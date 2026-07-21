@@ -1,9 +1,12 @@
 //! Helpers for writing formatted strings
 
 use crate::{
-    classes::{date::Date, time::Time},
-    common::scalar::{Offset, OffsetFormat},
     docstrings::FORMAT_ISO_NO_TZ_MSG,
+    domain::{
+        date::Date,
+        scalar::{Offset, OffsetFormat},
+        time::Time,
+    },
     py::*,
     pymodule::State,
 };

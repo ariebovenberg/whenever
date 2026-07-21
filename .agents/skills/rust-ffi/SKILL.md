@@ -15,7 +15,9 @@ The `src/py/` module provides safe wrappers. Key types:
 |------|---------|
 | `PyObj` | Core wrapper around `*mut PyObject`. Has `.extract()` (Copy types), `.extract_ref()` (ref types), `.type_()`, `.is_none()` |
 | `Owned<T>` | RAII refcount wrapper. Use `Owned::new()` to take ownership, `.borrow()` for non-owning access |
-| `ExtType<T>` | A Python type declared by the Rust extension; carries module state via `.state()` → `&State` |
+| `PyClass<T>` | A Python class whose instances contain a Rust `T`; carries module state via `.state()` → `&State` |
+| `PyRef<'a, T>` | A borrowed extension instance together with access to its `T` payload |
+| `PyPayload` | Trait implemented by Rust values stored inside extension objects |
 | `PyType` | A Python type object |
 | `PyReturn` | Alias for `PyResult<Owned<PyObj>>` — the return type of Python-visible functions |
 | `PyErrMarker` | Sentinel indicating the Python error indicator is set |
@@ -29,8 +31,8 @@ Key helpers in `src/py/`:
 - `handle_one_kwarg(fname, key, kwargs)` — extract a single optional kwarg by key
 - `find_interned(value, handler)` — match a PyObj against interned strings, returns `Option`
 - `match_interned_str(name, value, handler)` — like `find_interned` but raises on no match
-- `match_type!(obj, type => |value| {...}, _ => {...})` — match an extension object against differently typed `ExtType<T>` values; prefix an arm with `ref` for non-`Copy` types
-- `generic_alloc(type_, data)` — allocate a Python object with given data
+- `match_type!(obj, type => |value| {...}, _ => {...})` — match an extension object against differently typed `PyClass<T>` values; prefix an arm with `ref` for non-`Copy` types
+- `generic_alloc(cls, data)` — allocate a Python object with the given payload
 - `PyAsciiStrBuilder::format()` — build a Python string without intermediate Rust `String`
 - `PyTuple::with_len()` / `.init_item()` — safe tuple construction
 - `.to_py()` via the `ToPy` trait — convert Rust values to Python objects
@@ -46,7 +48,7 @@ Key helpers in `src/py/`:
 - Interned strings (`str_years`, `str_hour`, `str_units`, etc.)
 - Unpickling functions
 
-Access it via `cls.state()` from any `ExtType<T>`.
+Access it via `cls.state()` from any `PyClass<T>`.
 
 ## Method registration
 
@@ -59,7 +61,7 @@ Methods are registered in a `static mut METHODS: &[PyMethodDef]` array using mac
 
 The function signatures must match the macro used. For `method_kwargs!`:
 ```rust
-fn my_method(cls: ExtType<MyType>, slf: MyType, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn
+fn my_method(cls: PyClass<MyType>, slf: MyType, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn
 ```
 
 ## Performance philosophy
@@ -68,7 +70,7 @@ fn my_method(cls: ExtType<MyType>, slf: MyType, args: &[PyObj], kwargs: &mut Ite
   (e.g., `PyAsciiStrBuilder` instead of `format!()` → `to_py()`)
 - Prefer `i32`/`i64` over `i128` when possible
 - Use tuples (not lists) for immutable Python sequences
-- Check pointer equality before falling back to `py_eq` for comparisons
+- For known strings, check pointer equality before falling back to direct Unicode comparison
 
 ## Common patterns
 

@@ -1,7 +1,8 @@
 use core::ffi::{CStr, c_int, c_long, c_void};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
-use std::fmt::{Display, Formatter};
+
+pub(crate) use crate::domain::offset_datetime::OffsetDateTime;
 
 use crate::classes::itemized_date_delta::ItemizedDateDelta;
 use crate::classes::itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs};
@@ -17,66 +18,16 @@ use crate::{
     },
     common::{
         fmt::{self, Suffix},
-        parse::Scan,
         pattern, rfc2822, round,
         scalar::*,
     },
     docstrings as doc,
     py::*,
     pymodule::State,
-    tz::tzif::is_valid_key,
 };
 
-/// A date and time with a fixed offset from UTC.
-/// Invariant: the instant represented by the date and time is always within range.
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub(crate) struct OffsetDateTime {
-    pub(crate) date: Date,
-    pub(crate) time: Time,
-    pub(crate) offset: Offset,
-}
-
 impl OffsetDateTime {
-    pub(crate) const fn new_unchecked(date: Date, time: Time, offset: Offset) -> Self {
-        OffsetDateTime { date, time, offset }
-    }
-
-    pub(crate) fn new(date: Date, time: Time, offset: Offset) -> Option<Self> {
-        // Check: the instant represented by the date and time is within range
-        date.epoch_at(time).offset(-offset)?;
-        Some(Self { date, time, offset })
-    }
-
-    pub(crate) fn instant(self) -> Instant {
-        self.date
-            .at(self.time)
-            .assume_utc()
-            .offset(-self.offset)
-            // Safe: we know the instant of an OffsetDateTime is in range
-            .unwrap()
-    }
-
-    pub(crate) const fn local(self) -> DateTime {
-        DateTime {
-            date: self.date,
-            time: self.time,
-        }
-    }
-
-    pub(crate) fn parse(s: &[u8]) -> Option<Self> {
-        Scan::new(s).parse_all(Self::read_iso)
-    }
-
-    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
-        DateTime::read_iso(s)?
-            .with_offset(Offset::read_iso(s)?)
-            .and_then(|d| {
-                skip_tzname(s)?;
-                Some(d)
-            })
-    }
-
-    pub(crate) fn to_py(
+    pub(crate) fn to_stdlib(
         self,
         &PyDateTime_CAPI {
             DateTime_FromDateAndTime,
@@ -130,80 +81,14 @@ impl OffsetDateTime {
         .map(|d| unsafe { d.cast_unchecked::<PyDateTime>() })
     }
 
-    pub(crate) fn from_py(dt: PyDateTime) -> PyResult<Self> {
-        let date = Date::from_py(dt.date());
-        let time = Time::from_py_dt(dt);
+    pub(crate) fn from_stdlib(dt: PyDateTime) -> PyResult<Self> {
+        let date = Date::from_stdlib(dt.date());
+        let time = Time::from_stdlib_datetime(dt);
         OffsetDateTime::new(date, time, Offset::from_stdlib_datetime(dt)?).ok_or_range_err()
     }
 }
 
-impl DateTime {
-    pub(crate) fn with_offset(self, offset: Offset) -> Option<OffsetDateTime> {
-        OffsetDateTime::new(self.date, self.time, offset)
-    }
-
-    pub(crate) const fn with_offset_unchecked(self, offset: Offset) -> OffsetDateTime {
-        OffsetDateTime {
-            date: self.date,
-            time: self.time,
-            offset,
-        }
-    }
-}
-
-impl Instant {
-    pub(crate) fn to_offset(self, secs: Offset) -> Option<OffsetDateTime> {
-        Some(
-            self.offset(secs)?
-                .utc_datetime()
-                // Safety: at this point, we know the instant and local date
-                // are in range
-                .with_offset_unchecked(secs),
-        )
-    }
-}
-
 impl Offset {
-    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
-        let sign = match s.next() {
-            Some(b'+') => Sign::Plus,
-            Some(b'-') => Sign::Minus,
-            Some(b'Z' | b'z') => return Some(Offset::ZERO),
-            _ => None?, // sign is required
-        };
-        let mut total = 0;
-
-        // hours (required)
-        total += s.digits00_23()? as i32 * 3600;
-
-        match s.advance_on(b':') {
-            // we're parsing: HH:MM[:SS]
-            Some(true) => {
-                // minutes (required after the ':')
-                total += s.digits00_59()? as i32 * 60;
-                // Let's see if we have seconds too (optional)
-                if let Some(true) = s.advance_on(b':') {
-                    total += s.digits00_59()? as i32;
-                }
-            }
-            // we *may* be parsing HHMM[SS]
-            Some(false) => {
-                // Let's see if we have minutes (optional)
-                if let Some(n) = s.digits00_59() {
-                    total += n as i32 * 60;
-                    // Let's see if we have seconds too (optional)
-                    if let Some(n) = s.digits00_59() {
-                        total += n as i32;
-                    }
-                }
-            }
-            // end of string. We're done
-            None => {}
-        }
-        // Safe: we've bounded the values on parsing so we're in range
-        Some(Offset::new_unchecked(total).with_sign(sign))
-    }
-
     /// Get the offset from a Python datetime
     pub(crate) fn from_stdlib_datetime(dt: PyDateTime) -> PyResult<Self> {
         Ok({
@@ -243,25 +128,7 @@ impl Offset {
     }
 }
 
-/// Skip over the timezone in the string, if present.
-fn skip_tzname(s: &mut Scan) -> Option<()> {
-    if let Some(true) = s.advance_on(b'[') {
-        match s.take_until_inclusive(|c| c == b']') {
-            Some(tz) if is_valid_key(std::str::from_utf8(&tz[..tz.len() - 1]).ok()?) => (),
-            _ => None?,
-        }
-    };
-    Some(())
-}
-
 impl PyPayload for OffsetDateTime {}
-
-impl Display for OffsetDateTime {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let &OffsetDateTime { date, time, offset } = self;
-        write!(f, "{date}T{time}{offset}")
-    }
-}
 
 fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
@@ -270,7 +137,7 @@ fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
             return parse_iso(cls, arg);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            return OffsetDateTime::from_py(dt)?.to_obj(cls);
+            return OffsetDateTime::from_stdlib(dt)?.to_obj(cls);
         }
         return raise_type_err("OffsetDateTime() requires an ISO 8601 string or datetime.datetime");
     }
@@ -606,7 +473,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
 }
 
 fn to_stdlib(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    slf.to_py(cls.state().py_api()?).map(Owned::into_obj)
+    slf.to_stdlib(cls.state().py_api()?).map(Owned::into_obj)
 }
 
 fn py_datetime(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
@@ -893,7 +760,7 @@ fn from_py_datetime(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
         1,
     )?;
     if let Some(py_dt) = arg.cast_allow_subclass::<PyDateTime>() {
-        OffsetDateTime::from_py(py_dt)?.to_obj(cls)
+        OffsetDateTime::from_stdlib(py_dt)?.to_obj(cls)
     } else {
         raise_type_err("argument must be a datetime.datetime instance")?
     }
@@ -1214,7 +1081,7 @@ fn parse_strptime(
         .cast_exact::<PyDateTime>()
         .ok_or_type_err("strptime() returned non-datetime")?;
 
-    OffsetDateTime::from_py(*parsed)?.to_obj(cls)
+    OffsetDateTime::from_stdlib(*parsed)?.to_obj(cls)
 }
 
 fn format_rfc2822(_: PyType, slf: OffsetDateTime) -> PyReturn {

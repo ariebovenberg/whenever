@@ -1,104 +1,29 @@
 use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
-use std::fmt;
-use std::ops::Neg;
 use std::ptr::null_mut as NULL;
+
+pub(crate) use crate::domain::datetime_delta::DateTimeDelta;
 
 use crate::{
     classes::{
-        date_delta::{self, DateDelta, InitError, parse_prefix},
+        date_delta::{DateDelta, InitError},
         time_delta::{
-            self, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS, TimeDelta,
+            MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS, TimeDelta,
         },
     },
-    common::{math::CalUnit, scalar::*},
+    common::scalar::*,
     docstrings as doc,
     py::*,
     pymodule::State,
 };
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub(crate) struct DateTimeDelta {
-    // invariant: these never have opposite signs
-    pub(crate) ddelta: DateDelta,
-    pub(crate) tdelta: TimeDelta,
-}
-
 impl DateTimeDelta {
     pub(crate) fn pyhash(self) -> Py_hash_t {
         hash_combine(self.ddelta.pyhash(), self.tdelta.pyhash())
     }
-
-    pub(crate) fn new(ddelta: DateDelta, tdelta: TimeDelta) -> Option<Self> {
-        if ddelta.months.get() >= 0 && ddelta.days.get() >= 0 && tdelta.secs.get() >= 0
-            || ddelta.months.get() <= 0 && ddelta.days.get() <= 0 && tdelta.secs.get() <= 0
-        {
-            Some(Self { ddelta, tdelta })
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn checked_mul(self, factor: i32) -> Option<Self> {
-        let Self { ddelta, tdelta } = self;
-        ddelta
-            .mul(factor)
-            .zip(tdelta.mul(factor.into()))
-            // Safe: multiplication can't result in different signs
-            .map(|(ddelta, tdelta)| Self { ddelta, tdelta })
-    }
-
-    pub(crate) fn add(self, other: Self) -> Result<Self, InitError> {
-        let ddelta = self.ddelta.add(other.ddelta)?;
-        let tdelta = self.tdelta.add(other.tdelta).ok_or(InitError::TooBig)?;
-        // Confirm the signs of date- and timedelta didn't get out of sync
-        if ddelta.months.get() >= 0 && ddelta.days.get() >= 0 && tdelta.secs.get() >= 0
-            || ddelta.months.get() <= 0 && ddelta.days.get() <= 0 && tdelta.secs.get() <= 0
-        {
-            Ok(Self { ddelta, tdelta })
-        } else {
-            Err(InitError::MixedSign)
-        }
-    }
-
-    fn fmt_iso(self) -> String {
-        let mut s = String::with_capacity(8);
-        let DateTimeDelta { ddelta, tdelta } = if self.tdelta.secs.get() < 0
-            || self.ddelta.months.get() < 0
-            || self.ddelta.days.get() < 0
-        {
-            s.push('-');
-            -self
-        } else if self.tdelta.is_zero() && self.ddelta.is_zero() {
-            return "P0D".to_string();
-        } else {
-            self
-        };
-        s.push('P');
-
-        if !ddelta.is_zero() {
-            date_delta::format_components(ddelta, &mut s);
-        }
-        if !tdelta.is_zero() {
-            s.push('T');
-            time_delta::fmt_components_abs(tdelta, &mut s);
-        }
-        s
-    }
 }
 
 impl PyPayload for DateTimeDelta {}
-
-impl Neg for DateTimeDelta {
-    type Output = Self;
-
-    fn neg(self) -> Self {
-        Self {
-            ddelta: -self.ddelta,
-            tdelta: -self.tdelta,
-        }
-    }
-}
 
 #[inline]
 pub(crate) fn handle_exact_unit(
@@ -192,30 +117,7 @@ pub(crate) fn set_units_from_kwargs(
     Ok(true)
 }
 
-pub(crate) const SINGLETONS: &[(&CStr, DateTimeDelta); 1] = &[(
-    c"ZERO",
-    DateTimeDelta {
-        ddelta: DateDelta::ZERO,
-        tdelta: TimeDelta::ZERO,
-    },
-)];
-
-impl fmt::Display for DateTimeDelta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // A bit inefficient, but this isn't performance-critical
-        let mut isofmt = self.fmt_iso().into_bytes();
-        // Safe: we know the string is valid ASCII
-        for c in isofmt.iter_mut().skip(2) {
-            if *c != b'T' {
-                *c = c.to_ascii_lowercase();
-            }
-        }
-        f.write_str(
-            // SAFETY: we've built the string ourselves out of ASCII
-            unsafe { std::str::from_utf8_unchecked(&isofmt) },
-        )
-    }
-}
+pub(crate) const SINGLETONS: &[(&CStr, DateTimeDelta); 1] = &[(c"ZERO", DateTimeDelta::ZERO)];
 
 #[inline(never)]
 fn __new__(cls: PyClass<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
@@ -453,64 +355,11 @@ fn parse_iso_inner(cls: PyClass<DateTimeDelta>, arg: PyObj) -> PyReturn {
         // called through the constructor
         .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
 
-    let s = &mut binding.as_utf8()?;
+    let s = binding.as_utf8()?;
     let err = || format!("Invalid format or out of range: {arg}");
-    if s.len() < 3 {
-        // at least `P0D`
-        raise_value_err(err())?
-    }
-
-    let negated = parse_prefix(s).ok_or_else_value_err(err)?;
-    // Safe: we checked the string is at least 3 bytes long
-    if s[s.len() - 1].eq_ignore_ascii_case(&b'T') {
-        // catch 'empty' cases
-        raise_value_err(err())?
-    }
-    let mut ddelta = parse_date_components(s).ok_or_else_value_err(err)?;
-    let mut tdelta = if s.is_empty() {
-        TimeDelta::ZERO
-    } else if s[0].eq_ignore_ascii_case(&b'T') {
-        *s = &s[1..];
-        let (nanos, _) = time_delta::parse_all_components(s).ok_or_else_value_err(err)?;
-        TimeDelta::from_nanos(nanos as _).ok_or_else_value_err(err)?
-    } else {
-        raise_value_err(err())?
-    };
-    if negated {
-        ddelta = -ddelta;
-        tdelta = -tdelta;
-    }
-    DateTimeDelta { ddelta, tdelta }.to_obj(cls)
-}
-
-pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
-    let mut months = 0;
-    let mut days = 0;
-    let mut prev_unit: Option<CalUnit> = None;
-
-    while !s.is_empty() && !s[0].eq_ignore_ascii_case(&b'T') {
-        let (value, unit) = date_delta::parse_component(s)?;
-        match (unit, prev_unit.replace(unit)) {
-            // Note: We prevent overflow by limiting how many digits we parse
-            (CalUnit::Years, None) => {
-                months += value * 12;
-            }
-            (CalUnit::Months, None | Some(CalUnit::Years)) => {
-                months += value;
-            }
-            (CalUnit::Weeks, None | Some(CalUnit::Years | CalUnit::Months)) => {
-                days += value * 7;
-            }
-            (CalUnit::Days, _) => {
-                days += value;
-                break;
-            }
-            _ => None?, // i.e. the order of the components is wrong
-        }
-    }
-    DeltaMonths::new(months)
-        .zip(DeltaDays::new(days))
-        .map(|(months, days)| DateDelta { months, days })
+    DateTimeDelta::parse_iso(s)
+        .ok_or_else_value_err(err)?
+        .to_obj(cls)
 }
 
 fn in_months_days_secs_nanos(

@@ -12,7 +12,6 @@ use crate::{
         ambiguity::*,
         fmt,
         math::{self, DateRoundIncrement, DeltaUnit, DeltaUnitSet, SinceUntilKwargs},
-        parse::Scan,
         pattern, round,
         scalar::*,
     },
@@ -27,53 +26,11 @@ use core::{
 use pyo3_ffi::*;
 use std::cmp::Ordering;
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub struct DateTime {
-    pub(crate) date: Date,
-    pub(crate) time: Time,
-}
+pub(crate) use crate::domain::plain_datetime::BoundaryUnit;
+pub use crate::domain::plain_datetime::DateTime;
 
-pub(crate) const SINGLETONS: &[(&CStr, DateTime); 2] = &[
-    (
-        c"MIN",
-        DateTime {
-            date: Date {
-                year: Year::new(1).unwrap(),
-                month: Month::January,
-                day: 1,
-            },
-            time: Time {
-                hour: 0,
-                minute: 0,
-                second: 0,
-                subsec: SubSecNanos::MIN,
-            },
-        },
-    ),
-    (
-        c"MAX",
-        DateTime {
-            date: Date {
-                year: Year::new(9999).unwrap(),
-                month: Month::December,
-                day: 31,
-            },
-            time: Time {
-                hour: 23,
-                minute: 59,
-                second: 59,
-                subsec: SubSecNanos::MAX,
-            },
-        },
-    ),
-];
-
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub(crate) enum BoundaryUnit {
-    Date(date::BoundaryUnit),
-    Time(time::BoundUnit),
-    Day,
-}
+pub(crate) const SINGLETONS: &[(&CStr, DateTime); 2] =
+    &[(c"MIN", DateTime::MIN), (c"MAX", DateTime::MAX)];
 
 impl BoundaryUnit {
     pub(crate) fn from_py(state: &State, obj: PyObj) -> PyResult<Self> {
@@ -108,142 +65,19 @@ impl BoundaryUnit {
 }
 
 impl DateTime {
-    pub(crate) fn assume_utc(self) -> Instant {
-        Instant {
-            epoch: self.date.epoch_at(self.time),
-            subsec: self.time.subsec,
-        }
-    }
-
-    pub(crate) fn local_epoch(self) -> EpochSecs {
-        self.date.epoch_at(self.time)
-    }
-
-    pub(crate) fn diff(self, other: Self) -> TimeDelta {
-        self.assume_utc().diff(other.assume_utc())
-    }
-
-    pub(crate) fn with_date(self, date: Date) -> Self {
-        DateTime {
-            date,
-            time: self.time,
-        }
-    }
-
-    pub(crate) fn shift_date(self, months: DeltaMonths, days: DeltaDays) -> Option<Self> {
-        let DateTime { date, time } = self;
-        date.shift(months, days).map(|date| DateTime { date, time })
-    }
-
-    pub(crate) fn shift(self, t: TimeDelta) -> Option<Self> {
-        self.assume_utc().shift(t).map(|i| i.utc_datetime())
-    }
-
-    // This is significantly faster than the plain `shift` because
-    // offset deltas are guaranteed to be <48 hours
-    pub(crate) fn shift_by_offset(self, s: OffsetDelta) -> Option<Self> {
-        let Self { date, time } = self;
-        // Safety: both values sufficiently within i32 range
-        let secs_since_midnight = time.total_seconds() as i32 + s.get();
-        Some(Self {
-            date: match secs_since_midnight.div_euclid(S_PER_DAY) {
-                0 => date,
-                1 => date.tomorrow()?,
-                -1 => date.yesterday()?,
-                // more than 1 day difference is highly unlikely--but possible
-                2 => date.tomorrow()?.tomorrow()?,
-                -2 => date.yesterday()?.yesterday()?,
-                // OffsetDelta is <48 hours, so this is safe
-                _ => unreachable!(),
-            },
-            time: Time::from_sec_subsec(
-                secs_since_midnight.rem_euclid(S_PER_DAY) as u32,
-                time.subsec,
-            ),
-        })
-    }
-
-    /// Compute the start-of-unit DateTime
-    pub(crate) fn start_of_unit(self, unit: BoundaryUnit) -> Option<DateTime> {
-        let (date, time) = match unit {
-            BoundaryUnit::Date(u) => (self.date.start_of(u)?, Time::MIN),
-            BoundaryUnit::Time(u) => (self.date, self.time.start_of(u)),
-            BoundaryUnit::Day => (self.date, Time::MIN),
-        };
-        Some(DateTime { date, time })
-    }
-
-    /// Compute the end-of-unit DateTime.
-    pub(crate) fn end_of_unit(self, unit: BoundaryUnit) -> Option<DateTime> {
-        let (date, time) = match unit {
-            BoundaryUnit::Date(u) => (self.date.end_of(u)?, Time::MAX),
-            BoundaryUnit::Time(u) => (self.date, self.time.end_of(u)),
-            BoundaryUnit::Day => (self.date, Time::MAX),
-        };
-
-        Some(DateTime { date, time })
-    }
-
-    /// Compute the start_of_unit, but for the next interval. This is needed
-    /// for a timezone-aware end_of_unit()
-    pub(crate) fn next_start_of_unit(self, unit: BoundaryUnit) -> Option<DateTime> {
-        let (date, time) = match unit {
-            BoundaryUnit::Date(u) => (self.date.next_start_of(u)?, Time::MIN),
-            BoundaryUnit::Time(u) => {
-                let (time, overflow) = self.time.next_start_of(u);
-                (
-                    if overflow {
-                        self.date.tomorrow()?
-                    } else {
-                        self.date
-                    },
-                    time,
-                )
-            }
-            BoundaryUnit::Day => (self.date.tomorrow()?, Time::MIN),
-        };
-        Some(DateTime { date, time })
-    }
-
-    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
-        // Minimal length is 11 (YYYYMMDDTHH)
-        if s.len() < 11 {
-            return None;
-        }
-        let date = if is_datetime_sep(s[10]) {
-            Date::parse_iso_extended(s.take_unchecked(10).try_into().unwrap())
-        } else if is_datetime_sep(s[8]) {
-            Date::parse_iso_basic(s.take_unchecked(8).try_into().unwrap())
-        } else {
-            return None;
-        }?;
-        let time = Time::read_iso(s.skip(1))?;
-        Some(DateTime { date, time })
-    }
-
-    pub fn parse(s: &[u8]) -> Option<Self> {
-        Scan::new(s).parse_all(Self::read_iso)
-    }
-
-    fn from_py(dt: PyDateTime) -> PyResult<Self> {
+    fn from_stdlib(dt: PyDateTime) -> PyResult<Self> {
         let tzinfo = dt.tzinfo();
         if !tzinfo.is_none() {
             raise_value_err(format!("datetime must be naive, but got tzinfo={tzinfo}"))?
         }
         Ok(DateTime {
-            date: Date::from_py(dt.date()),
-            time: Time::from_py_dt(dt),
+            date: Date::from_stdlib(dt.date()),
+            time: Time::from_stdlib_datetime(dt),
         })
     }
 }
 
 impl PyPayload for DateTime {}
-
-impl std::fmt::Display for DateTime {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}T{}", self.date, self.time)
-    }
-}
 
 #[inline(never)]
 fn __new__(cls: PyClass<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
@@ -253,7 +87,7 @@ fn __new__(cls: PyClass<DateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyR
             return parse_iso(cls, arg);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            return DateTime::from_py(dt)?.to_obj(cls);
+            return DateTime::from_stdlib(dt)?.to_obj(cls);
         }
         return raise_type_err("PlainDateTime() requires an ISO 8601 string or datetime.datetime");
     }
@@ -759,7 +593,7 @@ fn from_py_datetime(cls: PyClass<DateTime>, arg: PyObj) -> PyReturn {
     let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() else {
         raise_type_err("argument must be datetime.datetime")?
     };
-    DateTime::from_py(dt)?.to_obj(cls)
+    DateTime::from_stdlib(dt)?.to_obj(cls)
 }
 
 fn to_stdlib(cls: PyClass<DateTime>, slf: DateTime) -> PyReturn {
@@ -848,10 +682,6 @@ fn end_of(cls: PyClass<DateTime>, slf: DateTime, unit_obj: PyObj) -> PyReturn {
         .to_obj(cls)
 }
 
-fn is_datetime_sep(c: u8) -> bool {
-    c == b'T' || c == b' ' || c == b't'
-}
-
 fn parse_strptime(cls: PyClass<DateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let state = cls.state();
     warn_with_class(
@@ -877,7 +707,7 @@ fn parse_strptime(cls: PyClass<DateTime>, args: &[PyObj], kwargs: &mut IterKwarg
         .cast_exact::<PyDateTime>()
         .ok_or_type_err("strptime() returned non-datetime")?;
 
-    DateTime::from_py(*parsed)?.to_obj(cls)
+    DateTime::from_stdlib(*parsed)?.to_obj(cls)
 }
 
 fn assume_utc(cls: PyClass<DateTime>, d: DateTime) -> PyReturn {

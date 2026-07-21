@@ -1,0 +1,316 @@
+use super::{date::Date, plain_datetime::DateTime, scalar::*};
+use crate::common::{
+    fmt::{self, Sink, format_2_digits},
+    parse::Scan,
+    round,
+};
+use std::fmt::{Display, Formatter};
+
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
+pub struct Time {
+    pub(crate) hour: u8,
+    pub(crate) minute: u8,
+    pub(crate) second: u8,
+    pub(crate) subsec: SubSecNanos,
+}
+
+impl Time {
+    pub(crate) const MIN: Time = Time {
+        hour: 0,
+        minute: 0,
+        second: 0,
+        subsec: SubSecNanos::MIN,
+    };
+
+    pub(crate) const MAX: Self = Self {
+        hour: 23,
+        minute: 59,
+        second: 59,
+        subsec: SubSecNanos::MAX,
+    };
+
+    pub(crate) fn new(hour: u8, minute: u8, second: u8, subsec: SubSecNanos) -> Option<Self> {
+        (hour < 24 && minute < 60 && second < 60).then_some(Self {
+            hour,
+            minute,
+            second,
+            subsec,
+        })
+    }
+
+    pub(crate) const fn total_seconds(self) -> u32 {
+        self.hour as u32 * 3600 + self.minute as u32 * 60 + self.second as u32
+    }
+
+    pub(crate) const fn from_sec_subsec(sec: u32, subsec: SubSecNanos) -> Self {
+        Time {
+            hour: (sec / 3600) as u8,
+            minute: ((sec % 3600) / 60) as u8,
+            second: (sec % 60) as u8,
+            subsec,
+        }
+    }
+
+    pub(crate) const fn total_nanos(self) -> u64 {
+        self.subsec.get() as u64 + self.total_seconds() as u64 * NS_PER_SEC as u64
+    }
+
+    pub(crate) const fn on(self, date: Date) -> DateTime {
+        DateTime { date, time: self }
+    }
+
+    pub(crate) fn from_total_nanos_unchecked(nanos: u64) -> Self {
+        Time {
+            hour: (nanos / NS_PER_HOUR) as u8,
+            minute: ((nanos % NS_PER_HOUR) / NS_PER_MINUTE) as u8,
+            second: ((nanos % NS_PER_MINUTE) / NS_PER_SEC as u64) as u8,
+            subsec: SubSecNanos::from_remainder(nanos),
+        }
+    }
+
+    pub(crate) fn read_iso_extended(s: &mut Scan) -> Option<Self> {
+        let hour = s.digits00_23()?;
+        let (minute, second, subsec) = match s.advance_on(b':') {
+            Some(true) => {
+                let minute = s.digits00_59()?;
+                let (second, subsec) = match s.advance_on(b':') {
+                    Some(true) => s.digits00_60_leap().zip(s.subsec())?,
+                    _ => (0, SubSecNanos::MIN),
+                };
+                (minute, second, subsec)
+            }
+            _ => (0, 0, SubSecNanos::MIN),
+        };
+        Some(Time {
+            hour,
+            minute,
+            second,
+            subsec,
+        })
+    }
+
+    pub(crate) fn read_iso_basic(s: &mut Scan) -> Option<Self> {
+        let hour = s.digits00_23()?;
+        let (minute, second, subsec) = match s.digits00_59() {
+            Some(minute) => {
+                let (second, subsec) = match s.digits00_60_leap() {
+                    Some(second) => (second, s.subsec()?),
+                    None => (0, SubSecNanos::MIN),
+                };
+                (minute, second, subsec)
+            }
+            None => (0, 0, SubSecNanos::MIN),
+        };
+        Some(Time {
+            hour,
+            minute,
+            second,
+            subsec,
+        })
+    }
+
+    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
+        match s.get(2) {
+            Some(b':') => Self::read_iso_extended(s),
+            _ => Self::read_iso_basic(s),
+        }
+    }
+
+    pub(crate) fn parse_iso(s: &[u8]) -> Option<Self> {
+        Scan::new(s).parse_all(Self::read_iso)
+    }
+
+    pub(crate) fn format_iso(self, unit: fmt::Unit, basic: bool) -> IsoFormat {
+        let (subsec_str, subsec_len) = self.subsec.format_iso();
+        IsoFormat {
+            time: self,
+            basic,
+            subsec_str,
+            subsec_len,
+            unit,
+        }
+    }
+
+    /// Round the time and return whether it wrapped to the next day.
+    pub(crate) fn round(self, increment: u64, mode: round::Mode) -> (Self, u64) {
+        debug_assert!(NS_PER_DAY.is_multiple_of(increment));
+        let total_nanos = self.total_nanos();
+        let quotient = total_nanos / increment;
+        let remainder = total_nanos % increment;
+        let threshold = match mode {
+            round::Mode::HalfEven => 1.max(increment / 2 + quotient.is_multiple_of(2) as u64),
+            round::Mode::Ceil | round::Mode::Expand => 1,
+            round::Mode::Floor | round::Mode::Trunc => increment + 1,
+            round::Mode::HalfFloor | round::Mode::HalfTrunc => increment / 2 + 1,
+            round::Mode::HalfCeil | round::Mode::HalfExpand => 1.max(increment / 2),
+        };
+        let ns_since_midnight = (quotient + (remainder >= threshold) as u64) * increment;
+        (
+            Self::from_total_nanos_unchecked(ns_since_midnight % NS_PER_DAY),
+            ns_since_midnight / NS_PER_DAY,
+        )
+    }
+
+    pub(crate) fn start_of(self, unit: BoundUnit) -> Self {
+        match unit {
+            BoundUnit::Hour => Time {
+                hour: self.hour,
+                ..Time::MIN
+            },
+            BoundUnit::Minute => Time {
+                second: 0,
+                subsec: SubSecNanos::MIN,
+                ..self
+            },
+            BoundUnit::Second => Time {
+                subsec: SubSecNanos::MIN,
+                ..self
+            },
+        }
+    }
+
+    pub(crate) fn end_of(self, unit: BoundUnit) -> Self {
+        match unit {
+            BoundUnit::Hour => Time {
+                hour: self.hour,
+                ..Time::MAX
+            },
+            BoundUnit::Minute => Time {
+                second: 59,
+                subsec: SubSecNanos::MAX,
+                ..self
+            },
+            BoundUnit::Second => Time {
+                subsec: SubSecNanos::MAX,
+                ..self
+            },
+        }
+    }
+
+    pub(crate) fn next_start_of(self, unit: BoundUnit) -> (Self, bool) {
+        match unit {
+            BoundUnit::Hour => (
+                Time {
+                    hour: (self.hour + 1) % 24,
+                    ..Time::MIN
+                },
+                self.hour == 23,
+            ),
+            BoundUnit::Minute => (
+                Time {
+                    hour: (self.hour + (self.minute == 59) as u8) % 24,
+                    minute: (self.minute + 1) % 60,
+                    ..Time::MIN
+                },
+                self.minute == 59 && self.hour == 23,
+            ),
+            BoundUnit::Second => (
+                Time {
+                    hour: (self.hour + (self.minute == 59 && self.second == 59) as u8) % 24,
+                    minute: (self.minute + (self.second == 59) as u8) % 60,
+                    second: (self.second + 1) % 60,
+                    ..Time::MIN
+                },
+                self.second == 59 && self.minute == 59 && self.hour == 23,
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BoundUnit {
+    Hour,
+    Minute,
+    Second,
+}
+
+impl BoundUnit {
+    pub(crate) fn in_secs(self) -> i32 {
+        match self {
+            BoundUnit::Hour => 3600,
+            BoundUnit::Minute => 60,
+            BoundUnit::Second => 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct IsoFormat {
+    time: Time,
+    basic: bool,
+    unit: fmt::Unit,
+    subsec_str: [u8; 10],
+    subsec_len: usize,
+}
+
+impl fmt::Chunk for IsoFormat {
+    fn len(&self) -> usize {
+        (match self.unit {
+            fmt::Unit::Hour => 2,
+            fmt::Unit::Minute => 4,
+            fmt::Unit::Second => 6,
+            fmt::Unit::Millisecond => 10,
+            fmt::Unit::Microsecond => 13,
+            fmt::Unit::Nanosecond => 16,
+            fmt::Unit::Auto => 6 + self.subsec_len,
+        }) + if self.basic || self.unit == fmt::Unit::Hour {
+            0
+        } else if self.unit == fmt::Unit::Minute {
+            1
+        } else {
+            2
+        }
+    }
+
+    fn write(&self, buf: &mut impl Sink) {
+        let &IsoFormat {
+            time:
+                Time {
+                    hour,
+                    minute,
+                    second,
+                    ..
+                },
+            basic,
+            unit,
+            subsec_str,
+            subsec_len,
+        } = self;
+        buf.write(format_2_digits(hour).as_ref());
+        if unit == fmt::Unit::Hour {
+            return;
+        }
+        if !basic {
+            buf.write_byte(b':');
+        }
+        buf.write(format_2_digits(minute).as_ref());
+        if unit == fmt::Unit::Minute {
+            return;
+        }
+        if !basic {
+            buf.write_byte(b':');
+        }
+        buf.write(format_2_digits(second).as_ref());
+        if unit == fmt::Unit::Second {
+            return;
+        }
+        let len_to_write = match unit {
+            fmt::Unit::Auto => subsec_len,
+            fmt::Unit::Nanosecond => 10,
+            fmt::Unit::Microsecond => 7,
+            fmt::Unit::Millisecond => 4,
+            _ => unreachable!(),
+        };
+        buf.write(&subsec_str[..len_to_write]);
+    }
+}
+
+impl Display for Time {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:02}:{:02}:{:02}{}",
+            self.hour, self.minute, self.second, self.subsec
+        )
+    }
+}

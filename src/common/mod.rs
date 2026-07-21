@@ -6,5 +6,5 @@ pub mod parse;
 pub mod pattern;
 pub mod rfc2822;
 pub mod round;
-pub mod scalar;
+pub use crate::domain::scalar;
 pub mod sync;
