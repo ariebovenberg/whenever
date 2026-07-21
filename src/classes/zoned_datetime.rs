@@ -88,7 +88,7 @@ impl ZonedDateTime {
         delta: TimeDelta,
         dis: Option<Disambiguate>,
         state: &State,
-        cls: ExtType<Self>,
+        cls: PyClass<Self>,
     ) -> PyReturn {
         let shifted_by_date = if !months.is_zero() || !days.is_zero() {
             self.date
@@ -266,11 +266,11 @@ fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(OffsetInIsoString, &'a
     .map(|tz| (offset, tz))
 }
 
-impl PyWrapped for ZonedDateTime {}
+impl PyPayload for ZonedDateTime {}
 
 impl Instant {
     /// Convert an instant to a zoned datetime, ready to be returned to Python.
-    pub(crate) fn to_tz_py(self, tz: Arc<TimeZone>, cls: ExtType<ZonedDateTime>) -> PyReturn {
+    pub(crate) fn to_tz_py(self, tz: Arc<TimeZone>, cls: PyClass<ZonedDateTime>) -> PyReturn {
         self.to_tz(&tz)
             .ok_or_range_err()?
             // SAFETY: We've already checked for both out-of-range date and time.
@@ -296,7 +296,7 @@ impl OffsetDateTime {
     pub(crate) fn assume_tz_unchecked(
         self,
         tz: Arc<TimeZone>,
-        cls: ExtType<ZonedDateTime>,
+        cls: PyClass<ZonedDateTime>,
     ) -> PyReturn {
         ZonedDateTime {
             date: self.date,
@@ -308,7 +308,7 @@ impl OffsetDateTime {
     }
 }
 
-fn __new__(cls: ExtType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     // Alternate constructor: one ISO 8601 string or stdlib datetime argument
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
@@ -367,7 +367,7 @@ extern "C" fn dealloc(arg: PyObj) {
     // SAFETY: in dealloc we have exclusive access. We must drop the Arc<TimeZone>
     // before freeing the memory, since generic_dealloc won't run Rust destructors.
     unsafe {
-        let ptr = &raw mut (*(arg.as_ptr() as *mut PyWrap<ZonedDateTime>)).data;
+        let ptr = &raw mut (*(arg.as_ptr() as *mut PyObjectLayout<ZonedDateTime>)).data;
         std::ptr::drop_in_place(ptr);
     }
     generic_dealloc(arg)
@@ -430,7 +430,7 @@ impl fmt::Chunk for TzFormat<'_> {
 }
 
 fn __richcmp__(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     a: &ZonedDateTime,
     b_obj: PyObj,
     op: c_int,
@@ -469,7 +469,7 @@ extern "C" fn __hash__(arg: PyObj) -> Py_hash_t {
 
 fn __add__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     binary_operation::<ZonedDateTime>(a_obj, b_obj, "+", |operands| {
-        let BinaryOperands::ExtTypes(cls, slf, other) = operands else {
+        let BinaryCall::ExtTypes { cls, slf, other } = operands else {
             return Ok(None);
         };
         shift_operator(cls.state(), cls, &slf, other, false)
@@ -479,32 +479,32 @@ fn __add__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
 fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     binary_operation::<ZonedDateTime>(a_obj, b_obj, "-", |operands| {
         let (cls, slf, other) = match operands {
-            BinaryOperands::SameType(cls, slf, b) => {
+            BinaryCall::SameType { cls, slf, other } => {
                 return Ok(Some(
                     slf.instant()
-                        .diff(b.instant())
+                        .diff(other.instant())
                         .to_obj(*cls.state().time_delta_type)?,
                 ));
             }
-            BinaryOperands::ExtTypes(cls, slf, other) => (cls, slf, other),
-            BinaryOperands::OtherTypes => return Ok(None),
+            BinaryCall::ExtTypes { cls, slf, other } => (cls, slf, other),
+            BinaryCall::OtherTypes => return Ok(None),
         };
         let state = cls.state();
-        let inst_b = match_type!(
+        let other = match_type!(
             other,
             *state.instant_type => |inst| { inst },
             *state.offset_datetime_type => |odt| { odt.instant() },
-            _ => { return shift_operator(state, slf.ext_type(), &slf, other, true) },
+            _ => { return shift_operator(state, slf.class(), &slf, other, true) },
         );
         Ok(Some(
-            slf.instant().diff(inst_b).to_obj(*state.time_delta_type)?,
+            slf.instant().diff(other).to_obj(*state.time_delta_type)?,
         ))
     })
 }
 
 fn shift_operator(
     state: &State,
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     arg: PyObj,
     negate: bool,
@@ -566,7 +566,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn exact_eq(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> PyReturn {
+fn exact_eq(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> PyReturn {
     if let Some(zdt) = obj_b.extract_ref(cls) {
         (slf == zdt).to_py()
     } else {
@@ -574,7 +574,7 @@ fn exact_eq(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> P
     }
 }
 
-fn to_tz(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, tz_obj: PyObj) -> PyReturn {
+fn to_tz(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, tz_obj: PyObj) -> PyReturn {
     slf.instant()
         .to_tz_py(cls.state().tz_store.obj_get(tz_obj)?, cls)
 }
@@ -608,7 +608,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     .to_obj(*state.zoned_datetime_type)
 }
 
-fn to_stdlib(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn to_stdlib(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     // Chosen approach: get the UTC date and time, then use ZoneInfo.fromutc().
     // This ensures we preserve the instant in time in the rare case
     // that ZoneInfo disagrees with our offset.
@@ -675,7 +675,7 @@ fn to_stdlib(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     )
 }
 
-fn py_datetime(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn py_datetime(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"py_datetime() is deprecated. Use to_stdlib() instead.",
@@ -684,11 +684,11 @@ fn py_datetime(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     to_stdlib(cls, slf)
 }
 
-fn to_instant(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn to_instant(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     slf.instant().to_obj(*cls.state().instant_type)
 }
 
-fn to_fixed_offset(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, args: &[PyObj]) -> PyReturn {
+fn to_fixed_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, args: &[PyObj]) -> PyReturn {
     let state = cls.state();
     match *args {
         [] => OffsetDateTime::new_unchecked(slf.date, slf.time, slf.offset),
@@ -701,38 +701,38 @@ fn to_fixed_offset(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, args: &[PyO
     .to_obj(*state.offset_datetime_type)
 }
 
-fn to_system_tz(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn to_system_tz(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     slf.instant()
         .to_tz_py(cls.state().tz_store.get_system_tz()?, cls)
 }
 
-fn date(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn date(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     slf.date.to_obj(*cls.state().date_type)
 }
 
-fn time(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn time(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     slf.time.to_obj(*cls.state().time_type)
 }
 
-fn day_of_year(_: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn day_of_year(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let d = slf.date;
     (d.year.days_before_month(d.month) + d.day as u16).to_py()
 }
 
-fn days_in_month(_: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn days_in_month(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let d = slf.date;
     d.year.days_in_month(d.month).to_py()
 }
 
-fn days_in_year(_: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn days_in_year(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     (if slf.date.year.is_leap() { 366 } else { 365 }).to_py()
 }
 
-fn in_leap_year(_: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn in_leap_year(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     slf.date.year.is_leap().to_py()
 }
 
-fn start_of(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
+fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
     let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
 
     // Behavior differs:
@@ -770,7 +770,7 @@ fn start_of(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -
     }
 }
 
-fn end_of(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
+fn end_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
     let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
 
     // Behavior differs:
@@ -823,7 +823,7 @@ fn end_of(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> 
 }
 
 fn replace_date(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -852,7 +852,7 @@ fn replace_date(
 }
 
 fn replace_time(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -880,7 +880,7 @@ fn replace_time(
 }
 
 fn format_iso(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -895,7 +895,7 @@ fn format_iso(
     )
 }
 
-fn parse_iso(cls: ExtType<ZonedDateTime>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: PyClass<ZonedDateTime>, arg: PyObj) -> PyReturn {
     let py_str = arg
         .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
@@ -932,7 +932,7 @@ fn parse_iso(cls: ExtType<ZonedDateTime>, arg: PyObj) -> PyReturn {
 }
 
 fn replace(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -994,17 +994,17 @@ fn replace(
         .assume_tz_unchecked(tz, cls)
 }
 
-fn now(cls: ExtType<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
+fn now(cls: PyClass<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
     state.now()?.to_tz_py(state.tz_store.obj_get(tz_obj)?, cls)
 }
 
-fn now_in_system_tz(cls: ExtType<ZonedDateTime>) -> PyReturn {
+fn now_in_system_tz(cls: PyClass<ZonedDateTime>) -> PyReturn {
     let state = cls.state();
     state.now()?.to_tz_py(state.tz_store.get_system_tz()?, cls)
 }
 
-fn from_system_tz(cls: ExtType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn from_system_tz(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let state = cls.state();
     let mut year: c_long = 0;
     let mut month: c_long = 0;
@@ -1042,7 +1042,7 @@ fn from_system_tz(cls: ExtType<ZonedDateTime>, args: PyTuple, kwargs: Option<PyD
         .assume_tz_unchecked(tz, cls)
 }
 
-fn from_py_datetime(cls: ExtType<ZonedDateTime>, arg: PyObj) -> PyReturn {
+fn from_py_datetime(cls: PyClass<ZonedDateTime>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"from_py_datetime() is deprecated. Use ZonedDateTime() constructor instead.",
@@ -1054,7 +1054,7 @@ fn from_py_datetime(cls: ExtType<ZonedDateTime>, arg: PyObj) -> PyReturn {
     from_py_datetime_inner(cls, dt)
 }
 
-fn from_py_datetime_inner(cls: ExtType<ZonedDateTime>, dt: PyDateTime) -> PyReturn {
+fn from_py_datetime_inner(cls: PyClass<ZonedDateTime>, dt: PyDateTime) -> PyReturn {
     let state = cls.state();
     let tzinfo = dt.tzinfo();
     // NOTE: it has to be exactly a `ZoneInfo`, since
@@ -1099,7 +1099,7 @@ fn from_py_datetime_inner(cls: ExtType<ZonedDateTime>, dt: PyDateTime) -> PyRetu
     .to_tz_py(tz, cls)
 }
 
-fn to_plain(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn to_plain(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     slf.local().to_obj(*cls.state().plain_datetime_type)
 }
 
@@ -1115,7 +1115,7 @@ fn timestamp_nanos(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     slf.instant().timestamp_nanos().to_py()
 }
 
-fn __reduce__(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn __reduce__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let ZonedDateTime {
         date: Date { year, month, day },
         time:
@@ -1182,7 +1182,7 @@ fn check_from_timestamp_args_return_tz(
 }
 
 fn from_timestamp(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
@@ -1201,7 +1201,7 @@ fn from_timestamp(
 }
 
 fn from_timestamp_millis(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
@@ -1219,7 +1219,7 @@ fn from_timestamp_millis(
 }
 
 fn from_timestamp_nanos(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
@@ -1246,7 +1246,7 @@ fn is_ambiguous(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     .to_py()
 }
 
-fn next_transition(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn next_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     match slf.tz.next_transition(slf.instant().epoch) {
         Some((epoch, offset)) => epoch
             .offset(offset)
@@ -1258,7 +1258,7 @@ fn next_transition(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn
     }
 }
 
-fn prev_transition(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn prev_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     match slf.tz.prev_transition(slf.instant().epoch) {
         Some((epoch, offset)) => epoch
             .offset(offset)
@@ -1270,7 +1270,7 @@ fn prev_transition(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn
     }
 }
 
-fn dst_offset(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn dst_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let state = cls.state();
     let meta = slf.tz.meta_for_instant(slf.instant().epoch);
     TimeDelta::from_nanos_unchecked(meta.dst_saving as i128 * 1_000_000_000)
@@ -1284,7 +1284,7 @@ fn tz_abbrev(_: PyType, slf: &ZonedDateTime) -> PyReturn {
 }
 
 fn add(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1293,7 +1293,7 @@ fn add(
 }
 
 fn subtract(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1302,7 +1302,7 @@ fn subtract(
 }
 
 fn shift_method(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1385,7 +1385,7 @@ fn shift_method(
     slf.shift(months, days, tdelta, dis, state, cls)
 }
 
-fn difference(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> PyReturn {
+fn difference(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> PyReturn {
     let state = cls.state();
     let inst_a = slf.instant();
 
@@ -1403,7 +1403,7 @@ fn difference(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> P
     inst_a.diff(inst_b).to_obj(*state.time_delta_type)
 }
 
-fn start_of_day(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn start_of_day(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"start_of_day() is deprecated; use start_of(\"day\") instead.",
@@ -1417,7 +1417,7 @@ fn start_of_day(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
         .assume_tz_unchecked(slf.tz.clone(), cls)
 }
 
-fn day_length(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn day_length(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let ZonedDateTime { date, ref tz, .. } = *slf;
     let start_of_day = date
         .at(Time::MIN)
@@ -1437,7 +1437,7 @@ fn day_length(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 }
 
 fn round(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1512,7 +1512,7 @@ fn tz_err_display(k: &Option<String>) -> String {
 }
 
 fn since(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1521,7 +1521,7 @@ fn since(
 }
 
 fn until(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1589,7 +1589,7 @@ pub(crate) fn zoned_target(
 }
 
 fn zoned_since(
-    cls: ExtType<ZonedDateTime>,
+    cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1688,7 +1688,7 @@ pub(crate) fn zoned_since_in_units(
     result.into()
 }
 
-fn format(_cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) -> PyReturn {
+fn format(_cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
@@ -1726,7 +1726,7 @@ fn format(_cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj)
     pattern::format_to_py(&elements, &vals)
 }
 
-fn __format__(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, spec_obj: PyObj) -> PyReturn {
+fn __format__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, spec_obj: PyObj) -> PyReturn {
     if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
@@ -1734,7 +1734,7 @@ fn __format__(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime, spec_obj: PyObj)
     }
 }
 
-fn parse(cls: ExtType<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &[s_obj] = args else {
         raise_type_err(format!(
             "parse() takes exactly 1 positional argument ({} given)",
@@ -1886,7 +1886,7 @@ static mut METHODS: &[PyMethodDef] = &[
                     kwargs: *mut PyObject,
                 ) -> *mut PyObject {
                     from_system_tz(
-                        unsafe { ExtType::from_ptr_unchecked(cls.cast()) },
+                        unsafe { PyClass::from_ptr_unchecked(cls.cast()) },
                         unsafe { PyTuple::from_ptr_unchecked(args) },
                         (!kwargs.is_null()).then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
                     )
@@ -1999,7 +1999,7 @@ fn tz(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     }
 }
 
-fn offset(cls: ExtType<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+fn offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     slf.offset.to_delta().to_obj(*cls.state().time_delta_type)
 }
 

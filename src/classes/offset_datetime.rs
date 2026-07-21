@@ -224,7 +224,7 @@ impl Offset {
         })
     }
 
-    pub(crate) fn from_obj(obj: PyObj, tdelta_cls: ExtType<TimeDelta>) -> PyResult<Self> {
+    pub(crate) fn from_obj(obj: PyObj, tdelta_cls: PyClass<TimeDelta>) -> PyResult<Self> {
         if let Some(py_int) = obj.cast_exact::<PyInt>() {
             Offset::from_hours(py_int.to_long()?)
                 .ok_or_value_err("offset must be between -24 and 24 hours")
@@ -254,7 +254,7 @@ fn skip_tzname(s: &mut Scan) -> Option<()> {
     Some(())
 }
 
-impl PyWrapped for OffsetDateTime {}
+impl PyPayload for OffsetDateTime {}
 
 impl Display for OffsetDateTime {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -263,7 +263,7 @@ impl Display for OffsetDateTime {
     }
 }
 
-fn __new__(cls: ExtType<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
         if PyStr::isinstance(arg) {
@@ -330,7 +330,7 @@ fn __str__(_: PyType, OffsetDateTime { date, time, offset }: OffsetDateTime) -> 
 }
 
 fn __richcmp__(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     a: OffsetDateTime,
     b_obj: PyObj,
     op: c_int,
@@ -373,7 +373,7 @@ pub(crate) extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 
 fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     binary_operation::<OffsetDateTime>(obj_a, obj_b, "+", |operands| {
-        let BinaryOperands::ExtTypes(cls, slf, other) = operands else {
+        let BinaryCall::ExtTypes { cls, slf, other } = operands else {
             return Ok(None);
         };
         let state = cls.state();
@@ -395,15 +395,15 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
 fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     binary_operation::<OffsetDateTime>(obj_a, obj_b, "-", |operands| {
         let (cls, slf, other) = match operands {
-            BinaryOperands::SameType(cls, slf, other) => {
+            BinaryCall::SameType { cls, slf, other } => {
                 return Ok(Some(
                     slf.instant()
                         .diff(other.instant())
                         .to_obj(*cls.state().time_delta_type)?,
                 ));
             }
-            BinaryOperands::ExtTypes(cls, slf, other) => (cls, slf, other),
-            BinaryOperands::OtherTypes => return Ok(None),
+            BinaryCall::ExtTypes { cls, slf, other } => (cls, slf, other),
+            BinaryCall::OtherTypes => return Ok(None),
         };
         let state = cls.state();
         if let Some(tdelta) = other.extract(*state.time_delta_type) {
@@ -414,7 +414,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
                     .shift(-tdelta)
                     .and_then(|dt| dt.with_offset(offset))
                     .ok_or_range_err()?
-                    .to_obj(slf.ext_type())?,
+                    .to_obj(slf.class())?,
             ));
         }
         let inst_b = match_type!(
@@ -463,7 +463,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn exact_eq(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime, obj_b: PyObj) -> PyReturn {
+fn exact_eq(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, obj_b: PyObj) -> PyReturn {
     if let Some(odt) = obj_b.extract(cls) {
         (slf == odt).to_py()
     } else {
@@ -471,11 +471,11 @@ fn exact_eq(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime, obj_b: PyObj) -> 
     }
 }
 
-pub(crate) fn to_instant(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+pub(crate) fn to_instant(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     slf.instant().to_obj(*cls.state().instant_type)
 }
 
-fn to_fixed_offset(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime, args: &[PyObj]) -> PyReturn {
+fn to_fixed_offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, args: &[PyObj]) -> PyReturn {
     match *args {
         [] => slf.to_obj(cls),
         [offset_obj] => slf
@@ -487,20 +487,20 @@ fn to_fixed_offset(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime, args: &[Py
     }
 }
 
-fn to_tz(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> PyReturn {
+fn to_tz(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
     slf.instant()
         .to_tz_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
 }
 
-fn to_system_tz(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+fn to_system_tz(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let state = cls.state();
     slf.instant()
         .to_tz_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
 
 fn assume_tz(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -605,11 +605,11 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     .to_obj(*state.offset_datetime_type)
 }
 
-fn to_stdlib(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+fn to_stdlib(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     slf.to_py(cls.state().py_api()?).map(Owned::into_obj)
 }
 
-fn py_datetime(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+fn py_datetime(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"py_datetime() is deprecated. Use to_stdlib() instead.",
@@ -618,25 +618,25 @@ fn py_datetime(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     to_stdlib(cls, slf)
 }
 
-fn date(cls: ExtType<OffsetDateTime>, OffsetDateTime { date, .. }: OffsetDateTime) -> PyReturn {
+fn date(cls: PyClass<OffsetDateTime>, OffsetDateTime { date, .. }: OffsetDateTime) -> PyReturn {
     date.to_obj(*cls.state().date_type)
 }
 
-fn time(cls: ExtType<OffsetDateTime>, OffsetDateTime { time, .. }: OffsetDateTime) -> PyReturn {
+fn time(cls: PyClass<OffsetDateTime>, OffsetDateTime { time, .. }: OffsetDateTime) -> PyReturn {
     time.to_obj(*cls.state().time_type)
 }
 
-fn day_of_year(_: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+fn day_of_year(_: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let d = slf.date;
     (d.year.days_before_month(d.month) + d.day as u16).to_py()
 }
 
-fn days_in_month(_: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+fn days_in_month(_: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let d = slf.date;
     d.year.days_in_month(d.month).to_py()
 }
 
-fn days_in_year(_: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+fn days_in_year(_: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     (if slf.date.year.is_leap() {
         366_u16
     } else {
@@ -645,12 +645,12 @@ fn days_in_year(_: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     .to_py()
 }
 
-fn in_leap_year(_: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+fn in_leap_year(_: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     slf.date.year.is_leap().to_py()
 }
 
 fn start_of(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -675,7 +675,7 @@ fn start_of(
 }
 
 fn end_of(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -730,7 +730,7 @@ fn check_ignore_dst_and_stale_offset(
 }
 
 fn replace_date(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     OffsetDateTime { time, offset, .. }: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -755,7 +755,7 @@ fn replace_date(
 }
 
 fn replace_time(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     OffsetDateTime { date, offset, .. }: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -780,7 +780,7 @@ fn replace_time(
 }
 
 fn format_iso(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -795,7 +795,7 @@ fn format_iso(
     )
 }
 
-fn parse_iso(cls: ExtType<OffsetDateTime>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
     OffsetDateTime::parse(
         arg.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
@@ -808,7 +808,7 @@ fn parse_iso(cls: ExtType<OffsetDateTime>, arg: PyObj) -> PyReturn {
 }
 
 fn replace(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -871,7 +871,7 @@ fn replace(
         .to_obj(cls)
 }
 
-fn now(cls: ExtType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn now(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let state = cls.state();
     let &[offset_obj] = args else {
         raise_type_err("now() takes exactly 1 positional argument")?
@@ -885,7 +885,7 @@ fn now(cls: ExtType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) ->
         .to_obj(cls)
 }
 
-fn from_py_datetime(cls: ExtType<OffsetDateTime>, arg: PyObj) -> PyReturn {
+fn from_py_datetime(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
@@ -899,7 +899,7 @@ fn from_py_datetime(cls: ExtType<OffsetDateTime>, arg: PyObj) -> PyReturn {
     }
 }
 
-pub(crate) fn to_plain(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+pub(crate) fn to_plain(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     slf.local().to_obj(*cls.state().plain_datetime_type)
 }
 
@@ -916,7 +916,7 @@ pub(crate) fn timestamp_nanos(_: PyType, slf: OffsetDateTime) -> PyReturn {
 }
 
 fn add(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -925,7 +925,7 @@ fn add(
 }
 
 fn subtract(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -935,7 +935,7 @@ fn subtract(
 
 #[inline(never)]
 fn shift_method(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1034,7 +1034,7 @@ fn shift_method(
         .to_obj(cls)
 }
 
-fn difference(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> PyReturn {
+fn difference(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> PyReturn {
     let state = cls.state();
     let other_inst = if let Some(odt) = arg.extract(cls) {
         odt.instant()
@@ -1054,7 +1054,7 @@ fn difference(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> 
         .to_obj(*state.time_delta_type)
 }
 
-fn __reduce__(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+fn __reduce__(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let OffsetDateTime {
         date: Date { year, month, day },
         time:
@@ -1125,7 +1125,7 @@ fn check_from_timestamp_args_return_offset(
 }
 
 fn from_timestamp(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
@@ -1146,7 +1146,7 @@ fn from_timestamp(
 }
 
 fn from_timestamp_millis(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
@@ -1166,7 +1166,7 @@ fn from_timestamp_millis(
 }
 
 fn from_timestamp_nanos(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
@@ -1186,7 +1186,7 @@ fn from_timestamp_nanos(
 }
 
 fn parse_strptime(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
@@ -1223,7 +1223,7 @@ fn format_rfc2822(_: PyType, slf: OffsetDateTime) -> PyReturn {
     unsafe { std::str::from_utf8_unchecked(&fmt[..]) }.to_py()
 }
 
-fn parse_rfc2822(cls: ExtType<OffsetDateTime>, arg: PyObj) -> PyReturn {
+fn parse_rfc2822(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
     let s = arg
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("expected a string")?;
@@ -1235,7 +1235,7 @@ fn parse_rfc2822(cls: ExtType<OffsetDateTime>, arg: PyObj) -> PyReturn {
 }
 
 fn round(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1275,7 +1275,7 @@ fn round(
 }
 
 fn since(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1284,7 +1284,7 @@ fn since(
 }
 
 fn until(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1294,7 +1294,7 @@ fn until(
 
 #[inline(never)]
 fn offset_since(
-    cls: ExtType<OffsetDateTime>,
+    cls: PyClass<OffsetDateTime>,
     slf: OffsetDateTime,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1379,7 +1379,7 @@ fn offset_since(
     }
 }
 
-fn format(_: ExtType<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -> PyReturn {
+fn format(_: PyClass<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
@@ -1413,7 +1413,7 @@ fn format(_: ExtType<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -
     pattern::format_to_py(&elements, &vals)
 }
 
-fn __format__(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime, spec_obj: PyObj) -> PyReturn {
+fn __format__(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, spec_obj: PyObj) -> PyReturn {
     if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
@@ -1421,7 +1421,7 @@ fn __format__(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime, spec_obj: PyObj
     }
 }
 
-fn parse(cls: ExtType<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &[s_obj] = args else {
         raise_type_err(format!(
             "parse() takes exactly 1 positional argument ({} given)",
@@ -1631,7 +1631,7 @@ fn nanosecond(_: PyType, slf: OffsetDateTime) -> PyReturn {
     slf.time.subsec.get().to_py()
 }
 
-fn offset(cls: ExtType<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+fn offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     slf.offset.to_delta().to_obj(*cls.state().time_delta_type)
 }
 

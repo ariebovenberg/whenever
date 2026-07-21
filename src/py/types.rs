@@ -14,23 +14,31 @@ pub(crate) struct PyType {
     obj: PyObj,
 }
 
-pub(crate) enum BinaryOperands<'a, T: PyWrapped> {
-    SameType(ExtType<T>, Wrapped<'a, T>, Wrapped<'a, T>),
-    ExtTypes(ExtType<T>, Wrapped<'a, T>, PyObj),
+pub(crate) enum BinaryCall<'a, T: PyPayload> {
+    SameType {
+        cls: PyClass<T>,
+        slf: PyRef<'a, T>,
+        other: PyRef<'a, T>,
+    },
+    ExtTypes {
+        cls: PyClass<T>,
+        slf: PyRef<'a, T>,
+        other: PyObj,
+    },
     OtherTypes,
 }
 
-pub(crate) fn binary_operation<T: PyWrapped>(
+pub(crate) fn binary_operation<T: PyPayload>(
     a: PyObj,
     b: PyObj,
     operator: &str,
-    operation: impl FnOnce(BinaryOperands<'_, T>) -> PyResult<Option<Owned<PyObj>>>,
+    operation: impl FnOnce(BinaryCall<'_, T>) -> PyResult<Option<Owned<PyObj>>>,
 ) -> PyReturn {
     let type_a = a.type_();
     let type_b = b.type_();
-    let operands = binary_operands::<T>(a, b, type_a, type_b);
-    let other_types = matches!(&operands, BinaryOperands::OtherTypes);
-    match operation(operands)? {
+    let call = binary_call::<T>(a, b, type_a, type_b);
+    let other_types = matches!(&call, BinaryCall::OtherTypes);
+    match operation(call)? {
         Some(result) => Ok(result),
         None => {
             if other_types {
@@ -46,32 +54,32 @@ pub(crate) fn binary_operation<T: PyWrapped>(
     }
 }
 
-fn binary_operands<'a, T: PyWrapped>(
+fn binary_call<'a, T: PyPayload>(
     a: PyObj,
     b: PyObj,
     type_a: PyType,
     type_b: PyType,
-) -> BinaryOperands<'a, T> {
+) -> BinaryCall<'a, T> {
     if type_a == type_b {
         // SAFETY: binary_operation's type parameter matches the slot's left type,
         // and equal types mean the right operand has the same representation.
-        return BinaryOperands::SameType(
-            unsafe { type_a.link_type() },
-            unsafe { Wrapped::new(a) },
-            unsafe { Wrapped::new(b) },
-        );
+        return BinaryCall::SameType {
+            cls: unsafe { type_a.assume_class() },
+            slf: unsafe { PyRef::from_obj_unchecked(a) },
+            other: unsafe { PyRef::from_obj_unchecked(b) },
+        };
     }
     let (Some(module_a), Some(module_b)) = (type_a.get_module(), type_b.get_module()) else {
-        return BinaryOperands::OtherTypes;
+        return BinaryCall::OtherTypes;
     };
     if module_a.is(module_b) {
         // SAFETY: whenever binary slots never return NotImplemented for two extension types,
         // so equal modules imply that the left operand is this slot's declared type.
-        let cls: ExtType<T> = unsafe { type_a.link_type() };
-        let left: Wrapped<'_, T> = unsafe { Wrapped::new(a) };
-        BinaryOperands::ExtTypes(cls, left, b)
+        let cls: PyClass<T> = unsafe { type_a.assume_class() };
+        let slf = unsafe { PyRef::from_obj_unchecked(a) };
+        BinaryCall::ExtTypes { cls, slf, other: b }
     } else {
-        BinaryOperands::OtherTypes
+        BinaryCall::OtherTypes
     }
 }
 
@@ -151,10 +159,13 @@ impl PyType {
         unsafe { PyDict::from_ptr_unchecked((*self.as_ptr().cast::<PyTypeObject>()).tp_dict) }
     }
 
-    /// Associate the type with the given Rust type.
-    pub(crate) unsafe fn link_type<T: PyWrapped>(self) -> ExtType<T> {
-        // SAFETY: we assume the pointer is valid and points to a PyType object
-        unsafe { ExtType::from_ptr_unchecked(self.as_ptr()) }
+    /// Treat this Python type as the class whose instances contain `T`.
+    ///
+    /// # Safety
+    /// Instances of this type must use `PyObjectLayout<T>`.
+    pub(crate) unsafe fn assume_class<T: PyPayload>(self) -> PyClass<T> {
+        // SAFETY: PyClass is transparent over a valid PyType pointer.
+        unsafe { PyClass::from_ptr_unchecked(self.as_ptr()) }
     }
 }
 
@@ -165,30 +176,30 @@ impl std::fmt::Display for PyType {
 }
 
 /// A PyTypeObject that is linked to a Rust struct in whenever.
-/// `#[repr(transparent)]` so that `*mut ExtType<T>` can be cast to
+/// `#[repr(transparent)]` so that `*mut PyClass<T>` can be cast to
 /// `*mut *mut PyObject` in `module_clear` (same as PyType → PyObj chain).
 #[repr(transparent)]
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct ExtType<T: PyWrapped> {
-    type_py: PyType,
+pub(crate) struct PyClass<T: PyPayload> {
+    py_type: PyType,
     type_rust: std::marker::PhantomData<T>,
 }
 
-// ExtType is always Copy/Clone: it's just a pointer + PhantomData marker.
-impl<T: PyWrapped> Copy for ExtType<T> {}
-impl<T: PyWrapped> Clone for ExtType<T> {
+// PyClass is always Copy/Clone: it's just a pointer + PhantomData marker.
+impl<T: PyPayload> Copy for PyClass<T> {}
+impl<T: PyPayload> Clone for PyClass<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: PyWrapped> ExtType<T> {
+impl<T: PyPayload> PyClass<T> {
     /// Get the module state
     pub(crate) fn state(&self) -> &State {
         // SAFETY: the type pointer is valid, and the retrieved module
         // state is valid once the Python module is initialized.
         unsafe {
-            PyType_GetModuleState(self.type_py.as_ptr().cast())
+            PyType_GetModuleState(self.py_type.as_ptr().cast())
                 .cast::<MaybeUninit<Option<State>>>()
                 .as_ref()
                 .unwrap()
@@ -198,38 +209,38 @@ impl<T: PyWrapped> ExtType<T> {
         }
     }
 
-    pub(crate) fn inner(&self) -> PyType {
-        self.type_py
+    pub(crate) fn as_type(&self) -> PyType {
+        self.py_type
     }
 }
 
-impl<T: PyWrapped> PyBase for ExtType<T> {
+impl<T: PyPayload> PyBase for PyClass<T> {
     fn as_py_obj(&self) -> PyObj {
-        self.type_py.as_py_obj()
+        self.py_type.as_py_obj()
     }
 }
 
-impl<T: PyWrapped> FromPy for ExtType<T> {
+impl<T: PyPayload> FromPy for PyClass<T> {
     unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
         Self {
-            type_py: unsafe { PyType::from_ptr_unchecked(ptr) },
+            py_type: unsafe { PyType::from_ptr_unchecked(ptr) },
             type_rust: std::marker::PhantomData,
         }
     }
 }
 
-impl<T: PyWrapped> From<ExtType<T>> for PyType {
-    fn from(t: ExtType<T>) -> Self {
-        t.type_py
+impl<T: PyPayload> From<PyClass<T>> for PyType {
+    fn from(t: PyClass<T>) -> Self {
+        t.py_type
     }
 }
 
 /// A trait for Rust structs that can be embedded in a Python heap object.
-pub(crate) trait PyWrapped: Sized {
+pub(crate) trait PyPayload: Sized {
     /// Allocate a new Python object wrapping this data.
     #[inline]
-    fn to_obj(self, type_: ExtType<Self>) -> PyReturn {
-        generic_alloc(type_.into(), self)
+    fn to_obj(self, cls: PyClass<Self>) -> PyReturn {
+        generic_alloc(cls, self)
     }
 }
 
@@ -241,18 +252,20 @@ pub(crate) trait PyWrapped: Sized {
 /// which the Rust compiler resolves based on what the function expects:
 /// - `T` (Copy types): extracts the value
 /// - `&T`: extracts the reference
-/// - `Wrapped<T>`: passes the full wrapper (for `__abs__` etc.)
-pub(crate) struct Wrapped<'a, T: PyWrapped> {
+/// - `PyRef<T>`: passes the full wrapper (for `__abs__` etc.)
+pub(crate) struct PyRef<'a, T: PyPayload> {
     obj: PyObj,
     data: &'a T,
 }
 
-impl<'a, T: PyWrapped> Wrapped<'a, T> {
+impl<'a, T: PyPayload> PyRef<'a, T> {
+    /// # Safety
+    /// `obj` must be an instance of `PyClass<T>` and remain alive for `'a`.
     #[inline]
-    pub(crate) unsafe fn new(obj: PyObj) -> Self {
+    pub(crate) unsafe fn from_obj_unchecked(obj: PyObj) -> Self {
         Self {
             obj,
-            data: unsafe { &(*obj.as_ptr().cast::<PyWrap<T>>()).data },
+            data: unsafe { &(*obj.as_ptr().cast::<PyObjectLayout<T>>()).data },
         }
     }
 
@@ -263,13 +276,13 @@ impl<'a, T: PyWrapped> Wrapped<'a, T> {
     }
 
     #[inline]
-    pub(crate) fn ext_type(&self) -> ExtType<T> {
-        // SAFETY: Wrapped is only constructed for an instance of ExtType<T>.
-        unsafe { ExtType::from_ptr_unchecked(self.obj.type_().as_ptr()) }
+    pub(crate) fn class(&self) -> PyClass<T> {
+        // SAFETY: PyRef is only constructed for an instance of PyClass<T>.
+        unsafe { self.obj.type_().assume_class() }
     }
 }
 
-impl<T: PyWrapped> std::ops::Deref for Wrapped<'_, T> {
+impl<T: PyPayload> std::ops::Deref for PyRef<'_, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
@@ -277,50 +290,50 @@ impl<T: PyWrapped> std::ops::Deref for Wrapped<'_, T> {
     }
 }
 
-/// Trait for automatic conversion from `Wrapped<T>` to the type expected
+/// Trait for automatic conversion from `PyRef<T>` to the type expected
 /// by a method function. Resolved by the compiler at each call site.
-pub(crate) trait FromWrapped<'a, T: PyWrapped>: Sized {
-    fn from_wrapped(w: Wrapped<'a, T>) -> Self;
+pub(crate) trait FromWrapped<'a, T: PyPayload>: Sized {
+    fn from_wrapped(w: PyRef<'a, T>) -> Self;
 }
 
 /// Copy types: extract the value.
-impl<T: PyWrapped + Copy> FromWrapped<'_, T> for T {
+impl<T: PyPayload + Copy> FromWrapped<'_, T> for T {
     #[inline]
-    fn from_wrapped(w: Wrapped<'_, T>) -> T {
+    fn from_wrapped(w: PyRef<'_, T>) -> T {
         *w.data
     }
 }
 
 /// Reference access: extract `&T`.
-impl<'a, T: PyWrapped> FromWrapped<'a, T> for &'a T {
+impl<'a, T: PyPayload> FromWrapped<'a, T> for &'a T {
     #[inline]
-    fn from_wrapped(w: Wrapped<'a, T>) -> &'a T {
+    fn from_wrapped(w: PyRef<'a, T>) -> &'a T {
         w.data
     }
 }
 
 /// Pass-through: keep the full wrapper.
-impl<'a, T: PyWrapped> FromWrapped<'a, T> for Wrapped<'a, T> {
+impl<'a, T: PyPayload> FromWrapped<'a, T> for PyRef<'a, T> {
     #[inline]
-    fn from_wrapped(w: Wrapped<'a, T>) -> Self {
+    fn from_wrapped(w: PyRef<'a, T>) -> Self {
         w
     }
 }
 
 /// The shape of PyObjects that wrap a `whenever` Rust type.
 #[repr(C)]
-pub(crate) struct PyWrap<T: PyWrapped> {
+pub(crate) struct PyObjectLayout<T: PyPayload> {
     _ob_base: PyObject,
     pub(crate) data: T,
 }
 
-pub(crate) const fn type_spec<T: PyWrapped>(
+pub(crate) const fn type_spec<T: PyPayload>(
     name: &CStr,
     slots: &'static [PyType_Slot],
 ) -> PyType_Spec {
     PyType_Spec {
         name: name.as_ptr().cast(),
-        basicsize: mem::size_of::<PyWrap<T>>() as _,
+        basicsize: mem::size_of::<PyObjectLayout<T>>() as _,
         itemsize: 0,
         // NOTE: IMMUTABLETYPE flag is required to prevent additional refcycles
         // between the class and the instance.
@@ -342,13 +355,13 @@ pub(crate) extern "C" fn generic_dealloc(slf: PyObj) {
 }
 
 #[inline]
-pub(crate) fn generic_alloc<T: PyWrapped>(type_: PyType, d: T) -> PyReturn {
-    let type_ptr = type_.as_ptr().cast::<PyTypeObject>();
+pub(crate) fn generic_alloc<T: PyPayload>(cls: PyClass<T>, data: T) -> PyReturn {
+    let type_ptr = cls.as_ptr().cast::<PyTypeObject>();
     unsafe {
-        let slf = (*type_ptr).tp_alloc.unwrap()(type_ptr, 0).cast::<PyWrap<T>>();
+        let slf = (*type_ptr).tp_alloc.unwrap()(type_ptr, 0).cast::<PyObjectLayout<T>>();
         match slf.cast::<PyObject>().as_mut() {
             Some(r) => {
-                (&raw mut (*slf).data).write(d);
+                (&raw mut (*slf).data).write(data);
                 // SAFETY: tp_alloc returns a new reference and `r` is non-null here.
                 Ok(Owned::from_owned_ptr(r))
             }

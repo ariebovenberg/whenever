@@ -20,18 +20,18 @@ pub(crate) fn new_exception(
 
 /// Create a new class in the module, including configuring the
 /// unpickler and setting the module name
-pub(crate) fn new_class<T: PyWrapped>(
+pub(crate) fn new_class<T: PyPayload>(
     module: PyModule,
     module_nameobj: PyObj,
     spec: &mut PyType_Spec,
     unpickle_name: &CStr,
-) -> PyResult<(Owned<ExtType<T>>, Owned<PyObj>)> {
+) -> PyResult<(Owned<PyClass<T>>, Owned<PyObj>)> {
     let cls = unsafe { PyType_FromModuleAndSpec(module.as_ptr(), spec, NULL()) }
         .own()?
         .cast_allow_subclass::<PyType>()
         .unwrap();
     // SAFETY: this type was created from the specification for T above.
-    let cls = unsafe { cls.cast_unchecked::<ExtType<T>>() };
+    let cls = unsafe { cls.cast_unchecked::<PyClass<T>>() };
     module.add_type((*cls).into())?;
 
     let unpickler = module.getattr(unpickle_name)?;
@@ -39,11 +39,11 @@ pub(crate) fn new_class<T: PyWrapped>(
     Ok((cls, unpickler))
 }
 
-pub(crate) fn create_singletons<T: PyWrapped + Copy>(
-    cls: ExtType<T>,
+pub(crate) fn create_singletons<T: PyPayload + Copy>(
+    cls: PyClass<T>,
     objs: &[(&CStr, T)],
 ) -> PyResult<()> {
-    let cls_dict = cls.inner().get_dict();
+    let cls_dict = cls.as_type().get_dict();
     for (name, value) in objs {
         let pyvalue = value.to_obj(cls)?;
         cls_dict

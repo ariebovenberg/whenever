@@ -87,7 +87,7 @@ impl DateTimeDelta {
     }
 }
 
-impl PyWrapped for DateTimeDelta {}
+impl PyPayload for DateTimeDelta {}
 
 impl Neg for DateTimeDelta {
     type Output = Self;
@@ -218,7 +218,7 @@ impl fmt::Display for DateTimeDelta {
 }
 
 #[inline(never)]
-fn __new__(cls: ExtType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: PyClass<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let nargs = args.len();
     let nkwargs = kwargs.map_or(0, |k| k.len());
 
@@ -272,7 +272,7 @@ fn __new__(cls: ExtType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -
     }
 }
 
-fn __richcmp__(cls: ExtType<DateTimeDelta>, a: DateTimeDelta, b_obj: PyObj, op: c_int) -> PyReturn {
+fn __richcmp__(cls: PyClass<DateTimeDelta>, a: DateTimeDelta, b_obj: PyObj, op: c_int) -> PyReturn {
     match b_obj.extract(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => (a == b).to_py(),
@@ -290,7 +290,7 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     hashmask(d.pyhash())
 }
 
-fn __neg__(cls: ExtType<DateTimeDelta>, d: DateTimeDelta) -> PyReturn {
+fn __neg__(cls: PyClass<DateTimeDelta>, d: DateTimeDelta) -> PyReturn {
     (-d).to_obj(cls)
 }
 
@@ -343,11 +343,11 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
 #[inline(never)]
 fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     binary_operation::<DateTimeDelta>(obj_a, obj_b, if negate { "-" } else { "+" }, |operands| {
-        let (cls, a, mut b) = match operands {
-            BinaryOperands::SameType(cls, a, b) => (cls, a, *b),
-            BinaryOperands::ExtTypes(cls, a, other) => {
+        let (cls, slf, mut other) = match operands {
+            BinaryCall::SameType { cls, slf, other } => (cls, slf, *other),
+            BinaryCall::ExtTypes { cls, slf, other } => {
                 let state = cls.state();
-                let b = match_type!(
+                let other = match_type!(
                     other,
                     *state.date_delta_type => |ddelta| {
                         DateTimeDelta {
@@ -363,15 +363,15 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                     },
                     _ => { return Ok(None) },
                 );
-                (cls, a, b)
+                (cls, slf, other)
             }
-            BinaryOperands::OtherTypes => return Ok(None),
+            BinaryCall::OtherTypes => return Ok(None),
         };
         if negate {
-            b = -b;
+            other = -other;
         }
         Ok(Some(
-            a.add(b)
+            slf.add(other)
                 .map_err(|e| {
                     value_err(match e {
                         InitError::TooBig => "Addition result out of bounds",
@@ -383,7 +383,7 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     })
 }
 
-fn __abs__(cls: ExtType<DateTimeDelta>, slf: Wrapped<'_, DateTimeDelta>) -> PyReturn {
+fn __abs__(cls: PyClass<DateTimeDelta>, slf: PyRef<'_, DateTimeDelta>) -> PyReturn {
     if slf.ddelta.months.get() >= 0 && slf.ddelta.days.get() >= 0 && !slf.tdelta.is_negative() {
         Ok(slf.newref())
     } else {
@@ -437,7 +437,7 @@ fn format_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
     d.fmt_iso().to_py()
 }
 
-fn parse_iso(cls: ExtType<DateTimeDelta>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: PyClass<DateTimeDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
@@ -446,7 +446,7 @@ fn parse_iso(cls: ExtType<DateTimeDelta>, arg: PyObj) -> PyReturn {
     parse_iso_inner(cls, arg)
 }
 
-fn parse_iso_inner(cls: ExtType<DateTimeDelta>, arg: PyObj) -> PyReturn {
+fn parse_iso_inner(cls: PyClass<DateTimeDelta>, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
@@ -536,7 +536,7 @@ fn in_months_days_secs_nanos(
     .into_pytuple()
 }
 
-fn date_part(cls: ExtType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
+fn date_part(cls: PyClass<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"DateTimeDelta.date_part() is deprecated.",
@@ -545,12 +545,12 @@ fn date_part(cls: ExtType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
     slf.ddelta.to_obj(*cls.state().date_delta_type)
 }
 
-fn time_part(cls: ExtType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
+fn time_part(cls: PyClass<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
     slf.tdelta.to_obj(*cls.state().time_delta_type)
 }
 
 fn __reduce__(
-    cls: ExtType<DateTimeDelta>,
+    cls: PyClass<DateTimeDelta>,
     DateTimeDelta {
         ddelta: DateDelta { months, days },
         tdelta: TimeDelta { secs, subsec },
