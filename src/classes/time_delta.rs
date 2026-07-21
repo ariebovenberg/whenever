@@ -270,7 +270,7 @@ impl TimeDelta {
     }
 }
 
-impl PyWrapped for TimeDelta {}
+impl PyPayload for TimeDelta {}
 
 impl Neg for TimeDelta {
     type Output = Self;
@@ -415,7 +415,7 @@ where
     Ok(result)
 }
 
-fn __new__(cls: ExtType<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: PyClass<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let nkwargs = kwargs.map_or(0, |k| k.len());
     let state = cls.state();
 
@@ -501,7 +501,7 @@ pub(crate) fn nanoseconds(state: &State, arg: PyObj) -> PyReturn {
     .to_obj(*state.time_delta_type)
 }
 
-fn __richcmp__(cls: ExtType<TimeDelta>, a: TimeDelta, arg: PyObj, op: c_int) -> PyReturn {
+fn __richcmp__(cls: PyClass<TimeDelta>, a: TimeDelta, arg: PyObj, op: c_int) -> PyReturn {
     match arg.extract(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => a == b,
@@ -522,7 +522,7 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     hashmask(unsafe { slf.assume_heaptype::<TimeDelta>().1 }.pyhash()) as Py_hash_t
 }
 
-fn __neg__(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn __neg__(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     (-slf).to_obj(cls)
 }
 
@@ -620,12 +620,12 @@ fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
                     .ok_or_range_err()?
                     .to_obj(cls)?,
             ))
-        } else if let BinaryOperands::SameType(_, a, b) = operands {
-            if b.is_zero() {
+        } else if let BinaryCall::SameType { slf, other, .. } = operands {
+            if other.is_zero() {
                 raise(exc_zero_division_error(), "Division by zero")?
             }
             Ok(Some(
-                (a.total_nanos() as f64 / b.total_nanos() as f64).to_py()?,
+                (slf.total_nanos() as f64 / other.total_nanos() as f64).to_py()?,
             ))
         } else {
             Ok(None)
@@ -635,19 +635,19 @@ fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
 
 fn __floordiv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     binary_operation::<TimeDelta>(a_obj, b_obj, "//", |operands| {
-        let BinaryOperands::SameType(_, a_delta, b_delta) = operands else {
+        let BinaryCall::SameType { slf, other, .. } = operands else {
             return Ok(None);
         };
-        if b_delta.is_zero() {
+        if other.is_zero() {
             raise(exc_zero_division_error(), "Division by zero")?
         }
         // NOTE: we can't avoid using i128 *in general*, because the divisor
         //       may be 1 nanosecond and the dividend TimeDelta.MAX
-        let a = a_delta.total_nanos();
-        let b = b_delta.total_nanos();
-        let mut result = a / b;
+        let slf = slf.total_nanos();
+        let other = other.total_nanos();
+        let mut result = slf / other;
         // Adjust for "correct" (Python style) floor division with mixed signs
-        if a.signum() != b.signum() && a % b != 0 {
+        if slf.signum() != other.signum() && slf % other != 0 {
             result -= 1;
         }
         Ok(Some(result.to_py()?))
@@ -656,19 +656,19 @@ fn __floordiv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
 
 fn __mod__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     binary_operation::<TimeDelta>(a_obj, b_obj, "%", |operands| {
-        let BinaryOperands::SameType(cls, a_delta, b_delta) = operands else {
+        let BinaryCall::SameType { cls, slf, other } = operands else {
             return Ok(None);
         };
 
-        let a = a_delta.total_nanos();
-        let b = b_delta.total_nanos();
-        if b == 0 {
+        let slf = slf.total_nanos();
+        let other = other.total_nanos();
+        if other == 0 {
             raise(exc_zero_division_error(), "Division by zero")?
         }
-        let mut result = a % b;
+        let mut result = slf % other;
         // Adjust for "correct" (Python style) floor division with mixed signs
-        if a.signum() != b.signum() && result != 0 {
-            result += b;
+        if slf.signum() != other.signum() && result != 0 {
+            result += other;
         }
         // SAFETY: remainder is always smaller than the divisor
         Ok(Some(TimeDelta::from_nanos_unchecked(result).to_obj(cls)?))
@@ -687,10 +687,12 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
 fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
     binary_operation::<TimeDelta>(a_obj, b_obj, if negate { "-" } else { "+" }, |operands| {
         match operands {
-            BinaryOperands::SameType(cls, a, b) => Ok(Some(
-                a.add(b.negate_if(negate)).ok_or_range_err()?.to_obj(cls)?,
+            BinaryCall::SameType { cls, slf, other } => Ok(Some(
+                slf.add(other.negate_if(negate))
+                    .ok_or_range_err()?
+                    .to_obj(cls)?,
             )),
-            BinaryOperands::ExtTypes(cls, tdelta, other) => {
+            BinaryCall::ExtTypes { cls, slf, other } => {
                 let state = cls.state();
                 if let Some(mut ddelta) = other.extract(*state.date_delta_type) {
                     if negate {
@@ -702,7 +704,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                         1,
                     )?;
                     Ok(Some(
-                        DateTimeDelta::new(ddelta, *tdelta)
+                        DateTimeDelta::new(ddelta, *slf)
                             .ok_or_value_err("mixed sign of delta components")?
                             .to_obj(*state.datetime_delta_type)?,
                     ))
@@ -714,7 +716,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                         dtdelta
                             .add(DateTimeDelta {
                                 ddelta: DateDelta::ZERO,
-                                tdelta: *tdelta,
+                                tdelta: *slf,
                             })
                             .map_err(|e| {
                                 value_err(match e {
@@ -736,14 +738,14 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                                 1,
                             )?;
                             Ok(Some(
-                                dt.shift(*tdelta)
+                                dt.shift(*slf)
                                     .ok_or_range_err()?
                                     .to_obj(*state.plain_datetime_type)?,
                             ))
                         },
                         *state.instant_type => |inst| {
                             Ok(Some(
-                                inst.shift(*tdelta)
+                                inst.shift(*slf)
                                     .ok_or_range_err()?
                                     .to_obj(*state.instant_type)?,
                             ))
@@ -756,7 +758,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                             )?;
                             Ok(Some(
                                 odt.local()
-                                    .shift(*tdelta)
+                                    .shift(*slf)
                                     .and_then(|dt| dt.with_offset(odt.offset))
                                     .ok_or_range_err()?
                                     .to_obj(*state.offset_datetime_type)?,
@@ -766,7 +768,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                             Ok(Some(zdt.shift(
                                 DeltaMonths::ZERO,
                                 DeltaDays::ZERO,
-                                *tdelta,
+                                *slf,
                                 None,
                                 state,
                                 *state.zoned_datetime_type,
@@ -776,12 +778,12 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                     )
                 }
             }
-            BinaryOperands::OtherTypes => Ok(None),
+            BinaryCall::OtherTypes => Ok(None),
         }
     })
 }
 
-fn __abs__(cls: ExtType<TimeDelta>, slf: Wrapped<'_, TimeDelta>) -> PyReturn {
+fn __abs__(cls: PyClass<TimeDelta>, slf: PyRef<'_, TimeDelta>) -> PyReturn {
     if slf.is_negative() {
         (-*slf).to_obj(cls)
     } else {
@@ -830,7 +832,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn __reduce__(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn __reduce__(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     let TimeDelta { secs, subsec } = slf;
     let data = pack![secs.get(), subsec.get()];
     [
@@ -855,7 +857,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     .to_obj(*state.time_delta_type)
 }
 
-fn in_nanoseconds(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn in_nanoseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"in_nanoseconds is deprecated, use total('nanoseconds') instead",
@@ -864,7 +866,7 @@ fn in_nanoseconds(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     slf.total_nanos().to_py()
 }
 
-fn in_microseconds(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn in_microseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"in_microseconds is deprecated, use total('microseconds') instead",
@@ -874,7 +876,7 @@ fn in_microseconds(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     (secs.get() as f64 * 1e6 + subsec.get() as f64 * 1e-3).to_py()
 }
 
-fn in_milliseconds(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn in_milliseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"in_milliseconds is deprecated, use total('milliseconds') instead",
@@ -884,7 +886,7 @@ fn in_milliseconds(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     (secs.get() as f64 * 1e3 + subsec.get() as f64 * 1e-6).to_py()
 }
 
-fn in_seconds(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn in_seconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"in_seconds is deprecated, use total('seconds') instead",
@@ -894,7 +896,7 @@ fn in_seconds(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     (secs.get() as f64 + subsec.get() as f64 * 1e-9).to_py()
 }
 
-fn in_minutes(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn in_minutes(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"in_minutes is deprecated, use total('minutes') instead",
@@ -904,7 +906,7 @@ fn in_minutes(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     (secs.get() as f64 / 60.0 + subsec.get() as f64 * 1e-9 / 60.0).to_py()
 }
 
-fn in_hours(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn in_hours(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"in_hours is deprecated, use total('hours') instead",
@@ -914,7 +916,7 @@ fn in_hours(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     (secs.get() as f64 / 3600.0 + subsec.get() as f64 * 1e-9 / 3600.0).to_py()
 }
 
-fn in_days_of_24h(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn in_days_of_24h(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"in_days_of_24h is deprecated, use total('days') instead",
@@ -924,7 +926,7 @@ fn in_days_of_24h(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     (secs.get() as f64 / S_PER_DAY as f64 + subsec.get() as f64 * 1e-9 / S_PER_DAY as f64).to_py()
 }
 
-fn from_py_timedelta(cls: ExtType<TimeDelta>, arg: PyObj) -> PyReturn {
+fn from_py_timedelta(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"from_py_timedelta() is deprecated. Use TimeDelta() constructor instead.",
@@ -937,7 +939,7 @@ fn from_py_timedelta(cls: ExtType<TimeDelta>, arg: PyObj) -> PyReturn {
     }
 }
 
-fn to_stdlib(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn to_stdlib(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     let TimeDelta { subsec, secs } = slf;
     let &PyDateTime_CAPI {
         Delta_FromDelta,
@@ -957,7 +959,7 @@ fn to_stdlib(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
     .own()
 }
 
-fn py_timedelta(cls: ExtType<TimeDelta>, slf: TimeDelta) -> PyReturn {
+fn py_timedelta(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"py_timedelta() is deprecated. Use to_stdlib() instead.",
@@ -989,7 +991,7 @@ fn format_iso(_: PyType, slf: TimeDelta) -> PyReturn {
     slf.fmt_iso().to_py()
 }
 
-fn parse_iso(cls: ExtType<TimeDelta>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
     let py_str = arg
         .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
@@ -1156,7 +1158,7 @@ pub(crate) fn parse_all_components(s: &mut &[u8]) -> Option<(u128, bool)> {
 }
 
 fn round(
-    cls: ExtType<TimeDelta>,
+    cls: PyClass<TimeDelta>,
     slf: TimeDelta,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1168,7 +1170,7 @@ fn round(
 }
 
 fn add(
-    cls: ExtType<TimeDelta>,
+    cls: PyClass<TimeDelta>,
     slf: TimeDelta,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1177,7 +1179,7 @@ fn add(
 }
 
 fn subtract(
-    cls: ExtType<TimeDelta>,
+    cls: PyClass<TimeDelta>,
     slf: TimeDelta,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1187,7 +1189,7 @@ fn subtract(
 
 #[inline(never)]
 fn add_method(
-    cls: ExtType<TimeDelta>,
+    cls: PyClass<TimeDelta>,
     slf: TimeDelta,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1211,7 +1213,7 @@ fn add_method(
 
 #[inline(never)]
 fn in_units(
-    cls: ExtType<TimeDelta>,
+    cls: PyClass<TimeDelta>,
     slf: TimeDelta,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -1297,7 +1299,7 @@ fn in_units(
 
 #[inline(never)]
 fn total(
-    cls: ExtType<TimeDelta>,
+    cls: PyClass<TimeDelta>,
     slf: TimeDelta,
     args: &[PyObj],
     kwargs: &mut IterKwargs,

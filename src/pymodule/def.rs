@@ -471,47 +471,47 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
     // types
     for (cls, unpkl, num_singletons) in [
         (
-            state.date_type.inner(),
+            state.date_type.as_type(),
             *state.unpickle_date,
             date::SINGLETONS.len(),
         ),
         (
-            state.time_type.inner(),
+            state.time_type.as_type(),
             *state.unpickle_time,
             time::SINGLETONS.len(),
         ),
         (
-            state.date_delta_type.inner(),
+            state.date_delta_type.as_type(),
             *state.unpickle_date_delta,
             date_delta::SINGLETONS.len(),
         ),
         (
-            state.time_delta_type.inner(),
+            state.time_delta_type.as_type(),
             *state.unpickle_time_delta,
             time_delta::SINGLETONS.len(),
         ),
         (
-            state.datetime_delta_type.inner(),
+            state.datetime_delta_type.as_type(),
             *state.unpickle_datetime_delta,
             datetime_delta::SINGLETONS.len(),
         ),
         (
-            state.plain_datetime_type.inner(),
+            state.plain_datetime_type.as_type(),
             *state.unpickle_plain_datetime,
             plain_datetime::SINGLETONS.len(),
         ),
         (
-            state.instant_type.inner(),
+            state.instant_type.as_type(),
             *state.unpickle_instant,
             instant::SINGLETONS.len(),
         ),
         (
-            state.offset_datetime_type.inner(),
+            state.offset_datetime_type.as_type(),
             *state.unpickle_offset_datetime,
             0,
         ),
         (
-            state.zoned_datetime_type.inner(),
+            state.zoned_datetime_type.as_type(),
             *state.unpickle_zoned_datetime,
             0,
         ),
@@ -595,15 +595,15 @@ unsafe extern "C" fn module_free(mod_ptr: *mut c_void) {
 // they can be deleted from it.
 pub(crate) struct State {
     // classes
-    pub(crate) date_type: Owned<ExtType<date::Date>>,
-    pub(crate) time_type: Owned<ExtType<time::Time>>,
-    pub(crate) date_delta_type: Owned<ExtType<date_delta::DateDelta>>,
-    pub(crate) time_delta_type: Owned<ExtType<time_delta::TimeDelta>>,
-    pub(crate) datetime_delta_type: Owned<ExtType<datetime_delta::DateTimeDelta>>,
-    pub(crate) plain_datetime_type: Owned<ExtType<plain_datetime::DateTime>>,
-    pub(crate) instant_type: Owned<ExtType<instant::Instant>>,
-    pub(crate) offset_datetime_type: Owned<ExtType<offset_datetime::OffsetDateTime>>,
-    pub(crate) zoned_datetime_type: Owned<ExtType<zoned_datetime::ZonedDateTime>>,
+    pub(crate) date_type: Owned<PyClass<date::Date>>,
+    pub(crate) time_type: Owned<PyClass<time::Time>>,
+    pub(crate) date_delta_type: Owned<PyClass<date_delta::DateDelta>>,
+    pub(crate) time_delta_type: Owned<PyClass<time_delta::TimeDelta>>,
+    pub(crate) datetime_delta_type: Owned<PyClass<datetime_delta::DateTimeDelta>>,
+    pub(crate) plain_datetime_type: Owned<PyClass<plain_datetime::DateTime>>,
+    pub(crate) instant_type: Owned<PyClass<instant::Instant>>,
+    pub(crate) offset_datetime_type: Owned<PyClass<offset_datetime::OffsetDateTime>>,
+    pub(crate) zoned_datetime_type: Owned<PyClass<zoned_datetime::ZonedDateTime>>,
 
     // Lazily imported from _shared
     pub(crate) yearmonth_type: OncePyObj,

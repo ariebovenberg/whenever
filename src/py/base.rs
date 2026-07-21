@@ -37,39 +37,37 @@ impl PyObj {
     /// Get a reference to the Rust data embedded in this Python object.
     ///
     /// # Safety
-    /// The caller must guarantee that `self` points to a `PyWrap<T>` instance.
+    /// The caller must guarantee that `self` points to a `PyObjectLayout<T>` instance.
     #[inline]
-    pub(crate) unsafe fn data_ref<T: PyWrapped>(&self) -> &T {
-        unsafe { &(*self.inner.as_ptr().cast::<PyWrap<T>>()).data }
+    pub(crate) unsafe fn data_ref<T: PyPayload>(&self) -> &T {
+        unsafe { &(*self.inner.as_ptr().cast::<PyObjectLayout<T>>()).data }
     }
 
     /// Extract the class and a reference to the Rust data from a `PyObj`
     /// known to be a heap type.
     ///
     /// # Safety
-    /// The caller must guarantee that `self` is an instance of `ExtType<T>`.
-    pub(crate) unsafe fn assume_heaptype_ref<T: PyWrapped>(&self) -> (ExtType<T>, &T) {
-        (
-            unsafe { ExtType::from_ptr_unchecked(self.type_().as_ptr()) },
-            unsafe { self.data_ref::<T>() },
-        )
+    /// The caller must guarantee that `self` is an instance of `PyClass<T>`.
+    pub(crate) unsafe fn assume_heaptype_ref<T: PyPayload>(&self) -> (PyClass<T>, &T) {
+        (unsafe { self.type_().assume_class() }, unsafe {
+            self.data_ref::<T>()
+        })
     }
 
-    pub(crate) unsafe fn assume_heaptype<T: PyWrapped + Copy>(&self) -> (ExtType<T>, T) {
-        (
-            unsafe { ExtType::from_ptr_unchecked(self.type_().as_ptr()) },
-            *unsafe { self.data_ref::<T>() },
-        )
+    pub(crate) unsafe fn assume_heaptype<T: PyPayload + Copy>(&self) -> (PyClass<T>, T) {
+        (unsafe { self.type_().assume_class() }, *unsafe {
+            self.data_ref::<T>()
+        })
     }
 
-    pub(crate) fn extract_ref<T: PyWrapped>(&self, t: ExtType<T>) -> Option<&T> {
-        (self.type_() == t.inner())
+    pub(crate) fn extract_ref<T: PyPayload>(&self, t: PyClass<T>) -> Option<&T> {
+        (self.type_() == t.as_type())
             // SAFETY: we've just checked the type, so this is safe
             .then(|| unsafe { self.data_ref::<T>() })
     }
 
-    pub(crate) fn extract<T: PyWrapped + Copy>(&self, t: ExtType<T>) -> Option<T> {
-        (self.type_() == t.inner())
+    pub(crate) fn extract<T: PyPayload + Copy>(&self, t: PyClass<T>) -> Option<T> {
+        (self.type_() == t.as_type())
             // SAFETY: we've just checked the type, so this is safe
             .then(|| *unsafe { self.data_ref::<T>() })
     }
