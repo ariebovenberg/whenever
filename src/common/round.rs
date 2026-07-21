@@ -2,15 +2,17 @@
 use std::num::{NonZero, NonZeroU64, NonZeroU128};
 
 use crate::{
-    classes::time_delta::DeltaIncrement,
     common::scalar::{
         NS_PER_DAY, NS_PER_HOUR, NS_PER_MICROSEC, NS_PER_MILLISEC, NS_PER_MINUTE, NS_PER_SEC,
         NS_PER_WEEK, SubSecNanos,
     },
     docstrings as doc,
+    domain::time_delta::DeltaIncrement,
     py::*,
     pymodule::State,
 };
+
+pub(crate) use crate::domain::round::{AbsMode, Mode};
 
 #[derive(Debug)]
 pub(crate) struct ModeStrs {
@@ -23,80 +25,6 @@ pub(crate) struct ModeStrs {
     pub(crate) str_half_even: Owned<PyObj>,
     pub(crate) str_half_trunc: Owned<PyObj>,
     pub(crate) str_half_expand: Owned<PyObj>,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub(crate) enum Mode {
-    Floor,
-    Ceil,
-    Trunc,
-    Expand,
-    HalfFloor,
-    HalfCeil,
-    HalfEven,
-    HalfTrunc,
-    HalfExpand,
-}
-
-/// Rounding mode resolved for the euclidean domain.
-/// After sign-based normalization, these modes can be used directly
-/// in euclidean quotient/remainder rounding without needing the sign.
-///
-/// In the euclidean domain:
-/// - `Trunc`: keep the quotient as-is (≡ floor, towards -∞)
-/// - `Expand`: increment the quotient (≡ ceil, towards +∞)
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub(crate) enum AbsMode {
-    Trunc,
-    Expand,
-    HalfTrunc,
-    HalfExpand,
-    HalfEven,
-}
-
-// FUTURE: can we simplify the different ways of transforming to "abs" round mode?
-impl Mode {
-    /// Resolve sign-dependent modes into sign-independent AbsMode
-    /// for the **euclidean quotient** domain (used by TimeDelta::round, Instant::round).
-    /// Here Floor/Ceil are "native" (already aligned with quotient direction),
-    /// while Trunc/Expand need sign-based swapping.
-    ///
-    /// Use this when rounding a plain signed integer (e.g. nanoseconds, epoch seconds).
-    pub(crate) fn to_abs_euclid(self, is_negative: bool) -> AbsMode {
-        match (self, is_negative) {
-            (Mode::Floor, _) | (Mode::Trunc, false) | (Mode::Expand, true) => AbsMode::Trunc,
-            (Mode::Ceil, _) | (Mode::Expand, false) | (Mode::Trunc, true) => AbsMode::Expand,
-            (Mode::HalfFloor, _) | (Mode::HalfTrunc, false) | (Mode::HalfExpand, true) => {
-                AbsMode::HalfTrunc
-            }
-            (Mode::HalfCeil, _) | (Mode::HalfExpand, false) | (Mode::HalfTrunc, true) => {
-                AbsMode::HalfExpand
-            }
-            (Mode::HalfEven, _) => AbsMode::HalfEven,
-        }
-    }
-
-    /// Resolve sign-dependent modes into sign-independent AbsMode
-    /// for the **sign-magnitude** domain (used by since/until rounding).
-    /// Here Trunc/Expand are "native" (already absolute),
-    /// while Floor/Ceil need sign-based swapping.
-    ///
-    /// Use this when rounding a delta whose sign is tracked separately
-    /// (e.g. "3 months backward", where `neg = true`).
-    pub(crate) fn to_abs_trunc(self, neg: bool) -> AbsMode {
-        let positive = !neg;
-        match (self, positive) {
-            (Mode::Trunc, _) | (Mode::Floor, true) | (Mode::Ceil, false) => AbsMode::Trunc,
-            (Mode::Expand, _) | (Mode::Ceil, true) | (Mode::Floor, false) => AbsMode::Expand,
-            (Mode::HalfTrunc, _) | (Mode::HalfFloor, true) | (Mode::HalfCeil, false) => {
-                AbsMode::HalfTrunc
-            }
-            (Mode::HalfExpand, _) | (Mode::HalfCeil, true) | (Mode::HalfFloor, false) => {
-                AbsMode::HalfExpand
-            }
-            (Mode::HalfEven, _) => AbsMode::HalfEven,
-        }
-    }
 }
 
 impl Mode {

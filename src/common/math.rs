@@ -4,12 +4,13 @@ use std::cmp::Ordering;
 use std::num::NonZeroU128;
 
 use crate::{
-    classes::{
-        date::Date, instant::Instant, itemized_date_delta::ItemizedDateDelta, time_delta::TimeDelta,
-    },
-    common::{
-        round,
+    common::round,
+    domain::{
+        date::Date,
+        instant::Instant,
+        itemized_date_delta::ItemizedDateDelta,
         scalar::{DeltaDays, DeltaField, DeltaMonths, Month, Year, *},
+        time_delta::TimeDelta,
     },
     py::*,
     pymodule::State,

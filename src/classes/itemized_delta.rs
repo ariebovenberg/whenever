@@ -1,57 +1,41 @@
 use crate::{
-    classes::{itemized_date_delta::ItemizedDateDelta, time_delta::TimeDelta},
+    classes::time_delta::TimeDelta,
     common::{
         math::{DeltaUnit, DeltaUnitSet, ExactUnit},
-        scalar::{DeltaDays, DeltaField, DeltaMonths, NS_PER_HOUR, NS_PER_MINUTE, NS_PER_SEC},
+        scalar::{DeltaDays, DeltaField, DeltaFieldInner, DeltaMonths},
     },
     py::*,
     pymodule::State,
 };
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct ItemizedDelta {
-    pub(crate) years: DeltaField<i32>,
-    pub(crate) months: DeltaField<i32>,
-    pub(crate) weeks: DeltaField<i32>,
-    pub(crate) days: DeltaField<i32>,
-    pub(crate) hours: DeltaField<i32>,
-    pub(crate) minutes: DeltaField<i64>,
-    pub(crate) seconds: DeltaField<i64>,
-    pub(crate) nanos: DeltaField<i32>,
+pub(crate) use crate::domain::itemized_delta::ItemizedDelta;
+
+impl<T: DeltaFieldInner> DeltaField<T> {
+    /// Construct from a Python int or None in an itemized delta tuple.
+    pub(crate) fn from_py_opt(obj: PyObj) -> PyResult<Self> {
+        if obj.is_none() {
+            Ok(Self::UNSET)
+        } else {
+            let value = obj
+                .cast_allow_subclass::<PyInt>()
+                .ok_or_type_err("expected int or None")?
+                .to_i64()?;
+            Ok(Self::new_unchecked(T::from_i64(value)))
+        }
+    }
+}
+
+impl<T: DeltaFieldInner> ToPy for DeltaField<T> {
+    fn to_py(self) -> PyReturn {
+        if self.is_set() {
+            self.unwrap().to_i64().to_py()
+        } else {
+            Ok(none())
+        }
+    }
 }
 
 impl ItemizedDelta {
-    pub(crate) const UNSET: Self = Self {
-        years: DeltaField::UNSET,
-        months: DeltaField::UNSET,
-        weeks: DeltaField::UNSET,
-        days: DeltaField::UNSET,
-        hours: DeltaField::UNSET,
-        minutes: DeltaField::UNSET,
-        seconds: DeltaField::UNSET,
-        nanos: DeltaField::UNSET,
-    };
-
-    pub(crate) fn fill_cal_units(&mut self, data: ItemizedDateDelta) {
-        self.years = data.years;
-        self.months = data.months;
-        self.weeks = data.weeks;
-        self.days = data.days;
-    }
-
-    pub(crate) fn to_components(self) -> Option<(DeltaMonths, DeltaDays, TimeDelta)> {
-        let months = DeltaMonths::new(
-            (self.years.get_or(0) as i64 * 12 + self.months.get_or(0) as i64) as i32,
-        )?;
-        let days =
-            DeltaDays::new((self.weeks.get_or(0) as i64 * 7 + self.days.get_or(0) as i64) as i32)?;
-        let nanos = self.hours.get_or(0) as i128 * NS_PER_HOUR as i128
-            + self.minutes.get_or(0) as i128 * NS_PER_MINUTE as i128
-            + self.seconds.get_or(0) as i128 * NS_PER_SEC as i128
-            + self.nanos.get_or(0) as i128;
-        (months, days, TimeDelta::from_nanos(nanos)?).into()
-    }
-
     pub(crate) fn extract(obj: PyObj, state: &State) -> PyResult<Option<Self>> {
         if obj.type_().as_py_obj() != state.itemized_delta_type.get()? {
             return Ok(None);

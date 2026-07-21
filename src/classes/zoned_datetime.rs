@@ -11,7 +11,7 @@ use crate::{
     },
     common::{
         ambiguity::*,
-        fmt::{self, Sink, Suffix},
+        fmt::{self, Suffix},
         math::{self, DateRoundIncrement, DeltaUnitSet, SinceUntilKwargs},
         parse::Scan,
         pattern, round,
@@ -20,7 +20,7 @@ use crate::{
     docstrings as doc,
     py::*,
     pymodule::State,
-    tz::tzif::{TimeZone, is_valid_key},
+    tz::tzif::TimeZone,
 };
 use core::{
     ffi::{c_int, c_long, c_void},
@@ -29,58 +29,12 @@ use core::{
 use pyo3_ffi::*;
 use std::sync::Arc;
 
-#[derive(Debug, Clone)]
-pub(crate) struct ZonedDateTime {
-    pub(crate) date: Date,
-    time: Time,
-    offset: Offset,
-    pub(crate) tz: Arc<TimeZone>,
-}
-
-// Custom implementation to optimize timezone equality checks
-impl std::cmp::PartialEq for ZonedDateTime {
-    fn eq(&self, other: &Self) -> bool {
-        self.date == other.date
-            && self.time == other.time
-            && self.offset == other.offset
-            && self.same_tz(other)
-    }
-}
+pub(crate) use crate::domain::zoned_datetime::{
+    OffsetInIsoString, TzFormat, ZonedDateTime, read_offset_and_tzname, zoned_since_in_units,
+    zoned_target,
+};
 
 impl ZonedDateTime {
-    /// Whether two ZonedDateTimes share the same timezone (pointer or value equality).
-    fn same_tz(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.tz, &other.tz) || *self.tz == *other.tz
-    }
-
-    pub(crate) fn instant(&self) -> Instant {
-        self.date
-            .at(self.time)
-            .assume_utc()
-            .offset(-self.offset)
-            // SAFETY: we know the instant of a ZonedDateTime is always valid
-            .unwrap()
-    }
-
-    fn local(&self) -> DateTime {
-        DateTime {
-            date: self.date,
-            time: self.time,
-        }
-    }
-
-    pub(crate) fn fixed_offset(&self) -> OffsetDateTime {
-        OffsetDateTime {
-            date: self.date,
-            time: self.time,
-            offset: self.offset,
-        }
-    }
-
-    pub(crate) fn with_date(&self, new_date: Date) -> Option<OffsetDateTime> {
-        self.fixed_offset().with_date_in_tz(new_date, &self.tz)
-    }
-
     pub(crate) fn shift(
         &self,
         months: DeltaMonths,
@@ -109,43 +63,6 @@ impl ZonedDateTime {
 }
 
 impl DateTime {
-    /// Simple/fast path to resolve with the 'compatible' disambiguation strategy.
-    pub(crate) fn localize_default(self, tz: &TimeZone) -> Option<OffsetDateTime> {
-        match tz.ambiguity_for_local(self.assume_utc().epoch) {
-            Ambiguity::Unambiguous(offset) | Ambiguity::Fold(_, offset, _) => {
-                self.with_offset(offset)
-            }
-            Ambiguity::Gap(_, later_offset, earlier_offset) => {
-                let shift = later_offset.sub(earlier_offset);
-                self.shift_by_offset(shift)?.with_offset(later_offset)
-            }
-        }
-    }
-
-    /// Like `with_tz_offset`, but with a preferred offset to try to reuse if possible.
-    pub(crate) fn localize_using_offset(
-        self,
-        tz: &TimeZone,
-        target: Offset,
-    ) -> Option<OffsetDateTime> {
-        match tz.ambiguity_for_local(self.assume_utc().epoch) {
-            Ambiguity::Unambiguous(offset) => self.with_offset(offset),
-            Ambiguity::Fold(_, earlier_offset, later_offset) => {
-                self.with_offset(if target == later_offset {
-                    later_offset
-                } else {
-                    earlier_offset
-                })
-            }
-            // For gaps, don't try to reuse the previous offset since the
-            // time doesn't exist. Use "compatible" (later) behavior.
-            Ambiguity::Gap(_, later_offset, earlier_offset) => {
-                let shift = later_offset.sub(earlier_offset);
-                self.shift_by_offset(shift)?.with_offset(later_offset)
-            }
-        }
-    }
-
     pub(crate) fn localize_using_disambiguate(
         self,
         tz: &TimeZone,
@@ -210,62 +127,6 @@ impl DateTime {
     }
 }
 
-impl OffsetDateTime {
-    fn with_date_in_tz(self, new_date: Date, tz: &TimeZone) -> Option<OffsetDateTime> {
-        match tz.ambiguity_for_local(new_date.epoch_at(self.time)) {
-            Ambiguity::Unambiguous(offset) => OffsetDateTime::new(new_date, self.time, offset),
-            Ambiguity::Fold(_, earlier_offset, later_offset) => {
-                // Compatible: pick the offset matching the original
-                let offset = if self.offset == later_offset {
-                    later_offset
-                } else {
-                    earlier_offset
-                };
-                OffsetDateTime::new(new_date, self.time, offset)
-            }
-            Ambiguity::Gap(_, later_offset, earlier_offset) => {
-                // Compatible: shift to later
-                let shift = later_offset.sub(earlier_offset);
-                DateTime {
-                    date: new_date,
-                    time: self.time,
-                }
-                .shift_by_offset(shift)?
-                .with_offset(later_offset)
-            }
-        }
-    }
-}
-
-enum OffsetInIsoString {
-    Some(Offset),
-    Z,
-    Missing,
-}
-
-fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(OffsetInIsoString, &'a str)> {
-    let offset = match s.peek() {
-        Some(b'[') => OffsetInIsoString::Missing,
-        Some(b'Z' | b'z') => {
-            s.take_unchecked(1);
-            OffsetInIsoString::Z
-        }
-        _ => OffsetInIsoString::Some(Offset::read_iso(s)?),
-    };
-    let tz = s.rest();
-    (tz.len() > 2
-        && tz[0] == b'['
-        // This scanning check ensures there's no other closing bracket
-        && tz.iter().position(|&b| b == b']') == Some(tz.len() - 1)
-        && tz.is_ascii())
-    .then(|| unsafe {
-        // Safe: we've just checked that it's ASCII-only
-        std::str::from_utf8_unchecked(&tz[1..tz.len() - 1])
-    })
-    .filter(|tz| is_valid_key(tz))
-    .map(|tz| (offset, tz))
-}
-
 impl PyPayload for ZonedDateTime {}
 
 impl Instant {
@@ -275,20 +136,6 @@ impl Instant {
             .ok_or_range_err()?
             // SAFETY: We've already checked for both out-of-range date and time.
             .assume_tz_unchecked(tz, cls)
-    }
-
-    // Covert an instant to an OffsetDateTime in the given timezone.
-    // Returns None if out of range
-    pub(crate) fn to_tz(self, tz: &TimeZone) -> Option<OffsetDateTime> {
-        let epoch = self.epoch;
-        let offset = tz.offset_for_instant(epoch);
-        Some(
-            epoch
-                .offset(offset)?
-                .datetime(self.subsec)
-                // SAFETY: We've already checked for both out-of-range date and time.
-                .with_offset_unchecked(offset),
-        )
     }
 }
 
@@ -409,24 +256,6 @@ fn __str__(_: PyType, slf: &ZonedDateTime) -> PyReturn {
         offset.format_iso(false),
         TzFormat { tz },
     ))
-}
-
-struct TzFormat<'a> {
-    tz: &'a TimeZone,
-}
-
-impl fmt::Chunk for TzFormat<'_> {
-    fn len(&self) -> usize {
-        self.tz.key.as_ref().map_or(0, |k| k.len() + 2) // +2 for brackets around tz
-    }
-
-    fn write(&self, sink: &mut impl Sink) {
-        if let Some(ref tz_key) = self.tz.key {
-            sink.write_byte(b'[');
-            sink.write(tz_key.as_bytes());
-            sink.write_byte(b']');
-        }
-    }
 }
 
 fn __richcmp__(
@@ -1447,7 +1276,7 @@ fn round(
     } = round::Args::parse(cls.state(), args, kwargs, false)?;
 
     match increment {
-        round::RoundIncrement::Day => round_day(slf, mode),
+        round::RoundIncrement::Day => slf.round_day(mode),
         round::RoundIncrement::Exact(ns) => {
             let ZonedDateTime {
                 mut date,
@@ -1468,40 +1297,6 @@ fn round(
     }
     .ok_or_range_err()?
     .assume_tz_unchecked(slf.tz.clone(), cls)
-}
-
-fn round_day(slf: &ZonedDateTime, mode: round::Mode) -> Option<OffsetDateTime> {
-    let ZonedDateTime {
-        date, time, ref tz, ..
-    } = *slf;
-    let get_floor = || date.at(Time::MIN).localize_default(tz);
-    let get_ceil = || date.tomorrow()?.at(Time::MIN).localize_default(tz);
-    match mode {
-        round::Mode::Ceil | round::Mode::Expand => {
-            // Round up anything *except* midnight (which is a no-op)
-            if time == Time::MIN {
-                Some(slf.fixed_offset())
-            } else {
-                get_ceil()
-            }
-        }
-        round::Mode::Floor | round::Mode::Trunc => get_floor(),
-        _ => {
-            let time_ns = time.total_nanos();
-            let floor = get_floor()?;
-            let ceil = get_ceil()?;
-            let day_ns = ceil.instant().diff(floor.instant()).total_nanos() as u64;
-            debug_assert!(day_ns > 1);
-            // Time is always non-negative, so half_trunc=half_floor, half_expand=half_ceil
-            let threshold = match mode {
-                round::Mode::HalfEven => day_ns / 2 + (time_ns % 2 == 0) as u64,
-                round::Mode::HalfFloor | round::Mode::HalfTrunc => day_ns / 2 + 1,
-                round::Mode::HalfCeil | round::Mode::HalfExpand => day_ns / 2,
-                _ => unreachable!(),
-            };
-            Some(if time_ns >= threshold { ceil } else { floor })
-        }
-    }
 }
 
 fn tz_err_display(k: &Option<String>) -> String {
@@ -1568,26 +1363,6 @@ fn zoned_since_float(
     }
 }
 
-pub(crate) fn zoned_target(
-    mut target_date: Date,
-    a_inst: Instant,
-    b: &ZonedDateTime,
-    neg: bool,
-) -> Option<Date> {
-    // Adjust target_date so the exact remainder has the same sign.
-    // The while loop handles the rare case of a 24h+ gap (e.g. Samoa 2011).
-    if !neg {
-        while b.with_date(target_date)?.instant() > a_inst {
-            target_date = target_date.yesterday()?;
-        }
-    } else {
-        while b.with_date(target_date)?.instant() < a_inst {
-            target_date = target_date.tomorrow()?;
-        }
-    }
-    Some(target_date)
-}
-
 fn zoned_since(
     cls: PyClass<ZonedDateTime>,
     slf: &ZonedDateTime,
@@ -1635,57 +1410,6 @@ fn zoned_since(
             result.to_obj(state)
         }
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn zoned_since_in_units(
-    a: OffsetDateTime,
-    a_inst: Instant,
-    b: &ZonedDateTime,
-    target_date: Date,
-    units: DeltaUnitSet,
-    round_mode: round::Mode,
-    round_increment: math::RoundIncrement,
-    neg: bool,
-) -> Option<ItemizedDelta> {
-    let (cal_units, exact_units) = units.split_cal_exact();
-    let (mut ddelta, trunc_date, expand_date) = if cal_units.is_empty() {
-        (ItemizedDateDelta::UNSET, b.date.into(), a.date.into())
-    } else {
-        let inc = if exact_units.is_empty() {
-            round_increment.to_date()?
-        } else {
-            DateRoundIncrement::MIN
-        };
-        math::date_diff(target_date, b.date, inc, cal_units, neg)?
-    };
-
-    let trunc = b.with_date(trunc_date.into())?.instant();
-    let expand = b.with_date(expand_date.into())?.instant();
-
-    // If there are no time units, round the calendar units.
-    // Otherwise, calculate the time delta remainder
-    let mut result = if exact_units.is_empty() {
-        ddelta.round_by_time(
-            cal_units.smallest(),
-            a_inst,
-            trunc,
-            expand,
-            round_mode.to_abs_trunc(neg),
-            round_increment.to_date()?,
-            neg,
-        );
-        ItemizedDelta::UNSET
-    } else {
-        a_inst.diff(trunc).in_exact_units(
-            exact_units,
-            round_increment,
-            round_mode.to_abs_euclid(neg),
-        )?
-    };
-
-    result.fill_cal_units(ddelta);
-    result.into()
 }
 
 fn format(_cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) -> PyReturn {
