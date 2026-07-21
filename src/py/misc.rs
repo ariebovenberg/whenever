@@ -109,8 +109,8 @@ pub(crate) fn import(module: &CStr) -> PyReturn {
     unsafe { PyImport_ImportModule(module.as_ptr()) }.own()
 }
 
-pub(crate) fn __get_pydantic_core_schema__<T: PyWrapped>(
-    cls: ExtType<T>,
+pub(crate) fn __get_pydantic_core_schema__<T: PyPayload>(
+    cls: PyClass<T>,
     _: &[PyObj],
     _: &mut IterKwargs,
 ) -> PyReturn {

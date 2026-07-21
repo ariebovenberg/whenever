@@ -190,7 +190,7 @@ impl Instant {
     }
 }
 
-fn __new__(cls: ExtType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
         if PyStr::isinstance(arg) {
@@ -209,7 +209,7 @@ fn __new__(cls: ExtType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyRe
     }
 }
 
-fn from_utc(cls: ExtType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn from_utc(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let mut year: c_long = 0;
     let mut month: c_long = 0;
     let mut day: c_long = 0;
@@ -238,7 +238,7 @@ fn from_utc(cls: ExtType<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyR
         .to_obj(cls)
 }
 
-impl PyWrapped for Instant {}
+impl PyPayload for Instant {}
 
 fn __repr__(_: PyType, i: Instant) -> PyReturn {
     let DateTime { date, time } = i.utc_datetime();
@@ -261,7 +261,7 @@ fn __str__(_: PyType, i: Instant) -> PyReturn {
     ))
 }
 
-fn __richcmp__(cls: ExtType<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int) -> PyReturn {
+fn __richcmp__(cls: PyClass<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int) -> PyReturn {
     let inst_b = if let Some(i) = b_obj.extract(cls) {
         i
     } else {
@@ -296,45 +296,45 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 
 fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     binary_operation::<Instant>(obj_a, obj_b, "-", |operands| match operands {
-        BinaryOperands::SameType(cls, inst_a, inst_b) => Ok(Some(
-            inst_a.diff(*inst_b).to_obj(*cls.state().time_delta_type)?,
-        )),
-        BinaryOperands::ExtTypes(cls, inst_a, other) => {
+        BinaryCall::SameType { cls, slf, other } => {
+            Ok(Some(slf.diff(*other).to_obj(*cls.state().time_delta_type)?))
+        }
+        BinaryCall::ExtTypes { cls, slf, other } => {
             let state = cls.state();
-            let inst_b = match_type!(
+            let other = match_type!(
                 other,
                 ref *state.zoned_datetime_type => |zdt| { zdt.instant() },
                 *state.offset_datetime_type => |odt| { odt.instant() },
                 _ => {
                     return shift_inner(
                         cls,
-                        *inst_a,
+                        *slf,
                         *state.time_delta_type,
                         other,
                         true,
                     )
                 },
             );
-            Ok(Some(inst_a.diff(inst_b).to_obj(*state.time_delta_type)?))
+            Ok(Some(slf.diff(other).to_obj(*state.time_delta_type)?))
         }
-        BinaryOperands::OtherTypes => Ok(None),
+        BinaryCall::OtherTypes => Ok(None),
     })
 }
 
 fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     binary_operation::<Instant>(obj_a, obj_b, "+", |operands| {
-        let BinaryOperands::ExtTypes(cls, inst, other) = operands else {
+        let BinaryCall::ExtTypes { cls, slf, other } = operands else {
             return Ok(None);
         };
-        shift_inner(cls, *inst, *cls.state().time_delta_type, other, false)
+        shift_inner(cls, *slf, *cls.state().time_delta_type, other, false)
     })
 }
 
 #[inline(never)]
 fn shift_inner(
-    cls: ExtType<Instant>,
+    cls: PyClass<Instant>,
     inst: Instant,
-    tdelta_cls: ExtType<TimeDelta>,
+    tdelta_cls: PyClass<TimeDelta>,
     obj_b: PyObj,
     negate: bool,
 ) -> PyResult<Option<Owned<PyObj>>> {
@@ -377,7 +377,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn exact_eq(cls: ExtType<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
+fn exact_eq(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     if let Some(i) = obj_b.extract(cls) {
         (slf == i).to_py()
     } else {
@@ -385,7 +385,7 @@ fn exact_eq(cls: ExtType<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     }
 }
 
-fn __reduce__(cls: ExtType<Instant>, Instant { epoch, subsec }: Instant) -> PyReturn {
+fn __reduce__(cls: PyClass<Instant>, Instant { epoch, subsec }: Instant) -> PyReturn {
     let data = pack![epoch.get(), subsec.get()];
     [
         cls.state().unpickle_instant.newref(),
@@ -437,7 +437,7 @@ fn timestamp_nanos(_: PyType, slf: Instant) -> PyReturn {
     slf.timestamp_nanos().to_py()
 }
 
-fn from_timestamp(cls: ExtType<Instant>, ts: PyObj) -> PyReturn {
+fn from_timestamp(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
     if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
         Instant::from_timestamp(py_int.to_i64()?)
     } else if let Some(py_float) = ts.cast_allow_subclass::<PyFloat>() {
@@ -449,7 +449,7 @@ fn from_timestamp(cls: ExtType<Instant>, ts: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn from_timestamp_millis(cls: ExtType<Instant>, ts: PyObj) -> PyReturn {
+fn from_timestamp_millis(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
     if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
         Instant::from_timestamp_millis(py_int.to_i64()?)
     } else {
@@ -459,7 +459,7 @@ fn from_timestamp_millis(cls: ExtType<Instant>, ts: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn from_timestamp_nanos(cls: ExtType<Instant>, ts: PyObj) -> PyReturn {
+fn from_timestamp_nanos(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
     if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
         Instant::from_timestamp_nanos(py_int.to_i128()?)
     } else {
@@ -469,11 +469,11 @@ fn from_timestamp_nanos(cls: ExtType<Instant>, ts: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn to_stdlib(cls: ExtType<Instant>, slf: Instant) -> PyReturn {
+fn to_stdlib(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
     slf.to_py(cls.state().py_api()?)
 }
 
-fn py_datetime(cls: ExtType<Instant>, slf: Instant) -> PyReturn {
+fn py_datetime(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
@@ -483,7 +483,7 @@ fn py_datetime(cls: ExtType<Instant>, slf: Instant) -> PyReturn {
     to_stdlib(cls, slf)
 }
 
-fn from_py_datetime(cls: ExtType<Instant>, obj: PyObj) -> PyReturn {
+fn from_py_datetime(cls: PyClass<Instant>, obj: PyObj) -> PyReturn {
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
@@ -497,12 +497,12 @@ fn from_py_datetime(cls: ExtType<Instant>, obj: PyObj) -> PyReturn {
     }
 }
 
-fn now(cls: ExtType<Instant>) -> PyReturn {
+fn now(cls: PyClass<Instant>) -> PyReturn {
     cls.state().now()?.to_obj(cls)
 }
 
 fn format_iso(
-    cls: ExtType<Instant>,
+    cls: PyClass<Instant>,
     slf: Instant,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -511,7 +511,7 @@ fn format_iso(
     fmt::format_iso(date, time, cls.state(), args, kwargs, Suffix::Zulu)
 }
 
-fn parse_iso(cls: ExtType<Instant>, s_obj: PyObj) -> PyReturn {
+fn parse_iso(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
     OffsetDateTime::parse(
         s_obj
             .cast_allow_subclass::<PyStr>()
@@ -525,12 +525,12 @@ fn parse_iso(cls: ExtType<Instant>, s_obj: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn add(cls: ExtType<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn add(cls: PyClass<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     shift_method(cls, slf, args, kwargs, false)
 }
 
 fn subtract(
-    cls: ExtType<Instant>,
+    cls: PyClass<Instant>,
     slf: Instant,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -540,7 +540,7 @@ fn subtract(
 
 #[inline(never)]
 fn shift_method(
-    cls: ExtType<Instant>,
+    cls: PyClass<Instant>,
     instant: Instant,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -579,7 +579,7 @@ fn shift_method(
     }
 }
 
-fn difference(cls: ExtType<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
+fn difference(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     let state = cls.state();
 
     let inst_b = if let Some(i) = obj_b.extract(cls) {
@@ -597,12 +597,12 @@ fn difference(cls: ExtType<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     slf.diff(inst_b).to_obj(*state.time_delta_type)
 }
 
-fn to_tz(cls: ExtType<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
+fn to_tz(cls: PyClass<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
     slf.to_tz_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
 }
 
-fn to_fixed_offset(cls: ExtType<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
+fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
     let state = cls.state();
     match *args {
         [] => slf.utc_datetime().with_offset_unchecked(Offset::ZERO),
@@ -614,7 +614,7 @@ fn to_fixed_offset(cls: ExtType<Instant>, slf: Instant, args: &[PyObj]) -> PyRet
     .to_obj(*state.offset_datetime_type)
 }
 
-fn to_system_tz(cls: ExtType<Instant>, slf: Instant) -> PyReturn {
+fn to_system_tz(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
     let state = cls.state();
     slf.to_tz_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
@@ -625,7 +625,7 @@ fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
     unsafe { std::str::from_utf8_unchecked(&fmt[..]) }.to_py()
 }
 
-fn parse_rfc2822(cls: ExtType<Instant>, s_obj: PyObj) -> PyReturn {
+fn parse_rfc2822(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
     let s = s_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("expected a string")?;
@@ -637,7 +637,7 @@ fn parse_rfc2822(cls: ExtType<Instant>, s_obj: PyObj) -> PyReturn {
         .to_obj(cls)
 }
 
-fn round(cls: ExtType<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn round(cls: PyClass<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let round::Args {
         increment, mode, ..
     } = round::Args::parse(cls.state(), args, kwargs, false)?;
@@ -659,7 +659,7 @@ fn round(cls: ExtType<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterK
     .to_obj(cls)
 }
 
-fn format(_cls: ExtType<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
+fn format(_cls: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
@@ -690,7 +690,7 @@ fn format(_cls: ExtType<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn 
     pattern::format_to_py(&elements, &vals)
 }
 
-fn __format__(cls: ExtType<Instant>, slf: Instant, spec_obj: PyObj) -> PyReturn {
+fn __format__(cls: PyClass<Instant>, slf: Instant, spec_obj: PyObj) -> PyReturn {
     if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
@@ -698,7 +698,7 @@ fn __format__(cls: ExtType<Instant>, slf: Instant, spec_obj: PyObj) -> PyReturn 
     }
 }
 
-fn parse(cls: ExtType<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &[s_obj] = args else {
         raise_type_err(format!(
             "parse() takes exactly 1 positional argument ({} given)",
@@ -794,7 +794,7 @@ static mut METHODS: &[PyMethodDef] = &[
                     kwargs: *mut PyObject,
                 ) -> *mut PyObject {
                     from_utc(
-                        unsafe { ExtType::<Instant>::from_ptr_unchecked(cls.cast()) },
+                        unsafe { PyClass::<Instant>::from_ptr_unchecked(cls.cast()) },
                         unsafe { PyTuple::from_ptr_unchecked(args) },
                         (!kwargs.is_null()).then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
                     )

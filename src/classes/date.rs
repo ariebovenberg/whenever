@@ -426,7 +426,7 @@ pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
     .map(Year::new_unchecked)
 }
 
-impl PyWrapped for Date {}
+impl PyPayload for Date {}
 
 impl Display for Date {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -437,7 +437,7 @@ impl Display for Date {
     }
 }
 
-fn __new__(cls: ExtType<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: PyClass<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let arg = args.iter().next().unwrap();
         if PyStr::isinstance(arg) {
@@ -458,7 +458,7 @@ fn __new__(cls: ExtType<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
         .to_obj(cls)
 }
 
-fn __richcmp__(cls: ExtType<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyReturn {
+fn __richcmp__(cls: PyClass<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyReturn {
     match b_obj.extract(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => a == b,
@@ -521,11 +521,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn to_stdlib(cls: ExtType<Date>, slf: Date) -> PyReturn {
+fn to_stdlib(cls: PyClass<Date>, slf: Date) -> PyReturn {
     slf.to_py(cls.state().py_api()?)
 }
 
-fn py_date(cls: ExtType<Date>, slf: Date) -> PyReturn {
+fn py_date(cls: PyClass<Date>, slf: Date) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"py_date() is deprecated. Use to_stdlib() instead.",
@@ -534,7 +534,7 @@ fn py_date(cls: ExtType<Date>, slf: Date) -> PyReturn {
     to_stdlib(cls, slf)
 }
 
-fn from_py_date(cls: ExtType<Date>, arg: PyObj) -> PyReturn {
+fn from_py_date(cls: PyClass<Date>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"from_py_date() is deprecated. Use Date() constructor instead.",
@@ -547,21 +547,21 @@ fn from_py_date(cls: ExtType<Date>, arg: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn year_month(cls: ExtType<Date>, Date { year, month, .. }: Date) -> PyReturn {
+fn year_month(cls: PyClass<Date>, Date { year, month, .. }: Date) -> PyReturn {
     cls.state()
         .yearmonth_type
         .get()?
         .call_args([*year.get().to_py()?, *month.get().to_py()?])
 }
 
-fn month_day(cls: ExtType<Date>, Date { month, day, .. }: Date) -> PyReturn {
+fn month_day(cls: PyClass<Date>, Date { month, day, .. }: Date) -> PyReturn {
     cls.state()
         .monthday_type
         .get()?
         .call_args([*month.get().to_py()?, *day.to_py()?])
 }
 
-fn format_iso(cls: ExtType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn format_iso(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     if !args.is_empty() {
         raise_type_err("format_iso() takes no positional arguments")?
     }
@@ -586,7 +586,7 @@ fn format_iso(cls: ExtType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKw
     PyAsciiStrBuilder::format(slf.format_iso(basic))
 }
 
-fn parse_iso(cls: ExtType<Date>, s: PyObj) -> PyReturn {
+fn parse_iso(cls: PyClass<Date>, s: PyObj) -> PyReturn {
     Date::parse_iso(
         s.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
@@ -598,12 +598,12 @@ fn parse_iso(cls: ExtType<Date>, s: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn day_of_week(cls: ExtType<Date>, slf: Date) -> PyReturn {
+fn day_of_week(cls: PyClass<Date>, slf: Date) -> PyReturn {
     let members = cls.state().weekday_enum_members.get()?;
     Ok(members[(slf.day_of_week() as u8 - 1) as usize].newref())
 }
 
-fn iso_week_date(cls: ExtType<Date>, slf: Date) -> PyReturn {
+fn iso_week_date(cls: PyClass<Date>, slf: Date) -> PyReturn {
     let state = cls.state();
     let (iso_year, iso_week) = slf.iso_year_week();
     let weekday_idx = slf.day_of_week() as u8 - 1;
@@ -614,35 +614,35 @@ fn iso_week_date(cls: ExtType<Date>, slf: Date) -> PyReturn {
     ])
 }
 
-fn day_of_year(_: ExtType<Date>, slf: Date) -> PyReturn {
+fn day_of_year(_: PyClass<Date>, slf: Date) -> PyReturn {
     (slf.year.days_before_month(slf.month) + slf.day as u16).to_py()
 }
 
-fn days_in_month(_: ExtType<Date>, slf: Date) -> PyReturn {
+fn days_in_month(_: PyClass<Date>, slf: Date) -> PyReturn {
     slf.year.days_in_month(slf.month).to_py()
 }
 
-fn days_in_year(_: ExtType<Date>, slf: Date) -> PyReturn {
+fn days_in_year(_: PyClass<Date>, slf: Date) -> PyReturn {
     (if slf.year.is_leap() { 366_u16 } else { 365_u16 }).to_py()
 }
 
-fn in_leap_year(_: ExtType<Date>, slf: Date) -> PyReturn {
+fn in_leap_year(_: PyClass<Date>, slf: Date) -> PyReturn {
     slf.year.is_leap().to_py()
 }
 
-fn next_day(cls: ExtType<Date>, slf: Date) -> PyReturn {
+fn next_day(cls: PyClass<Date>, slf: Date) -> PyReturn {
     slf.shift(DeltaMonths::ZERO, DeltaDays::new_unchecked(1))
         .ok_or_range_err()?
         .to_obj(cls)
 }
 
-fn prev_day(cls: ExtType<Date>, slf: Date) -> PyReturn {
+fn prev_day(cls: PyClass<Date>, slf: Date) -> PyReturn {
     slf.shift(DeltaMonths::ZERO, DeltaDays::new_unchecked(-1))
         .ok_or_range_err()?
         .to_obj(cls)
 }
 
-fn nth_weekday_of_month(cls: ExtType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
+fn nth_weekday_of_month(cls: PyClass<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
     let &[n_obj, dow_obj] = args else {
         raise_type_err("nth_weekday_of_month() requires exactly 2 positional arguments")?
     };
@@ -670,7 +670,7 @@ fn nth_weekday_of_month(cls: ExtType<Date>, slf: Date, args: &[PyObj]) -> PyRetu
         .to_obj(cls)
 }
 
-fn nth_weekday(cls: ExtType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
+fn nth_weekday(cls: PyClass<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
     let &[n_obj, dow_obj] = args else {
         raise_type_err("nth_weekday() requires exactly 2 positional arguments")?
     };
@@ -709,12 +709,12 @@ fn nth_weekday(cls: ExtType<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
         .to_obj(cls)
 }
 
-fn start_of(cls: ExtType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
+fn start_of(cls: PyClass<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
     let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
     slf.start_of(unit).ok_or_range_err()?.to_obj(cls)
 }
 
-fn end_of(cls: ExtType<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
+fn end_of(cls: PyClass<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
     let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
     slf.end_of(unit).ok_or_range_err()?.to_obj(cls)
 }
@@ -730,7 +730,7 @@ fn extract_weekday(state: &State, arg: PyObj) -> PyResult<Weekday> {
         .ok_or_type_err("weekday must be a Weekday enum member")
 }
 
-fn __reduce__(cls: ExtType<Date>, Date { year, month, day }: Date) -> PyReturn {
+fn __reduce__(cls: PyClass<Date>, Date { year, month, day }: Date) -> PyReturn {
     let data = pack![year.get(), month.get(), day];
     [
         cls.state().unpickle_date.newref(),
@@ -741,36 +741,37 @@ fn __reduce__(cls: ExtType<Date>, Date { year, month, day }: Date) -> PyReturn {
 
 fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     binary_operation::<Date>(obj_a, obj_b, "-", |operands| match operands {
-        BinaryOperands::SameType(date_type, a, b) => {
+        BinaryCall::SameType { cls, slf, other } => {
             warn_with_class(
-                *date_type.state().warn_deprecation,
+                *cls.state().warn_deprecation,
                 c"Using the `-` operator on Date is deprecated; use the .since() method with explicit units instead.",
                 1,
             )?;
 
-            let mut days = a.day as i32;
+            let mut days = slf.day as i32;
             let mut months = DeltaMonths::new_unchecked(
-                a.month as i32 - b.month as i32 + 12 * (a.year.get() as i32 - b.year.get() as i32),
+                slf.month as i32 - other.month as i32
+                    + 12 * (slf.year.get() as i32 - other.year.get() as i32),
             );
-            let mut moved_a = b.shift_months(months).unwrap();
-            if *b > *a && moved_a < *a {
+            let mut moved_other = other.shift_months(months).unwrap();
+            if *other > *slf && moved_other < *slf {
                 months = DeltaMonths::new_unchecked(months.get() + 1);
-                moved_a = b.shift_months(months).unwrap();
-                days -= a.year.days_in_month(a.month) as i32;
-            } else if *b < *a && moved_a > *a {
+                moved_other = other.shift_months(months).unwrap();
+                days -= slf.year.days_in_month(slf.month) as i32;
+            } else if *other < *slf && moved_other > *slf {
                 months = DeltaMonths::new_unchecked(months.get() - 1);
-                moved_a = b.shift_months(months).unwrap();
-                days += moved_a.year.days_in_month(moved_a.month) as i32;
+                moved_other = other.shift_months(months).unwrap();
+                days += moved_other.year.days_in_month(moved_other.month) as i32;
             };
             Ok(Some(
                 DateDelta {
                     months,
-                    days: DeltaDays::new_unchecked(days - moved_a.day as i32),
+                    days: DeltaDays::new_unchecked(days - moved_other.day as i32),
                 }
-                .to_obj(*date_type.state().date_delta_type)?,
+                .to_obj(*cls.state().date_delta_type)?,
             ))
         }
-        BinaryOperands::ExtTypes(cls, date, other) => {
+        BinaryCall::ExtTypes { cls, slf, other } => {
             let state = cls.state();
             let Some(d) = other.extract(*state.date_delta_type) else {
                 return Ok(None);
@@ -781,19 +782,19 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
                 1,
             )?;
             Ok(Some(
-                date.shift_months(-d.months)
+                slf.shift_months(-d.months)
                     .and_then(|date| date.shift_days(-d.days))
                     .ok_or_range_err()?
                     .to_obj(cls)?,
             ))
         }
-        BinaryOperands::OtherTypes => Ok(None),
+        BinaryCall::OtherTypes => Ok(None),
     })
 }
 
 fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     binary_operation::<Date>(obj_a, obj_b, "+", |operands| {
-        let BinaryOperands::ExtTypes(cls, date, other) = operands else {
+        let BinaryCall::ExtTypes { cls, slf, other } = operands else {
             return Ok(None);
         };
         let state = cls.state();
@@ -806,7 +807,7 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             1,
         )?;
         Ok(Some(
-            date.shift_months(d.months)
+            slf.shift_months(d.months)
                 .and_then(|date| date.shift_days(d.days))
                 .ok_or_range_err()?
                 .to_obj(cls)?,
@@ -814,17 +815,17 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     })
 }
 
-fn add(cls: ExtType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn add(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     shift_method(cls, slf, args, kwargs, false)
 }
 
-fn subtract(cls: ExtType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn subtract(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     shift_method(cls, slf, args, kwargs, true)
 }
 
 #[inline(never)]
 fn shift_method(
-    cls: ExtType<Date>,
+    cls: PyClass<Date>,
     slf: Date,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -857,17 +858,17 @@ fn shift_method(
     slf.shift(months, days).ok_or_range_err()?.to_obj(cls)
 }
 
-fn since(cls: ExtType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn since(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     since_inner(cls, slf, args, kwargs, "since", false)
 }
 
-fn until(cls: ExtType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn until(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     since_inner(cls, slf, args, kwargs, "until", true)
 }
 
 #[inline(never)]
 fn since_inner(
-    cls: ExtType<Date>,
+    cls: PyClass<Date>,
     slf: Date,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
@@ -968,7 +969,7 @@ fn date_since_float(a: Date, b: Date, unit: CalUnit) -> PyReturn {
     ((result.abs() as f64 + num / denom).negate_if(neg)).to_py()
 }
 
-fn days_since(cls: ExtType<Date>, slf: Date, other: PyObj) -> PyReturn {
+fn days_since(cls: PyClass<Date>, slf: Date, other: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"days_since() is deprecated; use since() with total='days' instead.",
@@ -985,7 +986,7 @@ fn days_since(cls: ExtType<Date>, slf: Date, other: PyObj) -> PyReturn {
         .to_py()
 }
 
-fn days_until(cls: ExtType<Date>, slf: Date, other: PyObj) -> PyReturn {
+fn days_until(cls: PyClass<Date>, slf: Date, other: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"days_until() is deprecated; use until() with total='days' instead.",
@@ -1000,7 +1001,7 @@ fn days_until(cls: ExtType<Date>, slf: Date, other: PyObj) -> PyReturn {
         .to_py()
 }
 
-fn replace(cls: ExtType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn replace(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")?
     }
@@ -1035,7 +1036,7 @@ fn replace(cls: ExtType<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwarg
         .to_obj(cls)
 }
 
-fn at(cls: ExtType<Date>, date: Date, time_obj: PyObj) -> PyReturn {
+fn at(cls: PyClass<Date>, date: Date, time_obj: PyObj) -> PyReturn {
     let state = cls.state();
     let time = time_obj
         .extract(*state.time_type)
@@ -1043,13 +1044,13 @@ fn at(cls: ExtType<Date>, date: Date, time_obj: PyObj) -> PyReturn {
     DateTime { date, time }.to_obj(*state.plain_datetime_type)
 }
 
-fn today_in_system_tz(cls: ExtType<Date>) -> PyReturn {
+fn today_in_system_tz(cls: PyClass<Date>) -> PyReturn {
     let state = cls.state();
     let tz = state.tz_store.get_system_tz()?;
     state.now()?.to_tz(&tz).ok_or_range_err()?.date.to_obj(cls)
 }
 
-fn format(_: ExtType<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
+fn format(_: PyClass<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
@@ -1079,7 +1080,7 @@ fn format(_: ExtType<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
     pattern::format_to_py(&elements, &vals)
 }
 
-fn __format__(cls: ExtType<Date>, slf: Date, spec_obj: PyObj) -> PyReturn {
+fn __format__(cls: PyClass<Date>, slf: Date, spec_obj: PyObj) -> PyReturn {
     if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
@@ -1087,7 +1088,7 @@ fn __format__(cls: ExtType<Date>, slf: Date, spec_obj: PyObj) -> PyReturn {
     }
 }
 
-fn parse(cls: ExtType<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &[s_obj] = args else {
         raise_type_err(format!(
             "parse() takes exactly 1 positional argument ({} given)",
