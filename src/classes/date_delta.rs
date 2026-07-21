@@ -1,28 +1,16 @@
 use core::ffi::{CStr, c_int, c_long, c_void};
 use pyo3_ffi::*;
-use std::fmt;
-use std::ops::Neg;
 use std::ptr::null_mut as NULL;
+
+pub(crate) use crate::domain::date_delta::{DateDelta, InitError};
 
 use crate::{
     classes::{datetime_delta::DateTimeDelta, time_delta::TimeDelta},
-    common::{math::CalUnit, scalar::*},
+    common::scalar::*,
     docstrings as doc,
     py::*,
     pymodule::State,
 };
-
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub(crate) struct DateDelta {
-    // invariant: these never have opposite signs
-    pub(crate) months: DeltaMonths,
-    pub(crate) days: DeltaDays,
-}
-
-pub(crate) enum InitError {
-    TooBig,
-    MixedSign,
-}
 
 impl DateDelta {
     pub(crate) fn pyhash(self) -> Py_hash_t {
@@ -35,131 +23,11 @@ impl DateDelta {
             hash_combine(self.months.get() as Py_hash_t, self.days.get() as Py_hash_t)
         }
     }
-
-    /// Construct a new `DateDelta` from the given months and days.
-    /// Returns `None` if the signs are mixed.
-    pub(crate) fn new(months: DeltaMonths, days: DeltaDays) -> Option<Self> {
-        same_sign(months, days).then_some(Self { months, days })
-    }
-
-    pub(crate) fn from_months(months: DeltaMonths) -> Self {
-        Self {
-            months,
-            days: DeltaDays::ZERO,
-        }
-    }
-
-    pub(crate) fn from_days(days: DeltaDays) -> Self {
-        Self {
-            months: DeltaMonths::ZERO,
-            days,
-        }
-    }
-
-    pub(crate) fn mul(self, factor: i32) -> Option<Self> {
-        let Self { months, days } = self;
-        months
-            .mul(factor)
-            .zip(days.mul(factor))
-            // Safety: multiplication can't result in different signs
-            .map(|(months, days)| Self { months, days })
-    }
-
-    pub(crate) fn add(self, other: Self) -> Result<Self, InitError> {
-        let Self { months, days } = self;
-        let (month_sum, day_sum) = months
-            .add(other.months)
-            .zip(days.add(other.days))
-            .ok_or(InitError::TooBig)?;
-        // Note: addition *can* result in different signs
-        Self::new(month_sum, day_sum).ok_or(InitError::MixedSign)
-    }
-
-    pub(crate) fn is_zero(self) -> bool {
-        self.months.get() == 0 && self.days.get() == 0
-    }
-
-    pub(crate) fn abs(self) -> Self {
-        Self {
-            months: self.months.abs(),
-            days: self.days.abs(),
-        }
-    }
-
-    pub(crate) const ZERO: Self = Self {
-        months: DeltaMonths::ZERO,
-        days: DeltaDays::ZERO,
-    };
-
-    fn fmt_iso(self) -> String {
-        let mut s = String::with_capacity(8);
-        let Self { months, days } = self;
-        let self_abs = if months.get() < 0 || days.get() < 0 {
-            s.push('-');
-            -self
-        } else if months.get() == 0 && days.get() == 0 {
-            return "P0D".to_string();
-        } else {
-            self
-        };
-        s.push('P');
-        format_components(self_abs, &mut s);
-        s
-    }
 }
 
 impl PyPayload for DateDelta {}
 
-impl Neg for DateDelta {
-    type Output = Self;
-
-    fn neg(self) -> Self {
-        Self {
-            // Arithmetic overflow is impossible due to the ranges
-            months: -self.months,
-            days: -self.days,
-        }
-    }
-}
-
-fn same_sign(months: DeltaMonths, days: DeltaDays) -> bool {
-    months.get() >= 0 && days.get() >= 0 || months.get() <= 0 && days.get() <= 0
-}
-
 pub(crate) const SINGLETONS: &[(&CStr, DateDelta); 1] = &[(c"ZERO", DateDelta::ZERO)];
-
-impl fmt::Display for DateDelta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // A bit wasteful, but this isn't performance critical
-        let mut isofmt = self.fmt_iso().into_bytes();
-        // Safe: we know the string is valid ASCII
-        for c in isofmt.iter_mut().skip(2) {
-            *c = c.to_ascii_lowercase();
-        }
-        f.write_str(&
-            // SAFETY: We've built the string ourselves from ASCII
-            unsafe { String::from_utf8_unchecked(isofmt) })
-    }
-}
-
-// NOTE: delta must be positive
-pub(crate) fn format_components(delta: DateDelta, s: &mut String) {
-    let mut months = delta.months.get();
-    let days = delta.days.get();
-    debug_assert!(months >= 0 && days >= 0);
-    debug_assert!(months > 0 || days > 0);
-    let years = months / 12;
-    months %= 12;
-    if years != 0 {
-        s.push_str(&format!("{years}Y"));
-    }
-    if months != 0 {
-        s.push_str(&format!("{months}M"));
-    }
-    if days != 0 {
-        s.push_str(&format!("{days}D"));
-    }
-}
 
 pub(crate) fn handle_init_kwargs<T>(
     fname: &str,
@@ -506,123 +374,11 @@ fn parse_iso_inner(cls: PyClass<DateDelta>, arg: PyObj) -> PyReturn {
         // NOTE: this exception message also needs to make sense when
         // called through the constructor
         .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
-    let s = &mut py_str.as_utf8()?;
+    let s = py_str.as_utf8()?;
     let err = || format!("Invalid format: {arg}");
-    if s.len() < 3 {
-        // at least `P0D`
-        raise_value_err(err())?
-    }
-    let mut months = 0;
-    let mut days = 0;
-    let mut prev_unit: Option<CalUnit> = None;
-
-    let negated = parse_prefix(s).ok_or_else_value_err(err)?;
-
-    while !s.is_empty() {
-        let (value, unit) = parse_component(s).ok_or_else_value_err(err)?;
-        match (unit, prev_unit.replace(unit)) {
-            // NOTE: overflows are prevented by limiting the number
-            // of digits that are parsed.
-            (CalUnit::Years, None) => {
-                months += value * 12;
-            }
-            (CalUnit::Months, None | Some(CalUnit::Years)) => {
-                months += value;
-            }
-            (CalUnit::Weeks, None | Some(CalUnit::Years | CalUnit::Months)) => {
-                days += value * 7;
-            }
-            (CalUnit::Days, _) => {
-                days += value;
-                if s.is_empty() {
-                    break;
-                }
-                // i.e. there's more after the days component
-                raise_value_err(err())?;
-            }
-            _ => {
-                // i.e. the order of the components is wrong
-                raise_value_err(err())?;
-            }
-        }
-    }
-
-    // i.e. there must be at least one component (`P` alone is invalid)
-    if prev_unit.is_none() {
-        raise_value_err(err())?;
-    }
-
-    if negated {
-        months = -months;
-        days = -days;
-    }
-    DeltaMonths::new(months)
-        .zip(DeltaDays::new(days))
-        .map(|(months, days)| DateDelta { months, days })
-        .ok_or_range_err()?
+    DateDelta::parse_iso(s)
+        .ok_or_else_value_err(err)?
         .to_obj(cls)
-}
-
-// parse the prefix of an ISO8601 duration, e.g. `P`, `-P`, `+P`,
-pub(crate) fn parse_prefix(s: &mut &[u8]) -> Option<bool> {
-    debug_assert!(s.len() >= 2);
-    match s[0] {
-        b'P' | b'p' => {
-            let result = Some(false);
-            *s = &s[1..];
-            result
-        }
-        b'-' if s[1].eq_ignore_ascii_case(&b'P') => {
-            let result = Some(true);
-            *s = &s[2..];
-            result
-        }
-        b'+' if s[1].eq_ignore_ascii_case(&b'P') => {
-            let result = Some(false);
-            *s = &s[2..];
-            result
-        }
-        _ => None,
-    }
-}
-
-fn finish_parsing_component(s: &mut &[u8], mut value: i32) -> Option<(i32, CalUnit)> {
-    // We limit parsing to a number of digits to prevent overflow
-    for i in 1..s.len().min(9) {
-        match s[i] {
-            c if c.is_ascii_digit() => value = value * 10 + i32::from(c - b'0'),
-            b'D' | b'd' => {
-                *s = &s[i + 1..];
-                return Some((value, CalUnit::Days));
-            }
-            b'W' | b'w' => {
-                *s = &s[i + 1..];
-                return Some((value, CalUnit::Weeks));
-            }
-            b'M' | b'm' => {
-                *s = &s[i + 1..];
-                return Some((value, CalUnit::Months));
-            }
-            b'Y' | b'y' => {
-                *s = &s[i + 1..];
-                return Some((value, CalUnit::Years));
-            }
-            _ => {
-                return None;
-            }
-        }
-    }
-    None
-}
-
-// REFACTOR: make this u32
-// parse a component of a ISO8601 duration, e.g. `6Y`, `56M`, `2W`, `0D`
-pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, CalUnit)> {
-    if s.len() >= 2 && s[0].is_ascii_digit() {
-        finish_parsing_component(s, (s[0] - b'0').into())
-    } else {
-        None
-    }
 }
 
 fn in_months_days(_: PyType, DateDelta { months, days }: DateDelta) -> PyReturn {

@@ -1,16 +1,16 @@
 //! Functionality for parsing/writing RFC 2822 formatted date strings.
 use crate::{
-    classes::{
+    common::{
+        fmt::*,
+        parse::{Scan, extract_2_digits, extract_digit},
+    },
+    domain::{
         date::{Date, extract_year},
         instant::Instant,
         offset_datetime::OffsetDateTime,
         plain_datetime::DateTime,
-        time::Time,
-    },
-    common::{
-        fmt::*,
-        parse::{Scan, extract_2_digits, extract_digit},
         scalar::*,
+        time::Time,
     },
 };
 

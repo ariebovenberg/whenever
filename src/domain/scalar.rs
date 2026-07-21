@@ -1,12 +1,7 @@
 //! Checked arithmetic for scalar date and time concepts
-use crate::{
-    classes::{date::Date, plain_datetime::DateTime, time::Time},
-    common::{
-        fmt::{self, Sink, format_2_digits},
-        round,
-    },
-    py::{PyInt, PyObj, PyResult, PyReturn, base::ToPy, exc::RaiseExt, none},
-};
+use super::round;
+use super::{date::Date, plain_datetime::DateTime, time::Time};
+use crate::common::fmt::{self, Sink, format_2_digits};
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1030,33 +1025,6 @@ impl<T: DeltaFieldInner> DeltaField<T> {
 
     pub(crate) fn get_or(self, default: T) -> T {
         if self.is_set() { self.0 } else { default }
-    }
-}
-
-impl<T: DeltaFieldInner> DeltaField<T> {
-    /// Construct from a PyObj that is either an int or None.
-    /// Used when reading fields from a Python `_to_tuple()` result.
-    pub(crate) fn from_py_opt(obj: PyObj) -> PyResult<Self> {
-        if obj.is_none() {
-            Ok(Self::UNSET)
-        } else {
-            let val = obj
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_type_err("expected int or None")?
-                .to_i64()?;
-            Ok(Self::new_unchecked(T::from_i64(val)))
-        }
-    }
-}
-
-impl<T: DeltaFieldInner> ToPy for DeltaField<T> {
-    /// Convert to Python int (if set) or Python None (if unset).
-    fn to_py(self) -> PyReturn {
-        if self.is_set() {
-            self.0.to_i64().to_py()
-        } else {
-            Ok(none())
-        }
     }
 }
 

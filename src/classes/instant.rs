@@ -2,6 +2,8 @@ use core::ffi::{CStr, c_int, c_long, c_void};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
+pub(crate) use crate::domain::instant::Instant;
+
 use crate::{
     classes::{
         date::Date,
@@ -19,13 +21,6 @@ use crate::{
     py::*,
     pymodule::State,
 };
-
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub(crate) struct Instant {
-    pub(crate) epoch: EpochSecs,
-    pub(crate) subsec: SubSecNanos,
-    // FUTURE: make use of padding to cache something?
-}
 
 pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
     (
@@ -45,73 +40,7 @@ pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
 ];
 
 impl Instant {
-    pub(crate) fn utc_datetime(self) -> DateTime {
-        self.epoch.datetime(self.subsec)
-    }
-
-    pub(crate) fn diff(self, other: Self) -> TimeDelta {
-        // Safety: difference between two valid Instants is always within delta range
-        TimeDelta::from_nanos_unchecked(self.timestamp_nanos() - other.timestamp_nanos())
-    }
-
-    pub(crate) fn timestamp_millis(&self) -> i64 {
-        self.epoch.get() * 1_000 + self.subsec.get() as i64 / 1_000_000
-    }
-
-    pub(crate) fn timestamp_nanos(&self) -> i128 {
-        self.epoch.get() as i128 * 1_000_000_000 + self.subsec.get() as i128
-    }
-
-    pub(crate) fn from_timestamp(timestamp: i64) -> Option<Self> {
-        Some(Instant {
-            epoch: EpochSecs::new(timestamp)?,
-            subsec: SubSecNanos::MIN,
-        })
-    }
-
-    pub(crate) fn from_timestamp_f64(timestamp: f64) -> Option<Self> {
-        (EpochSecs::MIN.get() as f64..=EpochSecs::MAX.get() as f64)
-            .contains(&timestamp)
-            .then(|| Instant {
-                epoch: EpochSecs::new_unchecked(timestamp.floor() as i64),
-                subsec: SubSecNanos::from_fract(timestamp),
-            })
-    }
-
-    pub(crate) fn from_timestamp_millis(millis: i64) -> Option<Self> {
-        Some(Instant {
-            epoch: EpochSecs::new(millis.div_euclid(1_000))?,
-            // Safety: we stay under 1_000_000_000
-            subsec: SubSecNanos::new_unchecked(millis.rem_euclid(1_000) as i32 * 1_000_000),
-        })
-    }
-
-    pub(crate) fn from_timestamp_nanos(timestamp: i128) -> Option<Self> {
-        i64::try_from(timestamp.div_euclid(1_000_000_000))
-            .ok()
-            .and_then(EpochSecs::new)
-            .map(|secs| Instant {
-                epoch: secs,
-                subsec: SubSecNanos::from_remainder(timestamp),
-            })
-    }
-
-    pub(crate) fn shift(&self, d: TimeDelta) -> Option<Instant> {
-        let (extra_sec, subsec) = self.subsec.add(d.subsec);
-        Some(Instant {
-            epoch: self.epoch.shift(d.secs)?.shift(extra_sec)?,
-            subsec,
-        })
-    }
-
-    pub(crate) fn offset(&self, f: Offset) -> Option<Self> {
-        Some(Instant {
-            epoch: self.epoch.offset(f)?,
-            subsec: self.subsec,
-        })
-    }
-
-    pub(crate) fn to_py(
+    pub(crate) fn to_stdlib(
         self,
         &PyDateTime_CAPI {
             DateTime_FromDateAndTime,
@@ -148,9 +77,9 @@ impl Instant {
     }
 
     // Returns None if the datetime is out of range
-    fn from_py(dt: PyDateTime) -> PyResult<Option<Self>> {
-        let inst = Date::from_py(dt.date())
-            .at(Time::from_py_dt(dt))
+    fn from_stdlib(dt: PyDateTime) -> PyResult<Option<Self>> {
+        let inst = Date::from_stdlib(dt.date())
+            .at(Time::from_stdlib_datetime(dt))
             .assume_utc();
         Ok({
             let offset = dt.utcoffset()?;
@@ -181,13 +110,6 @@ impl Instant {
             )
         }
     }
-
-    fn to_delta(self) -> TimeDelta {
-        TimeDelta {
-            secs: self.epoch.to_delta(),
-            subsec: self.subsec,
-        }
-    }
 }
 
 fn __new__(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
@@ -197,7 +119,7 @@ fn __new__(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyRe
             return parse_iso(cls, arg);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            return Instant::from_py(dt)?.ok_or_range_err()?.to_obj(cls);
+            return Instant::from_stdlib(dt)?.ok_or_range_err()?.to_obj(cls);
         }
         raise_type_err("Instant() requires an ISO 8601 string or datetime.datetime")
     } else {
@@ -470,7 +392,7 @@ fn from_timestamp_nanos(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
 }
 
 fn to_stdlib(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
-    slf.to_py(cls.state().py_api()?)
+    slf.to_stdlib(cls.state().py_api()?)
 }
 
 fn py_datetime(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
@@ -491,7 +413,7 @@ fn from_py_datetime(cls: PyClass<Instant>, obj: PyObj) -> PyReturn {
         1,
     )?;
     if let Some(dt) = obj.cast_allow_subclass::<PyDateTime>() {
-        Instant::from_py(dt)?.ok_or_range_err()?.to_obj(cls)
+        Instant::from_stdlib(dt)?.ok_or_range_err()?.to_obj(cls)
     } else {
         raise_type_err("expected a datetime object")
     }
