@@ -357,6 +357,8 @@ Verification after each moved type:
 
 ### 4. Normalize pure-layer names and arithmetic — complete
 
+Commit: `7f9fe8d Normalize Rust datetime APIs`
+
 Once definitions live in the pure layer, rename:
 
 - DateTime → PlainDateTime
@@ -385,7 +387,7 @@ Verification:
 Completed with all 79 Rust tests, build and lint, and 2,130 focused Python tests passing (one
 skipped).
 
-### 5. Introduce the local-time model — planned
+### 5. Introduce the local-time model — complete
 
 Add:
 
@@ -431,6 +433,8 @@ Verification:
 - Rust tests around every gap/fold strategy and range edge.
 - tests/test_zoned_datetime.py, timezone parsing tests, and relevant TimeDelta
   since/until tests.
+
+Completed with 82 Rust tests, build and lint, and 2,130 focused Python tests passing (one skipped).
 
 ### 6. Consolidate component and shift arguments — planned
 

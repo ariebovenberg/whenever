@@ -118,7 +118,11 @@ Use `match_interned_str` when the default error format is acceptable.
 
 - **ZonedDateTime** doesn't implement `Ord` in Rust. Compare via `.to_instant()` for ordering.
   Non-Copy (contains `Arc<TimeZone>`). Uses `Arc::ptr_eq` + content equality for timezone comparison.
-  DST-aware operations need `ambiguity_for_local()` resolution.
+  DST-aware operations resolve `PlainDateTime::local_seconds()` through
+  `TimeZone::mapping_for_local()` and `PlainDateTime::resolve_in()`.
+- **LocalSeconds** is the local-wall-time coordinate; don't pass `EpochSecs` to local timezone
+  lookup. `LocalMapping`, `Disambiguation`, and `ResolvePolicy` define gap/fold handling in the
+  domain layer. Map `ResolveError` to Python exceptions only in binding code.
 - **OffsetDateTime** compares by instant (`Instant` has `Ord`). Offset is an `Offset` scalar.
 - **PlainDateTime** compares by local date+time. Has `Ord`.
 - **TimeDelta** stores `secs: DeltaSeconds` + `subsec: SubSecNanos`. Use `.total_nanos() -> i128`.

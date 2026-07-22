@@ -1,6 +1,7 @@
 use super::{
     date::{BoundaryUnit as DateBoundaryUnit, Date},
     instant::Instant,
+    local::LocalSeconds,
     scalar::{DeltaDays, DeltaMonths, Month, OffsetDelta, S_PER_DAY, Year},
     time::{BoundUnit as TimeBoundaryUnit, Time},
     time_delta::TimeDelta,
@@ -34,13 +35,13 @@ impl PlainDateTime {
 
     pub(crate) fn assume_utc(self) -> Instant {
         Instant {
-            epoch: self.date.epoch_at(self.time),
+            epoch: self.local_seconds().assume_utc(),
             subsec: self.time.subsec,
         }
     }
 
-    pub(crate) fn local_epoch(self) -> super::scalar::EpochSecs {
-        self.date.epoch_at(self.time)
+    pub fn local_seconds(self) -> LocalSeconds {
+        LocalSeconds::from_plain(self)
     }
 
     pub(crate) fn diff(self, other: Self) -> TimeDelta {

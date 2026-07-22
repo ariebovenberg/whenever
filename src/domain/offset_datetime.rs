@@ -23,7 +23,7 @@ impl OffsetDateTime {
     }
 
     pub(crate) fn new(date: Date, time: Time, offset: Offset) -> Option<Self> {
-        date.epoch_at(time).shift_by_offset(-offset)?;
+        date.at(time).local_seconds().to_epoch(offset)?;
         Some(Self { date, time, offset })
     }
 

@@ -18,6 +18,8 @@ pub(crate) struct PyErrMarker; // sentinel that the Python error indicator is se
 pub(crate) type PyResult<T> = Result<T, PyErrMarker>;
 pub(crate) type PyReturn = PyResult<Owned<PyObj>>;
 
+const RANGE_ERROR_MSG: &str = "Value or calculation out of range";
+
 /// Extension methods for [`PyResult`] to handle Python exceptions.
 pub(crate) trait PyResultExt<T>: Sized {
     /// On error, clears the Python exception and returns `None`.
@@ -124,8 +126,7 @@ pub(crate) trait RaiseExt<T> {
     where
         Self: Sized,
     {
-        // FUTURE: can/should we intern this somehow, since it's static?
-        self.ok_or_raise(exc_value_error(), "Value or calculation out of range")
+        self.ok_or_raise(exc_value_error(), RANGE_ERROR_MSG)
     }
 
     fn ok_or_else_value_err<F, M: ToPy>(self, fmt: F) -> PyResult<T>
@@ -185,6 +186,11 @@ pub(crate) fn raise_type_err<T, U: ToPy>(msg: U) -> PyResult<T> {
 #[cold]
 pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
     raise(exc_value_error(), msg)
+}
+
+#[cold]
+pub(crate) fn raise_range_err<T>() -> PyResult<T> {
+    raise_value_err(RANGE_ERROR_MSG)
 }
 
 /// Emit a warning using a custom warning class (e.g. a heap-type UserWarning subclass).

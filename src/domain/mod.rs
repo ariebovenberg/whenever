@@ -6,6 +6,7 @@ pub mod datetime_delta;
 pub mod instant;
 pub mod itemized_date_delta;
 pub mod itemized_delta;
+pub mod local;
 pub mod offset_datetime;
 pub mod plain_datetime;
 pub mod round;

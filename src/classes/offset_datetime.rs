@@ -359,13 +359,13 @@ fn to_fixed_offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, args: &[Py
 fn to_tz(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
     slf.to_instant()
-        .to_tz_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
+        .into_zoned_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
 }
 
 fn to_system_tz(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let state = cls.state();
     slf.to_instant()
-        .to_tz_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
+        .into_zoned_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
 
 fn assume_tz(
@@ -406,7 +406,7 @@ fn assume_tz(
 
     if matches!(mismatch, OffsetMismatch::KeepInstant) || actual_offset == slf.offset {
         // Offsets match (or we're keeping the instant): create ZDT from instant
-        return instant.to_tz_py(tz, *state.zoned_datetime_type);
+        return instant.into_zoned_py(tz, *state.zoned_datetime_type);
     }
 
     match mismatch {
@@ -420,9 +420,9 @@ fn assume_tz(
         ),
         OffsetMismatch::KeepLocal => slf
             .to_plain()
-            .localize_default(&tz)
+            .resolve_compatible(&tz)
             .ok_or_range_err()?
-            .assume_tz_unchecked(tz, *state.zoned_datetime_type),
+            .into_zoned_py_unchecked(tz, *state.zoned_datetime_type),
         OffsetMismatch::KeepInstant => unreachable!(),
     }
 }

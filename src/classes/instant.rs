@@ -525,7 +525,7 @@ fn difference(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
 
 fn to_tz(cls: PyClass<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
-    slf.to_tz_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
+    slf.into_zoned_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
 }
 
 fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
@@ -542,7 +542,7 @@ fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyRet
 
 fn to_system_tz(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
     let state = cls.state();
-    slf.to_tz_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
+    slf.into_zoned_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
 
 fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
