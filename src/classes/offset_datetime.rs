@@ -12,7 +12,7 @@ use crate::{
     classes::{
         date::Date,
         instant::Instant,
-        plain_datetime::{self, DateTime, set_components_from_kwargs},
+        plain_datetime::{self, PlainDateTime, set_components_from_kwargs},
         time::Time,
         time_delta::TimeDelta,
     },
@@ -27,7 +27,7 @@ use crate::{
 };
 
 impl OffsetDateTime {
-    pub(crate) fn to_stdlib(
+    pub(crate) fn to_stdlib_datetime(
         self,
         &PyDateTime_CAPI {
             DateTime_FromDateAndTime,
@@ -81,8 +81,8 @@ impl OffsetDateTime {
         .map(|d| unsafe { d.cast_unchecked::<PyDateTime>() })
     }
 
-    pub(crate) fn from_stdlib(dt: PyDateTime) -> PyResult<Self> {
-        let date = Date::from_stdlib(dt.date());
+    pub(crate) fn from_stdlib_datetime(dt: PyDateTime) -> PyResult<Self> {
+        let date = Date::from_stdlib_date(dt.date());
         let time = Time::from_stdlib_datetime(dt);
         OffsetDateTime::new(date, time, Offset::from_stdlib_datetime(dt)?).ok_or_range_err()
     }
@@ -137,7 +137,7 @@ fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
             return parse_iso(cls, arg);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            return OffsetDateTime::from_stdlib(dt)?.to_obj(cls);
+            return OffsetDateTime::from_stdlib_datetime(dt)?.to_obj(cls);
         }
         return raise_type_err("OffsetDateTime() requires an ISO 8601 string or datetime.datetime");
     }
@@ -202,16 +202,16 @@ fn __richcmp__(
     b_obj: PyObj,
     op: c_int,
 ) -> PyReturn {
-    let inst_a = a.instant();
+    let inst_a = a.to_instant();
     let inst_b = if let Some(odt) = b_obj.extract(cls) {
-        odt.instant()
+        odt.to_instant()
     } else {
         let state = cls.state();
 
         if let Some(inst) = b_obj.extract(*state.instant_type) {
             inst
         } else if let Some(zdt) = b_obj.extract_ref(*state.zoned_datetime_type) {
-            zdt.instant()
+            zdt.to_instant()
         } else {
             return not_implemented();
         }
@@ -233,7 +233,7 @@ pub(crate) extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
         // SAFETY: self type is always passed to __hash__
         unsafe { slf.assume_heaptype::<OffsetDateTime>() }
             .1
-            .instant()
+            .to_instant()
             .pyhash(),
     )
 }
@@ -250,7 +250,7 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
         let OffsetDateTime { date, time, offset } = *slf;
         Ok(Some(
-            DateTime { date, time }
+            PlainDateTime { date, time }
                 .shift(tdelta)
                 .and_then(|dt| dt.with_offset(offset))
                 .ok_or_range_err()?
@@ -264,8 +264,8 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         let (cls, slf, other) = match operands {
             BinaryCall::SameType { cls, slf, other } => {
                 return Ok(Some(
-                    slf.instant()
-                        .diff(other.instant())
+                    slf.to_instant()
+                        .diff(other.to_instant())
                         .to_obj(*cls.state().time_delta_type)?,
                 ));
             }
@@ -277,7 +277,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
             let OffsetDateTime { date, time, offset } = *slf;
             return Ok(Some(
-                DateTime { date, time }
+                PlainDateTime { date, time }
                     .shift(-tdelta)
                     .and_then(|dt| dt.with_offset(offset))
                     .ok_or_range_err()?
@@ -287,11 +287,13 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         let inst_b = match_type!(
             other,
             *state.instant_type => |inst| { inst },
-            ref *state.zoned_datetime_type => |zdt| { zdt.instant() },
+            ref *state.zoned_datetime_type => |zdt| { zdt.to_instant() },
             _ => { return Ok(None) },
         );
         Ok(Some(
-            slf.instant().diff(inst_b).to_obj(*state.time_delta_type)?,
+            slf.to_instant()
+                .diff(inst_b)
+                .to_obj(*state.time_delta_type)?,
         ))
     })
 }
@@ -339,14 +341,14 @@ fn exact_eq(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, obj_b: PyObj) -> 
 }
 
 pub(crate) fn to_instant(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    slf.instant().to_obj(*cls.state().instant_type)
+    slf.to_instant().to_obj(*cls.state().instant_type)
 }
 
 fn to_fixed_offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, args: &[PyObj]) -> PyReturn {
     match *args {
         [] => slf.to_obj(cls),
         [offset_obj] => slf
-            .instant()
+            .to_instant()
             .to_offset(Offset::from_obj(offset_obj, *cls.state().time_delta_type)?)
             .ok_or_range_err()?
             .to_obj(cls),
@@ -356,13 +358,13 @@ fn to_fixed_offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, args: &[Py
 
 fn to_tz(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
-    slf.instant()
+    slf.to_instant()
         .to_tz_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
 }
 
 fn to_system_tz(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let state = cls.state();
-    slf.instant()
+    slf.to_instant()
         .to_tz_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
 
@@ -399,7 +401,7 @@ fn assume_tz(
     let tz = state.tz_store.obj_get(tz_obj)?;
 
     // Compute what offset the timezone has at this instant
-    let instant = slf.instant();
+    let instant = slf.to_instant();
     let actual_offset = tz.offset_for_instant(instant.epoch);
 
     if matches!(mismatch, OffsetMismatch::KeepInstant) || actual_offset == slf.offset {
@@ -417,7 +419,7 @@ fn assume_tz(
             ),
         ),
         OffsetMismatch::KeepLocal => slf
-            .local()
+            .to_plain()
             .localize_default(&tz)
             .ok_or_range_err()?
             .assume_tz_unchecked(tz, *state.zoned_datetime_type),
@@ -473,7 +475,8 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
 }
 
 fn to_stdlib(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    slf.to_stdlib(cls.state().py_api()?).map(Owned::into_obj)
+    slf.to_stdlib_datetime(cls.state().py_api()?)
+        .map(Owned::into_obj)
 }
 
 fn py_datetime(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
@@ -530,7 +533,7 @@ fn start_of(
     } {
         offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
     }
-    slf.local()
+    slf.to_plain()
         .start_of_unit(BoundaryUnit::from_py(
             state,
             handle_one_arg("start_of", args)?,
@@ -555,7 +558,7 @@ fn end_of(
     } {
         offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
     }
-    slf.local()
+    slf.to_plain()
         .end_of_unit(BoundaryUnit::from_py(
             state,
             handle_one_arg("end_of", args)?,
@@ -760,26 +763,26 @@ fn from_py_datetime(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
         1,
     )?;
     if let Some(py_dt) = arg.cast_allow_subclass::<PyDateTime>() {
-        OffsetDateTime::from_stdlib(py_dt)?.to_obj(cls)
+        OffsetDateTime::from_stdlib_datetime(py_dt)?.to_obj(cls)
     } else {
         raise_type_err("argument must be a datetime.datetime instance")?
     }
 }
 
 pub(crate) fn to_plain(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    slf.local().to_obj(*cls.state().plain_datetime_type)
+    slf.to_plain().to_obj(*cls.state().plain_datetime_type)
 }
 
 pub(crate) fn timestamp(_: PyType, slf: OffsetDateTime) -> PyReturn {
-    slf.instant().epoch.get().to_py()
+    slf.to_instant().epoch.get().to_py()
 }
 
 pub(crate) fn timestamp_millis(_: PyType, slf: OffsetDateTime) -> PyReturn {
-    slf.instant().timestamp_millis().to_py()
+    slf.to_instant().timestamp_millis().to_py()
 }
 
 pub(crate) fn timestamp_nanos(_: PyType, slf: OffsetDateTime) -> PyReturn {
-    slf.instant().timestamp_nanos().to_py()
+    slf.to_instant().timestamp_nanos().to_py()
 }
 
 fn add(
@@ -893,7 +896,7 @@ fn shift_method(
     months = months.negate_if(negate);
     days = days.negate_if(negate);
     tdelta = tdelta.negate_if(negate);
-    slf.local()
+    slf.to_plain()
         .shift_date(months, days)
         .and_then(|dt| dt.shift(tdelta))
         .and_then(|dt| dt.with_offset(slf.offset))
@@ -904,11 +907,11 @@ fn shift_method(
 fn difference(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> PyReturn {
     let state = cls.state();
     let other_inst = if let Some(odt) = arg.extract(cls) {
-        odt.instant()
+        odt.to_instant()
     } else if let Some(inst) = arg.extract(*state.instant_type) {
         inst
     } else if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
-        zdt.instant()
+        zdt.to_instant()
     } else {
         raise_type_err(
             "difference() argument must be an OffsetDateTime,
@@ -916,7 +919,7 @@ fn difference(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> 
         )?
     };
 
-    slf.instant()
+    slf.to_instant()
         .diff(other_inst)
         .to_obj(*state.time_delta_type)
 }
@@ -1081,7 +1084,7 @@ fn parse_strptime(
         .cast_exact::<PyDateTime>()
         .ok_or_type_err("strptime() returned non-datetime")?;
 
-    OffsetDateTime::from_stdlib(*parsed)?.to_obj(cls)
+    OffsetDateTime::from_stdlib_datetime(*parsed)?.to_obj(cls)
 }
 
 fn format_rfc2822(_: PyType, slf: OffsetDateTime) -> PyReturn {
@@ -1184,7 +1187,7 @@ fn offset_since(
                 Ok(u) => {
                     // Exact unit: absolute time difference.
                     // For nanoseconds (in_nanos == 1), return int to preserve full precision.
-                    let nanos = a.instant().diff(b.instant()).total_nanos();
+                    let nanos = a.to_instant().diff(b.to_instant()).total_nanos();
                     let unit_nanos = u.in_nanos();
                     if unit_nanos == 1 {
                         nanos.to_py()
@@ -1204,8 +1207,8 @@ fn offset_since(
                     // units are well-defined and exact units are always correct.
                     plain_datetime::plain_since_inner(
                         state,
-                        a.local(),
-                        b.local(),
+                        a.to_plain(),
+                        b.to_plain(),
                         SinceUntilKwargs::Total(unit),
                         false, // flip already applied above
                     )
@@ -1217,8 +1220,8 @@ fn offset_since(
                 // same offset: use the plain datetime rounding logic (days are always 24h)
                 (true, true) => plain_datetime::plain_since_inner(
                     state,
-                    slf.local(),
-                    other.local(),
+                    slf.to_plain(),
+                    other.to_plain(),
                     SinceUntilKwargs::InUnits(unit_set, round_mode, round_increment),
                     flip,
                 ),
@@ -1229,7 +1232,7 @@ fn offset_since(
                 _ => {
                     // Different offsets, exact units only: compute via TimeDelta
                     let (a, b) = if flip { (other, slf) } else { (slf, other) };
-                    let diff = a.instant().diff(b.instant());
+                    let diff = a.to_instant().diff(b.to_instant());
                     let abs_mode = round_mode.to_abs_euclid(diff.is_negative());
                     let result = diff
                         .in_exact_units(

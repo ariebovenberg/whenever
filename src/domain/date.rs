@@ -1,5 +1,5 @@
 use super::{
-    plain_datetime::DateTime,
+    plain_datetime::PlainDateTime,
     scalar::{DeltaDays, DeltaMonths, EpochSecs, Month, S_PER_DAY, UnixDays, Weekday, Year},
     time::Time,
 };
@@ -278,8 +278,8 @@ impl Date {
         self.end_of(unit)?.tomorrow()
     }
 
-    pub(crate) fn at(self, time: Time) -> DateTime {
-        DateTime { date: self, time }
+    pub(crate) fn at(self, time: Time) -> PlainDateTime {
+        PlainDateTime { date: self, time }
     }
 }
 

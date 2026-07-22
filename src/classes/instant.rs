@@ -8,7 +8,7 @@ use crate::{
     classes::{
         date::Date,
         offset_datetime::OffsetDateTime,
-        plain_datetime::DateTime,
+        plain_datetime::PlainDateTime,
         time::Time,
         time_delta::{DeltaIncrement, TimeDelta, timedelta_from_kwargs},
     },
@@ -40,7 +40,7 @@ pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
 ];
 
 impl Instant {
-    pub(crate) fn to_stdlib(
+    pub(crate) fn to_stdlib_datetime(
         self,
         &PyDateTime_CAPI {
             DateTime_FromDateAndTime,
@@ -49,7 +49,7 @@ impl Instant {
             ..
         }: &PyDateTime_CAPI,
     ) -> PyReturn {
-        let DateTime {
+        let PlainDateTime {
             date: Date { year, month, day },
             time:
                 Time {
@@ -58,7 +58,7 @@ impl Instant {
                     second,
                     subsec,
                 },
-        } = self.utc_datetime();
+        } = self.to_utc_plain();
         unsafe {
             // SAFETY: calling DateTime_FromDateAndTime with valid parameters
             DateTime_FromDateAndTime(
@@ -77,8 +77,8 @@ impl Instant {
     }
 
     // Returns None if the datetime is out of range
-    fn from_stdlib(dt: PyDateTime) -> PyResult<Option<Self>> {
-        let inst = Date::from_stdlib(dt.date())
+    fn from_stdlib_datetime(dt: PyDateTime) -> PyResult<Option<Self>> {
+        let inst = Date::from_stdlib_date(dt.date())
             .at(Time::from_stdlib_datetime(dt))
             .assume_utc();
         Ok({
@@ -94,7 +94,7 @@ impl Instant {
         })
     }
 
-    pub(crate) const fn pyhash(&self) -> Py_hash_t {
+    pub(crate) const fn pyhash(self) -> Py_hash_t {
         if cfg!(target_pointer_width = "64") {
             hash_combine(
                 self.epoch.get() as Py_hash_t,
@@ -119,7 +119,9 @@ fn __new__(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyRe
             return parse_iso(cls, arg);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            return Instant::from_stdlib(dt)?.ok_or_range_err()?.to_obj(cls);
+            return Instant::from_stdlib_datetime(dt)?
+                .ok_or_range_err()?
+                .to_obj(cls);
         }
         raise_type_err("Instant() requires an ISO 8601 string or datetime.datetime")
     } else {
@@ -163,7 +165,7 @@ fn from_utc(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyR
 impl PyPayload for Instant {}
 
 fn __repr__(_: PyType, i: Instant) -> PyReturn {
-    let DateTime { date, time } = i.utc_datetime();
+    let PlainDateTime { date, time } = i.to_utc_plain();
     PyAsciiStrBuilder::format((
         b"Instant(\"",
         date.format_iso(false),
@@ -174,7 +176,7 @@ fn __repr__(_: PyType, i: Instant) -> PyReturn {
 }
 
 fn __str__(_: PyType, i: Instant) -> PyReturn {
-    let DateTime { date, time } = i.utc_datetime();
+    let PlainDateTime { date, time } = i.to_utc_plain();
     PyAsciiStrBuilder::format((
         date.format_iso(false),
         b"T",
@@ -189,9 +191,9 @@ fn __richcmp__(cls: PyClass<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int) 
     } else {
         let state = cls.state();
         if let Some(i) = b_obj.extract_ref(*state.zoned_datetime_type) {
-            i.instant()
+            i.to_instant()
         } else if let Some(odt) = b_obj.extract(*state.offset_datetime_type) {
-            odt.instant()
+            odt.to_instant()
         } else {
             return not_implemented();
         }
@@ -225,8 +227,8 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             let state = cls.state();
             let other = match_type!(
                 other,
-                ref *state.zoned_datetime_type => |zdt| { zdt.instant() },
-                *state.offset_datetime_type => |odt| { odt.instant() },
+                ref *state.zoned_datetime_type => |zdt| { zdt.to_instant() },
+                *state.offset_datetime_type => |odt| { odt.to_instant() },
                 _ => {
                     return shift_inner(
                         cls,
@@ -392,7 +394,7 @@ fn from_timestamp_nanos(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
 }
 
 fn to_stdlib(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
-    slf.to_stdlib(cls.state().py_api()?)
+    slf.to_stdlib_datetime(cls.state().py_api()?)
 }
 
 fn py_datetime(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
@@ -413,7 +415,9 @@ fn from_py_datetime(cls: PyClass<Instant>, obj: PyObj) -> PyReturn {
         1,
     )?;
     if let Some(dt) = obj.cast_allow_subclass::<PyDateTime>() {
-        Instant::from_stdlib(dt)?.ok_or_range_err()?.to_obj(cls)
+        Instant::from_stdlib_datetime(dt)?
+            .ok_or_range_err()?
+            .to_obj(cls)
     } else {
         raise_type_err("expected a datetime object")
     }
@@ -429,7 +433,7 @@ fn format_iso(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let DateTime { date, time } = slf.utc_datetime();
+    let PlainDateTime { date, time } = slf.to_utc_plain();
     fmt::format_iso(date, time, cls.state(), args, kwargs, Suffix::Zulu)
 }
 
@@ -443,7 +447,7 @@ fn parse_iso(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
             .as_utf8()?,
     )
     .ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?
-    .instant()
+    .to_instant()
     .to_obj(cls)
 }
 
@@ -507,9 +511,9 @@ fn difference(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     let inst_b = if let Some(i) = obj_b.extract(cls) {
         i
     } else if let Some(zdt) = obj_b.extract_ref(*state.zoned_datetime_type) {
-        zdt.instant()
+        zdt.to_instant()
     } else if let Some(odt) = obj_b.extract(*state.offset_datetime_type) {
-        odt.instant()
+        odt.to_instant()
     } else {
         raise_type_err(
             "difference() argument must be an OffsetDateTime,
@@ -527,7 +531,7 @@ fn to_tz(cls: PyClass<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
 fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
     let state = cls.state();
     match *args {
-        [] => slf.utc_datetime().with_offset_unchecked(Offset::ZERO),
+        [] => slf.to_utc_plain().with_offset_unchecked(Offset::ZERO),
         [arg] => slf
             .to_offset(Offset::from_obj(arg, *state.time_delta_type)?)
             .ok_or_range_err()?,
@@ -555,7 +559,7 @@ fn parse_rfc2822(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
         rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?;
     OffsetDateTime::new(date, time, offset)
         .ok_or_range_err()?
-        .instant()
+        .to_instant()
         .to_obj(cls)
 }
 
@@ -595,7 +599,7 @@ fn format(_cls: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn 
             1,
         )?;
     }
-    let DateTime { date, time } = slf.utc_datetime();
+    let PlainDateTime { date, time } = slf.to_utc_plain();
     let vals = pattern::FormatValues {
         year: date.year,
         month: date.month,
@@ -679,7 +683,7 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
     // offset is already validated (scalar::Offset) — no range check needed here.
     date.at(time)
         .assume_utc()
-        .offset(-offset)
+        .shift_by_offset(-offset)
         .ok_or_range_err()?
         .to_obj(cls)
 }

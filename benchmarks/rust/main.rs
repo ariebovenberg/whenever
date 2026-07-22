@@ -4,7 +4,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 
 use _whenever::classes::date::Date;
-use _whenever::classes::plain_datetime::DateTime;
+use _whenever::classes::plain_datetime::PlainDateTime;
 use _whenever::common::scalar::{EpochSecs, UnixDays};
 use _whenever::common::scalar::{Month, Year};
 use _whenever::tz::posix::TzStr;
@@ -21,7 +21,7 @@ pub fn date_from_unix_days(c: &mut Criterion) {
 pub fn parse_plain_datetime(c: &mut Criterion) {
     c.bench_function("Parse plain datetime", |b| {
         b.iter(|| {
-            DateTime::parse(black_box(b"2023-03-02 02:09:09")).unwrap();
+            PlainDateTime::parse(black_box(b"2023-03-02 02:09:09")).unwrap();
         })
     });
 }

@@ -1,7 +1,7 @@
 use super::{
     date::Date,
     instant::Instant,
-    plain_datetime::DateTime,
+    plain_datetime::PlainDateTime,
     scalar::{Offset, Sign},
     time::Time,
 };
@@ -23,16 +23,19 @@ impl OffsetDateTime {
     }
 
     pub(crate) fn new(date: Date, time: Time, offset: Offset) -> Option<Self> {
-        date.epoch_at(time).offset(-offset)?;
+        date.epoch_at(time).shift_by_offset(-offset)?;
         Some(Self { date, time, offset })
     }
 
-    pub(crate) fn instant(self) -> Instant {
-        self.local().assume_utc().offset(-self.offset).unwrap()
+    pub(crate) fn to_instant(self) -> Instant {
+        self.to_plain()
+            .assume_utc()
+            .shift_by_offset(-self.offset)
+            .unwrap()
     }
 
-    pub(crate) const fn local(self) -> DateTime {
-        DateTime {
+    pub(crate) const fn to_plain(self) -> PlainDateTime {
+        PlainDateTime {
             date: self.date,
             time: self.time,
         }
@@ -43,7 +46,7 @@ impl OffsetDateTime {
     }
 
     pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
-        DateTime::read_iso(s)?
+        PlainDateTime::read_iso(s)?
             .with_offset(Offset::read_iso(s)?)
             .and_then(|datetime| {
                 skip_tzname(s)?;
@@ -52,7 +55,7 @@ impl OffsetDateTime {
     }
 }
 
-impl DateTime {
+impl PlainDateTime {
     pub(crate) fn with_offset(self, offset: Offset) -> Option<OffsetDateTime> {
         OffsetDateTime::new(self.date, self.time, offset)
     }
@@ -69,8 +72,8 @@ impl DateTime {
 impl Instant {
     pub(crate) fn to_offset(self, offset: Offset) -> Option<OffsetDateTime> {
         Some(
-            self.offset(offset)?
-                .utc_datetime()
+            self.shift_by_offset(offset)?
+                .to_utc_plain()
                 .with_offset_unchecked(offset),
         )
     }

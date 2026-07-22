@@ -229,7 +229,7 @@ fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
     let (delta_type, delta) = unsafe { delta_obj.assume_heaptype::<DateTimeDelta>() };
     i32::try_from(factor)
         .ok()
-        .and_then(|f| delta.checked_mul(f))
+        .and_then(|f| delta.mul(f))
         .ok_or_range_err()?
         .to_obj(delta_type)
 }

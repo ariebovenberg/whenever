@@ -1,6 +1,6 @@
 use super::{
     date::Date, instant::Instant, itemized_date_delta::ItemizedDateDelta,
-    itemized_delta::ItemizedDelta, offset_datetime::OffsetDateTime, plain_datetime::DateTime,
+    itemized_delta::ItemizedDelta, offset_datetime::OffsetDateTime, plain_datetime::PlainDateTime,
     scalar::Offset, time::Time,
 };
 use crate::{common::ambiguity::Ambiguity, tz::tzif::TimeZone};
@@ -37,18 +37,21 @@ impl ZonedDateTime {
         Arc::ptr_eq(&self.tz, &other.tz) || *self.tz == *other.tz
     }
 
-    pub(crate) fn instant(&self) -> Instant {
-        self.local().assume_utc().offset(-self.offset).unwrap()
+    pub(crate) fn to_instant(&self) -> Instant {
+        self.to_plain()
+            .assume_utc()
+            .shift_by_offset(-self.offset)
+            .unwrap()
     }
 
-    pub(crate) fn local(&self) -> DateTime {
-        DateTime {
+    pub(crate) fn to_plain(&self) -> PlainDateTime {
+        PlainDateTime {
             date: self.date,
             time: self.time,
         }
     }
 
-    pub(crate) fn fixed_offset(&self) -> OffsetDateTime {
+    pub(crate) fn to_fixed_offset(&self) -> OffsetDateTime {
         OffsetDateTime {
             date: self.date,
             time: self.time,
@@ -57,7 +60,7 @@ impl ZonedDateTime {
     }
 
     pub(crate) fn with_date(&self, date: Date) -> Option<OffsetDateTime> {
-        self.fixed_offset().with_date_in_tz(date, &self.tz)
+        self.to_fixed_offset().with_date_in_tz(date, &self.tz)
     }
 
     pub(crate) fn round_day(&self, mode: round::Mode) -> Option<OffsetDateTime> {
@@ -69,7 +72,7 @@ impl ZonedDateTime {
         match mode {
             round::Mode::Ceil | round::Mode::Expand => {
                 if time == Time::MIN {
-                    Some(self.fixed_offset())
+                    Some(self.to_fixed_offset())
                 } else {
                     get_ceil()
                 }
@@ -79,7 +82,7 @@ impl ZonedDateTime {
                 let time_ns = time.total_nanos();
                 let floor = get_floor()?;
                 let ceil = get_ceil()?;
-                let day_ns = ceil.instant().diff(floor.instant()).total_nanos() as u64;
+                let day_ns = ceil.to_instant().diff(floor.to_instant()).total_nanos() as u64;
                 debug_assert!(day_ns > 1);
                 let threshold = match mode {
                     round::Mode::HalfEven => day_ns / 2 + (time_ns % 2 == 0) as u64,
@@ -93,7 +96,7 @@ impl ZonedDateTime {
     }
 }
 
-impl DateTime {
+impl PlainDateTime {
     pub(crate) fn localize_default(self, tz: &TimeZone) -> Option<OffsetDateTime> {
         match tz.ambiguity_for_local(self.assume_utc().epoch) {
             Ambiguity::Unambiguous(offset) | Ambiguity::Fold(_, offset, _) => {
@@ -139,7 +142,7 @@ impl OffsetDateTime {
                     earlier_offset
                 },
             ),
-            Ambiguity::Gap(_, later_offset, earlier_offset) => DateTime {
+            Ambiguity::Gap(_, later_offset, earlier_offset) => PlainDateTime {
                 date,
                 time: self.time,
             }
@@ -150,11 +153,11 @@ impl OffsetDateTime {
 }
 
 impl Instant {
-    pub(crate) fn to_tz(self, tz: &TimeZone) -> Option<OffsetDateTime> {
+    pub(crate) fn to_offset_in(self, tz: &TimeZone) -> Option<OffsetDateTime> {
         let offset = tz.offset_for_instant(self.epoch);
         Some(
             self.epoch
-                .offset(offset)?
+                .shift_by_offset(offset)?
                 .datetime(self.subsec)
                 .with_offset_unchecked(offset),
         )
@@ -214,11 +217,11 @@ pub(crate) fn zoned_target(
     negative: bool,
 ) -> Option<Date> {
     if !negative {
-        while b.with_date(target_date)?.instant() > a_inst {
+        while b.with_date(target_date)?.to_instant() > a_inst {
             target_date = target_date.yesterday()?;
         }
     } else {
-        while b.with_date(target_date)?.instant() < a_inst {
+        while b.with_date(target_date)?.to_instant() < a_inst {
             target_date = target_date.tomorrow()?;
         }
     }
@@ -248,8 +251,8 @@ pub(crate) fn zoned_since_in_units(
         math::date_diff(target_date, b.date, increment, cal_units, negative)?
     };
 
-    let trunc = b.with_date(trunc_date.into())?.instant();
-    let expand = b.with_date(expand_date.into())?.instant();
+    let trunc = b.with_date(trunc_date.into())?.to_instant();
+    let expand = b.with_date(expand_date.into())?.to_instant();
     let mut result = if exact_units.is_empty() {
         ddelta.round_by_time(
             cal_units.smallest(),

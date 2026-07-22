@@ -600,7 +600,7 @@ pub(crate) struct State {
     pub(crate) date_delta_type: Owned<PyClass<date_delta::DateDelta>>,
     pub(crate) time_delta_type: Owned<PyClass<time_delta::TimeDelta>>,
     pub(crate) datetime_delta_type: Owned<PyClass<datetime_delta::DateTimeDelta>>,
-    pub(crate) plain_datetime_type: Owned<PyClass<plain_datetime::DateTime>>,
+    pub(crate) plain_datetime_type: Owned<PyClass<plain_datetime::PlainDateTime>>,
     pub(crate) instant_type: Owned<PyClass<instant::Instant>>,
     pub(crate) offset_datetime_type: Owned<PyClass<offset_datetime::OffsetDateTime>>,
     pub(crate) zoned_datetime_type: Owned<PyClass<zoned_datetime::ZonedDateTime>>,

@@ -187,7 +187,7 @@ impl TzStr {
     /// Whether DST is active at the given UTC epoch.
     fn is_dst_at(&self, epoch: EpochSecs) -> bool {
         let Some(((start, _), (end, _))) =
-            self.utc_transitions_for_year(epoch.saturating_offset(self.std).date().year)
+            self.utc_transitions_for_year(epoch.saturating_shift_by_offset(self.std).date().year)
         else {
             return false;
         };
@@ -200,7 +200,7 @@ impl TzStr {
 
     /// The next UTC offset transition after `epoch`, or None if no DST rule.
     pub(crate) fn next_transition(&self, epoch: EpochSecs) -> Option<(EpochSecs, Offset)> {
-        let year = epoch.saturating_offset(self.std).date().year;
+        let year = epoch.saturating_shift_by_offset(self.std).date().year;
         let ((se, so), (ee, eo)) = self.utc_transitions_for_year(year)?;
         let result = match (se > epoch, ee > epoch) {
             (true, true) if se <= ee => Some((se, so)),
@@ -218,7 +218,7 @@ impl TzStr {
 
     /// The previous UTC offset transition before `epoch`, or None if no DST rule.
     pub(crate) fn prev_transition(&self, epoch: EpochSecs) -> Option<(EpochSecs, Offset)> {
-        let year = epoch.saturating_offset(self.std).date().year;
+        let year = epoch.saturating_shift_by_offset(self.std).date().year;
         let ((se, so), (ee, eo)) = self.utc_transitions_for_year(year)?;
         let result = match (se < epoch, ee < epoch) {
             (true, true) if se >= ee => Some((se, so)),
@@ -978,7 +978,7 @@ mod tests {
         };
 
         fn to_epoch_s(d: Date, t: Time, offset: Offset) -> EpochSecs {
-            d.unix_days().epoch_at(t).offset(-offset).unwrap()
+            d.unix_days().epoch_at(t).shift_by_offset(-offset).unwrap()
         }
 
         fn test(tz: TzStr, ymd: (u16, u8, u8), hms: (u8, u8, u8), expected: Ambiguity) {

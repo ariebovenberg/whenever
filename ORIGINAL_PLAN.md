@@ -355,7 +355,7 @@ Verification after each moved type:
 - Run that class’s Python test file.
 - Run Rust unit tests for the moved domain code.
 
-### 4. Normalize pure-layer names and arithmetic — planned
+### 4. Normalize pure-layer names and arithmetic — complete
 
 Once definitions live in the pure layer, rename:
 
@@ -366,8 +366,8 @@ Once definitions live in the pure layer, rename:
 - DateTimeDelta::checked_mul() → mul()
 - stdlib adapters to to_stdlib_date/time/datetime() and from_stdlib_*()
 
-The staged core extraction currently uses the shorter `to_stdlib()` and `from_stdlib()` spellings.
-Review that divergence against the type-specific names above before completing this phase.
+The Python callbacks retain the public `to_stdlib` spelling, while their internal adapters now use
+the type-specific names above.
 
 Keep checked operations unmarked and reserve _unchecked for bypassed validation.
 
@@ -381,6 +381,9 @@ Verification:
 - Compile-driven call-site migration.
 - Full focused tests for Date, Time, PlainDateTime, Instant, OffsetDateTime, and
   ZonedDateTime.
+
+Completed with all 79 Rust tests, build and lint, and 2,130 focused Python tests passing (one
+skipped).
 
 ### 5. Introduce the local-time model — planned
 

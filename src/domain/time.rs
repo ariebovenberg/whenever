@@ -1,4 +1,4 @@
-use super::{date::Date, plain_datetime::DateTime, scalar::*};
+use super::{date::Date, plain_datetime::PlainDateTime, scalar::*};
 use crate::common::{
     fmt::{self, Sink, format_2_digits},
     parse::Scan,
@@ -55,8 +55,8 @@ impl Time {
         self.subsec.get() as u64 + self.total_seconds() as u64 * NS_PER_SEC as u64
     }
 
-    pub(crate) const fn on(self, date: Date) -> DateTime {
-        DateTime { date, time: self }
+    pub(crate) const fn on(self, date: Date) -> PlainDateTime {
+        PlainDateTime { date, time: self }
     }
 
     pub(crate) fn from_total_nanos_unchecked(nanos: u64) -> Self {
