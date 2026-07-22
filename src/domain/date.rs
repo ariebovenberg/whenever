@@ -1,6 +1,6 @@
 use super::{
     plain_datetime::PlainDateTime,
-    scalar::{DeltaDays, DeltaMonths, EpochSecs, Month, S_PER_DAY, UnixDays, Weekday, Year},
+    scalar::{DeltaDays, DeltaMonths, EpochSecs, Month, UnixDays, Weekday, Year},
     time::Time,
 };
 use crate::common::{
@@ -99,10 +99,6 @@ impl Date {
 
     pub(crate) fn epoch_at(self, time: Time) -> EpochSecs {
         self.unix_days().epoch_at(time)
-    }
-
-    pub(crate) fn epoch(self) -> EpochSecs {
-        EpochSecs::new_unchecked(self.unix_days().get() as i64 * S_PER_DAY as i64)
     }
 
     pub(crate) fn shift(self, months: DeltaMonths, days: DeltaDays) -> Option<Date> {

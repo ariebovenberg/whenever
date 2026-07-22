@@ -1,5 +1,5 @@
 //! Module with reusable components used elsewhere in the crate
-pub mod ambiguity;
+pub mod disambiguation;
 pub mod fmt;
 pub mod math;
 pub mod parse;

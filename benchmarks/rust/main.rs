@@ -5,7 +5,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 
 use _whenever::classes::date::Date;
 use _whenever::classes::plain_datetime::PlainDateTime;
-use _whenever::common::scalar::{EpochSecs, UnixDays};
+use _whenever::common::scalar::UnixDays;
 use _whenever::common::scalar::{Month, Year};
 use _whenever::tz::posix::TzStr;
 use _whenever::tz::tzif::TimeZone;
@@ -37,8 +37,10 @@ pub fn offset_for_local_time(c: &mut Criterion) {
     let tzif = TimeZone::parse_tzif(TZ_AMS, None).unwrap();
 
     c.bench_function("offset for local", |b| {
-        let t = EpochSecs::new(1719946800).unwrap();
-        b.iter(|| tzif.ambiguity_for_local(black_box(t)))
+        let t = PlainDateTime::parse(b"2024-07-02 23:00:00")
+            .unwrap()
+            .local_seconds();
+        b.iter(|| tzif.mapping_for_local(black_box(t)))
     });
 }
 
