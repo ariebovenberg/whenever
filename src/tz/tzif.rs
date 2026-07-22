@@ -346,7 +346,7 @@ fn local_transitions(
     for &(epoch, offset) in transitions[1..].iter() {
         // NOTE: we don't check for "impossible" gaps or folds
         result.push((
-            epoch.saturating_offset(offset_prev.max(offset)),
+            epoch.saturating_shift_by_offset(offset_prev.max(offset)),
             (offset_prev, offset.sub(offset_prev)),
         ));
         offset_prev = offset;

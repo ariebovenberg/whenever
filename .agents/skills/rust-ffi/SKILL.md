@@ -116,11 +116,11 @@ Use `match_interned_str` when the default error format is acceptable.
 
 ## Type-specific gotchas
 
-- **ZonedDateTime** doesn't implement `Ord` in Rust. Compare via `.instant()` for ordering.
+- **ZonedDateTime** doesn't implement `Ord` in Rust. Compare via `.to_instant()` for ordering.
   Non-Copy (contains `Arc<TimeZone>`). Uses `Arc::ptr_eq` + content equality for timezone comparison.
   DST-aware operations need `ambiguity_for_local()` resolution.
 - **OffsetDateTime** compares by instant (`Instant` has `Ord`). Offset is an `Offset` scalar.
-- **PlainDateTime** (`DateTime` in Rust) compares by local date+time. Has `Ord`.
+- **PlainDateTime** compares by local date+time. Has `Ord`.
 - **TimeDelta** stores `secs: DeltaSeconds` + `subsec: SubSecNanos`. Use `.total_nanos() -> i128`.
   Has `.in_single_unit()` and `.in_exact_units()` for unit decomposition.
 - **ItemizedDelta/ItemizedDateDelta** use `DeltaField<T>` with `i32::MAX` as the UNSET sentinel.

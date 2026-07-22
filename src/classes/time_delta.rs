@@ -490,7 +490,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                                 1,
                             )?;
                             Ok(Some(
-                                odt.local()
+                                odt.to_plain()
                                     .shift(*slf)
                                     .and_then(|dt| dt.with_offset(odt.offset))
                                     .ok_or_range_err()?
@@ -841,8 +841,8 @@ fn in_units(
     if let Some(arg) = relative_to_arg {
         // ZonedDateTime: full DST-aware path.
         if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
-            let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
-            let shifted = shifted_inst.to_tz(&zdt.tz).ok_or_range_err()?;
+            let shifted_inst = zdt.to_instant().shift(slf).ok_or_range_err()?;
+            let shifted = shifted_inst.to_offset_in(&zdt.tz).ok_or_range_err()?;
             let result = zoned_since_in_units(
                 shifted,
                 shifted_inst,
@@ -863,7 +863,7 @@ fn in_units(
 
         // Compute the shifted datetime by treating b_dt as UTC anchor.
         let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
-        let a_dt = a_inst.to_offset(Offset::ZERO).ok_or_range_err()?.local();
+        let a_dt = a_inst.to_offset(Offset::ZERO).ok_or_range_err()?.to_plain();
         plain_since_inner(
             state,
             a_dt,
@@ -937,8 +937,8 @@ fn total(
 
     // ZonedDateTime: full DST-aware path via zoned_target.
     if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
-        let shifted_inst = zdt.instant().shift(slf).ok_or_range_err()?;
-        let shifted = shifted_inst.to_tz(&zdt.tz).ok_or_range_err()?;
+        let shifted_inst = zdt.to_instant().shift(slf).ok_or_range_err()?;
+        let shifted = shifted_inst.to_offset_in(&zdt.tz).ok_or_range_err()?;
         return total_cal(slf.is_negative(), cal_unit, zdt, shifted, shifted_inst);
     }
 
@@ -950,7 +950,7 @@ fn total(
 
     let neg = slf.is_negative();
     let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
-    let a_dt = a_inst.to_offset(Offset::ZERO).ok_or_range_err()?.local();
+    let a_dt = a_inst.to_offset(Offset::ZERO).ok_or_range_err()?.to_plain();
     let target_date = match (neg, b_dt.with_date(a_dt.date).cmp(&a_dt)) {
         (false, std::cmp::Ordering::Greater) => a_dt.date.yesterday(),
         (true, std::cmp::Ordering::Less) => a_dt.date.tomorrow(),
@@ -985,8 +985,8 @@ pub(crate) fn total_cal(
         .with_date(expand_date.into())
         .ok_or_range_err()?;
 
-    let r = shifted_inst.diff(trunc_odt.instant()).abs();
-    let e = expand_odt.instant().diff(trunc_odt.instant());
+    let r = shifted_inst.diff(trunc_odt.to_instant()).abs();
+    let e = expand_odt.to_instant().diff(trunc_odt.to_instant());
 
     (trunc_amount as f64 + r.to_nanos_f64() / e.to_nanos_f64()).to_py()
 }

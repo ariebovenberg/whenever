@@ -8,12 +8,12 @@ use super::{
 use crate::common::parse::Scan;
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub struct DateTime {
+pub struct PlainDateTime {
     pub(crate) date: Date,
     pub(crate) time: Time,
 }
 
-impl DateTime {
+impl PlainDateTime {
     pub(crate) const MIN: Self = Self {
         date: Date {
             year: Year::MIN,
@@ -60,7 +60,7 @@ impl DateTime {
     }
 
     pub(crate) fn shift(self, delta: TimeDelta) -> Option<Self> {
-        self.assume_utc().shift(delta).map(Instant::utc_datetime)
+        self.assume_utc().shift(delta).map(Instant::to_utc_plain)
     }
 
     pub(crate) fn shift_by_offset(self, offset: OffsetDelta) -> Option<Self> {
@@ -79,25 +79,25 @@ impl DateTime {
         })
     }
 
-    pub(crate) fn start_of_unit(self, unit: BoundaryUnit) -> Option<DateTime> {
+    pub(crate) fn start_of_unit(self, unit: BoundaryUnit) -> Option<PlainDateTime> {
         let (date, time) = match unit {
             BoundaryUnit::Date(unit) => (self.date.start_of(unit)?, Time::MIN),
             BoundaryUnit::Time(unit) => (self.date, self.time.start_of(unit)),
             BoundaryUnit::Day => (self.date, Time::MIN),
         };
-        Some(DateTime { date, time })
+        Some(PlainDateTime { date, time })
     }
 
-    pub(crate) fn end_of_unit(self, unit: BoundaryUnit) -> Option<DateTime> {
+    pub(crate) fn end_of_unit(self, unit: BoundaryUnit) -> Option<PlainDateTime> {
         let (date, time) = match unit {
             BoundaryUnit::Date(unit) => (self.date.end_of(unit)?, Time::MAX),
             BoundaryUnit::Time(unit) => (self.date, self.time.end_of(unit)),
             BoundaryUnit::Day => (self.date, Time::MAX),
         };
-        Some(DateTime { date, time })
+        Some(PlainDateTime { date, time })
     }
 
-    pub(crate) fn next_start_of_unit(self, unit: BoundaryUnit) -> Option<DateTime> {
+    pub(crate) fn next_start_of_unit(self, unit: BoundaryUnit) -> Option<PlainDateTime> {
         let (date, time) = match unit {
             BoundaryUnit::Date(unit) => (self.date.next_start_of(unit)?, Time::MIN),
             BoundaryUnit::Time(unit) => {
@@ -113,7 +113,7 @@ impl DateTime {
             }
             BoundaryUnit::Day => (self.date.tomorrow()?, Time::MIN),
         };
-        Some(DateTime { date, time })
+        Some(PlainDateTime { date, time })
     }
 
     pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
@@ -128,7 +128,7 @@ impl DateTime {
             return None;
         }?;
         let time = Time::read_iso(s.skip(1))?;
-        Some(DateTime { date, time })
+        Some(PlainDateTime { date, time })
     }
 
     pub fn parse(s: &[u8]) -> Option<Self> {
@@ -143,7 +143,7 @@ pub(crate) enum BoundaryUnit {
     Day,
 }
 
-impl std::fmt::Display for DateTime {
+impl std::fmt::Display for PlainDateTime {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}T{}", self.date, self.time)
     }

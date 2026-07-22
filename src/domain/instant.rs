@@ -1,5 +1,5 @@
 use super::{
-    plain_datetime::DateTime,
+    plain_datetime::PlainDateTime,
     scalar::{EpochSecs, Offset, SubSecNanos},
     time_delta::TimeDelta,
 };
@@ -11,7 +11,7 @@ pub(crate) struct Instant {
 }
 
 impl Instant {
-    pub(crate) fn utc_datetime(self) -> DateTime {
+    pub(crate) fn to_utc_plain(self) -> PlainDateTime {
         self.epoch.datetime(self.subsec)
     }
 
@@ -68,9 +68,9 @@ impl Instant {
         })
     }
 
-    pub(crate) fn offset(self, offset: Offset) -> Option<Self> {
+    pub(crate) fn shift_by_offset(self, offset: Offset) -> Option<Self> {
         Some(Self {
-            epoch: self.epoch.offset(offset)?,
+            epoch: self.epoch.shift_by_offset(offset)?,
             subsec: self.subsec,
         })
     }
