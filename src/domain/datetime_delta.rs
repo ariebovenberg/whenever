@@ -29,7 +29,7 @@ impl DateTimeDelta {
         }
     }
 
-    pub(crate) fn checked_mul(self, factor: i32) -> Option<Self> {
+    pub(crate) fn mul(self, factor: i32) -> Option<Self> {
         let Self { ddelta, tdelta } = self;
         ddelta
             .mul(factor)

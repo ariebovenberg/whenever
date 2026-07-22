@@ -1,6 +1,6 @@
 //! Checked arithmetic for scalar date and time concepts
 use super::round;
-use super::{date::Date, plain_datetime::DateTime, time::Time};
+use super::{date::Date, plain_datetime::PlainDateTime, time::Time};
 use crate::common::fmt::{self, Sink, format_2_digits};
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
@@ -226,11 +226,11 @@ impl EpochSecs {
         self.0
     }
 
-    pub(crate) const fn offset(self, x: Offset) -> Option<Self> {
+    pub(crate) const fn shift_by_offset(self, x: Offset) -> Option<Self> {
         Self::new(self.0 + x.0 as i64)
     }
 
-    pub(crate) fn saturating_offset(self, x: Offset) -> Self {
+    pub(crate) fn saturating_shift_by_offset(self, x: Offset) -> Self {
         Self::clamp(self.0 + x.get() as i64)
     }
 
@@ -248,8 +248,8 @@ impl EpochSecs {
         UnixDays::new_unchecked((self.0.div_euclid(i64::from(S_PER_DAY))) as _)
     }
 
-    pub(crate) fn datetime(self, nanos: SubSecNanos) -> DateTime {
-        DateTime {
+    pub(crate) fn datetime(self, nanos: SubSecNanos) -> PlainDateTime {
+        PlainDateTime {
             date: self.date(),
             time: self.time(nanos),
         }

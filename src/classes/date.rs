@@ -12,7 +12,7 @@ use crate::{
     classes::{
         date_delta::{DateDelta, handle_init_kwargs as handle_datedelta_kwargs},
         itemized_date_delta::ItemizedDateDelta,
-        plain_datetime::DateTime,
+        plain_datetime::PlainDateTime,
     },
     common::{
         math::{self, CalUnit, CalUnitSet, DateRoundIncrement, DateSinceUnits},
@@ -37,7 +37,7 @@ impl Date {
         })
     }
 
-    pub(crate) fn to_stdlib(
+    pub(crate) fn to_stdlib_date(
         self,
         &PyDateTime_CAPI {
             DateType,
@@ -57,7 +57,7 @@ impl Date {
         .own()
     }
 
-    pub(crate) fn from_stdlib(d: PyDate) -> Self {
+    pub(crate) fn from_stdlib_date(d: PyDate) -> Self {
         Date {
             // SAFETY: dates coming from Python are always valid
             year: Year::new_unchecked(d.year() as _),
@@ -106,7 +106,7 @@ fn __new__(cls: PyClass<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
         }
         // Accept stdlib datetime.date (or datetime.datetime, which is a subclass)
         if let Some(d) = arg.cast_allow_subclass::<PyDate>() {
-            return Date::from_stdlib(d).to_obj(cls);
+            return Date::from_stdlib_date(d).to_obj(cls);
         }
         return raise_type_err("Date() requires an ISO 8601 string or datetime.date");
     }
@@ -183,7 +183,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 fn to_stdlib(cls: PyClass<Date>, slf: Date) -> PyReturn {
-    slf.to_stdlib(cls.state().py_api()?)
+    slf.to_stdlib_date(cls.state().py_api()?)
 }
 
 fn py_date(cls: PyClass<Date>, slf: Date) -> PyReturn {
@@ -201,7 +201,7 @@ fn from_py_date(cls: PyClass<Date>, arg: PyObj) -> PyReturn {
         c"from_py_date() is deprecated. Use Date() constructor instead.",
         1,
     )?;
-    Date::from_stdlib(
+    Date::from_stdlib_date(
         arg.cast_allow_subclass::<PyDate>()
             .ok_or_type_err("argument must be a datetime.date")?,
     )
@@ -702,13 +702,18 @@ fn at(cls: PyClass<Date>, date: Date, time_obj: PyObj) -> PyReturn {
     let time = time_obj
         .extract(*state.time_type)
         .ok_or_type_err("argument must be a whenever.Time")?;
-    DateTime { date, time }.to_obj(*state.plain_datetime_type)
+    PlainDateTime { date, time }.to_obj(*state.plain_datetime_type)
 }
 
 fn today_in_system_tz(cls: PyClass<Date>) -> PyReturn {
     let state = cls.state();
     let tz = state.tz_store.get_system_tz()?;
-    state.now()?.to_tz(&tz).ok_or_range_err()?.date.to_obj(cls)
+    state
+        .now()?
+        .to_offset_in(&tz)
+        .ok_or_range_err()?
+        .date
+        .to_obj(cls)
 }
 
 fn format(_: PyClass<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {

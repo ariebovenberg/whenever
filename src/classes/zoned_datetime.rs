@@ -5,7 +5,7 @@ use crate::{
         itemized_date_delta::ItemizedDateDelta,
         itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs},
         offset_datetime::OffsetDateTime,
-        plain_datetime::{BoundaryUnit, DateTime, set_components_from_kwargs},
+        plain_datetime::{BoundaryUnit, PlainDateTime, set_components_from_kwargs},
         time::Time,
         time_delta::TimeDelta,
     },
@@ -51,18 +51,82 @@ impl ZonedDateTime {
                 .at(self.time)
                 .localize_custom(&self.tz, dis, self.offset, state)?
         } else {
-            self.fixed_offset()
+            self.to_fixed_offset()
         };
 
         shifted_by_date
-            .instant()
+            .to_instant()
             .shift(delta)
             .ok_or_range_err()?
             .to_tz_py(self.tz.clone(), cls)
     }
+
+    fn to_stdlib_datetime(&self, state: &State) -> PyReturn {
+        // Get UTC date and time, then use ZoneInfo.fromutc() to preserve the instant if
+        // ZoneInfo disagrees with our offset.
+        let PlainDateTime {
+            date: Date { year, month, day },
+            time:
+                Time {
+                    hour,
+                    minute,
+                    second,
+                    subsec,
+                },
+        } = self
+            .to_plain()
+            .shift_by_offset(-self.offset.as_offset_delta())
+            // SAFETY: the UTC date and time are valid.
+            .unwrap();
+        let &PyDateTime_CAPI {
+            DateTime_FromDateAndTime,
+            DateTimeType,
+            TimeZone_FromTimeZone,
+            Delta_FromDelta,
+            DeltaType,
+            ..
+        } = state.py_api()?;
+        let tzinfo = match self.tz.key.as_ref() {
+            Some(key) => state.zoneinfo_type.get()?.call1(*key.as_str().to_py()?),
+            None => {
+                let offset = self.offset;
+                // SAFETY: calling C API with valid arguments
+                let delta = unsafe {
+                    Delta_FromDelta(
+                        // Important that we normalize so seconds >= 0
+                        offset.get().div_euclid(S_PER_DAY),
+                        offset.get().rem_euclid(S_PER_DAY),
+                        0,
+                        0,
+                        DeltaType,
+                    )
+                }
+                .own()?;
+                unsafe { TimeZone_FromTimeZone(delta.as_ptr(), NULL()) }.own()
+            }
+        }?;
+
+        tzinfo.getattr(c"fromutc")?.call1(
+            // SAFETY: calling C API with valid arguments
+            *unsafe {
+                DateTime_FromDateAndTime(
+                    year.get().into(),
+                    month.get().into(),
+                    day.into(),
+                    hour.into(),
+                    minute.into(),
+                    second.into(),
+                    (subsec.get() / 1_000) as _,
+                    tzinfo.as_ptr(),
+                    DateTimeType,
+                )
+            }
+            .own()?,
+        )
+    }
 }
 
-impl DateTime {
+impl PlainDateTime {
     pub(crate) fn localize_using_disambiguate(
         self,
         tz: &TimeZone,
@@ -132,7 +196,7 @@ impl PyPayload for ZonedDateTime {}
 impl Instant {
     /// Convert an instant to a zoned datetime, ready to be returned to Python.
     pub(crate) fn to_tz_py(self, tz: Arc<TimeZone>, cls: PyClass<ZonedDateTime>) -> PyReturn {
-        self.to_tz(&tz)
+        self.to_offset_in(&tz)
             .ok_or_range_err()?
             // SAFETY: We've already checked for both out-of-range date and time.
             .assume_tz_unchecked(tz, cls)
@@ -205,7 +269,7 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
         .map_or(Ok(Disambiguate::Compatible), |o| {
             Disambiguate::from_py(o, state)
         })?;
-    DateTime { date, time }
+    PlainDateTime { date, time }
         .localize_using_disambiguate(&tz, dis, state)?
         .assume_tz_unchecked(tz, cls)
 }
@@ -264,16 +328,16 @@ fn __richcmp__(
     b_obj: PyObj,
     op: c_int,
 ) -> PyReturn {
-    let inst_a = a.instant();
+    let inst_a = a.to_instant();
     let inst_b = if let Some(zdt) = b_obj.extract_ref(cls) {
-        zdt.instant()
+        zdt.to_instant()
     } else {
         let state = cls.state();
 
         if let Some(inst) = b_obj.extract(*state.instant_type) {
             inst
         } else if let Some(odt) = b_obj.extract(*state.offset_datetime_type) {
-            odt.instant()
+            odt.to_instant()
         } else {
             return not_implemented();
         }
@@ -293,7 +357,7 @@ fn __richcmp__(
 extern "C" fn __hash__(arg: PyObj) -> Py_hash_t {
     // SAFETY: the first arg to this function is the self type
     let (_, slf) = unsafe { arg.assume_heaptype_ref::<ZonedDateTime>() };
-    hashmask(slf.instant().pyhash())
+    hashmask(slf.to_instant().pyhash())
 }
 
 fn __add__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
@@ -310,8 +374,8 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
         let (cls, slf, other) = match operands {
             BinaryCall::SameType { cls, slf, other } => {
                 return Ok(Some(
-                    slf.instant()
-                        .diff(other.instant())
+                    slf.to_instant()
+                        .diff(other.to_instant())
                         .to_obj(*cls.state().time_delta_type)?,
                 ));
             }
@@ -322,11 +386,13 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
         let other = match_type!(
             other,
             *state.instant_type => |inst| { inst },
-            *state.offset_datetime_type => |odt| { odt.instant() },
+            *state.offset_datetime_type => |odt| { odt.to_instant() },
             _ => { return shift_operator(state, slf.class(), &slf, other, true) },
         );
         Ok(Some(
-            slf.instant().diff(other).to_obj(*state.time_delta_type)?,
+            slf.to_instant()
+                .diff(other)
+                .to_obj(*state.time_delta_type)?,
         ))
     })
 }
@@ -404,7 +470,7 @@ fn exact_eq(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> P
 }
 
 fn to_tz(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, tz_obj: PyObj) -> PyReturn {
-    slf.instant()
+    slf.to_instant()
         .to_tz_py(cls.state().tz_store.obj_get(tz_obj)?, cls)
 }
 
@@ -438,70 +504,8 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
 }
 
 fn to_stdlib(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    // Chosen approach: get the UTC date and time, then use ZoneInfo.fromutc().
-    // This ensures we preserve the instant in time in the rare case
-    // that ZoneInfo disagrees with our offset.
-    // FUTURE: document the rare case that offsets could disagree
-    let DateTime {
-        date: Date { year, month, day },
-        time:
-            Time {
-                hour,
-                minute,
-                second,
-                subsec,
-            },
-    } = slf
-        .local()
-        .shift_by_offset(-slf.offset.as_offset_delta())
-        // Safety: we know the UTC date and time are valid
-        .unwrap();
     let state = cls.state();
-    let &PyDateTime_CAPI {
-        DateTime_FromDateAndTime,
-        DateTimeType,
-        TimeZone_FromTimeZone,
-        Delta_FromDelta,
-        DeltaType,
-        ..
-    } = state.py_api()?;
-    let tzinfo = match slf.tz.key.as_ref() {
-        Some(key) => state.zoneinfo_type.get()?.call1(*key.as_str().to_py()?),
-        None => {
-            let offset = slf.offset;
-            // SAFETY: calling C API with valid arguments
-            let delta = unsafe {
-                Delta_FromDelta(
-                    // Important that we normalize so seconds >= 0
-                    offset.get().div_euclid(S_PER_DAY),
-                    offset.get().rem_euclid(S_PER_DAY),
-                    0,
-                    0,
-                    DeltaType,
-                )
-            }
-            .own()?;
-            unsafe { TimeZone_FromTimeZone(delta.as_ptr(), NULL()) }.own()
-        }
-    }?;
-
-    tzinfo.getattr(c"fromutc")?.call1(
-        // SAFETY: calling C API with valid arguments
-        *unsafe {
-            DateTime_FromDateAndTime(
-                year.get().into(),
-                month.get().into(),
-                day.into(),
-                hour.into(),
-                minute.into(),
-                second.into(),
-                (subsec.get() / 1_000) as _,
-                tzinfo.as_ptr(),
-                DateTimeType,
-            )
-        }
-        .own()?,
-    )
+    slf.to_stdlib_datetime(state)
 }
 
 fn py_datetime(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -514,7 +518,7 @@ fn py_datetime(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 }
 
 fn to_instant(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    slf.instant().to_obj(*cls.state().instant_type)
+    slf.to_instant().to_obj(*cls.state().instant_type)
 }
 
 fn to_fixed_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, args: &[PyObj]) -> PyReturn {
@@ -522,7 +526,7 @@ fn to_fixed_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, args: &[PyO
     match *args {
         [] => OffsetDateTime::new_unchecked(slf.date, slf.time, slf.offset),
         [arg] => slf
-            .instant()
+            .to_instant()
             .to_offset(Offset::from_obj(arg, *state.time_delta_type)?)
             .ok_or_range_err()?,
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument")?,
@@ -531,7 +535,7 @@ fn to_fixed_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, args: &[PyO
 }
 
 fn to_system_tz(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    slf.instant()
+    slf.to_instant()
         .to_tz_py(cls.state().tz_store.get_system_tz()?, cls)
 }
 
@@ -570,14 +574,14 @@ fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -
     // 2. Other units consume folds under certain conditions, but not always.
     match unit {
         BoundaryUnit::Date(_) | BoundaryUnit::Day => slf
-            .local()
+            .to_plain()
             .start_of_unit(unit)
             .ok_or_range_err()?
             .localize_default(&slf.tz)
             .ok_or_range_err()?
             .assume_tz_unchecked(slf.tz.clone(), cls),
         BoundaryUnit::Time(_) => {
-            let start_local = slf.local().start_of_unit(unit).ok_or_range_err()?;
+            let start_local = slf.to_plain().start_of_unit(unit).ok_or_range_err()?;
             match slf.tz.ambiguity_for_local(start_local.local_epoch()) {
                 Ambiguity::Unambiguous(f) => start_local.with_offset(f),
                 Ambiguity::Fold(_, earlier_offset, later_offset) => {
@@ -609,17 +613,17 @@ fn end_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> 
     match unit {
         BoundaryUnit::Date(_) | BoundaryUnit::Day => slf
             // Calculate the start of the next unit, then step back one ns.
-            .local()
+            .to_plain()
             .next_start_of_unit(unit)
             .ok_or_range_err()?
             .localize_default(&slf.tz)
             .ok_or_range_err()?
-            .instant()
+            .to_instant()
             .shift(-TimeDelta::RESOLUTION)
             .unwrap()
             .to_tz_py(slf.tz.clone(), cls),
         BoundaryUnit::Time(u) => {
-            let end_local = slf.local().end_of_unit(unit).ok_or_range_err()?;
+            let end_local = slf.to_plain().end_of_unit(unit).ok_or_range_err()?;
             let local_epoch = end_local.local_epoch();
             match slf.tz.ambiguity_for_local(local_epoch) {
                 Ambiguity::Unambiguous(f) => end_local.with_offset(f),
@@ -731,7 +735,7 @@ fn parse_iso(cls: PyClass<ZonedDateTime>, arg: PyObj) -> PyReturn {
         // called through the constructor
         .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
     let mut s = Scan::new(py_str.as_utf8()?);
-    let (dt, (offset, tzstr)) = DateTime::read_iso(&mut s)
+    let (dt, (offset, tzstr)) = PlainDateTime::read_iso(&mut s)
         .zip(read_offset_and_tzname(&mut s))
         .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
     let state = cls.state();
@@ -929,19 +933,19 @@ fn from_py_datetime_inner(cls: PyClass<ZonedDateTime>, dt: PyDateTime) -> PyRetu
 }
 
 fn to_plain(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    slf.local().to_obj(*cls.state().plain_datetime_type)
+    slf.to_plain().to_obj(*cls.state().plain_datetime_type)
 }
 
 fn timestamp(_: PyType, slf: &ZonedDateTime) -> PyReturn {
-    slf.instant().epoch.get().to_py()
+    slf.to_instant().epoch.get().to_py()
 }
 
 fn timestamp_millis(_: PyType, slf: &ZonedDateTime) -> PyReturn {
-    slf.instant().timestamp_millis().to_py()
+    slf.to_instant().timestamp_millis().to_py()
 }
 
 fn timestamp_nanos(_: PyType, slf: &ZonedDateTime) -> PyReturn {
-    slf.instant().timestamp_nanos().to_py()
+    slf.to_instant().timestamp_nanos().to_py()
 }
 
 fn __reduce__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -1076,9 +1080,9 @@ fn is_ambiguous(_: PyType, slf: &ZonedDateTime) -> PyReturn {
 }
 
 fn next_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    match slf.tz.next_transition(slf.instant().epoch) {
+    match slf.tz.next_transition(slf.to_instant().epoch) {
         Some((epoch, offset)) => epoch
-            .offset(offset)
+            .shift_by_offset(offset)
             .ok_or_range_err()?
             .datetime(SubSecNanos::MIN)
             .with_offset_unchecked(offset)
@@ -1088,9 +1092,9 @@ fn next_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn
 }
 
 fn prev_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    match slf.tz.prev_transition(slf.instant().epoch) {
+    match slf.tz.prev_transition(slf.to_instant().epoch) {
         Some((epoch, offset)) => epoch
-            .offset(offset)
+            .shift_by_offset(offset)
             .ok_or_range_err()?
             .datetime(SubSecNanos::MIN)
             .with_offset_unchecked(offset)
@@ -1101,13 +1105,13 @@ fn prev_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn
 
 fn dst_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let state = cls.state();
-    let meta = slf.tz.meta_for_instant(slf.instant().epoch);
+    let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
     TimeDelta::from_nanos_unchecked(meta.dst_saving as i128 * 1_000_000_000)
         .to_obj(*state.time_delta_type)
 }
 
 fn tz_abbrev(_: PyType, slf: &ZonedDateTime) -> PyReturn {
-    let meta = slf.tz.meta_for_instant(slf.instant().epoch);
+    let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
     // SAFETY: TzAbbrev always contains valid ASCII bytes
     unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) }.to_py()
 }
@@ -1216,14 +1220,14 @@ fn shift_method(
 
 fn difference(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> PyReturn {
     let state = cls.state();
-    let inst_a = slf.instant();
+    let inst_a = slf.to_instant();
 
     let inst_b = if let Some(zdt) = arg.extract_ref(cls) {
-        zdt.instant()
+        zdt.to_instant()
     } else if let Some(i) = arg.extract(*state.instant_type) {
         i
     } else if let Some(odt) = arg.extract(*state.offset_datetime_type) {
-        odt.instant()
+        odt.to_instant()
     } else {
         raise_type_err(
             "difference() argument must be an OffsetDateTime, Instant, or ZonedDateTime",
@@ -1238,7 +1242,7 @@ fn start_of_day(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
         c"start_of_day() is deprecated; use start_of(\"day\") instead.",
         1,
     )?;
-    slf.local()
+    slf.to_plain()
         .start_of_unit(BoundaryUnit::Day)
         .ok_or_range_err()?
         .localize_default(&slf.tz)
@@ -1252,14 +1256,14 @@ fn day_length(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
         .at(Time::MIN)
         .localize_default(tz)
         .ok_or_range_err()?
-        .instant();
+        .to_instant();
     let start_of_next_day = date
         .tomorrow()
         .ok_or_range_err()?
         .at(Time::MIN)
         .localize_default(tz)
         .ok_or_range_err()?
-        .instant();
+        .to_instant();
     start_of_next_day
         .diff(start_of_day)
         .to_obj(*cls.state().time_delta_type)
@@ -1288,7 +1292,7 @@ fn round(
             if next_day == 1 {
                 date = date.tomorrow().ok_or_range_err()?;
             };
-            DateTime {
+            PlainDateTime {
                 date,
                 time: time_rounded,
             }
@@ -1334,7 +1338,7 @@ fn zoned_since_float(
     match unit.to_exact(false) {
         Ok(u) => {
             // For nanoseconds (in_nanos == 1), return int to preserve full precision.
-            let nanos = a.instant().diff(b.instant()).total_nanos();
+            let nanos = a.to_instant().diff(b.to_instant()).total_nanos();
             let unit_nanos = u.in_nanos();
             if unit_nanos == 1 {
                 nanos.to_py()
@@ -1351,11 +1355,17 @@ fn zoned_since_float(
                 neg,
             )
             .ok_or_range_err()?;
-            let trunc = b.with_date(trunc_raw.into()).ok_or_range_err()?.instant();
-            let expand = b.with_date(expand_raw.into()).ok_or_range_err()?.instant();
+            let trunc = b
+                .with_date(trunc_raw.into())
+                .ok_or_range_err()?
+                .to_instant();
+            let expand = b
+                .with_date(expand_raw.into())
+                .ok_or_range_err()?
+                .to_instant();
             // result is signed; take absolute value and restore sign at the end.
             // num/denom ratio is always positive (same sign).
-            let num = a.instant().diff(trunc).total_nanos() as f64;
+            let num = a.to_instant().diff(trunc).total_nanos() as f64;
             let denom = expand.diff(trunc).total_nanos() as f64;
             let sign: f64 = if neg { -1.0 } else { 1.0 };
             ((result.abs() as f64 + num / denom) * sign).to_py()
@@ -1386,18 +1396,18 @@ fn zoned_since(
         )?;
     }
     let (a, b) = if flip { (other, slf) } else { (slf, other) };
-    let a_inst = a.instant();
-    let neg = a_inst < b.instant();
+    let a_inst = a.to_instant();
+    let neg = a_inst < b.to_instant();
 
     let target_date = zoned_target(a.date, a_inst, b, neg).ok_or_range_err()?;
 
     match kwargs {
         SinceUntilKwargs::Total(unit) => {
-            zoned_since_float(a.fixed_offset(), b, target_date, unit, neg)
+            zoned_since_float(a.to_fixed_offset(), b, target_date, unit, neg)
         }
         SinceUntilKwargs::InUnits(units, round_mode, round_increment) => {
             let result = zoned_since_in_units(
-                a.fixed_offset(),
+                a.to_fixed_offset(),
                 a_inst,
                 b,
                 target_date,
@@ -1430,7 +1440,7 @@ fn format(_cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj)
             1,
         )?;
     }
-    let meta = slf.tz.meta_for_instant(slf.instant().epoch);
+    let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
     // SAFETY: TzAbbrev always contains valid ASCII bytes
     let abbrev_str = unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) };
     let tz_key = slf.tz.key.as_deref().unwrap_or("");

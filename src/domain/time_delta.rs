@@ -71,7 +71,7 @@ impl TimeDelta {
         self.secs.get() as i128 * NS_PER_SEC as i128 + self.subsec.get() as i128
     }
 
-    pub(crate) const fn is_zero(&self) -> bool {
+    pub(crate) const fn is_zero(self) -> bool {
         self.secs.get() == 0 && self.subsec.get() == 0
     }
 

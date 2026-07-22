@@ -1,7 +1,7 @@
 #[cfg(test)]
 use crate::common::{fmt::Sink, parse::Scan};
 use crate::{
-    classes::plain_datetime::DateTime,
+    classes::plain_datetime::PlainDateTime,
     common::{fmt, pattern, round, scalar::*},
     docstrings as doc,
     py::*,
@@ -15,6 +15,34 @@ pub(crate) use crate::domain::time::BoundUnit;
 pub use crate::domain::time::Time;
 
 impl Time {
+    pub(crate) fn to_stdlib_time(
+        self,
+        &PyDateTime_CAPI {
+            Time_FromTime,
+            TimeType,
+            ..
+        }: &PyDateTime_CAPI,
+    ) -> PyReturn {
+        let Time {
+            hour,
+            minute,
+            second,
+            subsec,
+        } = self;
+        // SAFETY: calling C API with valid arguments
+        unsafe {
+            Time_FromTime(
+                hour.into(),
+                minute.into(),
+                second.into(),
+                (subsec.get() / 1_000) as c_int,
+                Py_None(),
+                TimeType,
+            )
+        }
+        .own()
+    }
+
     pub(crate) const fn pyhash(self) -> Py_hash_t {
         #[cfg(target_pointer_width = "64")]
         {
@@ -52,7 +80,7 @@ impl Time {
         }
     }
 
-    pub(crate) fn from_stdlib(t: PyTime) -> Self {
+    pub(crate) fn from_stdlib_time(t: PyTime) -> Self {
         Time {
             hour: t.hour() as _,
             minute: t.minute() as _,
@@ -97,7 +125,7 @@ fn __new__(cls: PyClass<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
             return parse_iso(cls, obj);
         }
         if let Some(t) = obj.cast_allow_subclass::<PyTime>() {
-            return Time::from_stdlib(t).to_obj(cls);
+            return Time::from_stdlib_time(t).to_obj(cls);
         }
     }
     let mut hour: c_long = 0;
@@ -182,29 +210,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 fn to_stdlib(cls: PyClass<Time>, slf: Time) -> PyReturn {
-    let Time {
-        hour,
-        minute,
-        second,
-        subsec,
-    } = slf;
-    let &PyDateTime_CAPI {
-        Time_FromTime,
-        TimeType,
-        ..
-    } = cls.state().py_api()?;
-    // SAFETY: calling C API with valid arguments
-    unsafe {
-        Time_FromTime(
-            hour.into(),
-            minute.into(),
-            second.into(),
-            (subsec.get() / 1_000) as c_int,
-            Py_None(),
-            TimeType,
-        )
-    }
-    .own()
+    slf.to_stdlib_time(cls.state().py_api()?)
 }
 
 fn py_time(cls: PyClass<Time>, slf: Time) -> PyReturn {
@@ -222,7 +228,7 @@ fn from_py_time(cls: PyClass<Time>, arg: PyObj) -> PyReturn {
         c"from_py_time() is deprecated. Use Time() constructor instead.",
         1,
     )?;
-    Time::from_stdlib(
+    Time::from_stdlib_time(
         arg.cast_allow_subclass::<PyTime>()
             .ok_or_type_err("argument must be a datetime.time")?,
     )
@@ -289,7 +295,7 @@ fn on(cls: PyClass<Time>, slf: Time, arg: PyObj) -> PyReturn {
     let state = cls.state();
 
     if let Some(date) = arg.extract(*state.date_type) {
-        DateTime { date, time: slf }.to_obj(*state.plain_datetime_type)
+        PlainDateTime { date, time: slf }.to_obj(*state.plain_datetime_type)
     } else {
         raise_type_err("argument must be a date")
     }

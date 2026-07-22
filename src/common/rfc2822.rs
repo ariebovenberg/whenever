@@ -8,7 +8,7 @@ use crate::{
         date::{Date, extract_year},
         instant::Instant,
         offset_datetime::OffsetDateTime,
-        plain_datetime::DateTime,
+        plain_datetime::PlainDateTime,
         scalar::*,
         time::Time,
     },
@@ -49,7 +49,7 @@ pub(crate) fn format(odt: OffsetDateTime) -> [u8; 31] {
 
 /// Format into a standard RFC 2822 date string, using "GMT" as the timezone.
 pub(crate) fn format_gmt(i: Instant) -> [u8; 29] {
-    let DateTime {
+    let PlainDateTime {
         date,
         time:
             Time {
@@ -58,7 +58,7 @@ pub(crate) fn format_gmt(i: Instant) -> [u8; 29] {
                 second,
                 ..
             },
-    } = i.utc_datetime();
+    } = i.to_utc_plain();
     let Date { year, month, day } = date;
 
     let mut buf = TEMPLATE_GMT;
