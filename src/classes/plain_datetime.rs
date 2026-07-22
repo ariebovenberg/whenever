@@ -9,13 +9,14 @@ use crate::{
         time_delta::TimeDelta,
     },
     common::{
-        ambiguity::*,
+        disambiguation::*,
         fmt,
         math::{self, DateRoundIncrement, DeltaUnit, DeltaUnitSet, SinceUntilKwargs},
         pattern, round,
         scalar::*,
     },
     docstrings as doc,
+    domain::local::ResolvePolicy,
     py::*,
     pymodule::State,
 };
@@ -755,11 +756,11 @@ fn assume_tz(
         ))?
     };
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, "assume_tz", state)?
-        .unwrap_or(Disambiguate::Compatible);
+    let dis = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?
+        .unwrap_or(Disambiguation::Compatible);
     let tz = state.tz_store.obj_get(tz_obj)?;
-    slf.localize_using_disambiguate(&tz, dis, state)?
-        .assume_tz_unchecked(tz, *state.zoned_datetime_type)
+    slf.resolve_in_py(&tz, ResolvePolicy::Disambiguate(dis), state)?
+        .into_zoned_py_unchecked(tz, *state.zoned_datetime_type)
 }
 
 fn assume_system_tz(
@@ -773,11 +774,11 @@ fn assume_system_tz(
         raise_type_err("assume_system_tz() takes no positional arguments")?
     }
 
-    let dis = Disambiguate::from_only_kwarg(kwargs, "assume_tz", state)?
-        .unwrap_or(Disambiguate::Compatible);
+    let dis = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?
+        .unwrap_or(Disambiguation::Compatible);
     let tz = state.tz_store.get_system_tz()?;
-    slf.localize_using_disambiguate(&tz, dis, state)?
-        .assume_tz_unchecked(tz, *state.zoned_datetime_type)
+    slf.resolve_in_py(&tz, ResolvePolicy::Disambiguate(dis), state)?
+        .into_zoned_py_unchecked(tz, *state.zoned_datetime_type)
 }
 
 fn replace_date(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyObj) -> PyReturn {

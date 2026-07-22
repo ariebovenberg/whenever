@@ -1,26 +1,8 @@
-//! Functionality for handling ambiguous datetime values.
-use crate::{
-    common::scalar::{EpochSecs, Offset},
-    py::*,
-    pymodule::State,
-};
+//! Python argument parsing for local-time disambiguation.
+pub(crate) use crate::domain::local::Disambiguation;
+use crate::{py::*, pymodule::State};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Disambiguate {
-    Compatible,
-    Earlier,
-    Later,
-    Raise,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Ambiguity {
-    Unambiguous(Offset),
-    Gap(EpochSecs, Offset, Offset), // (end, later_offset, earlier_offset)
-    Fold(EpochSecs, Offset, Offset), // (end, earlier_offset, later_offset)
-}
-
-impl Disambiguate {
+impl Disambiguation {
     pub(crate) fn from_only_kwarg(
         kwargs: &mut IterKwargs,
         fname: &str,
@@ -51,13 +33,13 @@ impl Disambiguate {
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         match_interned_str("disambiguate", obj, |v, eq| {
             Some(if eq(v, *state.str_compatible) {
-                Disambiguate::Compatible
+                Disambiguation::Compatible
             } else if eq(v, *state.str_raise) {
-                Disambiguate::Raise
+                Disambiguation::Reject
             } else if eq(v, *state.str_earlier) {
-                Disambiguate::Earlier
+                Disambiguation::Earlier
             } else if eq(v, *state.str_later) {
-                Disambiguate::Later
+                Disambiguation::Later
             } else {
                 None?
             })

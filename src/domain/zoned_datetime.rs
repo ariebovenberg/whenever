@@ -1,9 +1,15 @@
 use super::{
-    date::Date, instant::Instant, itemized_date_delta::ItemizedDateDelta,
-    itemized_delta::ItemizedDelta, offset_datetime::OffsetDateTime, plain_datetime::PlainDateTime,
-    scalar::Offset, time::Time,
+    date::Date,
+    instant::Instant,
+    itemized_date_delta::ItemizedDateDelta,
+    itemized_delta::ItemizedDelta,
+    local::{Disambiguation, ResolveError, ResolvePolicy},
+    offset_datetime::OffsetDateTime,
+    plain_datetime::PlainDateTime,
+    scalar::Offset,
+    time::Time,
 };
-use crate::{common::ambiguity::Ambiguity, tz::tzif::TimeZone};
+use crate::tz::tzif::TimeZone;
 use crate::{
     common::{
         fmt::{self, Sink},
@@ -67,8 +73,8 @@ impl ZonedDateTime {
         let Self {
             date, time, ref tz, ..
         } = *self;
-        let get_floor = || date.at(Time::MIN).localize_default(tz);
-        let get_ceil = || date.tomorrow()?.at(Time::MIN).localize_default(tz);
+        let get_floor = || date.at(Time::MIN).resolve_compatible(tz);
+        let get_ceil = || date.tomorrow()?.at(Time::MIN).resolve_compatible(tz);
         match mode {
             round::Mode::Ceil | round::Mode::Expand => {
                 if time == Time::MIN {
@@ -97,57 +103,48 @@ impl ZonedDateTime {
 }
 
 impl PlainDateTime {
-    pub(crate) fn localize_default(self, tz: &TimeZone) -> Option<OffsetDateTime> {
-        match tz.ambiguity_for_local(self.assume_utc().epoch) {
-            Ambiguity::Unambiguous(offset) | Ambiguity::Fold(_, offset, _) => {
-                self.with_offset(offset)
-            }
-            Ambiguity::Gap(_, later_offset, earlier_offset) => self
-                .shift_by_offset(later_offset.sub(earlier_offset))?
-                .with_offset(later_offset),
-        }
-    }
-
-    pub(crate) fn localize_using_offset(
+    #[inline]
+    pub(crate) fn resolve_in(
         self,
         tz: &TimeZone,
-        target: Offset,
+        policy: ResolvePolicy,
+    ) -> Result<OffsetDateTime, ResolveError> {
+        tz.mapping_for_local(self.local_seconds())
+            .resolve(self, policy)
+    }
+
+    #[inline]
+    pub(crate) fn resolve_compatible(self, tz: &TimeZone) -> Option<OffsetDateTime> {
+        self.resolve_in(tz, ResolvePolicy::Disambiguate(Disambiguation::Compatible))
+            .ok()
+    }
+
+    #[inline]
+    pub(crate) fn resolve_preserving_offset(
+        self,
+        tz: &TimeZone,
+        offset: Offset,
     ) -> Option<OffsetDateTime> {
-        match tz.ambiguity_for_local(self.assume_utc().epoch) {
-            Ambiguity::Unambiguous(offset) => self.with_offset(offset),
-            Ambiguity::Fold(_, earlier_offset, later_offset) => {
-                self.with_offset(if target == later_offset {
-                    later_offset
-                } else {
-                    earlier_offset
-                })
-            }
-            Ambiguity::Gap(_, later_offset, earlier_offset) => self
-                .shift_by_offset(later_offset.sub(earlier_offset))?
-                .with_offset(later_offset),
-        }
+        self.resolve_in(tz, ResolvePolicy::PreserveOffset(offset))
+            .ok()
     }
 }
 
 impl OffsetDateTime {
     fn with_date_in_tz(self, date: Date, tz: &TimeZone) -> Option<Self> {
-        match tz.ambiguity_for_local(date.epoch_at(self.time)) {
-            Ambiguity::Unambiguous(offset) => Self::new(date, self.time, offset),
-            Ambiguity::Fold(_, earlier_offset, later_offset) => Self::new(
-                date,
-                self.time,
-                if self.offset == later_offset {
-                    later_offset
-                } else {
-                    earlier_offset
-                },
-            ),
-            Ambiguity::Gap(_, later_offset, earlier_offset) => PlainDateTime {
-                date,
-                time: self.time,
-            }
-            .shift_by_offset(later_offset.sub(earlier_offset))?
-            .with_offset(later_offset),
+        PlainDateTime {
+            date,
+            time: self.time,
+        }
+        .resolve_preserving_offset(tz, self.offset)
+    }
+
+    pub(crate) fn into_zoned_unchecked(self, tz: Arc<TimeZone>) -> ZonedDateTime {
+        ZonedDateTime {
+            date: self.date,
+            time: self.time,
+            offset: self.offset,
+            tz,
         }
     }
 }
@@ -161,6 +158,11 @@ impl Instant {
                 .datetime(self.subsec)
                 .with_offset_unchecked(offset),
         )
+    }
+
+    pub(crate) fn in_timezone(self, tz: Arc<TimeZone>) -> Option<ZonedDateTime> {
+        self.to_offset_in(&tz)
+            .map(|datetime| datetime.into_zoned_unchecked(tz))
     }
 }
 

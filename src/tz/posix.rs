@@ -5,8 +5,12 @@
 //! - [POSIX TZ strings](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html)
 //! - [GNU libc manual](https://sourceware.org/glibc/manual/latest/html_node/TZ-Variable.html)
 use crate::{
-    classes::date::Date,
-    common::{ambiguity::Ambiguity, parse::Scan, scalar::*},
+    common::{parse::Scan, scalar::*},
+    domain::{
+        date::Date,
+        local::{LocalMapping, LocalSeconds},
+        time::Time,
+    },
 };
 use std::num::{NonZeroU8, NonZeroU16};
 
@@ -87,9 +91,9 @@ impl TzStr {
     }
 
     /// Get the offset for a local time, given as the number of seconds since the Unix epoch.
-    pub(crate) fn ambiguity_for_local(&self, t: EpochSecs) -> Ambiguity {
+    pub(crate) fn mapping_for_local(&self, t: LocalSeconds) -> LocalMapping {
         match self.dst {
-            None => Ambiguity::Unambiguous(self.std), // No DST
+            None => LocalMapping::Unique { offset: self.std },
             Some(Dst {
                 start: (start_rule, start_time),
                 end: (end_rule, end_time),
@@ -100,11 +104,8 @@ impl TzStr {
                 // These should only affect DST calculations at the extreme MIN/MAX
                 // boundaries. We just want to avoid crashing.
                 let year = t.date().year; // OPTIMIZE: pass the year as an argument
-                let start = start_rule
-                    .for_year(year)
-                    .epoch()
-                    .saturating_add_i32(start_time);
-                let end = end_rule.for_year(year).epoch().saturating_add_i32(end_time);
+                let start = start_rule.for_year(year, start_time);
+                let end = end_rule.for_year(year, end_time);
 
                 // Compensate for inverted DST setups (e.g. Australia)
                 // to ensure the two transition points (t1, t2) are in order.
@@ -117,27 +118,43 @@ impl TzStr {
                 // Positive DST: first a gap, then a fold
                 if shift >= 0 {
                     if t < t1 {
-                        Ambiguity::Unambiguous(off1)
+                        LocalMapping::Unique { offset: off1 }
                     } else if t < t1.saturating_add_i32(shift) {
-                        Ambiguity::Gap(t1.saturating_add_i32(shift), off2, off1)
+                        LocalMapping::Gap {
+                            transition: t1.saturating_add_i32(shift),
+                            before: off1,
+                            after: off2,
+                        }
                     } else if t < t2.saturating_add_i32(-shift) {
-                        Ambiguity::Unambiguous(off2)
+                        LocalMapping::Unique { offset: off2 }
                     } else if t < t2 {
-                        Ambiguity::Fold(t2, off2, off1)
+                        LocalMapping::Fold {
+                            transition: t2,
+                            before: off2,
+                            after: off1,
+                        }
                     } else {
-                        Ambiguity::Unambiguous(off1)
+                        LocalMapping::Unique { offset: off1 }
                     }
                 // Negative DST: first a fold, then a gap
                 } else if t < t1.saturating_add_i32(shift) {
-                    Ambiguity::Unambiguous(off1)
+                    LocalMapping::Unique { offset: off1 }
                 } else if t < t1 {
-                    Ambiguity::Fold(t1, off1, off2)
+                    LocalMapping::Fold {
+                        transition: t1,
+                        before: off1,
+                        after: off2,
+                    }
                 } else if t < t2 {
-                    Ambiguity::Unambiguous(off2)
+                    LocalMapping::Unique { offset: off2 }
                 } else if t < t2.saturating_add_i32(-shift) {
-                    Ambiguity::Gap(t2.saturating_add_i32(-shift), off1, off2)
+                    LocalMapping::Gap {
+                        transition: t2.saturating_add_i32(-shift),
+                        before: off2,
+                        after: off1,
+                    }
                 } else {
-                    Ambiguity::Unambiguous(off1)
+                    LocalMapping::Unique { offset: off1 }
                 }
             }
         }
@@ -174,13 +191,11 @@ impl TzStr {
             ..
         } = self.dst?;
         let start = start_rule
-            .for_year(year)
-            .epoch()
-            .saturating_add_i32(start_time - self.std.get());
+            .for_year(year, start_time)
+            .to_epoch_saturating(self.std);
         let end = end_rule
-            .for_year(year)
-            .epoch()
-            .saturating_add_i32(end_time - dst_offset.get());
+            .for_year(year, end_time)
+            .to_epoch_saturating(dst_offset);
         Some(((start, dst_offset), (end, self.std)))
     }
 
@@ -285,9 +300,9 @@ impl TzStr {
 }
 
 impl Rule {
-    fn for_year(self, y: Year) -> Date {
-        match self {
-            Rule::DayOfYear(d) => y
+    fn for_year(self, year: Year, transition_time: TransitionTime) -> LocalSeconds {
+        let date = match self {
+            Rule::DayOfYear(d) => year
                 .unix_days_at_jan1()
                 // Safe: no overflow since it stays within the year
                 .add_unchecked(
@@ -295,28 +310,29 @@ impl Rule {
                         // The 366th day will blow up for non-leap years.
                         // It's unlikely that a TZ string would specify this,
                         // so we'll just clamp it to the last day of the year.
-                        .min(365 + y.is_leap() as u16)
+                        .min(365 + year.is_leap() as u16)
                         - 1) as _,
                 )
                 .date(),
 
-            Rule::JulianDayOfYear(d) => y
+            Rule::JulianDayOfYear(d) => year
                 .unix_days_at_jan1()
                 // Safe: No overflow since it stays within the year
-                .add_unchecked((d.get() - 1) as i32 + (y.is_leap() && d.get() > 59) as i32)
+                .add_unchecked((d.get() - 1) as i32 + (year.is_leap() && d.get() > 59) as i32)
                 .date(),
 
             Self::LastWeekday(w, m) => {
                 // SAFETY: -1 always produces a valid result (every month has
                 // at least one occurrence of every weekday)
-                Date::nth_weekday_in_month(y, m, -1, w).unwrap()
+                Date::nth_weekday_in_month(year, m, -1, w).unwrap()
             }
             Self::NthWeekday(n, w, m) => {
                 debug_assert!(n.get() <= 4);
                 // SAFETY: n in 1..=4 always fits in a month
-                Date::nth_weekday_in_month(y, m, n.get() as i32, w).unwrap()
+                Date::nth_weekday_in_month(year, m, n.get() as i32, w).unwrap()
             }
-        }
+        };
+        LocalSeconds::from_plain(date.at(Time::MIN)).saturating_add_i32(transition_time)
     }
 }
 
@@ -420,26 +436,34 @@ fn parse_rule(scan: &mut Scan) -> Option<(Rule, TransitionTime)> {
 mod tests {
     use super::*;
     use crate::classes::time::Time;
-    use crate::common::ambiguity::Ambiguity::*;
+    use crate::domain::local::LocalMapping;
 
-    fn unambig(offset: i32) -> Ambiguity {
-        Ambiguity::Unambiguous(offset.try_into().unwrap())
+    fn unique(offset: i32) -> LocalMapping {
+        LocalMapping::Unique {
+            offset: offset.try_into().unwrap(),
+        }
     }
 
-    fn fold(t: i64, earlier_offset: i32, later_offset: i32) -> Ambiguity {
-        Ambiguity::Fold(
-            t.try_into().unwrap(),
-            earlier_offset.try_into().unwrap(),
-            later_offset.try_into().unwrap(),
-        )
+    fn fold(t: i64, before: i32, after: i32) -> LocalMapping {
+        LocalMapping::Fold {
+            transition: EpochSecs::new(t)
+                .unwrap()
+                .datetime(SubSecNanos::MIN)
+                .local_seconds(),
+            before: before.try_into().unwrap(),
+            after: after.try_into().unwrap(),
+        }
     }
 
-    fn gap(t: i64, later_offset: i32, earlier_offset: i32) -> Ambiguity {
-        Ambiguity::Gap(
-            t.try_into().unwrap(),
-            later_offset.try_into().unwrap(),
-            earlier_offset.try_into().unwrap(),
-        )
+    fn gap(t: i64, after: i32, before: i32) -> LocalMapping {
+        LocalMapping::Gap {
+            transition: EpochSecs::new(t)
+                .unwrap()
+                .datetime(SubSecNanos::MIN)
+                .local_seconds(),
+            before: before.try_into().unwrap(),
+            after: after.try_into().unwrap(),
+        }
     }
 
     fn mkdate(year: u16, month: u8, day: u8) -> Date {
@@ -767,7 +791,9 @@ mod tests {
         fn test(year: u16, doy: u16, expected: (u16, u8, u8)) {
             let (y, m, d) = expected;
             assert_eq!(
-                Rule::DayOfYear(doy.try_into().unwrap()).for_year(year.try_into().unwrap()),
+                Rule::DayOfYear(doy.try_into().unwrap())
+                    .for_year(year.try_into().unwrap(), 0)
+                    .date(),
                 mkdate(y, m, d),
                 "year: {year}, doy: {doy} -> {expected:?}"
             );
@@ -805,7 +831,9 @@ mod tests {
         fn test(year: u16, doy: u16, expected: (u16, u8, u8)) {
             let (y, m, d) = expected;
             assert_eq!(
-                Rule::JulianDayOfYear(doy.try_into().unwrap()).for_year(year.try_into().unwrap()),
+                Rule::JulianDayOfYear(doy.try_into().unwrap())
+                    .for_year(year.try_into().unwrap(), 0)
+                    .date(),
                 mkdate(y, m, d),
                 "year: {year}, doy: {doy} -> {expected:?}"
             );
@@ -842,7 +870,8 @@ mod tests {
             let (y, m, d) = expected;
             assert_eq!(
                 Rule::LastWeekday(weekday, month.try_into().unwrap())
-                    .for_year(year.try_into().unwrap()),
+                    .for_year(year.try_into().unwrap(), 0)
+                    .date(),
                 mkdate(y, m, d),
                 "year: {year}, month: {month}, {weekday:?} -> {expected:?}"
             );
@@ -868,7 +897,8 @@ mod tests {
             let (y, m, d) = expected;
             assert_eq!(
                 Rule::NthWeekday(nth.try_into().unwrap(), weekday, month.try_into().unwrap())
-                    .for_year(year.try_into().unwrap()),
+                    .for_year(year.try_into().unwrap(), 0)
+                    .date(),
                 mkdate(y, m, d),
                 "year: {year}, month: {month}, nth: {nth}, {weekday:?} -> {expected:?}"
             );
@@ -981,7 +1011,7 @@ mod tests {
             d.unix_days().epoch_at(t).shift_by_offset(-offset).unwrap()
         }
 
-        fn test(tz: TzStr, ymd: (u16, u8, u8), hms: (u8, u8, u8), expected: Ambiguity) {
+        fn test(tz: TzStr, ymd: (u16, u8, u8), hms: (u8, u8, u8), expected: LocalMapping) {
             let (y, m, d) = ymd;
             let (hour, minute, second) = hms;
             let date = mkdate(y, m, d);
@@ -992,13 +1022,13 @@ mod tests {
                 subsec: SubSecNanos::MIN,
             };
             assert_eq!(
-                tz.ambiguity_for_local(to_epoch_s(date, time, Offset::ZERO)),
+                tz.mapping_for_local(date.at(time).local_seconds()),
                 expected,
                 "{ymd:?} {hms:?} -> {expected:?} (tz: {tz:?})"
             );
             // Test that the inverse operation (epoch->local) works
             match expected {
-                Unambiguous(offset) => {
+                LocalMapping::Unique { offset } => {
                     let epoch = to_epoch_s(date, time, offset);
                     assert_eq!(
                         tz.offset_for_instant(epoch),
@@ -1006,51 +1036,51 @@ mod tests {
                         "tz: {tz:?} date: {date}, time: {time}, {offset:?}, {epoch:?}"
                     );
                 }
-                Fold(_, earlier_offset, later_offset) => {
-                    let epoch_earlier = to_epoch_s(date, time, earlier_offset);
-                    let epoch_later = to_epoch_s(date, time, later_offset);
+                LocalMapping::Fold { before, after, .. } => {
+                    let epoch_earlier = to_epoch_s(date, time, before);
+                    let epoch_later = to_epoch_s(date, time, after);
                     assert_eq!(
                         tz.offset_for_instant(epoch_earlier),
-                        earlier_offset,
-                        "(earlier offset) tz: {tz:?} date: {date}, time: {time}, {earlier_offset:?}, {epoch_earlier:?}"
+                        before,
+                        "(earlier offset) tz: {tz:?} date: {date}, time: {time}, {before:?}, {epoch_earlier:?}"
                     );
                     assert_eq!(
                         tz.offset_for_instant(epoch_later),
-                        later_offset,
-                        "(later offset) tz: {tz:?} date: {date}, time: {time}, {later_offset:?}, {epoch_later:?}"
+                        after,
+                        "(later offset) tz: {tz:?} date: {date}, time: {time}, {after:?}, {epoch_later:?}"
                     );
                 }
-                Gap(_, _, _) => {} // Times in a gap aren't reversible
+                LocalMapping::Gap { .. } => {} // Times in a gap aren't reversible
             }
         }
 
         let cases = [
             // fixed always the same
-            (tz_fixed, (2020, 3, 19), (12, 34, 56), unambig(1234)),
+            (tz_fixed, (2020, 3, 19), (12, 34, 56), unique(1234)),
             // First second of the year
-            (tz, (1990, 1, 1), (0, 0, 0), unambig(4800)),
+            (tz, (1990, 1, 1), (0, 0, 0), unique(4800)),
             // Last second of the year
-            (tz, (1990, 12, 31), (23, 59, 59), unambig(4800)),
+            (tz, (1990, 12, 31), (23, 59, 59), unique(4800)),
             // Well before the transition
-            (tz, (1990, 3, 13), (12, 34, 56), unambig(4800)),
+            (tz, (1990, 3, 13), (12, 34, 56), unique(4800)),
             // Gap: Before, start, mid, end, after
-            (tz, (1990, 3, 25), (3, 59, 59), unambig(4800)),
+            (tz, (1990, 3, 25), (3, 59, 59), unique(4800)),
             (tz, (1990, 3, 25), (4, 0, 0), gap(638342100, 9300, 4800)),
             (tz, (1990, 3, 25), (5, 10, 0), gap(638342100, 9300, 4800)),
             (tz, (1990, 3, 25), (5, 14, 59), gap(638342100, 9300, 4800)),
-            (tz, (1990, 3, 25), (5, 15, 0), unambig(9300)),
+            (tz, (1990, 3, 25), (5, 15, 0), unique(9300)),
             // Well after the transition
-            (tz, (1990, 6, 26), (8, 0, 0), unambig(9300)),
+            (tz, (1990, 6, 26), (8, 0, 0), unique(9300)),
             // Fold: Before, start, mid, end, after
-            (tz, (1990, 10, 8), (0, 44, 59), unambig(9300)),
+            (tz, (1990, 10, 8), (0, 44, 59), unique(9300)),
             (tz, (1990, 10, 8), (0, 45, 0), fold(655351200, 9300, 4800)),
             (tz, (1990, 10, 8), (1, 33, 59), fold(655351200, 9300, 4800)),
             (tz, (1990, 10, 8), (1, 59, 59), fold(655351200, 9300, 4800)),
-            (tz, (1990, 10, 8), (2, 0, 0), unambig(4800)),
+            (tz, (1990, 10, 8), (2, 0, 0), unique(4800)),
             // Well after the end of DST
-            (tz, (1990, 11, 30), (23, 34, 56), unambig(4800)),
+            (tz, (1990, 11, 30), (23, 34, 56), unique(4800)),
             // time outside 0-24h range is also valid for a rule
-            (tz_weirdtime, (1990, 3, 26), (1, 59, 59), unambig(4800)),
+            (tz_weirdtime, (1990, 3, 26), (1, 59, 59), unique(4800)),
             (
                 tz_weirdtime,
                 (1990, 3, 27),
@@ -1069,8 +1099,8 @@ mod tests {
                 (3, 14, 59),
                 gap(638507700, 9300, 4800),
             ),
-            (tz_weirdtime, (1990, 3, 27), (3, 15, 0), unambig(9300)),
-            (tz_weirdtime, (1990, 10, 7), (20, 44, 59), unambig(9300)),
+            (tz_weirdtime, (1990, 3, 27), (3, 15, 0), unique(9300)),
+            (tz_weirdtime, (1990, 10, 7), (20, 44, 59), unique(9300)),
             (
                 tz_weirdtime,
                 (1990, 10, 7),
@@ -1089,15 +1119,15 @@ mod tests {
                 (21, 59, 59),
                 fold(655336800, 9300, 4800),
             ),
-            (tz_weirdtime, (1990, 10, 7), (22, 0, 0), unambig(4800)),
-            (tz_weirdtime, (1990, 10, 7), (22, 0, 1), unambig(4800)),
+            (tz_weirdtime, (1990, 10, 7), (22, 0, 0), unique(4800)),
+            (tz_weirdtime, (1990, 10, 7), (22, 0, 1), unique(4800)),
             // 00:00:00 is a valid time for a rule
-            (tz00, (1990, 3, 24), (23, 59, 59), unambig(4800)),
+            (tz00, (1990, 3, 24), (23, 59, 59), unique(4800)),
             (tz00, (1990, 3, 25), (0, 0, 0), gap(638327700, 9300, 4800)),
             (tz00, (1990, 3, 25), (1, 0, 0), gap(638327700, 9300, 4800)),
             (tz00, (1990, 3, 25), (1, 14, 59), gap(638327700, 9300, 4800)),
-            (tz00, (1990, 3, 25), (1, 15, 0), unambig(9300)),
-            (tz00, (1990, 10, 7), (22, 44, 59), unambig(9300)),
+            (tz00, (1990, 3, 25), (1, 15, 0), unique(9300)),
+            (tz00, (1990, 10, 7), (22, 44, 59), unique(9300)),
             (
                 tz00,
                 (1990, 10, 7),
@@ -1116,11 +1146,11 @@ mod tests {
                 (23, 59, 59),
                 fold(655344000, 9300, 4800),
             ),
-            (tz00, (1990, 10, 8), (0, 0, 0), unambig(4800)),
-            (tz00, (1990, 10, 8), (0, 0, 1), unambig(4800)),
+            (tz00, (1990, 10, 8), (0, 0, 0), unique(4800)),
+            (tz00, (1990, 10, 8), (0, 0, 1), unique(4800)),
             // Negative DST should be handled gracefully. Gap and fold reversed
             // Fold instead of gap
-            (tz_neg, (1990, 3, 25), (0, 59, 59), unambig(4800)),
+            (tz_neg, (1990, 3, 25), (0, 59, 59), unique(4800)),
             (
                 tz_neg,
                 (1990, 3, 25),
@@ -1139,9 +1169,9 @@ mod tests {
                 (1, 59, 59),
                 fold(638330400, 4800, 1200),
             ),
-            (tz_neg, (1990, 3, 25), (2, 0, 0), unambig(1200)),
+            (tz_neg, (1990, 3, 25), (2, 0, 0), unique(1200)),
             // Gap instead of fold
-            (tz_neg, (1990, 10, 8), (3, 59, 59), unambig(1200)),
+            (tz_neg, (1990, 10, 8), (3, 59, 59), unique(1200)),
             (tz_neg, (1990, 10, 8), (4, 0, 0), gap(655362000, 4800, 1200)),
             (
                 tz_neg,
@@ -1155,9 +1185,9 @@ mod tests {
                 (4, 59, 59),
                 gap(655362000, 4800, 1200),
             ),
-            (tz_neg, (1990, 10, 8), (5, 0, 0), unambig(4800)),
+            (tz_neg, (1990, 10, 8), (5, 0, 0), unique(4800)),
             // Always DST
-            (tz_always_dst, (1990, 1, 1), (0, 0, 0), unambig(3600)),
+            (tz_always_dst, (1990, 1, 1), (0, 0, 0), unique(3600)),
             // This is actually incorrect, but ZoneInfo does the same...
             (
                 tz_always_dst,
@@ -1166,8 +1196,8 @@ mod tests {
                 gap(725846400, 7200, 3600),
             ),
             // Inverted DST
-            (tz_inverted, (1990, 2, 9), (15, 0, 0), unambig(7200)), // DST in effect
-            (tz_inverted, (1990, 3, 25), (1, 19, 0), unambig(7200)), // Before fold
+            (tz_inverted, (1990, 2, 9), (15, 0, 0), unique(7200)), // DST in effect
+            (tz_inverted, (1990, 3, 25), (1, 19, 0), unique(7200)), // Before fold
             (
                 tz_inverted,
                 (1990, 3, 25),
@@ -1180,9 +1210,9 @@ mod tests {
                 (1, 59, 0),
                 fold(638330400, 7200, 4800),
             ), // Fold almost over
-            (tz_inverted, (1990, 3, 25), (2, 0, 0), unambig(4800)), // Fold over
-            (tz_inverted, (1990, 9, 8), (8, 0, 0), unambig(4800)),  // DST not in effect
-            (tz_inverted, (1990, 10, 8), (3, 59, 0), unambig(4800)), // Before gap
+            (tz_inverted, (1990, 3, 25), (2, 0, 0), unique(4800)), // Fold over
+            (tz_inverted, (1990, 9, 8), (8, 0, 0), unique(4800)),  // DST not in effect
+            (tz_inverted, (1990, 10, 8), (3, 59, 0), unique(4800)), // Before gap
             (
                 tz_inverted,
                 (1990, 10, 8),
@@ -1195,8 +1225,8 @@ mod tests {
                 (4, 39, 0),
                 gap(655360800, 7200, 4800),
             ), // Gap almost over
-            (tz_inverted, (1990, 10, 8), (4, 40, 0), unambig(7200)), // Gap over
-            (tz_inverted, (1990, 12, 31), (23, 40, 0), unambig(7200)), // DST not in effect
+            (tz_inverted, (1990, 10, 8), (4, 40, 0), unique(7200)), // Gap over
+            (tz_inverted, (1990, 12, 31), (23, 40, 0), unique(7200)), // DST not in effect
         ];
 
         for &(tz, ymd, hms, expected) in &cases {
