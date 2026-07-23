@@ -120,7 +120,7 @@ impl Time {
         Scan::new(s).parse_all(Self::read_iso)
     }
 
-    pub(crate) fn format_iso(self, unit: fmt::Unit, basic: bool) -> IsoFormat {
+    pub(crate) fn format_iso(self, unit: fmt::Precision, basic: bool) -> IsoFormat {
         let (subsec_str, subsec_len) = self.subsec.format_iso();
         IsoFormat {
             time: self,
@@ -151,52 +151,52 @@ impl Time {
         )
     }
 
-    pub(crate) fn start_of(self, unit: BoundUnit) -> Self {
+    pub(crate) fn start_of(self, unit: TimeBoundaryUnit) -> Self {
         match unit {
-            BoundUnit::Hour => Time {
+            TimeBoundaryUnit::Hour => Time {
                 hour: self.hour,
                 ..Time::MIN
             },
-            BoundUnit::Minute => Time {
+            TimeBoundaryUnit::Minute => Time {
                 second: 0,
                 subsec: SubSecNanos::MIN,
                 ..self
             },
-            BoundUnit::Second => Time {
+            TimeBoundaryUnit::Second => Time {
                 subsec: SubSecNanos::MIN,
                 ..self
             },
         }
     }
 
-    pub(crate) fn end_of(self, unit: BoundUnit) -> Self {
+    pub(crate) fn end_of(self, unit: TimeBoundaryUnit) -> Self {
         match unit {
-            BoundUnit::Hour => Time {
+            TimeBoundaryUnit::Hour => Time {
                 hour: self.hour,
                 ..Time::MAX
             },
-            BoundUnit::Minute => Time {
+            TimeBoundaryUnit::Minute => Time {
                 second: 59,
                 subsec: SubSecNanos::MAX,
                 ..self
             },
-            BoundUnit::Second => Time {
+            TimeBoundaryUnit::Second => Time {
                 subsec: SubSecNanos::MAX,
                 ..self
             },
         }
     }
 
-    pub(crate) fn next_start_of(self, unit: BoundUnit) -> (Self, bool) {
+    pub(crate) fn next_start_of(self, unit: TimeBoundaryUnit) -> (Self, bool) {
         match unit {
-            BoundUnit::Hour => (
+            TimeBoundaryUnit::Hour => (
                 Time {
                     hour: (self.hour + 1) % 24,
                     ..Time::MIN
                 },
                 self.hour == 23,
             ),
-            BoundUnit::Minute => (
+            TimeBoundaryUnit::Minute => (
                 Time {
                     hour: (self.hour + (self.minute == 59) as u8) % 24,
                     minute: (self.minute + 1) % 60,
@@ -204,7 +204,7 @@ impl Time {
                 },
                 self.minute == 59 && self.hour == 23,
             ),
-            BoundUnit::Second => (
+            TimeBoundaryUnit::Second => (
                 Time {
                     hour: (self.hour + (self.minute == 59 && self.second == 59) as u8) % 24,
                     minute: (self.minute + (self.second == 59) as u8) % 60,
@@ -218,18 +218,18 @@ impl Time {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BoundUnit {
+pub(crate) enum TimeBoundaryUnit {
     Hour,
     Minute,
     Second,
 }
 
-impl BoundUnit {
+impl TimeBoundaryUnit {
     pub(crate) fn in_secs(self) -> i32 {
         match self {
-            BoundUnit::Hour => 3600,
-            BoundUnit::Minute => 60,
-            BoundUnit::Second => 1,
+            TimeBoundaryUnit::Hour => 3600,
+            TimeBoundaryUnit::Minute => 60,
+            TimeBoundaryUnit::Second => 1,
         }
     }
 }
@@ -238,7 +238,7 @@ impl BoundUnit {
 pub(crate) struct IsoFormat {
     time: Time,
     basic: bool,
-    unit: fmt::Unit,
+    unit: fmt::Precision,
     subsec_str: [u8; 10],
     subsec_len: usize,
 }
@@ -246,16 +246,16 @@ pub(crate) struct IsoFormat {
 impl fmt::Chunk for IsoFormat {
     fn len(&self) -> usize {
         (match self.unit {
-            fmt::Unit::Hour => 2,
-            fmt::Unit::Minute => 4,
-            fmt::Unit::Second => 6,
-            fmt::Unit::Millisecond => 10,
-            fmt::Unit::Microsecond => 13,
-            fmt::Unit::Nanosecond => 16,
-            fmt::Unit::Auto => 6 + self.subsec_len,
-        }) + if self.basic || self.unit == fmt::Unit::Hour {
+            fmt::Precision::Hour => 2,
+            fmt::Precision::Minute => 4,
+            fmt::Precision::Second => 6,
+            fmt::Precision::Millisecond => 10,
+            fmt::Precision::Microsecond => 13,
+            fmt::Precision::Nanosecond => 16,
+            fmt::Precision::Auto => 6 + self.subsec_len,
+        }) + if self.basic || self.unit == fmt::Precision::Hour {
             0
-        } else if self.unit == fmt::Unit::Minute {
+        } else if self.unit == fmt::Precision::Minute {
             1
         } else {
             2
@@ -277,28 +277,28 @@ impl fmt::Chunk for IsoFormat {
             subsec_len,
         } = self;
         buf.write(format_2_digits(hour).as_ref());
-        if unit == fmt::Unit::Hour {
+        if unit == fmt::Precision::Hour {
             return;
         }
         if !basic {
             buf.write_byte(b':');
         }
         buf.write(format_2_digits(minute).as_ref());
-        if unit == fmt::Unit::Minute {
+        if unit == fmt::Precision::Minute {
             return;
         }
         if !basic {
             buf.write_byte(b':');
         }
         buf.write(format_2_digits(second).as_ref());
-        if unit == fmt::Unit::Second {
+        if unit == fmt::Precision::Second {
             return;
         }
         let len_to_write = match unit {
-            fmt::Unit::Auto => subsec_len,
-            fmt::Unit::Nanosecond => 10,
-            fmt::Unit::Microsecond => 7,
-            fmt::Unit::Millisecond => 4,
+            fmt::Precision::Auto => subsec_len,
+            fmt::Precision::Nanosecond => 10,
+            fmt::Precision::Microsecond => 7,
+            fmt::Precision::Millisecond => 4,
             _ => unreachable!(),
         };
         buf.write(&subsec_str[..len_to_write]);

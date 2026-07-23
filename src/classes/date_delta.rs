@@ -224,8 +224,8 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                         }
                         dtdelta
                             .add(DateTimeDelta {
-                                ddelta: *slf,
-                                tdelta: TimeDelta::ZERO,
+                                date: *slf,
+                                time: TimeDelta::ZERO,
                             })
                             .map_err(|e| {
                                 value_err(match e {

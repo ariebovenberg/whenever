@@ -29,7 +29,7 @@ impl ItemizedDelta {
         nanos: DeltaField::UNSET,
     };
 
-    pub(crate) fn fill_cal_units(&mut self, data: ItemizedDateDelta) {
+    pub(crate) fn fill_calendar_units(&mut self, data: ItemizedDateDelta) {
         self.years = data.years;
         self.months = data.months;
         self.weeks = data.weeks;

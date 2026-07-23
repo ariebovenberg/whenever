@@ -1,5 +1,5 @@
 use super::scalar::{DeltaDays, DeltaMonths};
-use crate::common::math::CalUnit;
+use crate::common::math::CalendarUnit;
 use std::{fmt, ops::Neg};
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -93,12 +93,12 @@ impl DateDelta {
         while !s.is_empty() {
             let (value, unit) = parse_component(&mut s)?;
             match (unit, previous.replace(unit)) {
-                (CalUnit::Years, None) => months += value * 12,
-                (CalUnit::Months, None | Some(CalUnit::Years)) => months += value,
-                (CalUnit::Weeks, None | Some(CalUnit::Years | CalUnit::Months)) => {
+                (CalendarUnit::Years, None) => months += value * 12,
+                (CalendarUnit::Months, None | Some(CalendarUnit::Years)) => months += value,
+                (CalendarUnit::Weeks, None | Some(CalendarUnit::Years | CalendarUnit::Months)) => {
                     days += value * 7
                 }
-                (CalUnit::Days, _) if s.is_empty() => days += value,
+                (CalendarUnit::Days, _) if s.is_empty() => days += value,
                 _ => return None,
             }
         }
@@ -177,25 +177,25 @@ pub(crate) fn parse_prefix(s: &mut &[u8]) -> Option<bool> {
     }
 }
 
-fn finish_parsing_component(s: &mut &[u8], mut value: i32) -> Option<(i32, CalUnit)> {
+fn finish_parsing_component(s: &mut &[u8], mut value: i32) -> Option<(i32, CalendarUnit)> {
     for i in 1..s.len().min(9) {
         match s[i] {
             c if c.is_ascii_digit() => value = value * 10 + i32::from(c - b'0'),
             b'D' | b'd' => {
                 *s = &s[i + 1..];
-                return Some((value, CalUnit::Days));
+                return Some((value, CalendarUnit::Days));
             }
             b'W' | b'w' => {
                 *s = &s[i + 1..];
-                return Some((value, CalUnit::Weeks));
+                return Some((value, CalendarUnit::Weeks));
             }
             b'M' | b'm' => {
                 *s = &s[i + 1..];
-                return Some((value, CalUnit::Months));
+                return Some((value, CalendarUnit::Months));
             }
             b'Y' | b'y' => {
                 *s = &s[i + 1..];
-                return Some((value, CalUnit::Years));
+                return Some((value, CalendarUnit::Years));
             }
             _ => return None,
         }
@@ -203,7 +203,7 @@ fn finish_parsing_component(s: &mut &[u8], mut value: i32) -> Option<(i32, CalUn
     None
 }
 
-pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, CalUnit)> {
+pub(crate) fn parse_component(s: &mut &[u8]) -> Option<(i32, CalendarUnit)> {
     (s.len() >= 2 && s[0].is_ascii_digit())
         .then(|| finish_parsing_component(s, (s[0] - b'0').into()))
         .flatten()

@@ -243,16 +243,16 @@ impl Date {
         self.shift_days(DeltaDays::new_unchecked(-(dow as i32)))
     }
 
-    pub(crate) fn start_of(self, unit: BoundaryUnit) -> Option<Date> {
+    pub(crate) fn start_of(self, unit: DateBoundaryUnit) -> Option<Date> {
         match unit {
-            BoundaryUnit::WeekMon => self.start_of_week_mon(),
-            BoundaryUnit::WeekSun => self.start_of_week_sun(),
-            BoundaryUnit::Month => Some(Date {
+            DateBoundaryUnit::WeekMon => self.start_of_week_mon(),
+            DateBoundaryUnit::WeekSun => self.start_of_week_sun(),
+            DateBoundaryUnit::Month => Some(Date {
                 year: self.year,
                 month: self.month,
                 day: 1,
             }),
-            BoundaryUnit::Year => Some(Date {
+            DateBoundaryUnit::Year => Some(Date {
                 year: self.year,
                 month: Month::January,
                 day: 1,
@@ -260,22 +260,22 @@ impl Date {
         }
     }
 
-    pub(crate) fn end_of(self, unit: BoundaryUnit) -> Option<Date> {
+    pub(crate) fn end_of(self, unit: DateBoundaryUnit) -> Option<Date> {
         match unit {
-            BoundaryUnit::WeekMon => self.end_of_week_mon(),
-            BoundaryUnit::WeekSun => self.end_of_week_sun(),
-            BoundaryUnit::Month => Some(Date {
+            DateBoundaryUnit::WeekMon => self.end_of_week_mon(),
+            DateBoundaryUnit::WeekSun => self.end_of_week_sun(),
+            DateBoundaryUnit::Month => Some(Date {
                 day: self.year.days_in_month(self.month),
                 ..self
             }),
-            BoundaryUnit::Year => Some(Date {
+            DateBoundaryUnit::Year => Some(Date {
                 year: self.year,
                 ..Date::MAX
             }),
         }
     }
 
-    pub(crate) fn next_start_of(self, unit: BoundaryUnit) -> Option<Date> {
+    pub(crate) fn next_start_of(self, unit: DateBoundaryUnit) -> Option<Date> {
         self.end_of(unit)?.tomorrow()
     }
 
@@ -285,7 +285,7 @@ impl Date {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BoundaryUnit {
+pub(crate) enum DateBoundaryUnit {
     Year,
     Month,
     WeekMon,

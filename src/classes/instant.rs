@@ -14,6 +14,7 @@ use crate::{
     },
     common::{
         fmt::{self, Suffix},
+        instant::{extract_instant, parse_instant_arg},
         pattern, rfc2822, round,
         scalar::*,
     },
@@ -170,7 +171,7 @@ fn __repr__(_: PyType, i: Instant) -> PyReturn {
         b"Instant(\"",
         date.format_iso(false),
         b" ",
-        time.format_iso(fmt::Unit::Auto, false),
+        time.format_iso(fmt::Precision::Auto, false),
         b"Z\")",
     ))
 }
@@ -180,35 +181,16 @@ fn __str__(_: PyType, i: Instant) -> PyReturn {
     PyAsciiStrBuilder::format((
         date.format_iso(false),
         b"T",
-        time.format_iso(fmt::Unit::Auto, false),
+        time.format_iso(fmt::Precision::Auto, false),
         b"Z",
     ))
 }
 
 fn __richcmp__(cls: PyClass<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int) -> PyReturn {
-    let inst_b = if let Some(i) = b_obj.extract(cls) {
-        i
-    } else {
-        let state = cls.state();
-        if let Some(i) = b_obj.extract_ref(*state.zoned_datetime_type) {
-            i.to_instant()
-        } else if let Some(odt) = b_obj.extract(*state.offset_datetime_type) {
-            odt.to_instant()
-        } else {
-            return not_implemented();
-        }
+    let Some(inst_b) = extract_instant(b_obj, cls.state()) else {
+        return not_implemented();
     };
-
-    match op {
-        pyo3_ffi::Py_EQ => inst_a == inst_b,
-        pyo3_ffi::Py_NE => inst_a != inst_b,
-        pyo3_ffi::Py_LT => inst_a < inst_b,
-        pyo3_ffi::Py_LE => inst_a <= inst_b,
-        pyo3_ffi::Py_GT => inst_a > inst_b,
-        pyo3_ffi::Py_GE => inst_a >= inst_b,
-        _ => unreachable!(),
-    }
-    .to_py()
+    CompareOp::from_ffi(op).apply(inst_a, inst_b).to_py()
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -225,21 +207,11 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         }
         BinaryCall::ExtTypes { cls, slf, other } => {
             let state = cls.state();
-            let other = match_type!(
-                other,
-                ref *state.zoned_datetime_type => |zdt| { zdt.to_instant() },
-                *state.offset_datetime_type => |odt| { odt.to_instant() },
-                _ => {
-                    return shift_inner(
-                        cls,
-                        *slf,
-                        *state.time_delta_type,
-                        other,
-                        true,
-                    )
-                },
-            );
-            Ok(Some(slf.diff(other).to_obj(*state.time_delta_type)?))
+            if let Some(i) = extract_instant(other, state) {
+                Ok(Some(slf.diff(i).to_obj(*state.time_delta_type)?))
+            } else {
+                shift_inner(cls, *slf, *state.time_delta_type, other, true)
+            }
         }
         BinaryCall::OtherTypes => Ok(None),
     })
@@ -507,19 +479,7 @@ fn shift_method(
 
 fn difference(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     let state = cls.state();
-
-    let inst_b = if let Some(i) = obj_b.extract(cls) {
-        i
-    } else if let Some(zdt) = obj_b.extract_ref(*state.zoned_datetime_type) {
-        zdt.to_instant()
-    } else if let Some(odt) = obj_b.extract(*state.offset_datetime_type) {
-        odt.to_instant()
-    } else {
-        raise_type_err(
-            "difference() argument must be an OffsetDateTime,
-             Instant, or ZonedDateTime",
-        )?
-    };
+    let inst_b = parse_instant_arg("difference", obj_b, state)?;
     slf.diff(inst_b).to_obj(*state.time_delta_type)
 }
 

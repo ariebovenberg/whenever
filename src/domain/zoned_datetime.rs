@@ -13,7 +13,7 @@ use crate::tz::tzif::TimeZone;
 use crate::{
     common::{
         fmt::{self, Sink},
-        math::{self, DateRoundIncrement, DeltaUnitSet},
+        math::{self, CalendarIncrement, DifferenceUnitSet},
         parse::Scan,
         round,
     },
@@ -236,33 +236,33 @@ pub(crate) fn zoned_since_in_units(
     a_inst: Instant,
     b: &ZonedDateTime,
     target_date: Date,
-    units: DeltaUnitSet,
+    units: DifferenceUnitSet,
     round_mode: round::Mode,
-    round_increment: math::RoundIncrement,
+    round_increment: math::DifferenceIncrement,
     negative: bool,
 ) -> Option<ItemizedDelta> {
-    let (cal_units, exact_units) = units.split_cal_exact();
-    let (mut ddelta, trunc_date, expand_date) = if cal_units.is_empty() {
+    let (calendar_units, exact_units) = units.split_calendar_exact();
+    let (mut ddelta, trunc_date, expand_date) = if calendar_units.is_empty() {
         (ItemizedDateDelta::UNSET, b.date.into(), a.date.into())
     } else {
         let increment = if exact_units.is_empty() {
-            round_increment.to_date()?
+            round_increment.to_calendar()?
         } else {
-            DateRoundIncrement::MIN
+            CalendarIncrement::MIN
         };
-        math::date_diff(target_date, b.date, increment, cal_units, negative)?
+        math::date_diff(target_date, b.date, increment, calendar_units, negative)?
     };
 
     let trunc = b.with_date(trunc_date.into())?.to_instant();
     let expand = b.with_date(expand_date.into())?.to_instant();
     let mut result = if exact_units.is_empty() {
         ddelta.round_by_time(
-            cal_units.smallest(),
+            calendar_units.smallest(),
             a_inst,
             trunc,
             expand,
             round_mode.to_abs_trunc(negative),
-            round_increment.to_date()?,
+            round_increment.to_calendar()?,
             negative,
         );
         ItemizedDelta::UNSET
@@ -273,6 +273,6 @@ pub(crate) fn zoned_since_in_units(
             round_mode.to_abs_euclid(negative),
         )?
     };
-    result.fill_cal_units(ddelta);
+    result.fill_calendar_units(ddelta);
     Some(result)
 }

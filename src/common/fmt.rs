@@ -120,7 +120,7 @@ impl<const N: usize> Sink for ArrayWriter<N> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum Unit {
+pub(crate) enum Precision {
     Auto,
     Nanosecond,
     Microsecond,
@@ -130,7 +130,7 @@ pub(crate) enum Unit {
     Hour,
 }
 
-impl Unit {
+impl Precision {
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         match_interned_str("unit", obj, |v, eq| {
             if eq(v, *state.str_millisecond) {
@@ -226,7 +226,7 @@ pub(crate) fn format_iso(
 
     // As-efficient-as-possible assignment of keyword arguments
     let mut sep = b'T';
-    let mut unit = Unit::Auto;
+    let mut unit = Precision::Auto;
     let mut basic = false;
     let mut tz_display = TzDisplay::Always;
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
@@ -241,7 +241,7 @@ pub(crate) fn format_iso(
                 }
             })?;
         } else if eq(key, *state.str_unit) {
-            unit = Unit::from_py(value, state)?;
+            unit = Precision::from_py(value, state)?;
         } else if eq(key, *state.str_basic) {
             if value.is_true() {
                 basic = true;

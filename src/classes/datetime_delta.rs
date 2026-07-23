@@ -19,7 +19,7 @@ use crate::{
 
 impl DateTimeDelta {
     pub(crate) fn pyhash(self) -> Py_hash_t {
-        hash_combine(self.ddelta.pyhash(), self.tdelta.pyhash())
+        hash_combine(self.date.pyhash(), self.time.pyhash())
     }
 }
 
@@ -136,11 +136,11 @@ fn __new__(cls: PyClass<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -
     match (nargs, nkwargs) {
         (1, 0) => parse_iso_inner(cls, args.iter().next().unwrap()),
         (0, 0) => DateTimeDelta {
-            ddelta: DateDelta {
+            date: DateDelta {
                 months: DeltaMonths::ZERO,
                 days: DeltaDays::ZERO,
             },
-            tdelta: TimeDelta {
+            time: TimeDelta {
                 secs: DeltaSeconds::ZERO,
                 subsec: SubSecNanos::MIN,
             },
@@ -157,11 +157,11 @@ fn __new__(cls: PyClass<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -
             )?;
             if months >= 0 && days >= 0 && nanos >= 0 || months <= 0 && days <= 0 && nanos <= 0 {
                 DateTimeDelta {
-                    ddelta: DeltaMonths::new(months)
+                    date: DeltaMonths::new(months)
                         .zip(DeltaDays::new(days))
                         .map(|(m, d)| DateDelta { months: m, days: d })
                         .ok_or_range_err()?,
-                    tdelta: TimeDelta::from_nanos(nanos).ok_or_range_err()?,
+                    time: TimeDelta::from_nanos(nanos).ok_or_range_err()?,
                 }
                 .to_obj(cls)
             } else {
@@ -197,10 +197,10 @@ fn __neg__(cls: PyClass<DateTimeDelta>, d: DateTimeDelta) -> PyReturn {
 }
 
 extern "C" fn __bool__(slf: PyObj) -> c_int {
-    let (_, DateTimeDelta { ddelta, tdelta }) =
+    let (_, DateTimeDelta { date, time }) =
         // SAFETY: first argument guaranteed to be self type
         unsafe { slf.assume_heaptype::<DateTimeDelta>() };
-    (!(ddelta.is_zero() && tdelta.is_zero())).into()
+    (!(date.is_zero() && time.is_zero())).into()
 }
 
 fn __repr__(_: PyType, d: DateTimeDelta) -> PyReturn {
@@ -251,16 +251,16 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                 let state = cls.state();
                 let other = match_type!(
                     other,
-                    *state.date_delta_type => |ddelta| {
+                    *state.date_delta_type => |date| {
                         DateTimeDelta {
-                            ddelta,
-                            tdelta: TimeDelta::ZERO,
+                            date,
+                            time: TimeDelta::ZERO,
                         }
                     },
-                    *state.time_delta_type => |tdelta| {
+                    *state.time_delta_type => |time| {
                         DateTimeDelta {
-                            ddelta: DateDelta::ZERO,
-                            tdelta,
+                            date: DateDelta::ZERO,
+                            time,
                         }
                     },
                     _ => { return Ok(None) },
@@ -286,12 +286,12 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
 }
 
 fn __abs__(cls: PyClass<DateTimeDelta>, slf: PyRef<'_, DateTimeDelta>) -> PyReturn {
-    if slf.ddelta.months.get() >= 0 && slf.ddelta.days.get() >= 0 && !slf.tdelta.is_negative() {
+    if slf.date.months.get() >= 0 && slf.date.days.get() >= 0 && !slf.time.is_negative() {
         Ok(slf.newref())
     } else {
         DateTimeDelta {
-            ddelta: slf.ddelta.abs(),
-            tdelta: slf.tdelta.abs(),
+            date: slf.date.abs(),
+            time: slf.time.abs(),
         }
         .to_obj(cls)
     }
@@ -365,8 +365,8 @@ fn parse_iso_inner(cls: PyClass<DateTimeDelta>, arg: PyObj) -> PyReturn {
 fn in_months_days_secs_nanos(
     _: PyType,
     DateTimeDelta {
-        ddelta: DateDelta { months, days },
-        tdelta: TimeDelta { secs, subsec },
+        date: DateDelta { months, days },
+        time: TimeDelta { secs, subsec },
     }: DateTimeDelta,
 ) -> PyReturn {
     let mut secs = secs.get();
@@ -391,18 +391,18 @@ fn date_part(cls: PyClass<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
         c"DateTimeDelta.date_part() is deprecated.",
         1,
     )?;
-    slf.ddelta.to_obj(*cls.state().date_delta_type)
+    slf.date.to_obj(*cls.state().date_delta_type)
 }
 
 fn time_part(cls: PyClass<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
-    slf.tdelta.to_obj(*cls.state().time_delta_type)
+    slf.time.to_obj(*cls.state().time_delta_type)
 }
 
 fn __reduce__(
     cls: PyClass<DateTimeDelta>,
     DateTimeDelta {
-        ddelta: DateDelta { months, days },
-        tdelta: TimeDelta { secs, subsec },
+        date: DateDelta { months, days },
+        time: TimeDelta { secs, subsec },
     }: DateTimeDelta,
 ) -> PyReturn {
     [
@@ -423,7 +423,7 @@ fn __reduce__(
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     match args {
         &[months, days, secs, nanos] => DateTimeDelta {
-            ddelta: DateDelta {
+            date: DateDelta {
                 months: DeltaMonths::new_unchecked(
                     months
                         .cast_exact::<PyInt>()
@@ -436,7 +436,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
                         .to_long()? as _,
                 ),
             },
-            tdelta: TimeDelta {
+            time: TimeDelta {
                 secs: DeltaSeconds::new_unchecked(
                     secs.cast_exact::<PyInt>()
                         .ok_or_type_err("invalid pickle data")?

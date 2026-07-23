@@ -482,7 +482,7 @@ itemized delta types in new internal APIs and tests.
 Completed with all 82 Rust tests, build and lint, and 2,761 focused Python tests passing (one
 skipped).
 
-### 7. Consolidate instant-like and unit logic — planned
+### 7. Consolidate instant-like and unit logic — complete
 
 Add one shared extraction function for Instant, OffsetDateTime, and ZonedDateTime,
 then use it in:
@@ -505,6 +505,19 @@ Then do the lower-priority naming pass:
 
 Avoid merging all unit enums immediately; first rename them according to their
 semantic role, then consolidate only demonstrably duplicated parsing.
+
+Implemented `common::instant::{extract_instant, parse_instant_arg}` for the three instant-like
+classes and reused it in rich comparisons, `difference()`, and binary subtraction.
+`CompareOp` now owns the ordered CPython comparison dispatch.
+
+The naming pass distinguishes `DateBoundaryUnit`, `TimeBoundaryUnit`, and
+`DateTimeBoundaryUnit`; `fmt::Precision` and `round::RoundUnit`; and
+`CalendarUnit`, `DifferenceUnit`, `ExactUnit`, and `TotalUnit`. Difference rounding uses
+`CalendarIncrement` and `DifferenceIncrement`, while deprecated `DateTimeDelta` received only the
+mechanical `date`/`time` field rename. The separate unit enums and their parsing remain intact.
+
+Completed with all 82 Rust tests, build and lint, and 2,419 focused Python tests passing (one
+skipped).
 
 ### 8. Final verification — planned
 

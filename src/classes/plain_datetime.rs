@@ -10,7 +10,7 @@ use crate::{
     common::{
         disambiguation::*,
         fmt,
-        math::{self, DateRoundIncrement, DeltaUnit, DeltaUnitSet, SinceUntilKwargs},
+        math::{self, CalendarIncrement, DifferenceUnit, DifferenceUnitSet, SinceUntilKwargs},
         pattern, round,
         scalar::*,
         shift::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
@@ -27,31 +27,41 @@ use core::{
 use pyo3_ffi::*;
 use std::cmp::Ordering;
 
-pub(crate) use crate::domain::plain_datetime::BoundaryUnit;
+pub(crate) use crate::domain::plain_datetime::DateTimeBoundaryUnit;
 pub use crate::domain::plain_datetime::PlainDateTime;
 
 pub(crate) const SINGLETONS: &[(&CStr, PlainDateTime); 2] =
     &[(c"MIN", PlainDateTime::MIN), (c"MAX", PlainDateTime::MAX)];
 
-impl BoundaryUnit {
+impl DateTimeBoundaryUnit {
     pub(crate) fn from_py(state: &State, obj: PyObj) -> PyResult<Self> {
         find_interned(obj, |v, eq| {
             if eq(v, *state.str_year) {
-                Some(Ok(BoundaryUnit::Date(date::BoundaryUnit::Year)))
+                Some(Ok(DateTimeBoundaryUnit::Date(date::DateBoundaryUnit::Year)))
             } else if eq(v, *state.str_month) {
-                Some(Ok(BoundaryUnit::Date(date::BoundaryUnit::Month)))
+                Some(Ok(DateTimeBoundaryUnit::Date(
+                    date::DateBoundaryUnit::Month,
+                )))
             } else if eq(v, *state.str_week_mon) {
-                Some(Ok(BoundaryUnit::Date(date::BoundaryUnit::WeekMon)))
+                Some(Ok(DateTimeBoundaryUnit::Date(
+                    date::DateBoundaryUnit::WeekMon,
+                )))
             } else if eq(v, *state.str_week_sun) {
-                Some(Ok(BoundaryUnit::Date(date::BoundaryUnit::WeekSun)))
+                Some(Ok(DateTimeBoundaryUnit::Date(
+                    date::DateBoundaryUnit::WeekSun,
+                )))
             } else if eq(v, *state.str_day) {
-                Some(Ok(BoundaryUnit::Day))
+                Some(Ok(DateTimeBoundaryUnit::Day))
             } else if eq(v, *state.str_hour) {
-                Some(Ok(BoundaryUnit::Time(time::BoundUnit::Hour)))
+                Some(Ok(DateTimeBoundaryUnit::Time(time::TimeBoundaryUnit::Hour)))
             } else if eq(v, *state.str_minute) {
-                Some(Ok(BoundaryUnit::Time(time::BoundUnit::Minute)))
+                Some(Ok(DateTimeBoundaryUnit::Time(
+                    time::TimeBoundaryUnit::Minute,
+                )))
             } else if eq(v, *state.str_second) {
-                Some(Ok(BoundaryUnit::Time(time::BoundUnit::Second)))
+                Some(Ok(DateTimeBoundaryUnit::Time(
+                    time::TimeBoundaryUnit::Second,
+                )))
             } else if eq(v, *state.str_week) {
                 Some(raise_value_err(
                     "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
@@ -161,7 +171,7 @@ fn __repr__(_: PyType, slf: PlainDateTime) -> PyReturn {
         b"PlainDateTime(\"",
         date.format_iso(false),
         b' ',
-        time.format_iso(fmt::Unit::Auto, false),
+        time.format_iso(fmt::Precision::Auto, false),
         b"\")",
     ))
 }
@@ -205,16 +215,7 @@ fn __richcmp__(
     op: c_int,
 ) -> PyReturn {
     if let Some(dt) = other.extract(cls) {
-        match op {
-            pyo3_ffi::Py_LT => slf < dt,
-            pyo3_ffi::Py_LE => slf <= dt,
-            pyo3_ffi::Py_EQ => slf == dt,
-            pyo3_ffi::Py_NE => slf != dt,
-            pyo3_ffi::Py_GT => slf > dt,
-            pyo3_ffi::Py_GE => slf >= dt,
-            _ => unreachable!(),
-        }
-        .to_py()
+        CompareOp::from_ffi(op).apply(slf, dt).to_py()
     } else {
         not_implemented()
     }
@@ -269,9 +270,9 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
             )?;
             slf.shift(tdelta.negate_if(negate)).ok_or_range_err()?
         } else if let Some(dt) = other.extract(*state.datetime_delta_type) {
-            let mut months = dt.ddelta.months;
-            let mut days = dt.ddelta.days;
-            let mut tdelta = dt.tdelta;
+            let mut months = dt.date.months;
+            let mut days = dt.date.days;
+            let mut tdelta = dt.time;
             if negate {
                 months = -months;
                 days = -days;
@@ -631,13 +632,13 @@ fn in_leap_year(_: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
 }
 
 fn start_of(cls: PyClass<PlainDateTime>, slf: PlainDateTime, unit_obj: PyObj) -> PyReturn {
-    slf.start_of_unit(BoundaryUnit::from_py(cls.state(), unit_obj)?)
+    slf.start_of_unit(DateTimeBoundaryUnit::from_py(cls.state(), unit_obj)?)
         .ok_or_range_err()?
         .to_obj(cls)
 }
 
 fn end_of(cls: PyClass<PlainDateTime>, slf: PlainDateTime, unit_obj: PyObj) -> PyReturn {
-    slf.end_of_unit(BoundaryUnit::from_py(cls.state(), unit_obj)?)
+    slf.end_of_unit(DateTimeBoundaryUnit::from_py(cls.state(), unit_obj)?)
         .ok_or_range_err()?
         .to_obj(cls)
 }
@@ -840,7 +841,7 @@ pub(crate) fn plain_since_float(
     a: PlainDateTime,
     b: PlainDateTime,
     target_date: Date,
-    unit: DeltaUnit,
+    unit: DifferenceUnit,
     neg: bool,
 ) -> PyReturn {
     match unit.to_exact(true) {
@@ -855,25 +856,27 @@ pub(crate) fn plain_since_float(
                 (nanos as f64 / unit_nanos as f64).to_py()
             }
         }
-        Err(cal_unit) => total_cal_plain(neg, cal_unit, a.assume_utc(), b, target_date),
+        Err(calendar_unit) => {
+            total_calendar_plain(neg, calendar_unit, a.assume_utc(), b, target_date)
+        }
     }
 }
 
 /// Calendar-unit fractional total for PlainDateTime/OffsetDateTime, treating
 /// the reference datetime as UTC (no DST transitions).
 ///
-/// This mirrors `zoned_datetime::total_cal` but works with raw `Instant` and
+/// This mirrors `zoned_datetime::total_calendar` but works with raw `Instant` and
 /// `PlainDateTime` values instead of `ZonedDateTime`, avoiding the need for a UTC
 /// timezone object.
-pub(crate) fn total_cal_plain(
+pub(crate) fn total_calendar_plain(
     neg: bool,
-    unit: math::CalUnit,
+    unit: math::CalendarUnit,
     a_inst: Instant,
     b_dt: PlainDateTime,
     target_date: Date,
 ) -> PyReturn {
     let (result, trunc_raw, expand_raw) =
-        math::date_diff_single_unit(target_date, b_dt.date, DateRoundIncrement::MIN, unit, neg)
+        math::date_diff_single_unit(target_date, b_dt.date, CalendarIncrement::MIN, unit, neg)
             .ok_or_range_err()?;
     let trunc = b_dt.with_date(trunc_raw.into()).assume_utc();
     let expand = b_dt.with_date(expand_raw.into()).assume_utc();
@@ -924,23 +927,23 @@ fn plain_since_in_units(
     a: PlainDateTime,
     b: PlainDateTime,
     target_date: Date,
-    units: DeltaUnitSet,
+    units: DifferenceUnitSet,
     round_mode: round::Mode,
-    round_increment: math::RoundIncrement,
+    round_increment: math::DifferenceIncrement,
     neg: bool,
 ) -> PyReturn {
     let smallest_unit = units.smallest();
-    let (cal_units, exact_units) = units.split_cal_exact();
+    let (calendar_units, exact_units) = units.split_calendar_exact();
 
-    let (mut cal_results, trunc_date, expand_date) = if cal_units.is_empty() {
+    let (mut calendar_results, trunc_date, expand_date) = if calendar_units.is_empty() {
         (ItemizedDateDelta::UNSET, b.date.into(), a.date.into())
     } else {
         let inc = if smallest_unit.to_exact(false).is_err() {
-            round_increment.to_date().ok_or_range_err()?
+            round_increment.to_calendar().ok_or_range_err()?
         } else {
-            DateRoundIncrement::MIN
+            CalendarIncrement::MIN
         };
-        math::date_diff(target_date, b.date, inc, cal_units, neg).ok_or_range_err()?
+        math::date_diff(target_date, b.date, inc, calendar_units, neg).ok_or_range_err()?
     };
 
     let trunc_dt = b.with_date(trunc_date.into());
@@ -949,8 +952,8 @@ fn plain_since_in_units(
     // If there are no time units, round the calendar units.
     // Otherwise, calculate the time delta remainder
     let mut result = if exact_units.is_empty() {
-        cal_results.round_by_time(
-            cal_units.smallest(),
+        calendar_results.round_by_time(
+            calendar_units.smallest(),
             // This UTC conversion is a bit weird, but it allows us to reuse
             // the logic since plain and UTC datetimes both have no timezone
             // adjustments.
@@ -958,7 +961,7 @@ fn plain_since_in_units(
             trunc_dt.assume_utc(),
             expand_dt.assume_utc(),
             round_mode.to_abs_trunc(neg),
-            round_increment.to_date().ok_or_range_err()?,
+            round_increment.to_calendar().ok_or_range_err()?,
             neg,
         );
         ItemizedDelta::UNSET
@@ -968,7 +971,7 @@ fn plain_since_in_units(
             .ok_or_range_err()?
     };
 
-    result.fill_cal_units(cal_results);
+    result.fill_calendar_units(calendar_results);
     result.to_obj(state)
 }
 

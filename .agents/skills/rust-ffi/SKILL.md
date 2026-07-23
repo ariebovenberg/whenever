@@ -34,6 +34,7 @@ Key helpers in `src/py/`:
 - `find_interned(value, handler)` — match a PyObj against interned strings, returns `Option`
 - `match_interned_str(name, value, handler)` — like `find_interned` but raises on no match
 - `match_type!(obj, type => |value| {...}, _ => {...})` — match an extension object against differently typed `PyClass<T>` values; prefix an arm with `ref` for non-`Copy` types
+- `CompareOp::from_ffi(op).apply(a, b)` — apply a CPython rich-comparison operation to ordered Rust values
 - `generic_alloc(cls, data)` — allocate a Python object with the given payload
 - `PyAsciiStrBuilder::format()` — build a Python string without intermediate Rust `String`
 - `PyTuple::with_len()` / `.init_item()` — safe tuple construction
@@ -109,6 +110,11 @@ class-specific kwargs such as `disambiguate` and warning suppression. For a
 positional delta, use `parse_datetime_shift_arg()` or `parse_calendar_shift_arg()`;
 these raise the method-specific type error if the argument is not a supported delta.
 
+**Instant-like arguments:**
+Use `common::instant::extract_instant()` when a non-Instant operand should fall through to another
+operation, and `parse_instant_arg()` for a required Instant, OffsetDateTime, or ZonedDateTime
+argument. Both normalize to the domain `Instant`.
+
 **Interned string matching with custom errors:**
 Use `find_interned` + manual error message when you need a specific error format.
 Use `match_interned_str` when the default error format is acceptable.
@@ -138,6 +144,9 @@ Use `match_interned_str` when the default error format is acceptable.
   `DateTimeComponents` in `classes::plain_datetime`.
 - **TimeDelta** stores `secs: DeltaSeconds` + `subsec: SubSecNanos`. Use `.total_nanos() -> i128`.
   Has `.in_single_unit()` and `.in_exact_units()` for unit decomposition.
+- Unit types name their role: `fmt::Precision`, `round::RoundUnit`, and
+  `CalendarUnit`/`DifferenceUnit`/`ExactUnit` in `common::math`. Keep these domains distinct unless
+  their parsing and behavior are demonstrably identical.
 - **ItemizedDelta/ItemizedDateDelta** use `DeltaField<T>` with `i32::MAX` as the UNSET sentinel.
   `DeltaField` has custom `Debug` showing `<unset>` for sentinel values.
 

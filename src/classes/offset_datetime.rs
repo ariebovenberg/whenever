@@ -4,8 +4,9 @@ use pyo3_ffi::*;
 
 pub(crate) use crate::domain::offset_datetime::OffsetDateTime;
 
-use crate::classes::plain_datetime::BoundaryUnit;
+use crate::classes::plain_datetime::DateTimeBoundaryUnit;
 use crate::common::{
+    instant::{extract_instant, parse_instant_arg},
     math::SinceUntilKwargs,
     shift::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
 };
@@ -184,7 +185,7 @@ fn __repr__(_: PyType, OffsetDateTime { date, time, offset }: OffsetDateTime) ->
         b"OffsetDateTime(\"",
         date.format_iso(false),
         b' ',
-        time.format_iso(fmt::Unit::Auto, false),
+        time.format_iso(fmt::Precision::Auto, false),
         offset.format_iso(false),
         b"\")",
     ))
@@ -194,7 +195,7 @@ fn __str__(_: PyType, OffsetDateTime { date, time, offset }: OffsetDateTime) -> 
     PyAsciiStrBuilder::format((
         date.format_iso(false),
         b'T',
-        time.format_iso(fmt::Unit::Auto, false),
+        time.format_iso(fmt::Precision::Auto, false),
         offset.format_iso(false),
     ))
 }
@@ -206,29 +207,10 @@ fn __richcmp__(
     op: c_int,
 ) -> PyReturn {
     let inst_a = a.to_instant();
-    let inst_b = if let Some(odt) = b_obj.extract(cls) {
-        odt.to_instant()
-    } else {
-        let state = cls.state();
-
-        if let Some(inst) = b_obj.extract(*state.instant_type) {
-            inst
-        } else if let Some(zdt) = b_obj.extract_ref(*state.zoned_datetime_type) {
-            zdt.to_instant()
-        } else {
-            return not_implemented();
-        }
+    let Some(inst_b) = extract_instant(b_obj, cls.state()) else {
+        return not_implemented();
     };
-    match op {
-        pyo3_ffi::Py_EQ => inst_a == inst_b,
-        pyo3_ffi::Py_NE => inst_a != inst_b,
-        pyo3_ffi::Py_LT => inst_a < inst_b,
-        pyo3_ffi::Py_LE => inst_a <= inst_b,
-        pyo3_ffi::Py_GT => inst_a > inst_b,
-        pyo3_ffi::Py_GE => inst_a >= inst_b,
-        _ => unreachable!(),
-    }
-    .to_py()
+    CompareOp::from_ffi(op).apply(inst_a, inst_b).to_py()
 }
 
 pub(crate) extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
@@ -287,12 +269,9 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
                     .to_obj(slf.class())?,
             ));
         }
-        let inst_b = match_type!(
-            other,
-            *state.instant_type => |inst| { inst },
-            ref *state.zoned_datetime_type => |zdt| { zdt.to_instant() },
-            _ => { return Ok(None) },
-        );
+        let Some(inst_b) = extract_instant(other, state) else {
+            return Ok(None);
+        };
         Ok(Some(
             slf.to_instant()
                 .diff(inst_b)
@@ -537,7 +516,7 @@ fn start_of(
         offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
     }
     slf.to_plain()
-        .start_of_unit(BoundaryUnit::from_py(
+        .start_of_unit(DateTimeBoundaryUnit::from_py(
             state,
             handle_one_arg("start_of", args)?,
         )?)
@@ -562,7 +541,7 @@ fn end_of(
         offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
     }
     slf.to_plain()
-        .end_of_unit(BoundaryUnit::from_py(
+        .end_of_unit(DateTimeBoundaryUnit::from_py(
             state,
             handle_one_arg("end_of", args)?,
         )?)
@@ -849,18 +828,7 @@ fn shift_method(
 
 fn difference(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> PyReturn {
     let state = cls.state();
-    let other_inst = if let Some(odt) = arg.extract(cls) {
-        odt.to_instant()
-    } else if let Some(inst) = arg.extract(*state.instant_type) {
-        inst
-    } else if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
-        zdt.to_instant()
-    } else {
-        raise_type_err(
-            "difference() argument must be an OffsetDateTime,
-                Instant, or ZonedDateTime",
-        )?
-    };
+    let other_inst = parse_instant_arg("difference", arg, state)?;
 
     slf.to_instant()
         .diff(other_inst)

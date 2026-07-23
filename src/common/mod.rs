@@ -1,6 +1,7 @@
 //! Module with reusable components used elsewhere in the crate
 pub mod disambiguation;
 pub mod fmt;
+pub mod instant;
 pub mod math;
 pub mod parse;
 pub mod pattern;
