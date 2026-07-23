@@ -156,7 +156,7 @@ impl Instant {
             self.epoch
                 .shift_by_offset(offset)?
                 .datetime(self.subsec)
-                .with_offset_unchecked(offset),
+                .assume_offset_unchecked(offset),
         )
     }
 

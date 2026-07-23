@@ -47,20 +47,20 @@ impl OffsetDateTime {
 
     pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
         PlainDateTime::read_iso(s)?
-            .with_offset(Offset::read_iso(s)?)
-            .and_then(|datetime| {
+            .assume_offset(Offset::read_iso(s)?)
+            .and_then(|dt| {
                 skip_tzname(s)?;
-                Some(datetime)
+                Some(dt)
             })
     }
 }
 
 impl PlainDateTime {
-    pub(crate) fn with_offset(self, offset: Offset) -> Option<OffsetDateTime> {
+    pub(crate) fn assume_offset(self, offset: Offset) -> Option<OffsetDateTime> {
         OffsetDateTime::new(self.date, self.time, offset)
     }
 
-    pub(crate) const fn with_offset_unchecked(self, offset: Offset) -> OffsetDateTime {
+    pub(crate) const fn assume_offset_unchecked(self, offset: Offset) -> OffsetDateTime {
         OffsetDateTime {
             date: self.date,
             time: self.time,
@@ -74,7 +74,7 @@ impl Instant {
         Some(
             self.shift_by_offset(offset)?
                 .to_utc_plain()
-                .with_offset_unchecked(offset),
+                .assume_offset_unchecked(offset),
         )
     }
 }

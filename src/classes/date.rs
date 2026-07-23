@@ -10,14 +10,14 @@ pub use crate::domain::date::Date;
 
 use crate::{
     classes::{
-        date_delta::{DateDelta, handle_init_kwargs as handle_datedelta_kwargs},
-        itemized_date_delta::ItemizedDateDelta,
+        date_delta::DateDelta, itemized_date_delta::ItemizedDateDelta,
         plain_datetime::PlainDateTime,
     },
     common::{
         math::{self, CalUnit, CalUnitSet, DateRoundIncrement, DateSinceUnits},
         pattern, round,
         scalar::*,
+        shift::{parse_calendar_shift_arg, parse_calendar_shift_kwargs},
     },
     docstrings as doc,
     py::*,
@@ -494,29 +494,17 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let (mut months, mut days) = match (args, kwargs.len()) {
-        (&[arg], 0) => {
-            if let Some(d) = arg.extract(*state.date_delta_type) {
-                (d.months, d.days)
-            } else if let Some(d) = ItemizedDateDelta::extract(arg, state)? {
-                d.to_months_days().ok_or_range_err()?
-            } else {
-                raise_type_err(format!(
-                    "{fname}() argument must be a DateDelta or ItemizedDateDelta"
-                ))?
-            }
-        }
-        ([], _) => handle_datedelta_kwargs(fname, kwargs, state)?,
+    let shift = match (args, kwargs.len()) {
+        (&[arg], 0) => parse_calendar_shift_arg(fname, arg, state)?,
+        ([], _) => parse_calendar_shift_kwargs(fname, kwargs, state)?,
         _ => raise_type_err(format!(
             "{fname}() takes either only kwargs or 1 positional arg"
         ))?,
     };
-    if negate {
-        days = -days;
-        months = -months;
-    }
 
-    slf.shift(months, days).ok_or_range_err()?.to_obj(cls)
+    slf.shift_by(shift.negate_if(negate))
+        .ok_or_range_err()?
+        .to_obj(cls)
 }
 
 fn since(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
@@ -671,22 +659,13 @@ fn replace(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwarg
     let mut year = slf.year.get().into();
     let mut month = slf.month.get().into();
     let mut day = slf.day.into();
-    handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, *state.str_year) {
-            year = value
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_type_err("year must be an integer")?
-                .to_long()?;
-        } else if eq(key, *state.str_month) {
-            month = value
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_type_err("month must be an integer")?
-                .to_long()?;
-        } else if eq(key, *state.str_day) {
-            day = value
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_type_err("day must be an integer")?
-                .to_long()?;
+    handle_kwargs("replace", kwargs, |k, v, eq| {
+        if eq(k, *state.str_year) {
+            year = v.expect_int("year")?.to_long()?;
+        } else if eq(k, *state.str_month) {
+            month = v.expect_int("month")?.to_long()?;
+        } else if eq(k, *state.str_day) {
+            day = v.expect_int("day")?.to_long()?;
         } else {
             return Ok(false);
         }

@@ -11,11 +11,6 @@ pub struct LocalSeconds(EpochSecs);
 
 impl LocalSeconds {
     #[inline]
-    pub(crate) fn from_plain(datetime: PlainDateTime) -> Self {
-        Self(datetime.date.epoch_at(datetime.time))
-    }
-
-    #[inline]
     pub(crate) fn from_instant_saturating(epoch: EpochSecs, offset: Offset) -> Self {
         Self(epoch.saturating_shift_by_offset(offset))
     }
@@ -49,6 +44,13 @@ impl LocalSeconds {
 
     pub(crate) fn date(self) -> Date {
         self.0.date()
+    }
+}
+
+impl PlainDateTime {
+    #[inline]
+    pub fn local_seconds(self) -> LocalSeconds {
+        LocalSeconds(self.date.epoch_at(self.time))
     }
 }
 
@@ -98,7 +100,7 @@ impl LocalMapping {
         policy: ResolvePolicy,
     ) -> Result<OffsetDateTime, ResolveError> {
         let resolved = match self {
-            Self::Unique { offset } => local.with_offset(offset),
+            Self::Unique { offset } => local.assume_offset(offset),
             Self::Fold { before, after, .. } => {
                 let offset = match policy {
                     ResolvePolicy::Disambiguate(Disambiguation::Earlier)
@@ -115,7 +117,7 @@ impl LocalMapping {
                         }
                     }
                 };
-                local.with_offset(offset)
+                local.assume_offset(offset)
             }
             Self::Gap { before, after, .. } => {
                 let shift = after.sub(before);
@@ -131,7 +133,7 @@ impl LocalMapping {
                 };
                 local
                     .shift_by_offset(shift)
-                    .and_then(|shifted| shifted.with_offset(offset))
+                    .and_then(|dt| dt.assume_offset(offset))
             }
         };
         resolved.ok_or(ResolveError::OutOfRange)
@@ -164,12 +166,12 @@ mod tests {
         for disambiguation in [Disambiguation::Compatible, Disambiguation::Earlier] {
             assert_eq!(
                 mapping.resolve(local, ResolvePolicy::Disambiguate(disambiguation)),
-                Ok(local.with_offset(before).unwrap())
+                Ok(local.assume_offset(before).unwrap())
             );
         }
         assert_eq!(
             mapping.resolve(local, ResolvePolicy::Disambiguate(Disambiguation::Later)),
-            Ok(local.with_offset(after).unwrap())
+            Ok(local.assume_offset(after).unwrap())
         );
         assert_eq!(
             mapping.resolve(local, ResolvePolicy::Disambiguate(Disambiguation::Reject)),
@@ -177,11 +179,11 @@ mod tests {
         );
         assert_eq!(
             mapping.resolve(local, ResolvePolicy::PreserveOffset(after)),
-            Ok(local.with_offset(after).unwrap())
+            Ok(local.assume_offset(after).unwrap())
         );
         assert_eq!(
             mapping.resolve(local, ResolvePolicy::PreserveOffset(Offset::ZERO)),
-            Ok(local.with_offset(before).unwrap())
+            Ok(local.assume_offset(before).unwrap())
         );
     }
 
@@ -207,7 +209,7 @@ mod tests {
                 Ok(local
                     .shift_by_offset(shift)
                     .unwrap()
-                    .with_offset(after)
+                    .assume_offset(after)
                     .unwrap())
             );
         }
@@ -216,7 +218,7 @@ mod tests {
             Ok(local
                 .shift_by_offset(-shift)
                 .unwrap()
-                .with_offset(before)
+                .assume_offset(before)
                 .unwrap())
         );
         assert_eq!(

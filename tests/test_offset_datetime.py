@@ -12,6 +12,7 @@ from whenever import (
     Date,
     Instant,
     InvalidOffsetError,
+    ItemizedDateDelta,
     ItemizedDelta,
     OffsetDateTime,
     PlainDateTime,
@@ -1099,6 +1100,18 @@ class TestAddSubtractOperators:
 
 
 class TestShiftMethods:
+    @pytest.mark.parametrize(
+        "delta, kwargs",
+        [
+            (ItemizedDateDelta(days=1), {"days": 1}),
+            (ItemizedDelta(days=1, hours=2), {"days": 1, "hours": 2}),
+        ],
+    )
+    @suppress(StaleOffsetWarning)
+    def test_itemized_delta_arguments(self, delta, kwargs):
+        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=2)
+        assert d.add(delta).exact_eq(d.add(**kwargs))
+
     def test_warnings(self):
         d = OffsetDateTime(
             2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=5
