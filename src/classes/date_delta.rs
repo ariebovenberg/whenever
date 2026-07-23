@@ -1,4 +1,4 @@
-use core::ffi::{CStr, c_int, c_long, c_void};
+use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
 use std::ptr::null_mut as NULL;
 
@@ -6,8 +6,9 @@ pub(crate) use crate::domain::date_delta::{DateDelta, InitError};
 
 use crate::{
     classes::{datetime_delta::DateTimeDelta, time_delta::TimeDelta},
-    common::scalar::*,
+    common::{scalar::*, shift::parse_calendar_shift_kwargs},
     docstrings as doc,
+    domain::shift::CalendarShift,
     py::*,
     pymodule::State,
 };
@@ -28,58 +29,6 @@ impl DateDelta {
 impl PyPayload for DateDelta {}
 
 pub(crate) const SINGLETONS: &[(&CStr, DateDelta); 1] = &[(c"ZERO", DateDelta::ZERO)];
-
-pub(crate) fn handle_init_kwargs<T>(
-    fname: &str,
-    kwargs: T,
-    state: &State,
-) -> PyResult<(DeltaMonths, DeltaDays)>
-where
-    T: IntoIterator<Item = (PyObj, PyObj)>,
-{
-    let mut days: c_long = 0;
-    let mut months: c_long = 0;
-    handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, *state.str_days) {
-            days = value
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_type_err("days must be an integer")?
-                .to_long()?
-                .checked_add(days)
-                .ok_or_range_err()?;
-        } else if eq(key, *state.str_months) {
-            months = value
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_type_err("months must be an integer")?
-                .to_long()?
-                .checked_add(months)
-                .ok_or_range_err()?;
-        } else if eq(key, *state.str_years) {
-            months = value
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_type_err("years must be an integer")?
-                .to_long()?
-                .checked_mul(12)
-                .and_then(|m| m.checked_add(months))
-                .ok_or_range_err()?;
-        } else if eq(key, *state.str_weeks) {
-            days = value
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_type_err("weeks must be an integer")?
-                .to_long()?
-                .checked_mul(7)
-                .and_then(|d| d.checked_add(days))
-                .ok_or_range_err()?;
-        } else {
-            return Ok(false);
-        }
-        Ok(true)
-    })?;
-    Ok((
-        DeltaMonths::from_long(months).ok_or_range_err()?,
-        DeltaDays::from_long(days).ok_or_range_err()?,
-    ))
-}
 
 fn __new__(cls: PyClass<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let state = cls.state();
@@ -102,7 +51,8 @@ fn __new__(cls: PyClass<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     match kwargs {
         None => DateDelta::ZERO,
         Some(kwarg_dict) => {
-            let (months, days) = handle_init_kwargs("DateDelta", kwarg_dict.iteritems(), state)?;
+            let CalendarShift { months, days } =
+                parse_calendar_shift_kwargs("DateDelta", kwarg_dict.iteritems(), state)?;
             DateDelta::new(months, days).ok_or_value_err("mixed sign in DateDelta")?
         }
     }

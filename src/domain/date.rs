@@ -1,6 +1,7 @@
 use super::{
     plain_datetime::PlainDateTime,
     scalar::{DeltaDays, DeltaMonths, EpochSecs, Month, UnixDays, Weekday, Year},
+    shift::CalendarShift,
     time::Time,
 };
 use crate::common::{
@@ -104,6 +105,10 @@ impl Date {
     pub(crate) fn shift(self, months: DeltaMonths, days: DeltaDays) -> Option<Date> {
         self.shift_months(months)
             .and_then(|date| date.shift_days(days))
+    }
+
+    pub(crate) fn shift_by(self, shift: CalendarShift) -> Option<Date> {
+        self.shift(shift.months, shift.days)
     }
 
     pub(crate) fn shift_days(self, days: DeltaDays) -> Option<Date> {

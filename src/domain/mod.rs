@@ -11,6 +11,7 @@ pub mod offset_datetime;
 pub mod plain_datetime;
 pub mod round;
 pub mod scalar;
+pub mod shift;
 pub mod time;
 pub mod time_delta;
 pub mod zoned_datetime;

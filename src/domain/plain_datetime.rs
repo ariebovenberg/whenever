@@ -1,8 +1,8 @@
 use super::{
     date::{BoundaryUnit as DateBoundaryUnit, Date},
     instant::Instant,
-    local::LocalSeconds,
     scalar::{DeltaDays, DeltaMonths, Month, OffsetDelta, S_PER_DAY, Year},
+    shift::DateTimeShift,
     time::{BoundUnit as TimeBoundaryUnit, Time},
     time_delta::TimeDelta,
 };
@@ -40,10 +40,6 @@ impl PlainDateTime {
         }
     }
 
-    pub fn local_seconds(self) -> LocalSeconds {
-        LocalSeconds::from_plain(self)
-    }
-
     pub(crate) fn diff(self, other: Self) -> TimeDelta {
         self.assume_utc().diff(other.assume_utc())
     }
@@ -62,6 +58,11 @@ impl PlainDateTime {
 
     pub(crate) fn shift(self, delta: TimeDelta) -> Option<Self> {
         self.assume_utc().shift(delta).map(Instant::to_utc_plain)
+    }
+
+    pub(crate) fn shift_by(self, shift: DateTimeShift) -> Option<Self> {
+        self.shift_date(shift.calendar.months, shift.calendar.days)
+            .and_then(|dt| dt.shift(shift.time))
     }
 
     pub(crate) fn shift_by_offset(self, offset: OffsetDelta) -> Option<Self> {

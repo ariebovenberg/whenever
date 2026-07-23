@@ -436,7 +436,7 @@ Verification:
 
 Completed with 82 Rust tests, build and lint, and 2,130 focused Python tests passing (one skipped).
 
-### 6. Consolidate component and shift arguments — planned
+### 6. Consolidate component and shift arguments — complete
 
 Introduce:
 
@@ -447,22 +447,40 @@ DateTimeShift
 Then:
 
 - Replace set_components_from_kwargs()’s mutable output parameters.
-- Make ItemizedDelta::to_components() return DateTimeShift.
-- Add shared extract_datetime_shift() and calendar-only extraction.
+- Replace ItemizedDelta::to_components() with to_shift() returning DateTimeShift.
+- Add shared parse_datetime_shift_arg() and calendar-only argument parsing.
 - Add shared keyword-unit parsing returning a value rather than mutating three
   outputs.
 
 - Retain class-specific parsing for disambiguate, stale-offset suppression, and
   naive-arithmetic warnings.
 
-- Replace boolean parser controls with small enums such as AllowedSubsecondUnits.
+- Remove the boolean parser controls. All current consumers accept the same subsecond units, so an
+  enum would not encode a real distinction.
 
 Verification:
 
-- Parameterized tests covering every accepted delta representation for
-  PlainDateTime, OffsetDateTime, and ZonedDateTime.
+- Parameterized tests covering the nondeprecated delta representations for
+  PlainDateTime, OffsetDateTime, and ZonedDateTime, reusing existing coverage
+  where it already exercises the same extraction path.
 
 - Tests for mixed positional/keyword errors and warning-suppression kwargs.
+
+The value types live in `domain::shift`; reusable Python delta and keyword parsing lives in
+`common::shift`. `Date`, `PlainDateTime`, and `ZonedDateTime` consume the typed shifts directly,
+while `DateTimeComponents` consolidates replacement parsing without moving Python conversion into
+the domain layer.
+
+Conversions are receiver-oriented: use `PlainDateTime::components()` and `assume_offset()`, and
+convert `CalendarShift` or `TimeDelta` with `to_shift()`. Shared integer kwargs use
+`PyObj::expect_int(name)` to preserve subclass acceptance and consistent TypeErrors.
+
+Do not build new abstractions or duplicate broad test matrices around DateDelta and DateTimeDelta.
+They are deprecated compatibility paths and will be removed; keep them working while favoring the
+itemized delta types in new internal APIs and tests.
+
+Completed with all 82 Rust tests, build and lint, and 2,761 focused Python tests passing (one
+skipped).
 
 ### 7. Consolidate instant-like and unit logic — planned
 

@@ -1,6 +1,7 @@
 use super::{
     itemized_date_delta::ItemizedDateDelta,
     scalar::{DeltaDays, DeltaField, DeltaMonths, NS_PER_HOUR, NS_PER_MINUTE, NS_PER_SEC},
+    shift::{CalendarShift, DateTimeShift},
     time_delta::TimeDelta,
 };
 
@@ -35,7 +36,7 @@ impl ItemizedDelta {
         self.days = data.days;
     }
 
-    pub(crate) fn to_components(self) -> Option<(DeltaMonths, DeltaDays, TimeDelta)> {
+    pub(crate) fn to_shift(self) -> Option<DateTimeShift> {
         let months = DeltaMonths::new(
             (self.years.get_or(0) as i64 * 12 + self.months.get_or(0) as i64) as i32,
         )?;
@@ -45,6 +46,9 @@ impl ItemizedDelta {
             + self.minutes.get_or(0) as i128 * NS_PER_MINUTE as i128
             + self.seconds.get_or(0) as i128 * NS_PER_SEC as i128
             + self.nanos.get_or(0) as i128;
-        Some((months, days, TimeDelta::from_nanos(nanos)?))
+        Some(DateTimeShift {
+            calendar: CalendarShift { months, days },
+            time: TimeDelta::from_nanos(nanos)?,
+        })
     }
 }

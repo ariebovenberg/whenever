@@ -310,27 +310,15 @@ fn replace(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwarg
         let mut minute = slf.minute.into();
         let mut second = slf.second.into();
         let mut nanos = slf.subsec.get() as _;
-        handle_kwargs("replace", kwargs, |key, value, eq| {
-            if eq(key, *state.str_hour) {
-                hour = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_type_err("hour must be an integer")?
-                    .to_long()?;
-            } else if eq(key, *state.str_minute) {
-                minute = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_type_err("minute must be an integer")?
-                    .to_long()?;
-            } else if eq(key, *state.str_second) {
-                second = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_type_err("second must be an integer")?
-                    .to_long()?;
-            } else if eq(key, *state.str_nanosecond) {
-                nanos = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_type_err("nanosecond must be an integer")?
-                    .to_long()?;
+        handle_kwargs("replace", kwargs, |k, v, eq| {
+            if eq(k, *state.str_hour) {
+                hour = v.expect_int("hour")?.to_long()?;
+            } else if eq(k, *state.str_minute) {
+                minute = v.expect_int("minute")?.to_long()?;
+            } else if eq(k, *state.str_second) {
+                second = v.expect_int("second")?.to_long()?;
+            } else if eq(k, *state.str_nanosecond) {
+                nanos = v.expect_int("nanosecond")?.to_long()?;
             } else {
                 return Ok(false);
             }

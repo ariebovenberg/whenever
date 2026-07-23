@@ -4,15 +4,16 @@ use pyo3_ffi::*;
 
 pub(crate) use crate::domain::offset_datetime::OffsetDateTime;
 
-use crate::classes::itemized_date_delta::ItemizedDateDelta;
-use crate::classes::itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs};
 use crate::classes::plain_datetime::BoundaryUnit;
-use crate::common::math::{DeltaUnitSet, SinceUntilKwargs};
+use crate::common::{
+    math::SinceUntilKwargs,
+    shift::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
+};
 use crate::{
     classes::{
         date::Date,
         instant::Instant,
-        plain_datetime::{self, PlainDateTime, set_components_from_kwargs},
+        plain_datetime::{self, PlainDateTime},
         time::Time,
         time_delta::TimeDelta,
     },
@@ -84,7 +85,9 @@ impl OffsetDateTime {
     pub(crate) fn from_stdlib_datetime(dt: PyDateTime) -> PyResult<Self> {
         let date = Date::from_stdlib_date(dt.date());
         let time = Time::from_stdlib_datetime(dt);
-        OffsetDateTime::new(date, time, Offset::from_stdlib_datetime(dt)?).ok_or_range_err()
+        date.at(time)
+            .assume_offset(Offset::from_stdlib_datetime(dt)?)
+            .ok_or_range_err()
     }
 }
 
@@ -171,7 +174,7 @@ fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
     Date::from_longs(year, month, day)
         .ok_or_value_err("invalid date")?
         .at(Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?)
-        .with_offset(offset)
+        .assume_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)
 }
@@ -252,7 +255,7 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         Ok(Some(
             PlainDateTime { date, time }
                 .shift(tdelta)
-                .and_then(|dt| dt.with_offset(offset))
+                .and_then(|dt| dt.assume_offset(offset))
                 .ok_or_range_err()?
                 .to_obj(cls)?,
         ))
@@ -279,7 +282,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             return Ok(Some(
                 PlainDateTime { date, time }
                     .shift(-tdelta)
-                    .and_then(|dt| dt.with_offset(offset))
+                    .and_then(|dt| dt.assume_offset(offset))
                     .ok_or_range_err()?
                     .to_obj(slf.class())?,
             ));
@@ -539,7 +542,7 @@ fn start_of(
             handle_one_arg("start_of", args)?,
         )?)
         .ok_or_range_err()?
-        .with_offset(slf.offset)
+        .assume_offset(slf.offset)
         .ok_or_range_err()?
         .to_obj(cls)
 }
@@ -564,7 +567,7 @@ fn end_of(
             handle_one_arg("end_of", args)?,
         )?)
         .ok_or_range_err()?
-        .with_offset(slf.offset)
+        .assume_offset(slf.offset)
         .ok_or_range_err()?
         .to_obj(cls)
 }
@@ -616,7 +619,8 @@ fn replace_date(
         raise_type_err("replace_date() takes exactly 1 positional argument")?
     };
     if let Some(date) = arg.extract(*state.date_type) {
-        OffsetDateTime::new(date, time, offset)
+        date.at(time)
+            .assume_offset(offset)
             .ok_or_range_err()?
             .to_obj(cls)
     } else {
@@ -641,7 +645,8 @@ fn replace_time(
         raise_type_err("replace_time() takes exactly 1 positional argument")?
     };
     if let Some(time) = arg.extract(*state.time_type) {
-        OffsetDateTime::new(date, time, offset)
+        date.at(time)
+            .assume_offset(offset)
             .ok_or_range_err()?
             .to_obj(cls)
     } else {
@@ -687,42 +692,20 @@ fn replace(
         raise_type_err("replace() takes no positional arguments")?
     }
     let state = cls.state();
-    let OffsetDateTime {
-        date,
-        time,
-        mut offset,
-    } = slf;
-    let mut year = date.year.get().into();
-    let mut month = date.month.get().into();
-    let mut day = date.day.into();
-    let mut hour = time.hour.into();
-    let mut minute = time.minute.into();
-    let mut second = time.second.into();
-    let mut nanos = time.subsec.get() as _;
+    let mut components = slf.to_plain().components();
+    let mut offset = slf.offset;
     let mut got_ignore_dst = false;
     let mut suppress_stale = false;
 
-    handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, *state.str_ignore_dst) {
+    handle_kwargs("replace", kwargs, |k, v, eq| {
+        if eq(k, *state.str_ignore_dst) {
             got_ignore_dst = true;
-        } else if eq(key, *state.str_stale_offset_ok) {
-            suppress_stale = value.is_truthy()?;
-        } else if eq(key, *state.str_offset) {
-            offset = Offset::from_obj(value, *state.time_delta_type)?;
+        } else if eq(k, *state.str_stale_offset_ok) {
+            suppress_stale = v.is_truthy()?;
+        } else if eq(k, *state.str_offset) {
+            offset = Offset::from_obj(v, *state.time_delta_type)?;
         } else {
-            return set_components_from_kwargs(
-                key,
-                value,
-                &mut year,
-                &mut month,
-                &mut day,
-                &mut hour,
-                &mut minute,
-                &mut second,
-                &mut nanos,
-                state,
-                eq,
-            );
+            return components.set_from_kwarg(k, v, state, eq);
         }
         Ok(true)
     })?;
@@ -734,9 +717,9 @@ fn replace(
         offset_stale_warning(state, doc::OFFSET_REPLACE_STALE_MSG)?;
     }
 
-    let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
-    let time = Time::from_longs(hour, minute, second, nanos).ok_or_value_err("invalid time")?;
-    OffsetDateTime::new(date, time, offset)
+    components
+        .into_plain()?
+        .assume_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)
 }
@@ -813,13 +796,10 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let mut months = DeltaMonths::ZERO;
-    let mut days = DeltaDays::ZERO;
-    let mut tdelta = TimeDelta::ZERO;
     let mut got_ignore_dst = false;
     let mut suppress_stale = false;
 
-    match *args {
+    let shift = match *args {
         [arg] => {
             for (key, value) in kwargs.by_ref() {
                 if unicode_eq(key, *state.str_ignore_dst) {
@@ -832,59 +812,25 @@ fn shift_method(
                     ))?;
                 }
             }
-            if let Some(t) = arg.extract(*state.time_delta_type) {
-                tdelta = t;
-            } else if let Some(ddelta) = arg.extract(*state.date_delta_type) {
-                months = ddelta.months;
-                days = ddelta.days;
-            } else if let Some(dt) = arg.extract(*state.datetime_delta_type) {
-                months = dt.ddelta.months;
-                days = dt.ddelta.days;
-                tdelta = dt.tdelta;
-            } else if let Some(d) = ItemizedDateDelta::extract(arg, state)? {
-                let (m, dy) = d.to_months_days().ok_or_range_err()?;
-                months = m;
-                days = dy;
-            } else if let Some(d) = ItemizedDelta::extract(arg, state)? {
-                let (m, dy, td) = d.to_components().ok_or_range_err()?;
-                months = m;
-                days = dy;
-                tdelta = td;
+            parse_datetime_shift_arg(fname, arg, state)?
+        }
+        [] => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
+            if eq(k, *state.str_ignore_dst) {
+                got_ignore_dst = true;
+                Ok(true)
+            } else if eq(k, *state.str_stale_offset_ok) {
+                suppress_stale = v.is_truthy()?;
+                Ok(true)
             } else {
-                raise_type_err(format!("{fname}() argument must be a delta"))?
+                Ok(false)
             }
-        }
-        [] => {
-            let mut units = DeltaUnitSet::EMPTY;
-            handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, *state.str_ignore_dst) {
-                    got_ignore_dst = true;
-                    Ok(true)
-                } else if eq(key, *state.str_stale_offset_ok) {
-                    suppress_stale = value.is_truthy()?;
-                    Ok(true)
-                } else {
-                    handle_delta_unit_kwargs(
-                        key,
-                        value,
-                        &mut months,
-                        &mut days,
-                        &mut tdelta,
-                        &mut units,
-                        eq,
-                        true,
-                        true,
-                        state,
-                    )
-                }
-            })?;
-        }
+        })?,
         _ => raise_type_err(format!(
             "{}() takes at most 1 positional argument, got {}",
             fname,
             args.len()
         ))?,
-    }
+    };
 
     if got_ignore_dst {
         warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
@@ -893,13 +839,10 @@ fn shift_method(
         offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
     }
 
-    months = months.negate_if(negate);
-    days = days.negate_if(negate);
-    tdelta = tdelta.negate_if(negate);
+    let shift = shift.negate_if(negate);
     slf.to_plain()
-        .shift_date(months, days)
-        .and_then(|dt| dt.shift(tdelta))
-        .and_then(|dt| dt.with_offset(slf.offset))
+        .shift_by(shift)
+        .and_then(|dt| dt.assume_offset(slf.offset))
         .ok_or_range_err()?
         .to_obj(cls)
 }
@@ -1023,16 +966,11 @@ fn from_timestamp_millis(
     let state = cls.state();
     let offset =
         check_from_timestamp_args_return_offset("from_timestamp_millis", args, kwargs, state)?;
-    Instant::from_timestamp_millis(
-        args[0]
-            .cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("timestamp must be an integer")?
-            .to_i64()?,
-    )
-    .ok_or_range_err()?
-    .to_offset(offset)
-    .ok_or_range_err()?
-    .to_obj(cls)
+    Instant::from_timestamp_millis(args[0].expect_int("timestamp")?.to_i64()?)
+        .ok_or_range_err()?
+        .to_offset(offset)
+        .ok_or_range_err()?
+        .to_obj(cls)
 }
 
 fn from_timestamp_nanos(
@@ -1043,16 +981,11 @@ fn from_timestamp_nanos(
     let state = cls.state();
     let offset =
         check_from_timestamp_args_return_offset("from_timestamp_nanos", args, kwargs, state)?;
-    Instant::from_timestamp_nanos(
-        args[0]
-            .cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("timestamp must be an integer")?
-            .to_i128()?,
-    )
-    .ok_or_range_err()?
-    .to_offset(offset)
-    .ok_or_range_err()?
-    .to_obj(cls)
+    Instant::from_timestamp_nanos(args[0].expect_int("timestamp")?.to_i128()?)
+        .ok_or_range_err()?
+        .to_offset(offset)
+        .ok_or_range_err()?
+        .to_obj(cls)
 }
 
 fn parse_strptime(
@@ -1099,7 +1032,8 @@ fn parse_rfc2822(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
         .ok_or_type_err("expected a string")?;
     let (date, time, offset) =
         rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
-    OffsetDateTime::new(date, time, offset)
+    date.at(time)
+        .assume_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)
 }
@@ -1358,7 +1292,8 @@ fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
     };
 
     // offset is already validated (scalar::Offset) — no range check needed here.
-    OffsetDateTime::new(date, time, offset)
+    date.at(time)
+        .assume_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)
 }
