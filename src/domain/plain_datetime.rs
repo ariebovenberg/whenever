@@ -1,9 +1,9 @@
 use super::{
-    date::{BoundaryUnit as DateBoundaryUnit, Date},
+    date::{Date, DateBoundaryUnit},
     instant::Instant,
     scalar::{DeltaDays, DeltaMonths, Month, OffsetDelta, S_PER_DAY, Year},
     shift::DateTimeShift,
-    time::{BoundUnit as TimeBoundaryUnit, Time},
+    time::{Time, TimeBoundaryUnit},
     time_delta::TimeDelta,
 };
 use crate::common::parse::Scan;
@@ -81,28 +81,28 @@ impl PlainDateTime {
         })
     }
 
-    pub(crate) fn start_of_unit(self, unit: BoundaryUnit) -> Option<PlainDateTime> {
+    pub(crate) fn start_of_unit(self, unit: DateTimeBoundaryUnit) -> Option<PlainDateTime> {
         let (date, time) = match unit {
-            BoundaryUnit::Date(unit) => (self.date.start_of(unit)?, Time::MIN),
-            BoundaryUnit::Time(unit) => (self.date, self.time.start_of(unit)),
-            BoundaryUnit::Day => (self.date, Time::MIN),
+            DateTimeBoundaryUnit::Date(unit) => (self.date.start_of(unit)?, Time::MIN),
+            DateTimeBoundaryUnit::Time(unit) => (self.date, self.time.start_of(unit)),
+            DateTimeBoundaryUnit::Day => (self.date, Time::MIN),
         };
         Some(PlainDateTime { date, time })
     }
 
-    pub(crate) fn end_of_unit(self, unit: BoundaryUnit) -> Option<PlainDateTime> {
+    pub(crate) fn end_of_unit(self, unit: DateTimeBoundaryUnit) -> Option<PlainDateTime> {
         let (date, time) = match unit {
-            BoundaryUnit::Date(unit) => (self.date.end_of(unit)?, Time::MAX),
-            BoundaryUnit::Time(unit) => (self.date, self.time.end_of(unit)),
-            BoundaryUnit::Day => (self.date, Time::MAX),
+            DateTimeBoundaryUnit::Date(unit) => (self.date.end_of(unit)?, Time::MAX),
+            DateTimeBoundaryUnit::Time(unit) => (self.date, self.time.end_of(unit)),
+            DateTimeBoundaryUnit::Day => (self.date, Time::MAX),
         };
         Some(PlainDateTime { date, time })
     }
 
-    pub(crate) fn next_start_of_unit(self, unit: BoundaryUnit) -> Option<PlainDateTime> {
+    pub(crate) fn next_start_of_unit(self, unit: DateTimeBoundaryUnit) -> Option<PlainDateTime> {
         let (date, time) = match unit {
-            BoundaryUnit::Date(unit) => (self.date.next_start_of(unit)?, Time::MIN),
-            BoundaryUnit::Time(unit) => {
+            DateTimeBoundaryUnit::Date(unit) => (self.date.next_start_of(unit)?, Time::MIN),
+            DateTimeBoundaryUnit::Time(unit) => {
                 let (time, overflow) = self.time.next_start_of(unit);
                 (
                     if overflow {
@@ -113,7 +113,7 @@ impl PlainDateTime {
                     time,
                 )
             }
-            BoundaryUnit::Day => (self.date.tomorrow()?, Time::MIN),
+            DateTimeBoundaryUnit::Day => (self.date.tomorrow()?, Time::MIN),
         };
         Some(PlainDateTime { date, time })
     }
@@ -139,7 +139,7 @@ impl PlainDateTime {
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub(crate) enum BoundaryUnit {
+pub(crate) enum DateTimeBoundaryUnit {
     Date(DateBoundaryUnit),
     Time(TimeBoundaryUnit),
     Day,

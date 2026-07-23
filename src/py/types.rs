@@ -2,7 +2,7 @@
 use super::{base::*, dict::PyDict, exc::*, misc::not_implemented, module::*, refs::*};
 use crate::pymodule::State;
 use core::{
-    ffi::CStr,
+    ffi::{CStr, c_int},
     mem::{self, MaybeUninit},
 };
 use pyo3_ffi::*;
@@ -26,6 +26,41 @@ pub(crate) enum BinaryCall<'a, T: PyPayload> {
         other: PyObj,
     },
     OtherTypes,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompareOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+impl CompareOp {
+    pub(crate) fn from_ffi(op: c_int) -> Self {
+        match op {
+            pyo3_ffi::Py_EQ => Self::Eq,
+            pyo3_ffi::Py_NE => Self::Ne,
+            pyo3_ffi::Py_LT => Self::Lt,
+            pyo3_ffi::Py_LE => Self::Le,
+            pyo3_ffi::Py_GT => Self::Gt,
+            pyo3_ffi::Py_GE => Self::Ge,
+            _ => unreachable!(),
+        }
+    }
+
+    pub(crate) fn apply<T: PartialOrd>(self, a: T, b: T) -> bool {
+        match self {
+            Self::Eq => a == b,
+            Self::Ne => a != b,
+            Self::Lt => a < b,
+            Self::Le => a <= b,
+            Self::Gt => a > b,
+            Self::Ge => a >= b,
+        }
+    }
 }
 
 pub(crate) fn binary_operation<T: PyPayload>(

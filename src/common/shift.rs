@@ -44,10 +44,10 @@ pub(crate) fn parse_datetime_shift_arg(
     } else if let Some(delta) = obj.extract(*state.datetime_delta_type) {
         Ok(DateTimeShift {
             calendar: CalendarShift {
-                months: delta.ddelta.months,
-                days: delta.ddelta.days,
+                months: delta.date.months,
+                days: delta.date.days,
             },
-            time: delta.tdelta,
+            time: delta.time,
         })
     } else if let Some(calendar) = ItemizedDateDelta::extract(obj, state)? {
         Ok(calendar.to_calendar_shift().ok_or_range_err()?.to_shift())

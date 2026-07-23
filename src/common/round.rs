@@ -61,7 +61,7 @@ impl Mode {
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub(crate) enum Unit {
+pub(crate) enum RoundUnit {
     Nanosecond,
     Microsecond,
     Millisecond,
@@ -72,26 +72,26 @@ pub(crate) enum Unit {
     Week,
 }
 
-impl Unit {
-    fn from_py(s: PyObj, state: &State, for_delta: bool) -> PyResult<Unit> {
+impl RoundUnit {
+    fn from_py(s: PyObj, state: &State, for_delta: bool) -> PyResult<RoundUnit> {
         // OPTIMIZE: run the comparisons in order if likelihood
         match_interned_str("unit", s, |v, eq| {
             Some(if eq(v, *state.str_nanosecond) {
-                Unit::Nanosecond
+                RoundUnit::Nanosecond
             } else if eq(v, *state.str_microsecond) {
-                Unit::Microsecond
+                RoundUnit::Microsecond
             } else if eq(v, *state.str_millisecond) {
-                Unit::Millisecond
+                RoundUnit::Millisecond
             } else if eq(v, *state.str_second) {
-                Unit::Second
+                RoundUnit::Second
             } else if eq(v, *state.str_minute) {
-                Unit::Minute
+                RoundUnit::Minute
             } else if eq(v, *state.str_hour) {
-                Unit::Hour
+                RoundUnit::Hour
             } else if eq(v, *state.str_day) {
-                Unit::Day
+                RoundUnit::Day
             } else if for_delta && eq(v, *state.str_week) {
-                Unit::Week
+                RoundUnit::Week
             } else {
                 None?
             })
@@ -100,14 +100,14 @@ impl Unit {
 
     pub(crate) const fn default_increment(self) -> u64 {
         match self {
-            Unit::Nanosecond => 1,
-            Unit::Microsecond => NS_PER_MICROSEC as _,
-            Unit::Millisecond => NS_PER_MILLISEC as _,
-            Unit::Second => NS_PER_SEC as _,
-            Unit::Minute => NS_PER_MINUTE,
-            Unit::Hour => NS_PER_HOUR,
-            Unit::Day => NS_PER_DAY,
-            Unit::Week => NS_PER_WEEK,
+            RoundUnit::Nanosecond => 1,
+            RoundUnit::Microsecond => NS_PER_MICROSEC as _,
+            RoundUnit::Millisecond => NS_PER_MILLISEC as _,
+            RoundUnit::Second => NS_PER_SEC as _,
+            RoundUnit::Minute => NS_PER_MINUTE,
+            RoundUnit::Hour => NS_PER_HOUR,
+            RoundUnit::Day => NS_PER_DAY,
+            RoundUnit::Week => NS_PER_WEEK,
         }
     }
 }
@@ -185,10 +185,10 @@ impl Args {
                     }
                     RoundIncrement::Exact(nanos)
                 } else {
-                    let unit = Unit::from_py(arg, state, false)?;
+                    let unit = RoundUnit::from_py(arg, state, false)?;
                     let increment_int = increment_kwarg.unwrap_or(NonZeroU64::MIN);
-                    debug_assert!(unit != Unit::Week);
-                    if unit == Unit::Day {
+                    debug_assert!(unit != RoundUnit::Week);
+                    if unit == RoundUnit::Day {
                         if increment_int.get() != 1 {
                             raise_value_err(INCREMENT_DIV_MSG)?;
                         }
@@ -267,8 +267,8 @@ impl DeltaArgs {
                         subsec: delta.subsec,
                     }
                 } else {
-                    let unit = Unit::from_py(arg, state, true)?;
-                    if matches!(unit, Unit::Day | Unit::Week) && !suppress_24h_warning {
+                    let unit = RoundUnit::from_py(arg, state, true)?;
+                    if matches!(unit, RoundUnit::Day | RoundUnit::Week) && !suppress_24h_warning {
                         warn_with_class(
                             *state.warn_days_not_always_24h,
                             doc::DAYS_NOT_ALWAYS_24H_MSG,

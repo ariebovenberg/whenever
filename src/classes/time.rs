@@ -11,8 +11,8 @@ use core::ffi::{CStr, c_int, c_long, c_void};
 use pyo3_ffi::*;
 use std::ptr::null_mut as NULL;
 
-pub(crate) use crate::domain::time::BoundUnit;
 pub use crate::domain::time::Time;
+pub(crate) use crate::domain::time::TimeBoundaryUnit;
 
 impl Time {
     pub(crate) fn to_stdlib_time(
@@ -155,26 +155,21 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
 
 fn __richcmp__(cls: PyClass<Time>, slf: Time, arg: PyObj, op: c_int) -> PyReturn {
     match arg.extract(cls) {
-        Some(b) => match op {
-            pyo3_ffi::Py_EQ => slf == b,
-            pyo3_ffi::Py_NE => slf != b,
-            pyo3_ffi::Py_LT => slf < b,
-            pyo3_ffi::Py_LE => slf <= b,
-            pyo3_ffi::Py_GT => slf > b,
-            pyo3_ffi::Py_GE => slf >= b,
-            _ => unreachable!(),
-        }
-        .to_py(),
+        Some(b) => CompareOp::from_ffi(op).apply(slf, b).to_py(),
         None => not_implemented(),
     }
 }
 
 fn __str__(_: PyType, slf: Time) -> PyReturn {
-    PyAsciiStrBuilder::format(slf.format_iso(fmt::Unit::Auto, false))
+    PyAsciiStrBuilder::format(slf.format_iso(fmt::Precision::Auto, false))
 }
 
 fn __repr__(_: PyType, slf: Time) -> PyReturn {
-    PyAsciiStrBuilder::format((b"Time(\"", slf.format_iso(fmt::Unit::Auto, false), b"\")"))
+    PyAsciiStrBuilder::format((
+        b"Time(\"",
+        slf.format_iso(fmt::Precision::Auto, false),
+        b"\")",
+    ))
 }
 
 #[allow(static_mut_refs)]
@@ -241,12 +236,12 @@ fn format_iso(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKw
     }
 
     // As-efficient-as-possible assignment of keyword arguments
-    let mut unit = fmt::Unit::Auto;
+    let mut unit = fmt::Precision::Auto;
     let mut basic = false;
     let state = cls.state();
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
         if eq(key, *state.str_unit) {
-            unit = fmt::Unit::from_py(value, state)?;
+            unit = fmt::Precision::from_py(value, state)?;
         } else if eq(key, *state.str_basic) {
             if value.is_true() {
                 basic = true;
@@ -531,7 +526,7 @@ mod tests {
             subsec: SubSecNanos::new_unchecked(34_090),
         };
 
-        fn testcase(t: Time, basic: bool, unit: fmt::Unit, expect: &[u8]) {
+        fn testcase(t: Time, basic: bool, unit: fmt::Precision, expect: &[u8]) {
             let mut buf = Vec::new();
             let fmt = t.format_iso(unit, basic);
             fmt.write(&mut buf);
@@ -551,18 +546,18 @@ mod tests {
             );
         }
 
-        testcase(t1, false, fmt::Unit::Auto, b"01:02:03");
-        testcase(t1, true, fmt::Unit::Millisecond, b"010203.000");
-        testcase(t2, false, fmt::Unit::Microsecond, b"12:34:56.123400");
-        testcase(t2, true, fmt::Unit::Nanosecond, b"123456.123400000");
-        testcase(t3, false, fmt::Unit::Nanosecond, b"12:34:56.000000008");
-        testcase(t4, true, fmt::Unit::Auto, b"123456.00003409");
-        testcase(t4, false, fmt::Unit::Millisecond, b"12:34:56.000");
-        testcase(t4, false, fmt::Unit::Second, b"12:34:56");
-        testcase(t4, true, fmt::Unit::Minute, b"1234");
-        testcase(t4, false, fmt::Unit::Minute, b"12:34");
-        testcase(t4, false, fmt::Unit::Hour, b"12");
-        testcase(t4, true, fmt::Unit::Hour, b"12");
+        testcase(t1, false, fmt::Precision::Auto, b"01:02:03");
+        testcase(t1, true, fmt::Precision::Millisecond, b"010203.000");
+        testcase(t2, false, fmt::Precision::Microsecond, b"12:34:56.123400");
+        testcase(t2, true, fmt::Precision::Nanosecond, b"123456.123400000");
+        testcase(t3, false, fmt::Precision::Nanosecond, b"12:34:56.000000008");
+        testcase(t4, true, fmt::Precision::Auto, b"123456.00003409");
+        testcase(t4, false, fmt::Precision::Millisecond, b"12:34:56.000");
+        testcase(t4, false, fmt::Precision::Second, b"12:34:56");
+        testcase(t4, true, fmt::Precision::Minute, b"1234");
+        testcase(t4, false, fmt::Precision::Minute, b"12:34");
+        testcase(t4, false, fmt::Precision::Hour, b"12");
+        testcase(t4, true, fmt::Precision::Hour, b"12");
     }
 
     #[test]

@@ -3,47 +3,46 @@ use super::{
     scalar::{DeltaDays, DeltaMonths},
     time_delta::{TimeDelta, fmt_components_abs, parse_all_components},
 };
-use crate::common::math::CalUnit;
+use crate::common::math::CalendarUnit;
 use std::{fmt, ops::Neg};
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub(crate) struct DateTimeDelta {
     // invariant: these never have opposite signs
-    pub(crate) ddelta: DateDelta,
-    pub(crate) tdelta: TimeDelta,
+    pub(crate) date: DateDelta,
+    pub(crate) time: TimeDelta,
 }
 
 impl DateTimeDelta {
     pub(crate) const ZERO: Self = Self {
-        ddelta: DateDelta::ZERO,
-        tdelta: TimeDelta::ZERO,
+        date: DateDelta::ZERO,
+        time: TimeDelta::ZERO,
     };
 
-    pub(crate) fn new(ddelta: DateDelta, tdelta: TimeDelta) -> Option<Self> {
-        if ddelta.months.get() >= 0 && ddelta.days.get() >= 0 && tdelta.secs.get() >= 0
-            || ddelta.months.get() <= 0 && ddelta.days.get() <= 0 && tdelta.secs.get() <= 0
+    pub(crate) fn new(date: DateDelta, time: TimeDelta) -> Option<Self> {
+        if date.months.get() >= 0 && date.days.get() >= 0 && time.secs.get() >= 0
+            || date.months.get() <= 0 && date.days.get() <= 0 && time.secs.get() <= 0
         {
-            Some(Self { ddelta, tdelta })
+            Some(Self { date, time })
         } else {
             None
         }
     }
 
     pub(crate) fn mul(self, factor: i32) -> Option<Self> {
-        let Self { ddelta, tdelta } = self;
-        ddelta
-            .mul(factor)
-            .zip(tdelta.mul(factor.into()))
-            .map(|(ddelta, tdelta)| Self { ddelta, tdelta })
+        let Self { date, time } = self;
+        date.mul(factor)
+            .zip(time.mul(factor.into()))
+            .map(|(date, time)| Self { date, time })
     }
 
     pub(crate) fn add(self, other: Self) -> Result<Self, InitError> {
-        let ddelta = self.ddelta.add(other.ddelta)?;
-        let tdelta = self.tdelta.add(other.tdelta).ok_or(InitError::TooBig)?;
-        if ddelta.months.get() >= 0 && ddelta.days.get() >= 0 && tdelta.secs.get() >= 0
-            || ddelta.months.get() <= 0 && ddelta.days.get() <= 0 && tdelta.secs.get() <= 0
+        let date = self.date.add(other.date)?;
+        let time = self.time.add(other.time).ok_or(InitError::TooBig)?;
+        if date.months.get() >= 0 && date.days.get() >= 0 && time.secs.get() >= 0
+            || date.months.get() <= 0 && date.days.get() <= 0 && time.secs.get() <= 0
         {
-            Ok(Self { ddelta, tdelta })
+            Ok(Self { date, time })
         } else {
             Err(InitError::MixedSign)
         }
@@ -51,24 +50,22 @@ impl DateTimeDelta {
 
     pub(crate) fn fmt_iso(self) -> String {
         let mut result = String::with_capacity(8);
-        let Self { ddelta, tdelta } = if self.tdelta.secs.get() < 0
-            || self.ddelta.months.get() < 0
-            || self.ddelta.days.get() < 0
-        {
-            result.push('-');
-            -self
-        } else if self.tdelta.is_zero() && self.ddelta.is_zero() {
-            return "P0D".to_string();
-        } else {
-            self
-        };
+        let Self { date, time } =
+            if self.time.secs.get() < 0 || self.date.months.get() < 0 || self.date.days.get() < 0 {
+                result.push('-');
+                -self
+            } else if self.time.is_zero() && self.date.is_zero() {
+                return "P0D".to_string();
+            } else {
+                self
+            };
         result.push('P');
-        if !ddelta.is_zero() {
-            format_components(ddelta, &mut result);
+        if !date.is_zero() {
+            format_components(date, &mut result);
         }
-        if !tdelta.is_zero() {
+        if !time.is_zero() {
             result.push('T');
-            fmt_components_abs(tdelta, &mut result);
+            fmt_components_abs(time, &mut result);
         }
         result
     }
@@ -81,8 +78,8 @@ impl DateTimeDelta {
         if s.last()?.eq_ignore_ascii_case(&b'T') {
             return None;
         }
-        let mut ddelta = parse_date_components(&mut s)?;
-        let mut tdelta = if s.is_empty() {
+        let mut date = parse_date_components(&mut s)?;
+        let mut time = if s.is_empty() {
             TimeDelta::ZERO
         } else if s[0].eq_ignore_ascii_case(&b'T') {
             s = &s[1..];
@@ -92,10 +89,10 @@ impl DateTimeDelta {
             return None;
         };
         if negative {
-            ddelta = -ddelta;
-            tdelta = -tdelta;
+            date = -date;
+            time = -time;
         }
-        Some(Self { ddelta, tdelta })
+        Some(Self { date, time })
     }
 }
 
@@ -104,8 +101,8 @@ impl Neg for DateTimeDelta {
 
     fn neg(self) -> Self {
         Self {
-            ddelta: -self.ddelta,
-            tdelta: -self.tdelta,
+            date: -self.date,
+            time: -self.time,
         }
     }
 }
@@ -130,10 +127,12 @@ fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
     while !s.is_empty() && !s[0].eq_ignore_ascii_case(&b'T') {
         let (value, unit) = parse_component(s)?;
         match (unit, previous.replace(unit)) {
-            (CalUnit::Years, None) => months += value * 12,
-            (CalUnit::Months, None | Some(CalUnit::Years)) => months += value,
-            (CalUnit::Weeks, None | Some(CalUnit::Years | CalUnit::Months)) => days += value * 7,
-            (CalUnit::Days, _) => {
+            (CalendarUnit::Years, None) => months += value * 12,
+            (CalendarUnit::Months, None | Some(CalendarUnit::Years)) => months += value,
+            (CalendarUnit::Weeks, None | Some(CalendarUnit::Years | CalendarUnit::Months)) => {
+                days += value * 7
+            }
+            (CalendarUnit::Days, _) => {
                 days += value;
                 break;
             }
