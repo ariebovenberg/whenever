@@ -3,14 +3,15 @@ use crate::{
         date::Date,
         instant::Instant,
         offset_datetime::OffsetDateTime,
-        plain_datetime::{BoundaryUnit, PlainDateTime},
+        plain_datetime::{DateTimeBoundaryUnit, PlainDateTime},
         time::Time,
         time_delta::TimeDelta,
     },
     common::{
         disambiguation::*,
         fmt::{self, Suffix},
-        math::{self, DateRoundIncrement, SinceUntilKwargs},
+        instant::{extract_instant, parse_instant_arg},
+        math::{self, CalendarIncrement, SinceUntilKwargs},
         parse::Scan,
         pattern, round,
         scalar::*,
@@ -262,7 +263,7 @@ fn __repr__(_: PyType, slf: &ZonedDateTime) -> PyReturn {
         b"ZonedDateTime(\"",
         date.format_iso(false),
         b' ',
-        time.format_iso(fmt::Unit::Auto, false),
+        time.format_iso(fmt::Precision::Auto, false),
         offset.format_iso(false),
         b'[',
         &tz.key
@@ -283,7 +284,7 @@ fn __str__(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     PyAsciiStrBuilder::format((
         date.format_iso(false),
         b'T',
-        time.format_iso(fmt::Unit::Auto, false),
+        time.format_iso(fmt::Precision::Auto, false),
         offset.format_iso(false),
         TzFormat { tz },
     ))
@@ -296,29 +297,10 @@ fn __richcmp__(
     op: c_int,
 ) -> PyReturn {
     let inst_a = a.to_instant();
-    let inst_b = if let Some(zdt) = b_obj.extract_ref(cls) {
-        zdt.to_instant()
-    } else {
-        let state = cls.state();
-
-        if let Some(inst) = b_obj.extract(*state.instant_type) {
-            inst
-        } else if let Some(odt) = b_obj.extract(*state.offset_datetime_type) {
-            odt.to_instant()
-        } else {
-            return not_implemented();
-        }
+    let Some(inst_b) = extract_instant(b_obj, cls.state()) else {
+        return not_implemented();
     };
-    match op {
-        pyo3_ffi::Py_EQ => inst_a == inst_b,
-        pyo3_ffi::Py_NE => inst_a != inst_b,
-        pyo3_ffi::Py_LT => inst_a < inst_b,
-        pyo3_ffi::Py_LE => inst_a <= inst_b,
-        pyo3_ffi::Py_GT => inst_a > inst_b,
-        pyo3_ffi::Py_GE => inst_a >= inst_b,
-        _ => unreachable!(),
-    }
-    .to_py()
+    CompareOp::from_ffi(op).apply(inst_a, inst_b).to_py()
 }
 
 extern "C" fn __hash__(arg: PyObj) -> Py_hash_t {
@@ -350,17 +332,13 @@ fn __sub__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
             BinaryCall::OtherTypes => return Ok(None),
         };
         let state = cls.state();
-        let other = match_type!(
-            other,
-            *state.instant_type => |inst| { inst },
-            *state.offset_datetime_type => |odt| { odt.to_instant() },
-            _ => { return shift_operator(state, slf.class(), &slf, other, true) },
-        );
-        Ok(Some(
-            slf.to_instant()
-                .diff(other)
-                .to_obj(*state.time_delta_type)?,
-        ))
+        if let Some(i) = extract_instant(other, state) {
+            Ok(Some(
+                slf.to_instant().diff(i).to_obj(*state.time_delta_type)?,
+            ))
+        } else {
+            shift_operator(state, slf.class(), &slf, other, true)
+        }
     })
 }
 
@@ -382,10 +360,10 @@ fn shift_operator(
     } else if let Some(d) = arg.extract(*state.datetime_delta_type) {
         DateTimeShift {
             calendar: CalendarShift {
-                months: d.ddelta.months,
-                days: d.ddelta.days,
+                months: d.date.months,
+                days: d.date.days,
             },
-            time: d.tdelta,
+            time: d.time,
         }
     } else {
         return Ok(None);
@@ -538,21 +516,21 @@ fn in_leap_year(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 }
 
 fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
-    let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
+    let unit = DateTimeBoundaryUnit::from_py(cls.state(), unit_obj)?;
 
     // Behavior differs:
     // 1. Calendar units always consume folds. A unit is only "started" once
     //    with the next "start of day/week/month/year".
     // 2. Other units consume folds under certain conditions, but not always.
     match unit {
-        BoundaryUnit::Date(_) | BoundaryUnit::Day => slf
+        DateTimeBoundaryUnit::Date(_) | DateTimeBoundaryUnit::Day => slf
             .to_plain()
             .start_of_unit(unit)
             .ok_or_range_err()?
             .resolve_compatible(&slf.tz)
             .ok_or_range_err()?
             .into_zoned_py_unchecked(slf.tz.clone(), cls),
-        BoundaryUnit::Time(_) => {
+        DateTimeBoundaryUnit::Time(_) => {
             let start_local = slf.to_plain().start_of_unit(unit).ok_or_range_err()?;
             match slf.tz.mapping_for_local(start_local.local_seconds()) {
                 LocalMapping::Unique { offset } => start_local.assume_offset(offset),
@@ -574,14 +552,14 @@ fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -
 }
 
 fn end_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
-    let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
+    let unit = DateTimeBoundaryUnit::from_py(cls.state(), unit_obj)?;
 
     // Behavior differs:
     // 1. Calendar units always consume folds--so that it seamlessly lines up
     //    with the next "start of day/week/month/year".
     // 2. Other units consume folds under certain conditions, but not always.
     match unit {
-        BoundaryUnit::Date(_) | BoundaryUnit::Day => slf
+        DateTimeBoundaryUnit::Date(_) | DateTimeBoundaryUnit::Day => slf
             // Calculate the start of the next unit, then step back one ns.
             .to_plain()
             .next_start_of_unit(unit)
@@ -592,7 +570,7 @@ fn end_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> 
             .shift(-TimeDelta::RESOLUTION)
             .unwrap()
             .into_zoned_py(slf.tz.clone(), cls),
-        BoundaryUnit::Time(u) => {
+        DateTimeBoundaryUnit::Time(u) => {
             let end_local = slf.to_plain().end_of_unit(unit).ok_or_range_err()?;
             let local_seconds = end_local.local_seconds();
             match slf.tz.mapping_for_local(local_seconds) {
@@ -1147,20 +1125,9 @@ fn shift_method(
 
 fn difference(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> PyReturn {
     let state = cls.state();
-    let inst_a = slf.to_instant();
-
-    let inst_b = if let Some(zdt) = arg.extract_ref(cls) {
-        zdt.to_instant()
-    } else if let Some(i) = arg.extract(*state.instant_type) {
-        i
-    } else if let Some(odt) = arg.extract(*state.offset_datetime_type) {
-        odt.to_instant()
-    } else {
-        raise_type_err(
-            "difference() argument must be an OffsetDateTime, Instant, or ZonedDateTime",
-        )?
-    };
-    inst_a.diff(inst_b).to_obj(*state.time_delta_type)
+    slf.to_instant()
+        .diff(parse_instant_arg("difference", arg, state)?)
+        .to_obj(*state.time_delta_type)
 }
 
 fn start_of_day(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -1170,7 +1137,7 @@ fn start_of_day(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
         1,
     )?;
     slf.to_plain()
-        .start_of_unit(BoundaryUnit::Day)
+        .start_of_unit(DateTimeBoundaryUnit::Day)
         .ok_or_range_err()?
         .resolve_compatible(&slf.tz)
         .ok_or_range_err()?
@@ -1259,7 +1226,7 @@ fn zoned_since_float(
     a: OffsetDateTime,
     b: &ZonedDateTime,
     target_date: Date,
-    unit: math::DeltaUnit,
+    unit: math::DifferenceUnit,
     neg: bool,
 ) -> PyReturn {
     match unit.to_exact(false) {
@@ -1273,12 +1240,12 @@ fn zoned_since_float(
                 (nanos as f64 / unit_nanos as f64).to_py()
             }
         }
-        Err(cal_unit) => {
+        Err(calendar_unit) => {
             let (result, trunc_raw, expand_raw) = math::date_diff_single_unit(
                 target_date,
                 b.date,
-                DateRoundIncrement::MIN,
-                cal_unit,
+                CalendarIncrement::MIN,
+                calendar_unit,
                 neg,
             )
             .ok_or_range_err()?;

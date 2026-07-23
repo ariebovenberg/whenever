@@ -5,7 +5,7 @@ use super::{
     scalar::{DeltaDays, DeltaField, DeltaMonths},
     shift::CalendarShift,
 };
-use crate::common::math::{CalUnit, DateRoundIncrement, round_by_days, round_by_time};
+use crate::common::math::{CalendarIncrement, CalendarUnit, round_by_days, round_by_time};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct ItemizedDateDelta {
@@ -43,12 +43,12 @@ impl ItemizedDateDelta {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn round_by_days(
         &mut self,
-        unit: CalUnit,
+        unit: CalendarUnit,
         target: Date,
         trunc: Date,
         expand: Date,
         mode: round::AbsMode,
-        increment: DateRoundIncrement,
+        increment: CalendarIncrement,
         neg: bool,
     ) {
         let field = unit.field(self);
@@ -66,12 +66,12 @@ impl ItemizedDateDelta {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn round_by_time(
         &mut self,
-        unit: CalUnit,
+        unit: CalendarUnit,
         target: Instant,
         trunc: Instant,
         expand: Instant,
         mode: round::AbsMode,
-        increment: DateRoundIncrement,
+        increment: CalendarIncrement,
         neg: bool,
     ) {
         let field = unit.field(self);

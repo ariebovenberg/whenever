@@ -12,13 +12,13 @@ use crate::{
         datetime_delta::{DateTimeDelta, handle_exact_unit},
         instant::Instant,
         offset_datetime::OffsetDateTime,
-        plain_datetime::{plain_since_inner, resolve_local_relative_to, total_cal_plain},
+        plain_datetime::{plain_since_inner, resolve_local_relative_to, total_calendar_plain},
         zoned_datetime::{ZonedDateTime, zoned_since_in_units, zoned_target},
     },
     common::{
         math::{
-            self, AnyUnit, DateRoundIncrement, DeltaUnitSet, ExactUnit, ExactUnitSet,
-            SinceUntilKwargs,
+            self, CalendarIncrement, DifferenceUnitSet, ExactUnit, ExactUnitSet, SinceUntilKwargs,
+            TotalUnit,
         },
         round,
         scalar::*,
@@ -236,16 +236,7 @@ pub(crate) fn nanoseconds(state: &State, arg: PyObj) -> PyReturn {
 
 fn __richcmp__(cls: PyClass<TimeDelta>, a: TimeDelta, arg: PyObj, op: c_int) -> PyReturn {
     match arg.extract(cls) {
-        Some(b) => match op {
-            pyo3_ffi::Py_EQ => a == b,
-            pyo3_ffi::Py_NE => a != b,
-            pyo3_ffi::Py_LT => a < b,
-            pyo3_ffi::Py_LE => a <= b,
-            pyo3_ffi::Py_GT => a > b,
-            pyo3_ffi::Py_GE => a >= b,
-            _ => unreachable!(),
-        }
-        .to_py(),
+        Some(b) => CompareOp::from_ffi(op).apply(a, b).to_py(),
         None => not_implemented(),
     }
 }
@@ -448,8 +439,8 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                     Ok(Some(
                         dtdelta
                             .add(DateTimeDelta {
-                                ddelta: DateDelta::ZERO,
-                                tdelta: *slf,
+                                date: DateDelta::ZERO,
+                                time: *slf,
                             })
                             .map_err(|e| {
                                 value_err(match e {
@@ -810,11 +801,11 @@ fn in_units(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let units = DeltaUnitSet::from_py(handle_one_arg("in_units", args)?, state)?;
+    let units = DifferenceUnitSet::from_py(handle_one_arg("in_units", args)?, state)?;
 
     // Parse optional round kwargs
     let mut round_mode = round::Mode::Trunc;
-    let mut round_increment = math::RoundIncrement::MIN;
+    let mut round_increment = math::DifferenceIncrement::MIN;
     let mut relative_to_arg = None;
     let mut suppress_24h_warning = false;
 
@@ -823,7 +814,7 @@ fn in_units(
             round_mode =
                 round::Mode::from_py_named("rounding mode", value, &state.round_mode_strs)?;
         } else if eq(key, *state.str_round_increment) {
-            round_increment = math::RoundIncrement::from_py(value)?;
+            round_increment = math::DifferenceIncrement::from_py(value)?;
         } else if eq(key, *state.str_relative_to) {
             relative_to_arg = Some(value);
         } else if eq(key, *state.str_days_assumed_24h_ok) {
@@ -896,7 +887,7 @@ fn total(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let unit = AnyUnit::from_py(handle_one_arg("total", args)?, state)?;
+    let unit = TotalUnit::from_py(handle_one_arg("total", args)?, state)?;
 
     let mut relative_to_arg = None;
     let mut suppress_24h_warning = false;
@@ -911,7 +902,7 @@ fn total(
         Ok(true)
     })?;
 
-    let cal_unit = match unit.to_exact(relative_to_arg.is_none()) {
+    let calendar_unit = match unit.to_exact(relative_to_arg.is_none()) {
         Ok(ExactUnit::Nanoseconds) => {
             // Special case for nanoseconds: always return an int
             return slf.total_nanos().to_py();
@@ -927,7 +918,7 @@ fn total(
             return (slf.to_nanos_f64() / u.in_nanos() as f64).to_py();
         }
         // FUTURE: fast early exit for zero
-        Err(cal_unit) => cal_unit,
+        Err(calendar_unit) => calendar_unit,
     };
 
     let arg = relative_to_arg
@@ -937,7 +928,7 @@ fn total(
     if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
         let shifted_inst = zdt.to_instant().shift(slf).ok_or_range_err()?;
         let shifted = shifted_inst.to_offset_in(&zdt.tz).ok_or_range_err()?;
-        return total_cal(slf.is_negative(), cal_unit, zdt, shifted, shifted_inst);
+        return total_calendar(slf.is_negative(), calendar_unit, zdt, shifted, shifted_inst);
     }
 
     // PlainDateTime/OffsetDateTime: treat local time as UTC for the calendar
@@ -955,13 +946,13 @@ fn total(
         _ => Some(a_dt.date),
     }
     .ok_or_range_err()?;
-    total_cal_plain(neg, cal_unit, a_inst, b_dt, target_date)
+    total_calendar_plain(neg, calendar_unit, a_inst, b_dt, target_date)
 }
 
 #[inline(never)]
-pub(crate) fn total_cal(
+pub(crate) fn total_calendar(
     neg: bool,
-    unit: math::CalUnit,
+    unit: math::CalendarUnit,
     relative_to: &ZonedDateTime,
     shifted: OffsetDateTime,
     shifted_inst: Instant,
@@ -972,7 +963,7 @@ pub(crate) fn total_cal(
     let (trunc_amount, trunc_date, expand_date) = math::date_diff_single_unit(
         target_date,
         relative_to.date,
-        DateRoundIncrement::MIN,
+        CalendarIncrement::MIN,
         unit,
         neg,
     )

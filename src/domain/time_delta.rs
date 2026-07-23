@@ -145,7 +145,7 @@ impl TimeDelta {
     pub(crate) fn in_exact_units(
         self,
         units: ExactUnitSet,
-        round_increment: math::RoundIncrement,
+        round_increment: math::DifferenceIncrement,
         round_mode: round::AbsMode,
     ) -> Option<ItemizedDelta> {
         debug_assert!(

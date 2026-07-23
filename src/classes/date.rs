@@ -5,8 +5,8 @@ use core::{
 };
 use pyo3_ffi::*;
 
-pub(crate) use crate::domain::date::BoundaryUnit;
 pub use crate::domain::date::Date;
+pub(crate) use crate::domain::date::DateBoundaryUnit;
 
 use crate::{
     classes::{
@@ -14,7 +14,7 @@ use crate::{
         plain_datetime::PlainDateTime,
     },
     common::{
-        math::{self, CalUnit, CalUnitSet, DateRoundIncrement, DateSinceUnits},
+        math::{self, CalendarIncrement, CalendarUnit, CalendarUnitSet, DateDifferenceUnits},
         pattern, round,
         scalar::*,
         shift::{parse_calendar_shift_arg, parse_calendar_shift_kwargs},
@@ -72,17 +72,17 @@ impl Date {
     }
 }
 
-impl BoundaryUnit {
+impl DateBoundaryUnit {
     pub(crate) fn from_py(state: &State, obj: PyObj) -> PyResult<Self> {
         find_interned(obj, |v, eq| {
             if eq(v, *state.str_year) {
-                Some(Ok(BoundaryUnit::Year))
+                Some(Ok(DateBoundaryUnit::Year))
             } else if eq(v, *state.str_month) {
-                Some(Ok(BoundaryUnit::Month))
+                Some(Ok(DateBoundaryUnit::Month))
             } else if eq(v, *state.str_week_mon) {
-                Some(Ok(BoundaryUnit::WeekMon))
+                Some(Ok(DateBoundaryUnit::WeekMon))
             } else if eq(v, *state.str_week_sun) {
-                Some(Ok(BoundaryUnit::WeekSun))
+                Some(Ok(DateBoundaryUnit::WeekSun))
             } else if eq(v, *state.str_week) {
                 Some(raise_value_err(
                     "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
@@ -121,16 +121,7 @@ fn __new__(cls: PyClass<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
 
 fn __richcmp__(cls: PyClass<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyReturn {
     match b_obj.extract(cls) {
-        Some(b) => match op {
-            pyo3_ffi::Py_EQ => a == b,
-            pyo3_ffi::Py_NE => a != b,
-            pyo3_ffi::Py_LT => a < b,
-            pyo3_ffi::Py_LE => a <= b,
-            pyo3_ffi::Py_GT => a > b,
-            pyo3_ffi::Py_GE => a >= b,
-            _ => unreachable!(),
-        }
-        .to_py(),
+        Some(b) => CompareOp::from_ffi(op).apply(a, b).to_py(),
         None => not_implemented(),
     }
 }
@@ -371,12 +362,12 @@ fn nth_weekday(cls: PyClass<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
 }
 
 fn start_of(cls: PyClass<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
-    let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
+    let unit = DateBoundaryUnit::from_py(cls.state(), unit_obj)?;
     slf.start_of(unit).ok_or_range_err()?.to_obj(cls)
 }
 
 fn end_of(cls: PyClass<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
-    let unit = BoundaryUnit::from_py(cls.state(), unit_obj)?;
+    let unit = DateBoundaryUnit::from_py(cls.state(), unit_obj)?;
     slf.end_of(unit).ok_or_range_err()?.to_obj(cls)
 }
 
@@ -530,27 +521,31 @@ fn since_inner(
         .extract(cls)
         .ok_or_type_err("argument must be a Date")?;
 
-    let mut units: Option<math::DateSinceUnits> = None;
+    let mut units: Option<math::DateDifferenceUnits> = None;
     let mut round_mode = None;
-    let mut round_increment = math::DateRoundIncrement::MIN;
+    let mut round_increment = math::CalendarIncrement::MIN;
     let mut round_was_set = false;
     handle_kwargs(fname, kwargs, |key, value, eq| {
         if eq(key, *state.str_total) {
             if units.is_some() {
                 return raise_type_err("cannot specify both 'total' and 'in_units'");
             }
-            units = Some(DateSinceUnits::Total(CalUnit::from_py(value, state)?));
+            units = Some(DateDifferenceUnits::Total(CalendarUnit::from_py(
+                value, state,
+            )?));
         } else if eq(key, *state.str_in_units) {
             if units.is_some() {
                 return raise_type_err("cannot specify both 'total' and 'in_units'");
             }
-            units = Some(DateSinceUnits::InUnits(CalUnitSet::from_py(value, state)?));
+            units = Some(DateDifferenceUnits::InUnits(CalendarUnitSet::from_py(
+                value, state,
+            )?));
         } else if eq(key, *state.str_round_mode) {
             round_mode =
                 round::Mode::from_py_named("round_mode", value, &state.round_mode_strs)?.into();
             round_was_set = true;
         } else if eq(key, *state.str_round_increment) {
-            round_increment = DateRoundIncrement::from_py(value)?;
+            round_increment = CalendarIncrement::from_py(value)?;
             round_was_set = true;
         } else {
             return Ok(false);
@@ -560,14 +555,14 @@ fn since_inner(
 
     let (a, b) = if negate { (other, slf) } else { (slf, other) };
     match units {
-        Some(DateSinceUnits::Total(unit)) => {
+        Some(DateDifferenceUnits::Total(unit)) => {
             if round_was_set {
                 raise_type_err("'round_mode' and 'round_increment' cannot be used with 'total'")
             } else {
                 date_since_float(a, b, unit)
             }
         }
-        Some(DateSinceUnits::InUnits(units)) => {
+        Some(DateDifferenceUnits::InUnits(units)) => {
             let d = date_since_iddelta(
                 a,
                 b,
@@ -584,9 +579,9 @@ fn since_inner(
 pub(crate) fn date_since_iddelta(
     a: Date,
     b: Date,
-    units: CalUnitSet,
+    units: CalendarUnitSet,
     round_mode: round::Mode,
-    round_increment: DateRoundIncrement,
+    round_increment: CalendarIncrement,
 ) -> PyResult<ItemizedDateDelta> {
     let neg = a < b;
     let (mut result, trunc, expand) =
@@ -604,10 +599,10 @@ pub(crate) fn date_since_iddelta(
     Ok(result)
 }
 
-fn date_since_float(a: Date, b: Date, unit: CalUnit) -> PyReturn {
+fn date_since_float(a: Date, b: Date, unit: CalendarUnit) -> PyReturn {
     let neg = a < b;
     let (result, trunc_raw, expand_raw) =
-        math::date_diff_single_unit(a, b, DateRoundIncrement::MIN, unit, neg).ok_or_range_err()?;
+        math::date_diff_single_unit(a, b, CalendarIncrement::MIN, unit, neg).ok_or_range_err()?;
     let trunc: Date = trunc_raw.into();
     let expand: Date = expand_raw.into();
     // result is signed; use its absolute value and restore sign at the end.
