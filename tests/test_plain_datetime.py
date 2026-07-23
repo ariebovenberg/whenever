@@ -737,9 +737,9 @@ class TestNaiveArithmeticOkKwarg:
 
         d = PlainDateTime(2020, 8, 15, 23, 12, 9)
         with pytest.raises(RuntimeError, match="bool failed"):
-            d.add(
+            d.add(  # type: ignore[call-overload]
                 hours=1,
-                naive_arithmetic_ok=BadBool(),  # type: ignore[arg-type]
+                naive_arithmetic_ok=BadBool(),
             )
 
     def test_add(self):
