@@ -531,7 +531,7 @@ fn to_tz(cls: PyClass<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
 fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
     let state = cls.state();
     match *args {
-        [] => slf.to_utc_plain().with_offset_unchecked(Offset::ZERO),
+        [] => slf.to_utc_plain().assume_offset_unchecked(Offset::ZERO),
         [arg] => slf
             .to_offset(Offset::from_obj(arg, *state.time_delta_type)?)
             .ok_or_range_err()?,
@@ -557,7 +557,8 @@ fn parse_rfc2822(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
         .ok_or_type_err("expected a string")?;
     let (date, time, offset) =
         rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?;
-    OffsetDateTime::new(date, time, offset)
+    date.at(time)
+        .assume_offset(offset)
         .ok_or_range_err()?
         .to_instant()
         .to_obj(cls)

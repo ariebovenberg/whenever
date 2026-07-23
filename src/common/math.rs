@@ -849,10 +849,7 @@ impl DateRoundIncrement {
     }
 
     pub(crate) fn from_py(v: PyObj) -> PyResult<Self> {
-        let inc = v
-            .cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("round_increment must be an integer")?
-            .to_i64()?;
+        let inc = v.expect_int("round_increment")?.to_i64()?;
         Self::from_i64(inc).ok_or_value_err("round_increment must be a positive integer in range")
     }
 
@@ -876,10 +873,7 @@ impl RoundIncrement {
     pub(crate) const MIN: Self = Self(NonZeroU128::new(1).unwrap());
 
     pub(crate) fn from_py(v: PyObj) -> PyResult<Self> {
-        let inc = v
-            .cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("round_increment must be an integer")?
-            .to_i128()?;
+        let inc = v.expect_int("round_increment")?.to_i128()?;
         if inc <= 0 {
             raise_value_err("round_increment must be a positive integer in range")?
         }

@@ -29,6 +29,8 @@ Key helpers in `src/py/`:
 - `handle_one_arg(fname, args)` — extract exactly one positional arg, or raise TypeError
 - `handle_opt_arg(fname, args)` — extract zero or one positional arg
 - `handle_one_kwarg(fname, key, kwargs)` — extract a single optional kwarg by key
+- `obj.expect_int(name)` — accept a Python int or subclass and raise
+  `TypeError: {name} must be an integer` otherwise
 - `find_interned(value, handler)` — match a PyObj against interned strings, returns `Option`
 - `match_interned_str(name, value, handler)` — like `find_interned` but raises on no match
 - `match_type!(obj, type => |value| {...}, _ => {...})` — match an extension object against differently typed `PyClass<T>` values; prefix an arm with `ref` for non-`Copy` types
@@ -100,9 +102,12 @@ let relative_to = handle_one_kwarg("total", state.str_relative_to, kwargs)?;
 ```
 
 **Building deltas from kwargs (shift/add/subtract methods):**
-Use `handle_delta_unit_kwargs()` for full datetime units, or
-`handle_date_delta_unit_kwargs()` for calendar-only units. These build typed
-`DeltaMonths`/`DeltaDays`/`TimeDelta` directly from kwargs.
+Use `common::shift::parse_datetime_shift_kwargs()` for full datetime units or
+`parse_calendar_shift_kwargs()` for calendar-only units. They return a typed
+`DateTimeShift` or `CalendarShift`; the datetime parser's callback retains
+class-specific kwargs such as `disambiguate` and warning suppression. For a
+positional delta, use `parse_datetime_shift_arg()` or `parse_calendar_shift_arg()`;
+these raise the method-specific type error if the argument is not a supported delta.
 
 **Interned string matching with custom errors:**
 Use `find_interned` + manual error message when you need a specific error format.
@@ -124,7 +129,13 @@ Use `match_interned_str` when the default error format is acceptable.
   lookup. `LocalMapping`, `Disambiguation`, and `ResolvePolicy` define gap/fold handling in the
   domain layer. Map `ResolveError` to Python exceptions only in binding code.
 - **OffsetDateTime** compares by instant (`Instant` has `Ord`). Offset is an `Offset` scalar.
+- Use `PlainDateTime::assume_offset()` when attaching a validated offset and
+  `assume_offset_unchecked()` only when the represented instant is already known to be in range.
 - **PlainDateTime** compares by local date+time. Has `Ord`.
+- **Shift arguments** use `CalendarShift` and `DateTimeShift` in the domain layer. Prefer
+  `Date::shift_by()` and `PlainDateTime::shift_by()` once a shift has been parsed. Python-facing
+  component replacement starts with `PlainDateTime::components()` and uses
+  `DateTimeComponents` in `classes::plain_datetime`.
 - **TimeDelta** stores `secs: DeltaSeconds` + `subsec: SubSecNanos`. Use `.total_nanos() -> i128`.
   Has `.in_single_unit()` and `.in_exact_units()` for unit decomposition.
 - **ItemizedDelta/ItemizedDateDelta** use `DeltaField<T>` with `i32::MAX` as the UNSET sentinel.

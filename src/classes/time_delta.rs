@@ -492,16 +492,14 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                             Ok(Some(
                                 odt.to_plain()
                                     .shift(*slf)
-                                    .and_then(|dt| dt.with_offset(odt.offset))
+                                    .and_then(|dt| dt.assume_offset(odt.offset))
                                     .ok_or_range_err()?
                                     .to_obj(*state.offset_datetime_type)?,
                             ))
                         },
                         ref *state.zoned_datetime_type => |zdt| {
                             Ok(Some(zdt.shift(
-                                DeltaMonths::ZERO,
-                                DeltaDays::ZERO,
-                                *slf,
+                                slf.to_shift(),
                                 None,
                                 state,
                                 *state.zoned_datetime_type,

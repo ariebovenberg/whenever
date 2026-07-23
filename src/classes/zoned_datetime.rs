@@ -2,23 +2,25 @@ use crate::{
     classes::{
         date::Date,
         instant::Instant,
-        itemized_date_delta::ItemizedDateDelta,
-        itemized_delta::{ItemizedDelta, handle_delta_unit_kwargs},
         offset_datetime::OffsetDateTime,
-        plain_datetime::{BoundaryUnit, PlainDateTime, set_components_from_kwargs},
+        plain_datetime::{BoundaryUnit, PlainDateTime},
         time::Time,
         time_delta::TimeDelta,
     },
     common::{
         disambiguation::*,
         fmt::{self, Suffix},
-        math::{self, DateRoundIncrement, DeltaUnitSet, SinceUntilKwargs},
+        math::{self, DateRoundIncrement, SinceUntilKwargs},
         parse::Scan,
         pattern, round,
         scalar::*,
+        shift::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
     },
     docstrings as doc,
-    domain::local::{LocalMapping, ResolveError, ResolvePolicy},
+    domain::{
+        local::{LocalMapping, ResolveError, ResolvePolicy},
+        shift::{CalendarShift, DateTimeShift},
+    },
     py::*,
     pymodule::State,
     tz::tzif::TimeZone,
@@ -38,16 +40,15 @@ pub(crate) use crate::domain::zoned_datetime::{
 impl ZonedDateTime {
     pub(crate) fn shift(
         &self,
-        months: DeltaMonths,
-        days: DeltaDays,
-        delta: TimeDelta,
+        shift: DateTimeShift,
         dis: Option<Disambiguation>,
         state: &State,
         cls: PyClass<Self>,
     ) -> PyReturn {
-        let shifted_by_date = if !months.is_zero() || !days.is_zero() {
+        let DateTimeShift { calendar, time } = shift;
+        let shifted_by_date = if !calendar.is_zero() {
             self.date
-                .shift(months, days)
+                .shift_by(calendar)
                 .ok_or_range_err()?
                 .at(self.time)
                 .resolve_in_py(
@@ -64,7 +65,7 @@ impl ZonedDateTime {
 
         shifted_by_date
             .to_instant()
-            .shift(delta)
+            .shift(time)
             .ok_or_range_err()?
             .into_zoned_py(self.tz.clone(), cls)
     }
@@ -370,27 +371,32 @@ fn shift_operator(
     arg: PyObj,
     negate: bool,
 ) -> PyResult<Option<Owned<PyObj>>> {
-    let mut months = DeltaMonths::ZERO;
-    let mut days = DeltaDays::ZERO;
-    let mut tdelta = TimeDelta::ZERO;
-
-    if let Some(d) = arg.extract(*state.time_delta_type) {
-        tdelta = d;
+    let shift = if let Some(time) = arg.extract(*state.time_delta_type) {
+        time.to_shift()
     } else if let Some(d) = arg.extract(*state.date_delta_type) {
-        months = d.months;
-        days = d.days;
+        CalendarShift {
+            months: d.months,
+            days: d.days,
+        }
+        .to_shift()
     } else if let Some(d) = arg.extract(*state.datetime_delta_type) {
-        months = d.ddelta.months;
-        days = d.ddelta.days;
-        tdelta = d.tdelta;
+        DateTimeShift {
+            calendar: CalendarShift {
+                months: d.ddelta.months,
+                days: d.ddelta.days,
+            },
+            time: d.tdelta,
+        }
     } else {
         return Ok(None);
-    }
-    months = months.negate_if(negate);
-    days = days.negate_if(negate);
-    tdelta = tdelta.negate_if(negate);
+    };
 
-    Ok(Some(slf.shift(months, days, tdelta, None, state, cls)?))
+    Ok(Some(slf.shift(
+        shift.negate_if(negate),
+        None,
+        state,
+        cls,
+    )?))
 }
 
 #[allow(static_mut_refs)]
@@ -549,17 +555,17 @@ fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -
         BoundaryUnit::Time(_) => {
             let start_local = slf.to_plain().start_of_unit(unit).ok_or_range_err()?;
             match slf.tz.mapping_for_local(start_local.local_seconds()) {
-                LocalMapping::Unique { offset } => start_local.with_offset(offset),
+                LocalMapping::Unique { offset } => start_local.assume_offset(offset),
                 LocalMapping::Fold { before, after, .. } => {
                     // Use the 'later' part of the fold if we're already in it.
                     // Otherwise, use the earlier part.
-                    start_local.with_offset(if after == slf.offset { after } else { before })
+                    start_local.assume_offset(if after == slf.offset { after } else { before })
                 }
                 LocalMapping::Gap {
                     transition, after, ..
                 } => transition
                     .datetime(start_local.time.subsec)
-                    .with_offset(after),
+                    .assume_offset(after),
             }
         }
         .ok_or_range_err()?
@@ -590,13 +596,13 @@ fn end_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> 
             let end_local = slf.to_plain().end_of_unit(unit).ok_or_range_err()?;
             let local_seconds = end_local.local_seconds();
             match slf.tz.mapping_for_local(local_seconds) {
-                LocalMapping::Unique { offset } => end_local.with_offset(offset),
+                LocalMapping::Unique { offset } => end_local.assume_offset(offset),
                 LocalMapping::Fold {
                     transition,
                     before,
                     after,
                 } => {
-                    end_local.with_offset(
+                    end_local.assume_offset(
                         // Use the 'later' part of the fold if...
                         if
                         // ...(a) we're already in that part of the fold...
@@ -619,7 +625,7 @@ fn end_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> 
                 } => transition
                     .saturating_add_i32(-after.sub(before).get() - 1)
                     .datetime(SubSecNanos::MAX)
-                    .with_offset(before),
+                    .assume_offset(before),
             }
         }
         .ok_or_range_err()?
@@ -738,7 +744,7 @@ fn parse_iso(cls: PyClass<ZonedDateTime>, arg: PyObj) -> PyReturn {
                     format!("invalid offset for {tzstr}"),
                 )?,
             }
-            dt.with_offset(offset)
+            dt.assume_offset(offset)
                 .ok_or_range_err()?
                 .into_zoned_py_unchecked(tz, cls)
         }
@@ -760,55 +766,32 @@ fn replace(
         raise_type_err("replace() takes no positional arguments")?;
     }
     let state = cls.state();
-    let ZonedDateTime {
-        date,
-        time,
-        offset,
-        ref tz,
-    } = *slf;
-    let mut year = date.year.get().into();
-    let mut month = date.month.get().into();
-    let mut day = date.day.into();
-    let mut hour = time.hour.into();
-    let mut minute = time.minute.into();
-    let mut second = time.second.into();
-    let mut nanos = time.subsec.get() as _;
+    let mut components = slf.to_plain().components();
+    let offset = slf.offset;
+    let tz = &slf.tz;
     let mut dis = None;
     let mut tz_new = None;
 
-    handle_kwargs("replace", kwargs, |key, value, eq| {
-        if eq(key, *state.str_tz) {
-            let tz_arg = state.tz_store.obj_get(value)?;
+    handle_kwargs("replace", kwargs, |k, v, eq| {
+        if eq(k, *state.str_tz) {
+            let tz_arg = state.tz_store.obj_get(v)?;
             // If we change timezones, forget about trying to preserve the offset.
             // Just use compatible disambiguation.
             if !Arc::ptr_eq(tz, &tz_arg) && **tz != *tz_arg {
                 dis = Some(Disambiguation::Compatible);
             }
             tz_new = Some(tz_arg);
-        } else if eq(key, *state.str_disambiguate) {
-            dis = Some(Disambiguation::from_py(value, state)?);
+        } else if eq(k, *state.str_disambiguate) {
+            dis = Some(Disambiguation::from_py(v, state)?);
         } else {
-            return set_components_from_kwargs(
-                key,
-                value,
-                &mut year,
-                &mut month,
-                &mut day,
-                &mut hour,
-                &mut minute,
-                &mut second,
-                &mut nanos,
-                state,
-                eq,
-            );
+            return components.set_from_kwarg(k, v, state, eq);
         }
         Ok(true)
     })?;
 
     let tz = tz_new.unwrap_or_else(|| tz.clone());
-    Date::from_longs(year, month, day)
-        .ok_or_value_err("invalid date")?
-        .at(Time::from_longs(hour, minute, second, nanos).ok_or_value_err("invalid time")?)
+    components
+        .into_plain()?
         .resolve_in_py(
             &tz,
             dis.map_or(
@@ -1037,15 +1020,10 @@ fn from_timestamp_millis(
 ) -> PyReturn {
     let state = cls.state();
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_millis")?;
-    Instant::from_timestamp_millis(
-        args[0]
-            .cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("timestamp must be an integer")?
-            .to_i64()?,
-    )
-    // FUTURE: a faster way to check both bounds
-    .ok_or_range_err()?
-    .into_zoned_py(tz, cls)
+    Instant::from_timestamp_millis(args[0].expect_int("timestamp")?.to_i64()?)
+        // FUTURE: a faster way to check both bounds
+        .ok_or_range_err()?
+        .into_zoned_py(tz, cls)
 }
 
 fn from_timestamp_nanos(
@@ -1055,14 +1033,9 @@ fn from_timestamp_nanos(
 ) -> PyReturn {
     let state = cls.state();
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_nanos")?;
-    Instant::from_timestamp_nanos(
-        args[0]
-            .cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("timestamp must be an integer")?
-            .to_i128()?,
-    )
-    .ok_or_range_err()?
-    .into_zoned_py(tz, cls)
+    Instant::from_timestamp_nanos(args[0].expect_int("timestamp")?.to_i128()?)
+        .ok_or_range_err()?
+        .into_zoned_py(tz, cls)
 }
 
 fn is_ambiguous(_: PyType, slf: &ZonedDateTime) -> PyReturn {
@@ -1079,7 +1052,7 @@ fn next_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn
             .shift_by_offset(offset)
             .ok_or_range_err()?
             .datetime(SubSecNanos::MIN)
-            .with_offset_unchecked(offset)
+            .assume_offset_unchecked(offset)
             .into_zoned_py_unchecked(slf.tz.clone(), cls),
         None => Ok(none()),
     }
@@ -1091,7 +1064,7 @@ fn prev_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn
             .shift_by_offset(offset)
             .ok_or_range_err()?
             .datetime(SubSecNanos::MIN)
-            .with_offset_unchecked(offset)
+            .assume_offset_unchecked(offset)
             .into_zoned_py_unchecked(slf.tz.clone(), cls),
         None => Ok(none()),
     }
@@ -1138,11 +1111,8 @@ fn shift_method(
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
     let mut dis = None;
-    let mut months = DeltaMonths::ZERO;
-    let mut days = DeltaDays::ZERO;
-    let mut tdelta = TimeDelta::ZERO;
 
-    match *args {
+    let shift = match *args {
         [arg] => {
             match kwargs.next() {
                 Some((key, value))
@@ -1155,61 +1125,24 @@ fn shift_method(
                     "{fname}() can't mix positional and keyword arguments"
                 ))?,
             };
-            if let Some(d) = arg.extract(*state.time_delta_type) {
-                tdelta = d;
-            } else if let Some(d) = arg.extract(*state.date_delta_type) {
-                months = d.months;
-                days = d.days;
-            } else if let Some(d) = arg.extract(*state.datetime_delta_type) {
-                months = d.ddelta.months;
-                days = d.ddelta.days;
-                tdelta = d.tdelta;
-            } else if let Some(d) = ItemizedDateDelta::extract(arg, state)? {
-                let (m, dy) = d.to_months_days().ok_or_range_err()?;
-                months = m;
-                days = dy;
-            } else if let Some(d) = ItemizedDelta::extract(arg, state)? {
-                let (m, dy, td) = d.to_components().ok_or_range_err()?;
-                months = m;
-                days = dy;
-                tdelta = td;
+            parse_datetime_shift_arg(fname, arg, state)?
+        }
+        [] => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
+            if eq(k, *state.str_disambiguate) {
+                dis = Disambiguation::from_py(v, state)?.into();
+                Ok(true)
             } else {
-                raise_type_err(format!("{fname}() argument must be a delta"))?
+                Ok(false)
             }
-        }
-        [] => {
-            let mut units = DeltaUnitSet::EMPTY;
-            handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, *state.str_disambiguate) {
-                    dis = Disambiguation::from_py(value, state)?.into();
-                    Ok(true)
-                } else {
-                    handle_delta_unit_kwargs(
-                        key,
-                        value,
-                        &mut months,
-                        &mut days,
-                        &mut tdelta,
-                        &mut units,
-                        eq,
-                        true,
-                        true,
-                        state,
-                    )
-                }
-            })?;
-        }
+        })?,
         _ => raise_type_err(format!(
             "{}() takes at most 1 positional argument, got {}",
             fname,
             args.len()
         ))?,
-    }
-    months = months.negate_if(negate);
-    days = days.negate_if(negate);
-    tdelta = tdelta.negate_if(negate);
+    };
 
-    slf.shift(months, days, tdelta, dis, state, cls)
+    slf.shift(shift.negate_if(negate), dis, state, cls)
 }
 
 fn difference(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> PyReturn {
@@ -1540,11 +1473,11 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         // Use offset to disambiguate during DST transitions.
         match tz.mapping_for_local(dt.local_seconds()) {
             LocalMapping::Unique { offset: actual } if actual == offset => dt
-                .with_offset(offset)
+                .assume_offset(offset)
                 .ok_or_range_err()?
                 .into_zoned_py_unchecked(tz, cls),
             LocalMapping::Fold { before, after, .. } if before == offset || after == offset => dt
-                .with_offset(offset)
+                .assume_offset(offset)
                 .ok_or_range_err()?
                 .into_zoned_py_unchecked(tz, cls),
             LocalMapping::Gap { .. } => raise_value_err(format!(

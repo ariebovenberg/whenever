@@ -3,6 +3,7 @@ use super::{
     instant::Instant,
     round,
     scalar::{DeltaDays, DeltaField, DeltaMonths},
+    shift::CalendarShift,
 };
 use crate::common::math::{CalUnit, DateRoundIncrement, round_by_days, round_by_time};
 
@@ -22,19 +23,21 @@ impl ItemizedDateDelta {
         days: DeltaField::UNSET,
     };
 
-    pub(crate) fn to_months_days(self) -> Option<(DeltaMonths, DeltaDays)> {
-        DeltaMonths::new(
-            self.years
-                .get_or(0)
-                .checked_mul(12)?
-                .checked_add(self.months.get_or(0))?,
-        )
-        .zip(DeltaDays::new(
-            self.weeks
-                .get_or(0)
-                .checked_mul(7)?
-                .checked_add(self.days.get_or(0))?,
-        ))
+    pub(crate) fn to_calendar_shift(self) -> Option<CalendarShift> {
+        Some(CalendarShift {
+            months: DeltaMonths::new(
+                self.years
+                    .get_or(0)
+                    .checked_mul(12)?
+                    .checked_add(self.months.get_or(0))?,
+            )?,
+            days: DeltaDays::new(
+                self.weeks
+                    .get_or(0)
+                    .checked_mul(7)?
+                    .checked_add(self.days.get_or(0))?,
+            )?,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]

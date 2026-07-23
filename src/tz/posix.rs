@@ -332,7 +332,9 @@ impl Rule {
                 Date::nth_weekday_in_month(year, m, n.get() as i32, w).unwrap()
             }
         };
-        LocalSeconds::from_plain(date.at(Time::MIN)).saturating_add_i32(transition_time)
+        date.at(Time::MIN)
+            .local_seconds()
+            .saturating_add_i32(transition_time)
     }
 }
 
