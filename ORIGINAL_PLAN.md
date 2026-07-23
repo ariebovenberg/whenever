@@ -519,7 +519,7 @@ mechanical `date`/`time` field rename. The separate unit enums and their parsing
 Completed with all 82 Rust tests, build and lint, and 2,419 focused Python tests passing (one
 skipped).
 
-### 8. Final verification — planned
+### 8. Final verification — complete
 
 Run the authoritative workflows:
 
@@ -531,6 +531,16 @@ make QUIET=1 test-py
 
 Also run pure-Python tests after make QUIET=1 clean-ext, then rebuild, because
 moving domain logic must not accidentally change Rust/Python parity.
+
+All authoritative workflows pass. The extension-backed suite passed 4,194 tests with one skipped;
+after removing the extension, the pure-Python suite passed 4,192 tests with three skipped. The
+extension was then rebuilt. Typechecking required moving one test-only `type: ignore` to the call
+expression it suppresses; no production typing changed.
+
+As a secondary measurement, the stripped fat-LTO extension is 883,820 bytes. This is 53,596 bytes
+(5.72%) smaller than `main`, but 8,176 bytes (0.93%) larger than the pre-refactor commit
+`cd99621` when built with the same lockfile. The branch-wide size reduction therefore predates
+these API phases; helper consolidation has not reduced binary size on net.
 
 This sequence keeps each stage independently reviewable: correctness first,
 mechanical FFI naming second, architectural movement third, and semantic
