@@ -1,8 +1,12 @@
 import struct
+from collections.abc import Callable, Iterator
+from typing import cast
 
 import pytest
 import whenever as w
 from whenever import _pywhenever as py
+
+_ReduceResult = tuple[Callable[..., object], tuple[object, ...]]
 
 
 @pytest.mark.parametrize(
@@ -56,7 +60,7 @@ from whenever import _pywhenever as py
     ],
 )
 def test_payload_matches_wire_format(value: object, payload: bytes):
-    assert value.__reduce__()[1][0] == payload  # type: ignore[attr-defined]
+    assert value.__reduce__()[1][0] == payload
 
 
 @pytest.mark.parametrize(
@@ -90,7 +94,7 @@ def test_payload_matches_wire_format(value: object, payload: bytes):
     ],
 )
 def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
-    assert value.__reduce__()[1][0] == payload  # type: ignore[attr-defined]
+    assert value.__reduce__()[1][0] == payload
 
 
 @pytest.mark.parametrize(
@@ -111,6 +115,7 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
             "_unpkl_local",
             (struct.pack("<HBBBBBi", 2024, 2, 29, 0, 0, 0, 1_000_000_000),),
         ),
+        ("_unpkl_utc", (struct.pack("<qL", 0, 1_000_000_000),)),
         ("_unpkl_inst", (struct.pack("<qL", -62_135_596_801, 0),)),
         ("_unpkl_inst", (struct.pack("<qL", 253_402_300_800, 0),)),
         ("_unpkl_inst", (struct.pack("<qL", 0, 1_000_000_000),)),
@@ -125,6 +130,23 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
         (
             "_unpkl_offset",
             (struct.pack("<HBBBBBil", 1, 1, 1, 0, 0, 0, 0, 1),),
+        ),
+        (
+            "_unpkl_zoned",
+            (
+                struct.pack(
+                    "<HBBBBBil",
+                    2024,
+                    1,
+                    1,
+                    0,
+                    0,
+                    0,
+                    1_000_000_000,
+                    0,
+                ),
+                "UTC",
+            ),
         ),
         (
             "_unpkl_zoned",
@@ -182,7 +204,7 @@ def test_rust_unpicklers_require_exact_bytes(
 
 
 def test_zoned_pickle_preserves_stored_offset():
-    value = w._unpkl_zoned(
+    value = getattr(w, "_unpkl_zoned")(
         struct.pack("<HBBBBBil", 2023, 7, 1, 12, 0, 0, 0, 3_600),
         "Europe/Amsterdam",
     )
@@ -194,7 +216,9 @@ def test_zoned_pickle_preserves_stored_offset():
     not w._EXTENSION_LOADED,
     reason="requires both implementations in one process",
 )
-def test_cross_backend_payloads_and_unpicklers():
+def test_cross_backend_payloads_and_unpicklers(
+    initialized_pure_tz_store: None,
+):
     pairs = [
         (w.Date(2024, 2, 29), py.Date(2024, 2, 29)),
         (
@@ -270,10 +294,25 @@ def test_cross_backend_payloads_and_unpicklers():
     ]
 
     for rust_value, python_value in pairs:
-        rust_unpickler, rust_args = rust_value.__reduce__()
-        python_unpickler, python_args = python_value.__reduce__()
+        rust_unpickler, rust_args = cast(
+            _ReduceResult, rust_value.__reduce__()
+        )
+        python_unpickler, python_args = cast(
+            _ReduceResult, python_value.__reduce__()
+        )
 
         assert rust_unpickler.__name__ == python_unpickler.__name__
         assert rust_args == python_args
         assert str(rust_unpickler(*python_args)) == str(rust_value)
         assert str(python_unpickler(*rust_args)) == str(python_value)
+
+
+@pytest.fixture
+def initialized_pure_tz_store() -> Iterator[None]:
+    previous = py._get_tzpath()
+    py._set_tzpath(w.TZPATH)
+    try:
+        yield
+    finally:
+        py._clear_tz_cache()
+        py._set_tzpath(previous)

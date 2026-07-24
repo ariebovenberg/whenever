@@ -4609,7 +4609,9 @@ def _unpkl_inst(data: bytes) -> Instant:
     secs, nanos = unpack("<qL", data)
     if nanos >= 1_000_000_000:
         raise ValueError(f"nanosecond out of range: {nanos}")
-    return Instant._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
+    return Instant._from_py_unchecked(
+        _EPOCH_DT + _timedelta(seconds=secs), nanos
+    )
 
 
 @final
