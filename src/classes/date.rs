@@ -691,29 +691,10 @@ fn format(_: PyClass<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
-    let elements = pattern::compile(pattern_str).into_value_err()?;
-    pattern::validate_fields(&elements, pattern::CategorySet::DATE, "Date")?;
-    if pattern::has_12h_without_ampm(&elements) {
-        warn_with_class(
-            exc_user_warning(),
-            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            1,
-        )?;
-    }
-    let vals = pattern::FormatValues {
-        year: slf.year,
-        month: slf.month,
-        day: slf.day,
-        weekday: slf.day_of_week(),
-        hour: 0,
-        minute: 0,
-        second: 0,
-        nanos: SubSecNanos::MIN,
-        offset_secs: None,
-        tz_id: None,
-        tz_abbrev: None,
-    };
-    pattern::format_to_py(&elements, &vals)
+    let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
+    pattern.validate(pattern::CategorySet::DATE, "Date")?;
+    pattern.warn_if_ambiguous_12h()?;
+    pattern.format(&slf.pattern_values())
 }
 
 fn __format__(cls: PyClass<Date>, slf: Date, spec_obj: PyObj) -> PyReturn {
@@ -744,29 +725,12 @@ fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         .ok_or_type_err("format must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
-    let elements = pattern::compile(fmt_bytes).into_value_err()?;
-    pattern::validate_fields(&elements, pattern::CategorySet::DATE, "Date")?;
-
-    let pstate = pattern::parse_to_state(&elements, s).into_value_err()?;
-
-    let year = pstate.year.ok_or_value_err(
-        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
-    )?;
-    let month = pstate.month.ok_or_value_err(
-        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
-    )?;
-    let day = pstate.day.ok_or_value_err(
-        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
-    )?;
-
-    let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
-
-    if let Some(wd) = pstate.weekday
-        && date.day_of_week() != wd
-    {
-        raise_value_err("Parsed weekday does not match the date")?;
-    }
-
+    let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
+    pattern.validate(pattern::CategorySet::DATE, "Date")?;
+    let parsed = pattern.parse(s).into_value_err()?;
+    let date = parsed
+        .date("Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields")?;
+    parsed.validate_weekday(date)?;
     date.to_obj(cls)
 }
 

@@ -1280,37 +1280,19 @@ fn format(_cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj)
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
-    let elements = pattern::compile(pattern_str).into_value_err()?;
-    pattern::validate_fields(
-        &elements,
-        pattern::CategorySet::DATE_TIME_OFFSET_TZ,
-        "ZonedDateTime",
-    )?;
-    if pattern::has_12h_without_ampm(&elements) {
-        warn_with_class(
-            exc_user_warning(),
-            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            1,
-        )?;
-    }
+    let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
+    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET_TZ, "ZonedDateTime")?;
+    pattern.warn_if_ambiguous_12h()?;
     let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
     // SAFETY: TzAbbrev always contains valid ASCII bytes
     let abbrev_str = unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) };
     let tz_key = slf.tz.key.as_deref().unwrap_or("");
-    let vals = pattern::FormatValues {
-        year: slf.date.year,
-        month: slf.date.month,
-        day: slf.date.day,
-        weekday: slf.date.day_of_week(),
-        hour: slf.time.hour,
-        minute: slf.time.minute,
-        second: slf.time.second,
-        nanos: slf.time.subsec,
-        offset_secs: Some(slf.offset),
-        tz_id: Some(tz_key),
-        tz_abbrev: Some(abbrev_str),
-    };
-    pattern::format_to_py(&elements, &vals)
+    pattern.format(
+        &slf.to_plain()
+            .pattern_values()
+            .with_offset(slf.offset)
+            .with_timezone(tz_key, abbrev_str),
+    )
 }
 
 fn __format__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, spec_obj: PyObj) -> PyReturn {
@@ -1355,43 +1337,18 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         .ok_or_type_err("format must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
-    let elements = pattern::compile(fmt_bytes).into_value_err()?;
-    pattern::validate_fields(
-        &elements,
-        pattern::CategorySet::DATE_TIME_OFFSET_TZ,
-        "ZonedDateTime",
-    )?;
-
-    let parsed = pattern::parse_to_state(&elements, s).into_value_err()?;
+    let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
+    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET_TZ, "ZonedDateTime")?;
+    let parsed = pattern.parse(s).into_value_err()?;
 
     let tz_id = parsed
         .tz_id
         .as_deref()
         .ok_or_value_err("ZonedDateTime.parse() pattern must include a timezone ID field (VV)")?;
 
-    let year = parsed
-        .year
-        .ok_or_value_err("Pattern must include year, month, and day fields")?;
-    let month = parsed
-        .month
-        .ok_or_value_err("Pattern must include year, month, and day fields")?;
-    let day = parsed
-        .day
-        .ok_or_value_err("Pattern must include year, month, and day fields")?;
-
-    let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
-
-    if let Some(wd) = parsed.weekday
-        && date.day_of_week() != wd
-    {
-        raise_value_err("Parsed weekday does not match the date")?;
-    }
-
-    let hour = parsed.hour.unwrap_or(0);
-    let minute = parsed.minute.unwrap_or(0);
-    let second = parsed.second.unwrap_or(0);
-    let dt =
-        date.at(Time::new(hour, minute, second, parsed.nanos).ok_or_value_err("Invalid time")?);
+    let date = parsed.date("Pattern must include year, month, and day fields")?;
+    parsed.validate_weekday(date)?;
+    let dt = date.at(parsed.time()?);
     let tz = state.tz_store.get(tz_id)?;
     // NOTE: we can't reuse resolve_in() because we need to outright
     // reject invalid offsets, rather than just disambiguate them.

@@ -329,29 +329,10 @@ fn format(_cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
-    let elements = pattern::compile(pattern_str).into_value_err()?;
-    pattern::validate_fields(&elements, pattern::CategorySet::TIME, "Time")?;
-    if pattern::has_12h_without_ampm(&elements) {
-        warn_with_class(
-            exc_user_warning(),
-            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            1,
-        )?;
-    }
-    let vals = pattern::FormatValues {
-        year: Year::MIN,
-        month: Month::MIN,
-        day: 1,
-        weekday: Weekday::Monday,
-        hour: slf.hour,
-        minute: slf.minute,
-        second: slf.second,
-        nanos: slf.subsec,
-        offset_secs: None,
-        tz_id: None,
-        tz_abbrev: None,
-    };
-    pattern::format_to_py(&elements, &vals)
+    let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
+    pattern.validate(pattern::CategorySet::TIME, "Time")?;
+    pattern.warn_if_ambiguous_12h()?;
+    pattern.format(&slf.pattern_values())
 }
 
 fn __format__(cls: PyClass<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
@@ -382,26 +363,9 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         .ok_or_type_err("format must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
-    let elements = pattern::compile(fmt_bytes).into_value_err()?;
-    pattern::validate_fields(&elements, pattern::CategorySet::TIME, "Time")?;
-
-    let state = pattern::parse_to_state(&elements, s).into_value_err()?;
-
-    let hour = state.hour.unwrap_or(0);
-    let minute = state.minute.unwrap_or(0);
-    let second = state.second.unwrap_or(0);
-
-    if hour >= 24 || minute >= 60 || second >= 60 {
-        raise_value_err("Invalid time")?;
-    }
-
-    Time {
-        hour,
-        minute,
-        second,
-        subsec: state.nanos,
-    }
-    .to_obj(cls)
+    let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
+    pattern.validate(pattern::CategorySet::TIME, "Time")?;
+    pattern.parse(s).into_value_err()?.time()?.to_obj(cls)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
