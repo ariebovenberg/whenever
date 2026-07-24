@@ -51,6 +51,13 @@ sync-docstrings:
 	# --no-sync prevents rust rebuild, which fails on empty docstrings.rs
 	uv $(UV_ARGS) run --no-sync python scripts/generate_docstrings.py > src/docstrings.rs
 
+.PHONY: check-docstrings
+check-docstrings:
+	uv $(UV_ARGS) run --no-sync python scripts/generate_docstrings.py | diff -u src/docstrings.rs - || { \
+		echo "Rust docstrings are stale. Please run 'make sync-docstrings'." >&2; \
+		exit 1; \
+	}
+
 .PHONY: fix
 fix:
 	uv $(UV_ARGS) run --no-sync ruff check $(RUFF_ARGS) --select I --fix .
@@ -84,7 +91,7 @@ test-rs:
 test: test-py test-rs
 
 .PHONY: ci-lint
-ci-lint: check-readme
+ci-lint: check-readme check-docstrings
 	uv $(UV_ARGS) lock --check
 	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) .
 	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check .
