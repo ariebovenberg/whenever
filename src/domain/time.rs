@@ -120,8 +120,8 @@ impl Time {
         Scan::new(s).parse_all(Self::read_iso)
     }
 
-    pub(crate) fn format_iso(self, unit: fmt::Precision, basic: bool) -> IsoFormat {
-        let (subsec_str, subsec_len) = self.subsec.format_iso();
+    pub(crate) fn iso_format(self, unit: fmt::Precision, basic: bool) -> IsoFormat {
+        let (subsec_str, subsec_len) = self.subsec.iso_format();
         IsoFormat {
             time: self,
             basic,

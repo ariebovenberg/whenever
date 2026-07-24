@@ -133,12 +133,18 @@ pub(crate) struct Args {
 static INCREMENT_DIV_MSG: &str =
     "Invalid increment. Must be positive and divide a 24-hour day evenly.";
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub(crate) enum ArgsContext {
+    Standard,
+    Offset,
+}
+
 impl Args {
     pub(crate) fn parse(
-        state: &State,
         args: &[PyObj],
         kwargs: &mut IterKwargs,
-        ignore_dst_kwarg: bool,
+        state: &State,
+        context: ArgsContext,
     ) -> PyResult<Self> {
         let opt_arg = handle_opt_arg("round", args)?;
 
@@ -159,9 +165,9 @@ impl Args {
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU64::new_unchecked(raw_increment as _) });
-            } else if ignore_dst_kwarg && eq(key, *state.str_ignore_dst) {
+            } else if context == ArgsContext::Offset && eq(key, *state.str_ignore_dst) {
                 got_ignore_dst = true;
-            } else if ignore_dst_kwarg && eq(key, *state.str_stale_offset_ok) {
+            } else if context == ArgsContext::Offset && eq(key, *state.str_stale_offset_ok) {
                 suppress_stale = value.is_truthy()?;
             } else {
                 return Ok(false);
@@ -224,7 +230,7 @@ pub(crate) struct DeltaArgs {
 }
 
 impl DeltaArgs {
-    pub(crate) fn parse(state: &State, args: &[PyObj], kwargs: &mut IterKwargs) -> PyResult<Self> {
+    pub(crate) fn parse(args: &[PyObj], kwargs: &mut IterKwargs, state: &State) -> PyResult<Self> {
         let opt_arg = handle_opt_arg("round", args)?;
         let mut mode = Mode::HalfEven;
         let mut increment_kwarg = None;

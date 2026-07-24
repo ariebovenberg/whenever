@@ -86,7 +86,7 @@ impl Instant {
             let offset = dt.utcoffset()?;
             if let Some(py_delta) = (*offset).cast_exact::<PyTimeDelta>() {
                 // SAFETY: Python offsets are already bounded to +/- 24 hours: well within TimeDelta range.
-                inst.shift(-TimeDelta::from_py_unchecked(py_delta))
+                inst.shift(-TimeDelta::from_stdlib_timedelta_unchecked(py_delta))
             } else if offset.is_none() {
                 raise_value_err("datetime is naive")?
             } else {
@@ -95,7 +95,7 @@ impl Instant {
         })
     }
 
-    pub(crate) const fn pyhash(self) -> Py_hash_t {
+    pub(crate) const fn python_hash(self) -> Py_hash_t {
         if cfg!(target_pointer_width = "64") {
             hash_combine(
                 self.epoch.get() as Py_hash_t,
@@ -169,9 +169,9 @@ fn __repr__(_: PyType, i: Instant) -> PyReturn {
     let PlainDateTime { date, time } = i.to_utc_plain();
     PyAsciiStrBuilder::format((
         b"Instant(\"",
-        date.format_iso(false),
+        date.iso_format(false),
         b" ",
-        time.format_iso(fmt::Precision::Auto, false),
+        time.iso_format(fmt::Precision::Auto, false),
         b"Z\")",
     ))
 }
@@ -179,9 +179,9 @@ fn __repr__(_: PyType, i: Instant) -> PyReturn {
 fn __str__(_: PyType, i: Instant) -> PyReturn {
     let PlainDateTime { date, time } = i.to_utc_plain();
     PyAsciiStrBuilder::format((
-        date.format_iso(false),
+        date.iso_format(false),
         b"T",
-        time.format_iso(fmt::Precision::Auto, false),
+        time.iso_format(fmt::Precision::Auto, false),
         b"Z",
     ))
 }
@@ -196,7 +196,7 @@ fn __richcmp__(cls: PyClass<Instant>, inst_a: Instant, b_obj: PyObj, op: c_int) 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     hashmask(
         // SAFETY: we know the self object is an Instant
-        unsafe { slf.assume_heaptype::<Instant>() }.1.pyhash(),
+        unsafe { slf.assume_heaptype::<Instant>() }.1.python_hash(),
     )
 }
 
@@ -467,7 +467,7 @@ fn difference(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
 
 fn to_tz(cls: PyClass<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
-    slf.into_zoned_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
+    slf.into_zoned_obj(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
 }
 
 fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
@@ -475,7 +475,7 @@ fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyRet
     match *args {
         [] => slf.to_utc_plain().assume_offset_unchecked(Offset::ZERO),
         [arg] => slf
-            .to_offset(Offset::from_obj(arg, *state.time_delta_type)?)
+            .to_offset(Offset::from_py(arg, *state.time_delta_type)?)
             .ok_or_range_err()?,
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument")?,
     }
@@ -484,7 +484,7 @@ fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyRet
 
 fn to_system_tz(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
     let state = cls.state();
-    slf.into_zoned_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
+    slf.into_zoned_obj(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
 
 fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
@@ -509,7 +509,7 @@ fn parse_rfc2822(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
 fn round(cls: PyClass<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let round::Args {
         increment, mode, ..
-    } = round::Args::parse(cls.state(), args, kwargs, false)?;
+    } = round::Args::parse(args, kwargs, cls.state(), round::ArgsContext::Standard)?;
     let round_increment = match increment {
         round::RoundIncrement::Day => raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?,
         // SAFETY: parse() validates the increment is ≥ 1 ns and fits within a day

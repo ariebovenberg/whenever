@@ -67,7 +67,7 @@ impl Offset {
         OffsetDelta::new_unchecked(self.0)
     }
 
-    pub(crate) fn format_iso(self, basic: bool) -> OffsetFormat {
+    pub(crate) fn iso_format(self, basic: bool) -> OffsetFormat {
         let total_secs = self.0.abs();
         let sign_char = if self.0 < 0 { b'-' } else { b'+' };
         let secs = total_secs % 60;
@@ -852,7 +852,7 @@ impl SubSecNanos {
 
     /// Convert the nanoseconds to a string representation,
     /// returning the buffer and the "significant" length (i.e. without trailing zeros)
-    pub(crate) fn format_iso(self) -> ([u8; 10], usize) {
+    pub(crate) fn iso_format(self) -> ([u8; 10], usize) {
         // Early exit for zero
         if self.0 == 0 {
             return (*b".000000000", 0);
@@ -1061,27 +1061,27 @@ mod tests {
     #[test]
     fn subsec_format_iso() {
         assert_eq!(
-            SubSecNanos::new_unchecked(123_456_789).format_iso(),
+            SubSecNanos::new_unchecked(123_456_789).iso_format(),
             (*b".123456789", 10)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(0).format_iso(),
+            SubSecNanos::new_unchecked(0).iso_format(),
             (*b".000000000", 0)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(123_000_000).format_iso(),
+            SubSecNanos::new_unchecked(123_000_000).iso_format(),
             (*b".123000000", 4)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(23_456_009).format_iso(),
+            SubSecNanos::new_unchecked(23_456_009).iso_format(),
             (*b".023456009", 10)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(80).format_iso(),
+            SubSecNanos::new_unchecked(80).iso_format(),
             (*b".000000080", 9)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(100_000_000).format_iso(),
+            SubSecNanos::new_unchecked(100_000_000).iso_format(),
             (*b".100000000", 2)
         );
     }

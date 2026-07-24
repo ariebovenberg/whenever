@@ -43,7 +43,7 @@ impl Time {
         .own()
     }
 
-    pub(crate) const fn pyhash(self) -> Py_hash_t {
+    pub(crate) const fn python_hash(self) -> Py_hash_t {
         #[cfg(target_pointer_width = "64")]
         {
             ((self.hour as Py_hash_t) << 48)
@@ -150,7 +150,7 @@ fn __new__(cls: PyClass<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     // SAFETY: self type is always passed to __hash__
-    hashmask(unsafe { slf.assume_heaptype::<Time>() }.1.pyhash())
+    hashmask(unsafe { slf.assume_heaptype::<Time>() }.1.python_hash())
 }
 
 fn __richcmp__(cls: PyClass<Time>, slf: Time, arg: PyObj, op: c_int) -> PyReturn {
@@ -161,13 +161,13 @@ fn __richcmp__(cls: PyClass<Time>, slf: Time, arg: PyObj, op: c_int) -> PyReturn
 }
 
 fn __str__(_: PyType, slf: Time) -> PyReturn {
-    PyAsciiStrBuilder::format(slf.format_iso(fmt::Precision::Auto, false))
+    PyAsciiStrBuilder::format(slf.iso_format(fmt::Precision::Auto, false))
 }
 
 fn __repr__(_: PyType, slf: Time) -> PyReturn {
     PyAsciiStrBuilder::format((
         b"Time(\"",
-        slf.format_iso(fmt::Precision::Auto, false),
+        slf.iso_format(fmt::Precision::Auto, false),
         b"\")",
     ))
 }
@@ -243,20 +243,14 @@ fn format_iso(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKw
         if eq(key, *state.str_unit) {
             unit = fmt::Precision::from_py(value, state)?;
         } else if eq(key, *state.str_basic) {
-            if value.is_true() {
-                basic = true;
-            } else if value.is_false() {
-                basic = false;
-            } else {
-                raise_value_err("basic must be True or False")?;
-            }
+            basic = value.expect_bool("basic")?;
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
 
-    PyAsciiStrBuilder::format(slf.format_iso(unit, basic))
+    PyAsciiStrBuilder::format(slf.iso_format(unit, basic))
 }
 
 fn parse_iso(cls: PyClass<Time>, s: PyObj) -> PyReturn {
@@ -322,7 +316,7 @@ fn replace(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwarg
 fn round(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let round::Args {
         increment, mode, ..
-    } = round::Args::parse(cls.state(), args, kwargs, false)?;
+    } = round::Args::parse(args, kwargs, cls.state(), round::ArgsContext::Standard)?;
     let increment_ns = match increment {
         round::RoundIncrement::Day => raise_value_err("cannot round Time to day")?,
         round::RoundIncrement::Exact(incr) => incr.get(),
@@ -510,7 +504,7 @@ mod tests {
 
         fn testcase(t: Time, basic: bool, unit: fmt::Precision, expect: &[u8]) {
             let mut buf = Vec::new();
-            let fmt = t.format_iso(unit, basic);
+            let fmt = t.iso_format(unit, basic);
             fmt.write(&mut buf);
             assert_eq!(
                 &buf,

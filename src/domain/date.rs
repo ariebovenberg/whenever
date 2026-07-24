@@ -161,7 +161,7 @@ impl Date {
         }
     }
 
-    pub(crate) fn format_iso(self, basic: bool) -> IsoFormat {
+    pub(crate) fn iso_format(self, basic: bool) -> IsoFormat {
         IsoFormat { date: self, basic }
     }
 
@@ -323,7 +323,7 @@ impl fmt::Chunk for IsoFormat {
 impl Display for Date {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut s = fmt::ArrayWriter::<10>::new();
-        self.format_iso(false).write(&mut s);
+        self.iso_format(false).write(&mut s);
         f.write_str(s.finish())
     }
 }

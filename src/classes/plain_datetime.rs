@@ -34,7 +34,7 @@ pub(crate) const SINGLETONS: &[(&CStr, PlainDateTime); 2] =
     &[(c"MIN", PlainDateTime::MIN), (c"MAX", PlainDateTime::MAX)];
 
 impl DateTimeBoundaryUnit {
-    pub(crate) fn from_py(state: &State, obj: PyObj) -> PyResult<Self> {
+    pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         find_interned(obj, |v, eq| {
             if eq(v, *state.str_year) {
                 Some(Ok(DateTimeBoundaryUnit::Date(date::DateBoundaryUnit::Year)))
@@ -169,9 +169,9 @@ fn __repr__(_: PyType, slf: PlainDateTime) -> PyReturn {
     let PlainDateTime { date, time } = slf;
     PyAsciiStrBuilder::format((
         b"PlainDateTime(\"",
-        date.format_iso(false),
+        date.iso_format(false),
         b' ',
-        time.format_iso(fmt::Precision::Auto, false),
+        time.iso_format(fmt::Precision::Auto, false),
         b"\")",
     ))
 }
@@ -224,7 +224,10 @@ fn __richcmp__(
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     // SAFETY: self type is always passed to __hash__
     let (_, PlainDateTime { date, time }) = unsafe { slf.assume_heaptype() };
-    hashmask(hash_combine(date.hash() as Py_hash_t, time.pyhash()))
+    hashmask(hash_combine(
+        date.python_hash() as Py_hash_t,
+        time.python_hash(),
+    ))
 }
 
 fn __add__(a: PyObj, b: PyObj) -> PyReturn {
@@ -595,13 +598,13 @@ fn in_leap_year(_: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
 }
 
 fn start_of(cls: PyClass<PlainDateTime>, slf: PlainDateTime, unit_obj: PyObj) -> PyReturn {
-    slf.start_of_unit(DateTimeBoundaryUnit::from_py(cls.state(), unit_obj)?)
+    slf.start_of_unit(DateTimeBoundaryUnit::from_py(unit_obj, cls.state())?)
         .ok_or_range_err()?
         .to_obj(cls)
 }
 
 fn end_of(cls: PyClass<PlainDateTime>, slf: PlainDateTime, unit_obj: PyObj) -> PyReturn {
-    slf.end_of_unit(DateTimeBoundaryUnit::from_py(cls.state(), unit_obj)?)
+    slf.end_of_unit(DateTimeBoundaryUnit::from_py(unit_obj, cls.state())?)
         .ok_or_range_err()?
         .to_obj(cls)
 }
@@ -644,7 +647,7 @@ fn assume_utc(cls: PyClass<PlainDateTime>, d: PlainDateTime) -> PyReturn {
 
 fn assume_fixed_offset(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyObj) -> PyReturn {
     let state = cls.state();
-    slf.assume_offset(Offset::from_obj(arg, *state.time_delta_type)?)
+    slf.assume_offset(Offset::from_py(arg, *state.time_delta_type)?)
         .ok_or_range_err()?
         .to_obj(*state.offset_datetime_type)
 }
@@ -666,8 +669,8 @@ fn assume_tz(
     let dis = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?
         .unwrap_or(Disambiguation::Compatible);
     let tz = state.tz_store.obj_get(tz_obj)?;
-    slf.resolve_in_py(&tz, ResolvePolicy::Disambiguate(dis), state)?
-        .into_zoned_py_unchecked(tz, *state.zoned_datetime_type)
+    slf.resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
+        .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type)
 }
 
 fn assume_system_tz(
@@ -684,8 +687,8 @@ fn assume_system_tz(
     let dis = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?
         .unwrap_or(Disambiguation::Compatible);
     let tz = state.tz_store.get_system_tz()?;
-    slf.resolve_in_py(&tz, ResolvePolicy::Disambiguate(dis), state)?
-        .into_zoned_py_unchecked(tz, *state.zoned_datetime_type)
+    slf.resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
+        .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type)
 }
 
 fn replace_date(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyObj) -> PyReturn {
@@ -737,7 +740,7 @@ fn plain_since(
 
     let mut suppress_unaware = false;
     let mut got_ignore_dst = false;
-    let since_kwargs = SinceUntilKwargs::parse_with(fname, state, kwargs, |key, value, eq| {
+    let since_kwargs = SinceUntilKwargs::parse_with(fname, kwargs, state, |key, value, eq| {
         if eq(key, *state.str_naive_arithmetic_ok) {
             suppress_unaware = value.is_truthy()?;
             Ok(true)
@@ -766,19 +769,17 @@ fn plain_since(
 /// Resolve a non-ZonedDateTime `relative_to` argument to a `PlainDateTime`,
 /// emitting the appropriate warning if the condition is met.
 ///
-/// - `warn_plain`: emit `TZUnawareArithmetic` warning for PlainDateTime
-/// - `warn_offset`: emit `PotentiallyStaleOffset` warning for OffsetDateTime
+/// If `warn` is true, emit the warning appropriate to the argument type.
 ///
 /// The caller is responsible for handling the ZonedDateTime case before calling
 /// this function (which always returns `Err` for ZonedDateTime args).
 pub(crate) fn resolve_local_relative_to(
     arg: PyObj,
     state: &State,
-    warn_plain: bool,
-    warn_offset: bool,
+    warn: bool,
 ) -> PyResult<PlainDateTime> {
     if let Some(pdt) = arg.extract(*state.plain_datetime_type) {
-        if warn_plain {
+        if warn {
             warn_with_class(
                 *state.warn_naive_arithmetic,
                 doc::PLAIN_RELATIVE_TO_UNAWARE_MSG,
@@ -787,7 +788,7 @@ pub(crate) fn resolve_local_relative_to(
         }
         Ok(pdt)
     } else if let Some(odt) = arg.extract(*state.offset_datetime_type) {
-        if warn_offset {
+        if warn {
             warn_with_class(
                 *state.warn_potentially_stale_offset,
                 doc::STALE_OFFSET_CALENDAR_MSG,
@@ -946,7 +947,7 @@ fn round(
 ) -> PyReturn {
     let round::Args {
         increment, mode, ..
-    } = round::Args::parse(cls.state(), args, kwargs, false)?;
+    } = round::Args::parse(args, kwargs, cls.state(), round::ArgsContext::Standard)?;
     let round_nanos = match increment {
         round::RoundIncrement::Day => NS_PER_DAY,
         round::RoundIncrement::Exact(ns) => ns.get(),

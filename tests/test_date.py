@@ -191,6 +191,10 @@ def test_format_iso():
     with pytest.raises(TypeError):
         d.format_iso(sep="T")  # type: ignore[call-arg]
 
+    for basic in (0, 1, None, ""):
+        with pytest.raises(TypeError, match="basic must be a boolean"):
+            d.format_iso(basic=basic)  # type: ignore[arg-type]
+
 
 def test_str():
     d = Date(2021, 1, 2)

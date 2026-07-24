@@ -243,13 +243,7 @@ pub(crate) fn format_iso(
         } else if eq(key, *state.str_unit) {
             unit = Precision::from_py(value, state)?;
         } else if eq(key, *state.str_basic) {
-            if value.is_true() {
-                basic = true;
-            } else if value.is_false() {
-                basic = false;
-            } else {
-                raise_type_err("`basic` must be a boolean value")?;
-            }
+            basic = value.expect_bool("basic")?;
         // Only allow the tz argument if we have a timezone suffix
         } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(key, *state.str_tz) {
             tz_display = match_interned_str("tz", value, |v, eq| {
@@ -270,18 +264,18 @@ pub(crate) fn format_iso(
     })?;
 
     // Perform the formatting of the individual parts
-    let date_fmt = date.format_iso(basic);
-    let time_fmt = time.format_iso(unit, basic);
+    let date_fmt = date.iso_format(basic);
+    let time_fmt = time.iso_format(unit, basic);
     let suffix_fmt = match suffix {
         Suffix::Absent => SuffixFormat::Absent,
         Suffix::Zulu => SuffixFormat::Zulu,
-        Suffix::Offset(offset) => SuffixFormat::Offset(offset.format_iso(basic)),
+        Suffix::Offset(offset) => SuffixFormat::Offset(offset.iso_format(basic)),
         Suffix::OffsetTz(offset, tz_key) => match (tz_key, tz_display) {
             (Some(key), TzDisplay::Auto | TzDisplay::Always) => {
-                SuffixFormat::OffsetTz(offset.format_iso(basic), key)
+                SuffixFormat::OffsetTz(offset.iso_format(basic), key)
             }
             (_, TzDisplay::Never | TzDisplay::Auto) => {
-                SuffixFormat::Offset(offset.format_iso(basic))
+                SuffixFormat::Offset(offset.iso_format(basic))
             }
             (None, TzDisplay::Always) => raise_value_err(FORMAT_ISO_NO_TZ_MSG)?,
         },
