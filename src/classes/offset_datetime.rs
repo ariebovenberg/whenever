@@ -1093,33 +1093,10 @@ fn format(_: PyClass<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
-    let elements = pattern::compile(pattern_str).into_value_err()?;
-    pattern::validate_fields(
-        &elements,
-        pattern::CategorySet::DATE_TIME_OFFSET,
-        "OffsetDateTime",
-    )?;
-    if pattern::has_12h_without_ampm(&elements) {
-        warn_with_class(
-            exc_user_warning(),
-            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            1,
-        )?;
-    }
-    let vals = pattern::FormatValues {
-        year: slf.date.year,
-        month: slf.date.month,
-        day: slf.date.day,
-        weekday: slf.date.day_of_week(),
-        hour: slf.time.hour,
-        minute: slf.time.minute,
-        second: slf.time.second,
-        nanos: slf.time.subsec,
-        offset_secs: Some(slf.offset),
-        tz_id: None,
-        tz_abbrev: None,
-    };
-    pattern::format_to_py(&elements, &vals)
+    let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
+    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "OffsetDateTime")?;
+    pattern.warn_if_ambiguous_12h()?;
+    pattern.format(&slf.to_plain().pattern_values().with_offset(slf.offset))
 }
 
 fn __format__(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, spec_obj: PyObj) -> PyReturn {
@@ -1150,52 +1127,16 @@ fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
         .ok_or_type_err("format must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
-    let elements = pattern::compile(fmt_bytes).into_value_err()?;
-    pattern::validate_fields(
-        &elements,
-        pattern::CategorySet::DATE_TIME_OFFSET,
-        "OffsetDateTime",
-    )?;
-
-    let state = pattern::parse_to_state(&elements, s).into_value_err()?;
-
-    let offset = state
+    let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
+    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "OffsetDateTime")?;
+    let parsed = pattern.parse(s).into_value_err()?;
+    let offset = parsed
         .offset_secs
         .ok_or_value_err("OffsetDateTime.parse() pattern must include an offset field (x/X)")?;
-
-    let year = state.year.ok_or_value_err(
-        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
-    )?;
-    let month = state.month.ok_or_value_err(
-        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
-    )?;
-    let day = state.day.ok_or_value_err(
-        "Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields",
-    )?;
-
-    let date = Date::new(year, month, day).ok_or_value_err("Invalid date")?;
-
-    if let Some(wd) = state.weekday
-        && date.day_of_week() != wd
-    {
-        raise_value_err("Parsed weekday does not match the date")?;
-    }
-
-    let hour = state.hour.unwrap_or(0);
-    let minute = state.minute.unwrap_or(0);
-    let second = state.second.unwrap_or(0);
-
-    if hour >= 24 || minute >= 60 || second >= 60 {
-        raise_value_err("Invalid time")?;
-    }
-
-    let time = Time {
-        hour,
-        minute,
-        second,
-        subsec: state.nanos,
-    };
-
+    let date = parsed
+        .date("Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields")?;
+    parsed.validate_weekday(date)?;
+    let time = parsed.time()?;
     // offset is already validated (scalar::Offset) — no range check needed here.
     date.at(time)
         .assume_offset(offset)
