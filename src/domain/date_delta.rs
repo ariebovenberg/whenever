@@ -1,5 +1,5 @@
 use super::scalar::{DeltaDays, DeltaMonths};
-use crate::common::math::CalendarUnit;
+use crate::domain::difference::CalendarUnit;
 use std::{fmt, ops::Neg};
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

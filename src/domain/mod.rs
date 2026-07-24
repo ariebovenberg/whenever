@@ -3,6 +3,7 @@
 pub mod date;
 pub mod date_delta;
 pub mod datetime_delta;
+pub mod difference;
 pub mod instant;
 pub mod itemized_date_delta;
 pub mod itemized_delta;

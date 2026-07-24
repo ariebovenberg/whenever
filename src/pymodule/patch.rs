@@ -1,5 +1,5 @@
 //! Functionality related to patching the current time
-use crate::{classes::instant::Instant, common::scalar::*, py::*, pymodule::State};
+use crate::{classes::instant::Instant, domain::scalar::*, py::*, pymodule::State};
 use std::time::SystemTime;
 
 pub(crate) fn _patch_time_frozen(state: &State, arg: PyObj) -> PyReturn {

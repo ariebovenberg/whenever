@@ -1,7 +1,8 @@
 //! Parsing of TZif files
 use crate::{
-    common::{parse::Scan, scalar::*},
+    common::parse::Scan,
     domain::local::{LocalMapping, LocalSeconds},
+    domain::scalar::*,
     tz::posix::{TzAbbrev, TzMetaResult, TzStr},
 };
 use std::{cmp::Ordering, fmt};

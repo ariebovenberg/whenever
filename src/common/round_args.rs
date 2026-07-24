@@ -1,18 +1,18 @@
-//! Functionality for rounding values
+//! Python argument parsing for rounding operations.
 use std::num::{NonZero, NonZeroU64, NonZeroU128};
 
 use crate::{
-    common::scalar::{
+    docstrings as doc,
+    domain::scalar::{
         NS_PER_DAY, NS_PER_HOUR, NS_PER_MICROSEC, NS_PER_MILLISEC, NS_PER_MINUTE, NS_PER_SEC,
         NS_PER_WEEK, SubSecNanos,
     },
-    docstrings as doc,
     domain::time_delta::DeltaIncrement,
     py::*,
     pymodule::State,
 };
 
-pub(crate) use crate::domain::round::{AbsMode, Mode};
+pub(crate) use crate::domain::round::Mode;
 
 #[derive(Debug)]
 pub(crate) struct ModeStrs {

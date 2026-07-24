@@ -3,7 +3,9 @@ use super::{
     instant::Instant,
     plain_datetime::PlainDateTime,
     scalar::{Offset, Sign},
+    shift::DateTimeShift,
     time::Time,
+    time_delta::TimeDelta,
 };
 use crate::{common::parse::Scan, tz::tzif::is_valid_key};
 use std::fmt;
@@ -18,10 +20,6 @@ pub(crate) struct OffsetDateTime {
 }
 
 impl OffsetDateTime {
-    pub(crate) const fn new_unchecked(date: Date, time: Time, offset: Offset) -> Self {
-        Self { date, time, offset }
-    }
-
     pub(crate) fn new(date: Date, time: Time, offset: Offset) -> Option<Self> {
         date.at(time).local_seconds().to_epoch(offset)?;
         Some(Self { date, time, offset })
@@ -35,10 +33,17 @@ impl OffsetDateTime {
     }
 
     pub(crate) const fn to_plain(self) -> PlainDateTime {
-        PlainDateTime {
-            date: self.date,
-            time: self.time,
-        }
+        self.date.at(self.time)
+    }
+
+    pub(crate) fn shift(self, delta: TimeDelta) -> Option<Self> {
+        let offset = self.offset;
+        self.to_plain().shift(delta)?.assume_offset(offset)
+    }
+
+    pub(crate) fn shift_by(self, shift: DateTimeShift) -> Option<Self> {
+        let offset = self.offset;
+        self.to_plain().shift_by(shift)?.assume_offset(offset)
     }
 
     pub(crate) fn parse(s: &[u8]) -> Option<Self> {

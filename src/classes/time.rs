@@ -1,9 +1,9 @@
 #[cfg(test)]
 use crate::common::{fmt::Sink, parse::Scan};
 use crate::{
-    classes::plain_datetime::PlainDateTime,
-    common::{fmt, pattern, pickle, round, scalar::*},
+    common::{fmt, pattern, pickle, round_args as round},
     docstrings as doc,
+    domain::scalar::*,
     py::*,
     pymodule::State,
 };
@@ -278,7 +278,7 @@ fn on(cls: PyClass<Time>, slf: Time, arg: PyObj) -> PyReturn {
     let state = cls.state();
 
     if let Some(date) = arg.extract(*state.date_type) {
-        PlainDateTime { date, time: slf }.to_obj(*state.plain_datetime_type)
+        slf.on(date).to_obj(*state.plain_datetime_type)
     } else {
         raise_type_err("argument must be a date")
     }

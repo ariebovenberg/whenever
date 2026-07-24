@@ -15,7 +15,7 @@ use crate::{
         zoned_datetime::{self, unpickle as _unpkl_zoned},
     },
     common::{
-        round,
+        round_args as round,
         sync::{OncePyCell, SwapPtr, SyncCell},
     },
     docstrings as doc,
