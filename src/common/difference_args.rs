@@ -15,75 +15,70 @@ use crate::{
 
 impl CalendarUnit {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        find_interned(v, |v, eq| {
-            Some(if eq(v, *state.str_years) {
-                Self::Years
-            } else if eq(v, *state.str_months) {
-                Self::Months
-            } else if eq(v, *state.str_weeks) {
-                Self::Weeks
-            } else if eq(v, *state.str_days) {
-                Self::Days
-            } else {
-                None?
+        TotalUnit::match_py(v, state)
+            .and_then(|unit| unit.try_into().ok())
+            .ok_or_else_value_err(|| {
+                format!("Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days'")
             })
-        })
-        .ok_or_else_value_err(|| {
-            format!("Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days'")
-        })
     }
+}
+
+fn parse_ordered_units<U, F, G>(
+    v: PyObj,
+    empty_message: &str,
+    mut parse: F,
+    mut insert: G,
+) -> PyResult<()>
+where
+    U: Copy + Ord,
+    F: FnMut(PyObj) -> PyResult<U>,
+    G: FnMut(U),
+{
+    if PyStr::isinstance(v) {
+        raise_type_err("units must be a sequence of strings, not a single string")?;
+    }
+    let mut prev = None;
+    let mut empty = true;
+    for item in v.to_tuple()?.iter() {
+        let unit = parse(item)?;
+        if let Some(p) = prev {
+            if p == unit {
+                raise_value_err("units cannot contain duplicates")?;
+            }
+            if p > unit {
+                raise_value_err("units must be in decreasing order of size")?;
+            }
+        }
+        insert(unit);
+        prev = Some(unit);
+        empty = false;
+    }
+    if empty {
+        raise_value_err(empty_message)?;
+    }
+    Ok(())
 }
 
 impl CalendarUnitSet {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
         let mut units = Self::EMPTY;
-        let mut prev = None;
-        for item in v.to_tuple()?.iter() {
-            let unit = CalendarUnit::from_py(item, state)?;
-            if let Some(p) = prev {
-                if p == unit {
-                    raise_value_err("units cannot contain duplicates")?;
-                }
-                if p > unit {
-                    raise_value_err("units must be in decreasing order of size")?;
-                }
-            }
-            units.insert(unit);
-            prev = Some(unit);
-        }
-        if units.is_empty() {
-            raise_value_err("units cannot be empty")?;
-        }
+        parse_ordered_units(
+            v,
+            "units cannot be empty",
+            |item| CalendarUnit::from_py(item, state),
+            |unit| units.insert(unit),
+        )?;
         Ok(units)
     }
 }
 
 impl DifferenceUnit {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        find_interned(v, |v, eq| {
-            Some(if eq(v, *state.str_years) {
-                Self::Years
-            } else if eq(v, *state.str_months) {
-                Self::Months
-            } else if eq(v, *state.str_weeks) {
-                Self::Weeks
-            } else if eq(v, *state.str_days) {
-                Self::Days
-            } else if eq(v, *state.str_hours) {
-                Self::Hours
-            } else if eq(v, *state.str_minutes) {
-                Self::Minutes
-            } else if eq(v, *state.str_seconds) {
-                Self::Seconds
-            } else if eq(v, *state.str_nanoseconds) {
-                Self::Nanoseconds
-            } else {
-                None?
-            })
-        })
-        .ok_or_else_value_err(|| format!(
-            "Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds', 'nanoseconds'"
-        ))
+        TotalUnit::match_py(v, state)
+            .and_then(|unit| unit.try_into().ok())
+            .ok_or_else_value_err(|| format!(
+                "Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds', 'nanoseconds'"
+            ))
     }
 }
 
@@ -118,26 +113,12 @@ impl ExactUnit {
 impl DifferenceUnitSet {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
         let mut units = Self::EMPTY;
-        let mut prev = None;
-        if PyStr::isinstance(v) {
-            raise_type_err("units must be a sequence of strings, not a single string")?;
-        }
-        for item in v.to_tuple()?.iter() {
-            let unit = DifferenceUnit::from_py(item, state)?;
-            if let Some(p) = prev {
-                if p == unit {
-                    raise_value_err("units cannot contain duplicates")?;
-                }
-                if p > unit {
-                    raise_value_err("units must be in decreasing order of size")?;
-                }
-            }
-            units.insert(unit);
-            prev = Some(unit);
-        }
-        if units.is_empty() {
-            raise_value_err("at least one unit must be provided")?;
-        }
+        parse_ordered_units(
+            v,
+            "at least one unit must be provided",
+            |item| DifferenceUnit::from_py(item, state),
+            |unit| units.insert(unit),
+        )?;
         if units.contains(DifferenceUnit::Nanoseconds) && !units.contains(DifferenceUnit::Seconds) {
             raise_value_err("nanoseconds can only be specified together with seconds")?;
         }
@@ -146,7 +127,7 @@ impl DifferenceUnitSet {
 }
 
 impl TotalUnit {
-    pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
+    fn match_py(v: PyObj, state: &State) -> Option<Self> {
         find_interned(v, |v, eq| {
             Some(if eq(v, *state.str_years) {
                 Self::Years
@@ -172,7 +153,10 @@ impl TotalUnit {
                 None?
             })
         })
-        .ok_or_else_value_err(|| format!(
+    }
+
+    pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
+        Self::match_py(v, state).ok_or_else_value_err(|| format!(
             "Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds', 'milliseconds', 'microseconds', 'nanoseconds'"
         ))
     }

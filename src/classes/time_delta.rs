@@ -656,23 +656,10 @@ fn from_py_timedelta(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
 }
 
 fn to_stdlib(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    let TimeDelta { subsec, secs } = slf;
-    let &PyDateTime_CAPI {
-        Delta_FromDelta,
-        DeltaType,
-        ..
-    } = cls.state().py_api()?;
-    // SAFETY: calling C API with valid arguments
-    unsafe {
-        Delta_FromDelta(
-            secs.get().div_euclid(S_PER_DAY.into()) as _,
-            secs.get().rem_euclid(S_PER_DAY.into()) as _,
-            (subsec.get() / NS_PER_MICROSEC as i32) as _,
-            0,
-            DeltaType,
-        )
-    }
-    .own()
+    cls.state()
+        .py_api()?
+        .new_timedelta(slf)
+        .map(Owned::into_obj)
 }
 
 fn py_timedelta(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {

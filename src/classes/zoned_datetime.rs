@@ -10,7 +10,10 @@ use crate::{
     common::{
         disambiguation::*,
         fmt::{self, Suffix},
-        instant::{extract_instant, parse_instant_arg},
+        instant::{
+            extract_instant, parse_instant_arg, parse_timestamp, parse_timestamp_millis,
+            parse_timestamp_nanos,
+        },
         parse::Scan,
         pattern, pickle, round_args as round,
         shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
@@ -74,65 +77,19 @@ impl ZonedDateTime {
     fn to_stdlib_datetime(&self, state: &State) -> PyReturn {
         // Get UTC date and time, then use ZoneInfo.fromutc() to preserve the instant if
         // ZoneInfo disagrees with our offset.
-        let PlainDateTime {
-            date: Date { year, month, day },
-            time:
-                Time {
-                    hour,
-                    minute,
-                    second,
-                    subsec,
-                },
-        } = self
+        let utc = self
             .to_plain()
             .shift_by_offset(-self.offset.as_offset_delta())
             // SAFETY: the UTC date and time are valid.
             .unwrap();
-        let &PyDateTime_CAPI {
-            DateTime_FromDateAndTime,
-            DateTimeType,
-            TimeZone_FromTimeZone,
-            Delta_FromDelta,
-            DeltaType,
-            ..
-        } = state.py_api()?;
+        let api = state.py_api()?;
         let tzinfo = match self.tz.key.as_ref() {
             Some(key) => state.zoneinfo_type.get()?.call1(*key.as_str().to_py()?),
-            None => {
-                let offset = self.offset;
-                // SAFETY: calling C API with valid arguments
-                let delta = unsafe {
-                    Delta_FromDelta(
-                        // Important that we normalize so seconds >= 0
-                        offset.get().div_euclid(S_PER_DAY),
-                        offset.get().rem_euclid(S_PER_DAY),
-                        0,
-                        0,
-                        DeltaType,
-                    )
-                }
-                .own()?;
-                unsafe { TimeZone_FromTimeZone(delta.as_ptr(), NULL()) }.own()
-            }
+            None => api.new_timezone(self.offset),
         }?;
 
-        tzinfo.getattr(c"fromutc")?.call1(
-            // SAFETY: calling C API with valid arguments
-            *unsafe {
-                DateTime_FromDateAndTime(
-                    year.get().into(),
-                    month.get().into(),
-                    day.into(),
-                    hour.into(),
-                    minute.into(),
-                    second.into(),
-                    (subsec.get() / 1_000) as _,
-                    tzinfo.as_ptr(),
-                    DateTimeType,
-                )
-            }
-            .own()?,
-        )
+        let dt = api.new_datetime(utc, Some(*tzinfo))?;
+        tzinfo.getattr(c"fromutc")?.call1(*dt)
     }
 }
 
@@ -939,15 +896,7 @@ fn from_timestamp(
     let state = cls.state();
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp")?;
 
-    if let Some(py_int) = args[0].cast_allow_subclass::<PyInt>() {
-        Instant::from_timestamp(py_int.to_i64()?)
-    } else if let Some(py_float) = args[0].cast_allow_subclass::<PyFloat>() {
-        Instant::from_timestamp_f64(py_float.to_f64()?)
-    } else {
-        raise_type_err("timestamp must be an integer or float")?
-    }
-    .ok_or_range_err()?
-    .into_zoned_obj(tz, cls)
+    parse_timestamp(args[0])?.into_zoned_obj(tz, cls)
 }
 
 fn from_timestamp_millis(
@@ -957,10 +906,7 @@ fn from_timestamp_millis(
 ) -> PyReturn {
     let state = cls.state();
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_millis")?;
-    Instant::from_timestamp_millis(args[0].expect_int("timestamp")?.to_i64()?)
-        // FUTURE: a faster way to check both bounds
-        .ok_or_range_err()?
-        .into_zoned_obj(tz, cls)
+    parse_timestamp_millis(args[0])?.into_zoned_obj(tz, cls)
 }
 
 fn from_timestamp_nanos(
@@ -970,9 +916,7 @@ fn from_timestamp_nanos(
 ) -> PyReturn {
     let state = cls.state();
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_nanos")?;
-    Instant::from_timestamp_nanos(args[0].expect_int("timestamp")?.to_i128()?)
-        .ok_or_range_err()?
-        .into_zoned_obj(tz, cls)
+    parse_timestamp_nanos(args[0])?.into_zoned_obj(tz, cls)
 }
 
 fn is_ambiguous(_: PyType, slf: &ZonedDateTime) -> PyReturn {

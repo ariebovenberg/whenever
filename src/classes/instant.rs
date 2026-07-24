@@ -14,7 +14,10 @@ use crate::{
     },
     common::{
         fmt::{self, Suffix},
-        instant::{extract_instant, parse_instant_arg},
+        instant::{
+            extract_instant, parse_instant_arg, parse_timestamp, parse_timestamp_millis,
+            parse_timestamp_nanos,
+        },
         pattern, pickle, rfc2822, round_args as round,
     },
     docstrings as doc,
@@ -41,40 +44,9 @@ pub(crate) const SINGLETONS: &[(&CStr, Instant); 2] = &[
 ];
 
 impl Instant {
-    pub(crate) fn to_stdlib_datetime(
-        self,
-        &PyDateTime_CAPI {
-            DateTime_FromDateAndTime,
-            TimeZone_UTC,
-            DateTimeType,
-            ..
-        }: &PyDateTime_CAPI,
-    ) -> PyReturn {
-        let PlainDateTime {
-            date: Date { year, month, day },
-            time:
-                Time {
-                    hour,
-                    minute,
-                    second,
-                    subsec,
-                },
-        } = self.to_utc_plain();
-        unsafe {
-            // SAFETY: calling DateTime_FromDateAndTime with valid parameters
-            DateTime_FromDateAndTime(
-                year.get().into(),
-                month.get().into(),
-                day.into(),
-                hour.into(),
-                minute.into(),
-                second.into(),
-                (subsec.get() / 1_000) as _,
-                TimeZone_UTC,
-                DateTimeType,
-            )
-        }
-        .own()
+    pub(crate) fn to_stdlib_datetime(self, api: &PyDateTime_CAPI) -> PyReturn {
+        api.new_datetime(self.to_utc_plain(), Some(api.utc_timezone()))
+            .map(Owned::into_obj)
     }
 
     // Returns None if the datetime is out of range
@@ -316,35 +288,15 @@ fn timestamp_nanos(_: PyType, slf: Instant) -> PyReturn {
 }
 
 fn from_timestamp(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
-    if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
-        Instant::from_timestamp(py_int.to_i64()?)
-    } else if let Some(py_float) = ts.cast_allow_subclass::<PyFloat>() {
-        Instant::from_timestamp_f64(py_float.to_f64()?)
-    } else {
-        return raise_type_err("timestamp must be an integer or float");
-    }
-    .ok_or_range_err()?
-    .to_obj(cls)
+    parse_timestamp(ts)?.to_obj(cls)
 }
 
 fn from_timestamp_millis(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
-    if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
-        Instant::from_timestamp_millis(py_int.to_i64()?)
-    } else {
-        return raise_type_err("timestamp must be an integer");
-    }
-    .ok_or_range_err()?
-    .to_obj(cls)
+    parse_timestamp_millis(ts)?.to_obj(cls)
 }
 
 fn from_timestamp_nanos(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
-    if let Some(py_int) = ts.cast_allow_subclass::<PyInt>() {
-        Instant::from_timestamp_nanos(py_int.to_i128()?)
-    } else {
-        return raise_type_err("timestamp must be an integer");
-    }
-    .ok_or_range_err()?
-    .to_obj(cls)
+    parse_timestamp_nanos(ts)?.to_obj(cls)
 }
 
 fn to_stdlib(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
