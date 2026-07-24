@@ -9,17 +9,16 @@ pub use crate::domain::date::Date;
 pub(crate) use crate::domain::date::DateBoundaryUnit;
 
 use crate::{
-    classes::{
-        date_delta::DateDelta, itemized_date_delta::ItemizedDateDelta,
-        plain_datetime::PlainDateTime,
-    },
+    classes::{date_delta::DateDelta, itemized_date_delta::ItemizedDateDelta},
     common::{
-        math::{self, CalendarIncrement, CalendarUnit, CalendarUnitSet, DateDifferenceUnits},
-        pattern, pickle, round,
-        scalar::*,
-        shift::{parse_calendar_shift_arg, parse_calendar_shift_kwargs},
+        pattern, pickle, round_args as round,
+        shift_args::{parse_calendar_shift_arg, parse_calendar_shift_kwargs},
     },
     docstrings as doc,
+    domain::{
+        difference::{self, CalendarIncrement, CalendarUnit, CalendarUnitSet, DateDifferenceUnits},
+        scalar::*,
+    },
     py::*,
     pymodule::State,
 };
@@ -262,19 +261,19 @@ fn iso_week_date(cls: PyClass<Date>, slf: Date) -> PyReturn {
 }
 
 fn day_of_year(_: PyClass<Date>, slf: Date) -> PyReturn {
-    (slf.year.days_before_month(slf.month) + slf.day as u16).to_py()
+    slf.day_of_year().to_py()
 }
 
 fn days_in_month(_: PyClass<Date>, slf: Date) -> PyReturn {
-    slf.year.days_in_month(slf.month).to_py()
+    slf.days_in_month().to_py()
 }
 
 fn days_in_year(_: PyClass<Date>, slf: Date) -> PyReturn {
-    (if slf.year.is_leap() { 366_u16 } else { 365_u16 }).to_py()
+    slf.days_in_year().to_py()
 }
 
 fn in_leap_year(_: PyClass<Date>, slf: Date) -> PyReturn {
-    slf.year.is_leap().to_py()
+    slf.is_in_leap_year().to_py()
 }
 
 fn next_day(cls: PyClass<Date>, slf: Date) -> PyReturn {
@@ -517,9 +516,9 @@ fn since_inner(
         .extract(cls)
         .ok_or_type_err("argument must be a Date")?;
 
-    let mut units: Option<math::DateDifferenceUnits> = None;
+    let mut units: Option<difference::DateDifferenceUnits> = None;
     let mut round_mode = None;
-    let mut round_increment = math::CalendarIncrement::MIN;
+    let mut round_increment = difference::CalendarIncrement::MIN;
     let mut round_was_set = false;
     handle_kwargs(fname, kwargs, |key, value, eq| {
         if eq(key, *state.str_total) {
@@ -581,7 +580,7 @@ pub(crate) fn date_since_iddelta(
 ) -> PyResult<ItemizedDateDelta> {
     let neg = a < b;
     let (mut result, trunc, expand) =
-        math::date_diff(a, b, round_increment, units, neg).ok_or_range_err()?;
+        difference::date_diff(a, b, round_increment, units, neg).ok_or_range_err()?;
 
     result.round_by_days(
         units.smallest(),
@@ -598,7 +597,8 @@ pub(crate) fn date_since_iddelta(
 fn date_since_float(a: Date, b: Date, unit: CalendarUnit) -> PyReturn {
     let neg = a < b;
     let (result, trunc_raw, expand_raw) =
-        math::date_diff_single_unit(a, b, CalendarIncrement::MIN, unit, neg).ok_or_range_err()?;
+        difference::date_diff_single_unit(a, b, CalendarIncrement::MIN, unit, neg)
+            .ok_or_range_err()?;
     let trunc: Date = trunc_raw.into();
     let expand: Date = expand_raw.into();
     // result is signed; use its absolute value and restore sign at the end.
@@ -672,7 +672,7 @@ fn at(cls: PyClass<Date>, date: Date, time_obj: PyObj) -> PyReturn {
     let time = time_obj
         .extract(*state.time_type)
         .ok_or_type_err("argument must be a whenever.Time")?;
-    PlainDateTime { date, time }.to_obj(*state.plain_datetime_type)
+    date.at(time).to_obj(*state.plain_datetime_type)
 }
 
 fn today_in_system_tz(cls: PyClass<Date>) -> PyReturn {

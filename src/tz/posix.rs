@@ -5,10 +5,11 @@
 //! - [POSIX TZ strings](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap08.html)
 //! - [GNU libc manual](https://sourceware.org/glibc/manual/latest/html_node/TZ-Variable.html)
 use crate::{
-    common::{parse::Scan, scalar::*},
+    common::parse::Scan,
     domain::{
         date::Date,
         local::{LocalMapping, LocalSeconds},
+        scalar::*,
         time::Time,
     },
 };

@@ -3,7 +3,7 @@ use super::{
     scalar::{DeltaDays, DeltaMonths},
     time_delta::{TimeDelta, fmt_components_abs, parse_all_components},
 };
-use crate::common::math::CalendarUnit;
+use crate::domain::difference::CalendarUnit;
 use std::{fmt, ops::Neg};
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

@@ -9,14 +9,15 @@ use crate::{
     },
     common::{
         disambiguation::*,
-        fmt,
-        math::{self, CalendarIncrement, DifferenceUnit, DifferenceUnitSet, SinceUntilKwargs},
-        pattern, pickle, round,
-        scalar::*,
-        shift::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
+        fmt, pattern, pickle, round_args as round,
+        shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
     },
     docstrings as doc,
-    domain::local::ResolvePolicy,
+    domain::{
+        difference::{self, CalendarIncrement, DifferenceSpec, DifferenceUnit, DifferenceUnitSet},
+        local::ResolvePolicy,
+        scalar::*,
+    },
     py::*,
     pymodule::State,
 };
@@ -158,11 +159,10 @@ fn __new__(cls: PyClass<PlainDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
         nanosecond,
     );
 
-    PlainDateTime {
-        date: Date::from_longs(year, month, day).ok_or_value_err("invalid date")?,
-        time: Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?,
-    }
-    .to_obj(cls)
+    Date::from_longs(year, month, day)
+        .ok_or_value_err("invalid date")?
+        .at(Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?)
+        .to_obj(cls)
 }
 
 fn __repr__(_: PyType, slf: PlainDateTime) -> PyReturn {
@@ -575,26 +575,19 @@ fn time(cls: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
 }
 
 fn day_of_year(_: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
-    let d = slf.date;
-    (d.year.days_before_month(d.month) + d.day as u16).to_py()
+    slf.date.day_of_year().to_py()
 }
 
 fn days_in_month(_: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
-    let d = slf.date;
-    d.year.days_in_month(d.month).to_py()
+    slf.date.days_in_month().to_py()
 }
 
 fn days_in_year(_: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
-    (if slf.date.year.is_leap() {
-        366_u16
-    } else {
-        365_u16
-    })
-    .to_py()
+    slf.date.days_in_year().to_py()
 }
 
 fn in_leap_year(_: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
-    slf.date.year.is_leap().to_py()
+    slf.date.is_in_leap_year().to_py()
 }
 
 fn start_of(cls: PyClass<PlainDateTime>, slf: PlainDateTime, unit_obj: PyObj) -> PyReturn {
@@ -695,14 +688,14 @@ fn replace_date(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyObj) -> 
     let Some(date) = arg.extract(*cls.state().date_type) else {
         raise_type_err("argument must be a whenever.Date")?
     };
-    PlainDateTime { date, ..slf }.to_obj(cls)
+    slf.with_date(date).to_obj(cls)
 }
 
 fn replace_time(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyObj) -> PyReturn {
     let Some(time) = arg.extract(*cls.state().time_type) else {
         raise_type_err("argument must be a whenever.Time")?
     };
-    PlainDateTime { time, ..slf }.to_obj(cls)
+    slf.with_time(time).to_obj(cls)
 }
 
 fn since(
@@ -740,7 +733,7 @@ fn plain_since(
 
     let mut suppress_unaware = false;
     let mut got_ignore_dst = false;
-    let since_kwargs = SinceUntilKwargs::parse_with(fname, kwargs, state, |key, value, eq| {
+    let since_kwargs = DifferenceSpec::parse_with(fname, kwargs, state, |key, value, eq| {
         if eq(key, *state.str_naive_arithmetic_ok) {
             suppress_unaware = value.is_truthy()?;
             Ok(true)
@@ -834,14 +827,19 @@ pub(crate) fn plain_since_float(
 /// timezone object.
 pub(crate) fn total_calendar_plain(
     neg: bool,
-    unit: math::CalendarUnit,
+    unit: difference::CalendarUnit,
     a_inst: Instant,
     b_dt: PlainDateTime,
     target_date: Date,
 ) -> PyReturn {
-    let (result, trunc_raw, expand_raw) =
-        math::date_diff_single_unit(target_date, b_dt.date, CalendarIncrement::MIN, unit, neg)
-            .ok_or_range_err()?;
+    let (result, trunc_raw, expand_raw) = difference::date_diff_single_unit(
+        target_date,
+        b_dt.date,
+        CalendarIncrement::MIN,
+        unit,
+        neg,
+    )
+    .ok_or_range_err()?;
     let trunc = b_dt.with_date(trunc_raw.into()).assume_utc();
     let expand = b_dt.with_date(expand_raw.into()).assume_utc();
     let num = a_inst.diff(trunc).total_nanos() as f64;
@@ -856,7 +854,7 @@ pub(crate) fn plain_since_inner(
     state: &State,
     slf: PlainDateTime,
     other: PlainDateTime,
-    kwargs: SinceUntilKwargs,
+    kwargs: DifferenceSpec,
     flip: bool,
 ) -> PyReturn {
     let (a, b) = if flip { (other, slf) } else { (slf, other) };
@@ -870,17 +868,12 @@ pub(crate) fn plain_since_inner(
     }
     .ok_or_range_err()?;
     match kwargs {
-        SinceUntilKwargs::Total(unit) => plain_since_float(a, b, target_date, unit, neg),
-        SinceUntilKwargs::InUnits(units, round_mode, round_increment) => plain_since_in_units(
-            state,
-            a,
-            b,
-            target_date,
+        DifferenceSpec::Total(unit) => plain_since_float(a, b, target_date, unit, neg),
+        DifferenceSpec::InUnits {
             units,
-            round_mode,
-            round_increment,
-            neg,
-        ),
+            mode,
+            increment,
+        } => plain_since_in_units(state, a, b, target_date, units, mode, increment, neg),
     }
 }
 
@@ -893,7 +886,7 @@ fn plain_since_in_units(
     target_date: Date,
     units: DifferenceUnitSet,
     round_mode: round::Mode,
-    round_increment: math::DifferenceIncrement,
+    round_increment: difference::DifferenceIncrement,
     neg: bool,
 ) -> PyReturn {
     let smallest_unit = units.smallest();
@@ -907,7 +900,7 @@ fn plain_since_in_units(
         } else {
             CalendarIncrement::MIN
         };
-        math::date_diff(target_date, b.date, inc, calendar_units, neg).ok_or_range_err()?
+        difference::date_diff(target_date, b.date, inc, calendar_units, neg).ok_or_range_err()?
     };
 
     let trunc_dt = b.with_date(trunc_date.into());
@@ -957,11 +950,7 @@ fn round(
     if next_day == 1 {
         date = date.tomorrow().ok_or_range_err()?;
     }
-    PlainDateTime {
-        date,
-        time: time_rounded,
-    }
-    .to_obj(cls)
+    slf.with_date(date).with_time(time_rounded).to_obj(cls)
 }
 
 fn format(_cls: PyClass<PlainDateTime>, slf: PlainDateTime, pattern_obj: PyObj) -> PyReturn {
@@ -1060,7 +1049,7 @@ fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         subsec: state.nanos,
     };
 
-    PlainDateTime { date, time }.to_obj(cls)
+    date.at(time).to_obj(cls)
 }
 
 static mut METHODS: &[PyMethodDef] = &[

@@ -5,7 +5,7 @@ use super::{
     scalar::{DeltaDays, DeltaField, DeltaMonths},
     shift::CalendarShift,
 };
-use crate::common::math::{CalendarIncrement, CalendarUnit, round_by_days, round_by_time};
+use crate::domain::difference::{CalendarIncrement, CalendarUnit, round_by_days, round_by_time};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct ItemizedDateDelta {

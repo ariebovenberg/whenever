@@ -209,8 +209,24 @@ impl Date {
         self.unix_days().day_of_week()
     }
 
+    pub(crate) fn day_of_year(self) -> u16 {
+        self.year.days_before_month(self.month) + self.day as u16
+    }
+
+    pub(crate) fn days_in_month(self) -> u8 {
+        self.year.days_in_month(self.month)
+    }
+
+    pub(crate) fn days_in_year(self) -> u16 {
+        if self.year.is_leap() { 366 } else { 365 }
+    }
+
+    pub(crate) fn is_in_leap_year(self) -> bool {
+        self.year.is_leap()
+    }
+
     pub(crate) fn iso_year_week(self) -> (i32, u8) {
-        let day_of_year = self.year.days_before_month(self.month) + self.day as u16;
+        let day_of_year = self.day_of_year();
         let dow = self.day_of_week() as u8;
         let nearest_thursday_doy = day_of_year as i32 + (4 - dow as i32);
         let mut iso_year = self.year.get() as i32;
@@ -282,7 +298,7 @@ impl Date {
         self.end_of(unit)?.tomorrow()
     }
 
-    pub(crate) fn at(self, time: Time) -> PlainDateTime {
+    pub(crate) const fn at(self, time: Time) -> PlainDateTime {
         PlainDateTime { date: self, time }
     }
 }
@@ -338,4 +354,28 @@ pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
     .filter(|&year| year > 0)
     // SAFETY: the filter excludes zero and four digits cannot exceed 9999.
     .map(|year| unsafe { Year::new_unchecked(year) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn date(year: u16, month: u8, day: u8) -> Date {
+        Date::new(Year::new(year).unwrap(), Month::new(month).unwrap(), day).unwrap()
+    }
+
+    #[test]
+    fn calendar_properties() {
+        let leap_day = date(2024, 2, 29);
+        assert_eq!(leap_day.day_of_year(), 60);
+        assert_eq!(leap_day.days_in_month(), 29);
+        assert_eq!(leap_day.days_in_year(), 366);
+        assert!(leap_day.is_in_leap_year());
+
+        let common = date(2023, 12, 31);
+        assert_eq!(common.day_of_year(), 365);
+        assert_eq!(common.days_in_month(), 31);
+        assert_eq!(common.days_in_year(), 365);
+        assert!(!common.is_in_leap_year());
+    }
 }

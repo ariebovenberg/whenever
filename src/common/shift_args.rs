@@ -1,10 +1,10 @@
 use crate::{
     classes::{itemized_date_delta::ItemizedDateDelta, itemized_delta::ItemizedDelta},
-    common::{
-        math::ExactUnit,
+    domain::{
+        difference::ExactUnit,
         scalar::{DeltaDays, DeltaMonths},
+        shift::{CalendarShift, DateTimeShift},
     },
-    domain::shift::{CalendarShift, DateTimeShift},
     py::*,
     pymodule::State,
 };

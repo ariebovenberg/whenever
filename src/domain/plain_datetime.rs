@@ -51,6 +51,13 @@ impl PlainDateTime {
         }
     }
 
+    pub(crate) fn with_time(self, time: Time) -> Self {
+        Self {
+            date: self.date,
+            time,
+        }
+    }
+
     pub(crate) fn shift_date(self, months: DeltaMonths, days: DeltaDays) -> Option<Self> {
         let Self { date, time } = self;
         date.shift(months, days).map(|date| Self { date, time })

@@ -11,15 +11,15 @@ use crate::{
         disambiguation::*,
         fmt::{self, Suffix},
         instant::{extract_instant, parse_instant_arg},
-        math::{self, CalendarIncrement, SinceUntilKwargs},
         parse::Scan,
-        pattern, pickle, round,
-        scalar::*,
-        shift::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
+        pattern, pickle, round_args as round,
+        shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
     },
     docstrings as doc,
     domain::{
+        difference::{self, CalendarIncrement, DifferenceSpec},
         local::{LocalMapping, ResolveError, ResolvePolicy},
+        scalar::*,
         shift::{CalendarShift, DateTimeShift},
     },
     py::*,
@@ -237,7 +237,7 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
         .map_or(Ok(Disambiguation::Compatible), |o| {
             Disambiguation::from_py(o, state)
         })?;
-    PlainDateTime { date, time }
+    date.at(time)
         .resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
         .into_zoned_obj_unchecked(tz, cls)
 }
@@ -455,7 +455,7 @@ fn to_instant(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 fn to_fixed_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, args: &[PyObj]) -> PyReturn {
     let state = cls.state();
     match *args {
-        [] => OffsetDateTime::new_unchecked(slf.date, slf.time, slf.offset),
+        [] => slf.to_plain().assume_offset_unchecked(slf.offset),
         [arg] => slf
             .to_instant()
             .to_offset(Offset::from_py(arg, *state.time_delta_type)?)
@@ -479,21 +479,19 @@ fn time(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 }
 
 fn day_of_year(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    let d = slf.date;
-    (d.year.days_before_month(d.month) + d.day as u16).to_py()
+    slf.date.day_of_year().to_py()
 }
 
 fn days_in_month(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    let d = slf.date;
-    d.year.days_in_month(d.month).to_py()
+    slf.date.days_in_month().to_py()
 }
 
 fn days_in_year(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    (if slf.date.year.is_leap() { 366 } else { 365 }).to_py()
+    slf.date.days_in_year().to_py()
 }
 
 fn in_leap_year(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    slf.date.year.is_leap().to_py()
+    slf.date.is_in_leap_year().to_py()
 }
 
 fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
@@ -1147,11 +1145,7 @@ fn round(
             if next_day == 1 {
                 date = date.tomorrow().ok_or_range_err()?;
             };
-            PlainDateTime {
-                date,
-                time: time_rounded,
-            }
-            .resolve_preserving_offset(tz, offset)
+            date.at(time_rounded).resolve_preserving_offset(tz, offset)
         }
     }
     .ok_or_range_err()?
@@ -1187,7 +1181,7 @@ fn zoned_since_float(
     a: OffsetDateTime,
     b: &ZonedDateTime,
     target_date: Date,
-    unit: math::DifferenceUnit,
+    unit: difference::DifferenceUnit,
     neg: bool,
 ) -> PyReturn {
     match unit.to_exact(false) {
@@ -1202,7 +1196,7 @@ fn zoned_since_float(
             }
         }
         Err(calendar_unit) => {
-            let (result, trunc_raw, expand_raw) = math::date_diff_single_unit(
+            let (result, trunc_raw, expand_raw) = difference::date_diff_single_unit(
                 target_date,
                 b.date,
                 CalendarIncrement::MIN,
@@ -1242,7 +1236,7 @@ fn zoned_since(
     let other = other_obj
         .extract_ref(cls)
         .ok_or_type_err("argument must be a whenever.ZonedDateTime")?;
-    let kwargs = SinceUntilKwargs::parse(fname, kwargs, state)?;
+    let kwargs = DifferenceSpec::parse(fname, kwargs, state)?;
 
     if kwargs.has_calendar() && !slf.same_tz(other) {
         raise_value_err(
@@ -1257,18 +1251,22 @@ fn zoned_since(
     let target_date = zoned_target(a.date, a_inst, b, neg).ok_or_range_err()?;
 
     match kwargs {
-        SinceUntilKwargs::Total(unit) => {
+        DifferenceSpec::Total(unit) => {
             zoned_since_float(a.to_fixed_offset(), b, target_date, unit, neg)
         }
-        SinceUntilKwargs::InUnits(units, round_mode, round_increment) => {
+        DifferenceSpec::InUnits {
+            units,
+            mode,
+            increment,
+        } => {
             let result = zoned_since_in_units(
                 a.to_fixed_offset(),
                 a_inst,
                 b,
                 target_date,
                 units,
-                round_mode,
-                round_increment,
+                mode,
+                increment,
                 neg,
             )
             .ok_or_range_err()?;

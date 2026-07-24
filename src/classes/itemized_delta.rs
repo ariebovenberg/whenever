@@ -1,5 +1,5 @@
 use crate::{
-    common::scalar::{DeltaField, DeltaFieldInner},
+    domain::scalar::{DeltaField, DeltaFieldInner},
     py::*,
     pymodule::State,
 };

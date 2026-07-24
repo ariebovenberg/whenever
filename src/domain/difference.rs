@@ -1,19 +1,13 @@
-//! Calendar difference logic for since()/until() methods.
-//! Rust equivalent of _math.py's date_diff and custom_round.
+//! Pure difference and calendar-rounding semantics.
 use std::cmp::Ordering;
 use std::num::NonZeroU128;
 
-use crate::{
-    common::round,
-    domain::{
-        date::Date,
-        instant::Instant,
-        itemized_date_delta::ItemizedDateDelta,
-        scalar::{DeltaDays, DeltaField, DeltaMonths, Month, Year, *},
-        time_delta::TimeDelta,
-    },
-    py::*,
-    pymodule::State,
+use super::{
+    date::Date,
+    instant::Instant,
+    itemized_date_delta::ItemizedDateDelta,
+    round,
+    scalar::{DeltaDays, DeltaField, DeltaMonths, Month, Year, *},
 };
 
 /// A Date-like struct that allows Feb 29 on non-leap years.
@@ -163,25 +157,6 @@ pub(crate) enum CalendarUnit {
 }
 
 impl CalendarUnit {
-    pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        find_interned(v, |v, eq| {
-            Some(if eq(v, *state.str_years) {
-                CalendarUnit::Years
-            } else if eq(v, *state.str_months) {
-                CalendarUnit::Months
-            } else if eq(v, *state.str_weeks) {
-                CalendarUnit::Weeks
-            } else if eq(v, *state.str_days) {
-                CalendarUnit::Days
-            } else {
-                None?
-            })
-        })
-        .ok_or_else_value_err(|| {
-            format!("Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days'")
-        })
-    }
-
     fn diff_into(
         self,
         a: Date,
@@ -272,31 +247,6 @@ impl CalendarUnitSet {
         CalendarUnit::from_index_unchecked(7 - self.0.leading_zeros() as u8)
     }
 
-    pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        let mut units = CalendarUnitSet::EMPTY;
-        let mut prev: Option<CalendarUnit> = None;
-
-        for item in v.to_tuple()?.iter() {
-            let unit = CalendarUnit::from_py(item, state)?;
-
-            if let Some(p) = prev {
-                if p == unit {
-                    raise_value_err("units cannot contain duplicates")?;
-                }
-                if p > unit {
-                    raise_value_err("units must be in decreasing order of size")?;
-                }
-            }
-            units.insert(unit);
-            prev = Some(unit);
-        }
-
-        if units.is_empty() {
-            raise_value_err("units cannot be empty")?;
-        }
-        Ok(units)
-    }
-
     pub(crate) fn iter(self) -> CalendarUnitSetIter {
         CalendarUnitSetIter(self.0)
     }
@@ -334,33 +284,6 @@ pub(crate) enum DifferenceUnit {
 }
 
 impl DifferenceUnit {
-    pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        find_interned(v, |v, eq| {
-            Some(if eq(v, *state.str_years) {
-                DifferenceUnit::Years
-            } else if eq(v, *state.str_months) {
-                DifferenceUnit::Months
-            } else if eq(v, *state.str_weeks) {
-                DifferenceUnit::Weeks
-            } else if eq(v, *state.str_days) {
-                DifferenceUnit::Days
-            } else if eq(v, *state.str_hours) {
-                DifferenceUnit::Hours
-            } else if eq(v, *state.str_minutes) {
-                DifferenceUnit::Minutes
-            } else if eq(v, *state.str_seconds) {
-                DifferenceUnit::Seconds
-            } else if eq(v, *state.str_nanoseconds) {
-                DifferenceUnit::Nanoseconds
-            } else {
-                None?
-            })
-        })
-        .ok_or_else_value_err(|| format!(
-            "Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds', 'nanoseconds'"
-        ))
-    }
-
     pub(crate) fn to_exact(self, days_are_24h: bool) -> Result<ExactUnit, CalendarUnit> {
         Ok(match self {
             DifferenceUnit::Weeks if days_are_24h => ExactUnit::Weeks,
@@ -446,35 +369,6 @@ impl ExactUnit {
             ExactUnit::Microseconds => "microseconds",
             ExactUnit::Nanoseconds => "nanoseconds",
         }
-    }
-
-    pub(crate) fn parse_py_number(self, v: PyObj) -> PyResult<TimeDelta> {
-        // OPTIMIZE: special case for nanoseconds. The rest only needs i64.
-
-        if let Some(i) = v.cast_allow_subclass::<PyInt>() {
-            self.parse_py_int(i)
-        } else if let Some(f) = v.cast_allow_subclass::<PyFloat>() {
-            if self == ExactUnit::Nanoseconds {
-                raise_value_err("nanoseconds must be an integer, not a float")?;
-            }
-            self.parse_py_float(f)
-        } else {
-            let name = self.name();
-            raise_value_err(format!("{name} must be an integer or float"))
-        }
-    }
-
-    pub(crate) fn parse_py_int(self, i: PyInt) -> PyResult<TimeDelta> {
-        TimeDelta::from_nanos(
-            i.to_i128()?
-                .checked_mul(self.in_nanos() as i128)
-                .ok_or_range_err()?,
-        )
-        .ok_or_range_err()
-    }
-
-    pub(crate) fn parse_py_float(self, f: PyFloat) -> PyResult<TimeDelta> {
-        TimeDelta::from_nanos_f64(f.to_f64()? * self.in_nanos() as f64).ok_or_range_err()
     }
 }
 
@@ -626,39 +520,6 @@ impl DifferenceUnitSet {
         DifferenceUnit::from_index(7 - self.0.leading_zeros() as u8)
     }
 
-    pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        let mut units = DifferenceUnitSet::EMPTY;
-        let mut prev: Option<DifferenceUnit> = None;
-
-        if PyStr::isinstance(v) {
-            raise_type_err("units must be a sequence of strings, not a single string")?;
-        }
-
-        for item in v.to_tuple()?.iter() {
-            let unit = DifferenceUnit::from_py(item, state)?;
-
-            if let Some(p) = prev {
-                if p == unit {
-                    raise_value_err("units cannot contain duplicates")?;
-                }
-                if p > unit {
-                    raise_value_err("units must be in decreasing order of size")?;
-                }
-            }
-            units.insert(unit);
-            prev = Some(unit);
-        }
-
-        if units.is_empty() {
-            raise_value_err("at least one unit must be provided")?;
-        }
-
-        if units.contains(DifferenceUnit::Nanoseconds) && !units.contains(DifferenceUnit::Seconds) {
-            raise_value_err("nanoseconds can only be specified together with seconds")?;
-        }
-        Ok(units)
-    }
-
     /// Split into calendar and exact unit sets
     pub(crate) fn split_calendar_exact(&self) -> (CalendarUnitSet, ExactUnitSet) {
         (self.calendar_only(), self.exact_only())
@@ -681,37 +542,6 @@ pub(crate) enum TotalUnit {
 }
 
 impl TotalUnit {
-    pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        find_interned(v, |v, eq| {
-            Some(if eq(v, *state.str_years) {
-                TotalUnit::Years
-            } else if eq(v, *state.str_months) {
-                TotalUnit::Months
-            } else if eq(v, *state.str_weeks) {
-                TotalUnit::Weeks
-            } else if eq(v, *state.str_days) {
-                TotalUnit::Days
-            } else if eq(v, *state.str_hours) {
-                TotalUnit::Hours
-            } else if eq(v, *state.str_minutes) {
-                TotalUnit::Minutes
-            } else if eq(v, *state.str_seconds) {
-                TotalUnit::Seconds
-            } else if eq(v, *state.str_milliseconds) {
-                TotalUnit::Milliseconds
-            } else if eq(v, *state.str_microseconds) {
-                TotalUnit::Microseconds
-            } else if eq(v, *state.str_nanoseconds) {
-                TotalUnit::Nanoseconds
-            } else {
-                None?
-            })
-        })
-        .ok_or_else_value_err(|| format!(
-            "Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds', 'milliseconds', 'microseconds', 'nanoseconds'"
-        ))
-    }
-
     pub(crate) fn to_exact(self, days_are_24h: bool) -> Result<ExactUnit, CalendarUnit> {
         Ok(match self {
             TotalUnit::Weeks if days_are_24h => ExactUnit::Weeks,
@@ -730,104 +560,35 @@ impl TotalUnit {
     }
 }
 
-#[derive(Copy, Clone)]
-enum UnitsOrUnit {
-    One(DifferenceUnit),
-    Seq(DifferenceUnitSet),
-}
-
-/// Parsed kwargs from `since()`/`until()` calls.
-///
-/// Two mutually exclusive forms:
-/// - `Total(unit)` — single unit returning a float; `round_mode`/`round_increment` forbidden
-/// - `InUnits(units, mode, increment)` — multi-unit ItemizedDelta with optional rounding
+/// Semantic specification for a `since()` or `until()` difference.
 #[derive(Debug, Copy, Clone)]
-pub(crate) enum SinceUntilKwargs {
+pub(crate) enum DifferenceSpec {
     Total(DifferenceUnit),
-    InUnits(DifferenceUnitSet, round::Mode, DifferenceIncrement),
+    InUnits {
+        units: DifferenceUnitSet,
+        mode: round::Mode,
+        increment: DifferenceIncrement,
+    },
 }
 
-impl SinceUntilKwargs {
+impl DifferenceSpec {
     pub(crate) fn has_calendar(self) -> bool {
         match self {
-            SinceUntilKwargs::Total(u) => matches!(
+            DifferenceSpec::Total(u) => matches!(
                 u,
                 DifferenceUnit::Years
                     | DifferenceUnit::Months
                     | DifferenceUnit::Weeks
                     | DifferenceUnit::Days
             ),
-            SinceUntilKwargs::InUnits(s, ..) => s.has_calendar(),
+            DifferenceSpec::InUnits { units, .. } => units.has_calendar(),
         }
     }
 
     pub(crate) fn has_exact_output(self) -> bool {
         match self {
-            SinceUntilKwargs::Total(u) => u.to_exact(false).is_ok(),
-            SinceUntilKwargs::InUnits(s, ..) => s.has_exact(),
-        }
-    }
-}
-
-impl SinceUntilKwargs {
-    pub(crate) fn parse(fname: &str, kwargs: &mut IterKwargs, state: &State) -> PyResult<Self> {
-        Self::parse_with(fname, kwargs, state, |_, _, _| Ok(false))
-    }
-
-    pub(crate) fn parse_with<F>(
-        fname: &str,
-        kwargs: &mut IterKwargs,
-        state: &State,
-        mut extra_handler: F,
-    ) -> PyResult<Self>
-    where
-        F: FnMut(PyObj, PyObj, StrEqFn) -> PyResult<bool>,
-    {
-        let mut round_mode = round::Mode::Trunc;
-        let mut round_increment = DifferenceIncrement::MIN;
-        let mut units: Option<UnitsOrUnit> = None;
-        let mut round_was_set = false;
-
-        handle_kwargs(fname, kwargs, |key, value, eq| {
-            if eq(key, *state.str_total) {
-                if units.is_some() {
-                    raise_type_err("cannot specify both 'total' and 'in_units'")?;
-                }
-                let unit = DifferenceUnit::from_py(value, state)?;
-                units = Some(UnitsOrUnit::One(unit));
-            } else if eq(key, *state.str_in_units) {
-                if units.is_some() {
-                    raise_type_err("cannot specify both 'total' and 'in_units'")?;
-                }
-                let unit_set = DifferenceUnitSet::from_py(value, state)?;
-                units = Some(UnitsOrUnit::Seq(unit_set));
-            } else if eq(key, *state.str_round_mode) {
-                round_mode =
-                    round::Mode::from_py_named("round_mode", value, &state.round_mode_strs)?;
-                round_was_set = true;
-            } else if eq(key, *state.str_round_increment) {
-                round_increment = DifferenceIncrement::from_py(value)?;
-                round_was_set = true;
-            } else {
-                return extra_handler(key, value, eq);
-            }
-            Ok(true)
-        })?;
-
-        match units.ok_or_type_err("must specify either 'total' or 'in_units'")? {
-            UnitsOrUnit::One(unit) => {
-                if round_was_set {
-                    raise_type_err(
-                        "'round_mode' and 'round_increment' cannot be used with 'total'",
-                    )?;
-                }
-                Ok(SinceUntilKwargs::Total(unit))
-            }
-            UnitsOrUnit::Seq(unit_set) => Ok(SinceUntilKwargs::InUnits(
-                unit_set,
-                round_mode,
-                round_increment,
-            )),
+            DifferenceSpec::Total(u) => u.to_exact(false).is_ok(),
+            DifferenceSpec::InUnits { units, .. } => units.has_exact(),
         }
     }
 }
@@ -854,11 +615,6 @@ impl CalendarIncrement {
         }
     }
 
-    pub(crate) fn from_py(v: PyObj) -> PyResult<Self> {
-        let inc = v.expect_int("round_increment")?.to_i64()?;
-        Self::from_i64(inc).ok_or_value_err("round_increment must be a positive integer in range")
-    }
-
     pub(crate) fn get(self) -> i32 {
         self.0
     }
@@ -877,13 +633,8 @@ impl DifferenceIncrement {
     // SAFETY: 1 is non-zero — but NonZeroU128::new(1).unwrap() also works in const
     pub(crate) const MIN: Self = Self(NonZeroU128::new(1).unwrap());
 
-    pub(crate) fn from_py(v: PyObj) -> PyResult<Self> {
-        let inc = v.expect_int("round_increment")?.to_i128()?;
-        if inc <= 0 {
-            raise_value_err("round_increment must be a positive integer in range")?
-        }
-        // SAFETY: we just checked that inc > 0, so inc as u128 is valid and non-zero
-        Ok(Self(unsafe { NonZeroU128::new_unchecked(inc as u128) }))
+    pub(crate) fn new(inc: i128) -> Option<Self> {
+        NonZeroU128::new(u128::try_from(inc).ok()?).map(Self)
     }
 
     /// Returns the increment as `i128`. Safe because `from_py` ensures the value
@@ -1033,6 +784,16 @@ mod tests {
 
     fn d(year: u16, month: u8, day: u8) -> Date {
         Date::new(Year::new(year).unwrap(), Month::new(month).unwrap(), day).unwrap()
+    }
+
+    #[test]
+    fn checked_increments() {
+        assert_eq!(CalendarIncrement::new(1).unwrap().get(), 1);
+        assert!(CalendarIncrement::new(0).is_none());
+        assert!(CalendarIncrement::new(-1).is_none());
+        assert_eq!(DifferenceIncrement::new(1).unwrap().as_i128(), 1);
+        assert!(DifferenceIncrement::new(0).is_none());
+        assert!(DifferenceIncrement::new(-1).is_none());
     }
 
     #[test]

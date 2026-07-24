@@ -15,10 +15,10 @@ use crate::{
     common::{
         fmt::{self, Suffix},
         instant::{extract_instant, parse_instant_arg},
-        pattern, pickle, rfc2822, round,
-        scalar::*,
+        pattern, pickle, rfc2822, round_args as round,
     },
     docstrings as doc,
+    domain::scalar::*,
     py::*,
     pymodule::State,
 };

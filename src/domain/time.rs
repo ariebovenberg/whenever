@@ -1,8 +1,7 @@
-use super::{date::Date, plain_datetime::PlainDateTime, scalar::*};
+use super::{date::Date, plain_datetime::PlainDateTime, round, scalar::*};
 use crate::common::{
     fmt::{self, Sink, format_2_digits},
     parse::Scan,
-    round,
 };
 use std::fmt::{Display, Formatter};
 

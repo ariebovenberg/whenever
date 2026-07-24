@@ -1,6 +1,6 @@
 //! Functionality for working with Python's datetime module.
 use super::{base::*, exc::*};
-use crate::common::scalar::{DeltaSeconds, SubSecNanos};
+use crate::domain::scalar::{DeltaSeconds, SubSecNanos};
 use pyo3_ffi::*;
 
 #[derive(Debug, Clone, Copy)]

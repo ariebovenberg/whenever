@@ -5,25 +5,16 @@ use pyo3_ffi::*;
 pub(crate) use crate::domain::offset_datetime::OffsetDateTime;
 
 use crate::classes::plain_datetime::DateTimeBoundaryUnit;
-use crate::common::{
-    instant::{extract_instant, parse_instant_arg},
-    math::SinceUntilKwargs,
-    shift::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
-};
 use crate::{
-    classes::{
-        date::Date,
-        instant::Instant,
-        plain_datetime::{self, PlainDateTime},
-        time::Time,
-        time_delta::TimeDelta,
-    },
+    classes::{date::Date, instant::Instant, plain_datetime, time::Time, time_delta::TimeDelta},
     common::{
         fmt::{self, Suffix},
-        pattern, pickle, rfc2822, round,
-        scalar::*,
+        instant::{extract_instant, parse_instant_arg},
+        pattern, pickle, rfc2822, round_args as round,
+        shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
     },
     docstrings as doc,
+    domain::{difference::DifferenceSpec, scalar::*},
     py::*,
     pymodule::State,
 };
@@ -233,14 +224,7 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             return Ok(None);
         };
         offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
-        let OffsetDateTime { date, time, offset } = *slf;
-        Ok(Some(
-            PlainDateTime { date, time }
-                .shift(tdelta)
-                .and_then(|dt| dt.assume_offset(offset))
-                .ok_or_range_err()?
-                .to_obj(cls)?,
-        ))
+        Ok(Some(slf.shift(tdelta).ok_or_range_err()?.to_obj(cls)?))
     })
 }
 
@@ -260,13 +244,8 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         let state = cls.state();
         if let Some(tdelta) = other.extract(*state.time_delta_type) {
             offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
-            let OffsetDateTime { date, time, offset } = *slf;
             return Ok(Some(
-                PlainDateTime { date, time }
-                    .shift(-tdelta)
-                    .and_then(|dt| dt.assume_offset(offset))
-                    .ok_or_range_err()?
-                    .to_obj(slf.class())?,
+                slf.shift(-tdelta).ok_or_range_err()?.to_obj(slf.class())?,
             ));
         }
         let Some(inst_b) = extract_instant(other, state) else {
@@ -460,26 +439,19 @@ fn time(cls: PyClass<OffsetDateTime>, OffsetDateTime { time, .. }: OffsetDateTim
 }
 
 fn day_of_year(_: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    let d = slf.date;
-    (d.year.days_before_month(d.month) + d.day as u16).to_py()
+    slf.date.day_of_year().to_py()
 }
 
 fn days_in_month(_: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    let d = slf.date;
-    d.year.days_in_month(d.month).to_py()
+    slf.date.days_in_month().to_py()
 }
 
 fn days_in_year(_: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    (if slf.date.year.is_leap() {
-        366_u16
-    } else {
-        365_u16
-    })
-    .to_py()
+    slf.date.days_in_year().to_py()
 }
 
 fn in_leap_year(_: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    slf.date.year.is_leap().to_py()
+    slf.date.is_in_leap_year().to_py()
 }
 
 fn start_of(
@@ -800,11 +772,7 @@ fn shift_method(
     }
 
     let shift = shift.negate_if(negate);
-    slf.to_plain()
-        .shift_by(shift)
-        .and_then(|dt| dt.assume_offset(slf.offset))
-        .ok_or_range_err()?
-        .to_obj(cls)
+    slf.shift_by(shift).ok_or_range_err()?.to_obj(cls)
 }
 
 fn difference(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> PyReturn {
@@ -1042,8 +1010,8 @@ fn offset_since(
 
     let same_offset = slf.offset == other.offset;
 
-    match SinceUntilKwargs::parse(fname, kwargs, state)? {
-        SinceUntilKwargs::Total(unit) => {
+    match DifferenceSpec::parse(fname, kwargs, state)? {
+        DifferenceSpec::Total(unit) => {
             let (a, b) = if flip { (other, slf) } else { (slf, other) };
             // Single unit: return float
             match unit.to_exact(false) {
@@ -1072,20 +1040,28 @@ fn offset_since(
                         state,
                         a.to_plain(),
                         b.to_plain(),
-                        SinceUntilKwargs::Total(unit),
+                        DifferenceSpec::Total(unit),
                         false, // flip already applied above
                     )
                 }
             }
         }
-        SinceUntilKwargs::InUnits(unit_set, round_mode, round_increment) => {
-            match (unit_set.has_calendar(), same_offset) {
+        DifferenceSpec::InUnits {
+            units,
+            mode,
+            increment,
+        } => {
+            match (units.has_calendar(), same_offset) {
                 // same offset: use the plain datetime rounding logic (days are always 24h)
                 (true, true) => plain_datetime::plain_since_inner(
                     state,
                     slf.to_plain(),
                     other.to_plain(),
-                    SinceUntilKwargs::InUnits(unit_set, round_mode, round_increment),
+                    DifferenceSpec::InUnits {
+                        units,
+                        mode,
+                        increment,
+                    },
                     flip,
                 ),
                 (true, false) => raise_value_err(
@@ -1096,12 +1072,12 @@ fn offset_since(
                     // Different offsets, exact units only: compute via TimeDelta
                     let (a, b) = if flip { (other, slf) } else { (slf, other) };
                     let diff = a.to_instant().diff(b.to_instant());
-                    let abs_mode = round_mode.to_abs_euclid(diff.is_negative());
+                    let abs_mode = mode.to_abs_euclid(diff.is_negative());
                     let result = diff
                         .in_exact_units(
                             // SAFETY: we've already checked there are only exact units
-                            unit_set.to_exact_assuming_24h_days().unwrap(),
-                            round_increment,
+                            units.to_exact_assuming_24h_days().unwrap(),
+                            increment,
                             abs_mode,
                         )
                         .ok_or_range_err()?;

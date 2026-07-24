@@ -15,15 +15,15 @@ use crate::{
         plain_datetime::{plain_since_inner, resolve_local_relative_to, total_calendar_plain},
         zoned_datetime::{ZonedDateTime, zoned_since_in_units, zoned_target},
     },
-    common::{
-        math::{
-            self, CalendarIncrement, DifferenceUnitSet, ExactUnit, ExactUnitSet, SinceUntilKwargs,
+    common::{pickle, round_args as round},
+    docstrings as doc,
+    domain::{
+        difference::{
+            self, CalendarIncrement, DifferenceSpec, DifferenceUnitSet, ExactUnit, ExactUnitSet,
             TotalUnit,
         },
-        pickle, round,
         scalar::*,
     },
-    docstrings as doc,
     py::*,
     pymodule::State,
 };
@@ -798,17 +798,16 @@ fn in_units(
     let units = DifferenceUnitSet::from_py(handle_one_arg("in_units", args)?, state)?;
 
     // Parse optional round kwargs
-    let mut round_mode = round::Mode::Trunc;
-    let mut round_increment = math::DifferenceIncrement::MIN;
+    let mut mode = round::Mode::Trunc;
+    let mut increment = difference::DifferenceIncrement::MIN;
     let mut relative_to_arg = None;
     let mut suppress_24h_warning = false;
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
         if eq(key, *state.str_round_mode) {
-            round_mode =
-                round::Mode::from_py_named("rounding mode", value, &state.round_mode_strs)?;
+            mode = round::Mode::from_py_named("rounding mode", value, &state.round_mode_strs)?;
         } else if eq(key, *state.str_round_increment) {
-            round_increment = math::DifferenceIncrement::from_py(value)?;
+            increment = difference::DifferenceIncrement::from_py(value)?;
         } else if eq(key, *state.str_relative_to) {
             relative_to_arg = Some(value);
         } else if eq(key, *state.str_days_assumed_24h_ok) {
@@ -832,8 +831,8 @@ fn in_units(
                 zdt,
                 zoned_target(shifted.date, shifted_inst, zdt, neg).ok_or_range_err()?,
                 units,
-                round_mode,
-                round_increment,
+                mode,
+                increment,
                 neg,
             )
             .ok_or_range_err()?;
@@ -851,7 +850,11 @@ fn in_units(
             state,
             a_dt,
             b_dt,
-            SinceUntilKwargs::InUnits(units, round_mode, round_increment),
+            DifferenceSpec::InUnits {
+                units,
+                mode,
+                increment,
+            },
             false,
         )
     } else {
@@ -864,7 +867,7 @@ fn in_units(
         }
         if let Some(exact) = units.to_exact_assuming_24h_days() {
             let result = slf
-                .in_exact_units(exact, round_increment, round_mode.to_abs_euclid(neg))
+                .in_exact_units(exact, increment, mode.to_abs_euclid(neg))
                 .ok_or_range_err()?;
             result.to_obj(state)
         } else {
@@ -946,7 +949,7 @@ fn total(
 #[inline(never)]
 pub(crate) fn total_calendar(
     neg: bool,
-    unit: math::CalendarUnit,
+    unit: difference::CalendarUnit,
     relative_to: &ZonedDateTime,
     shifted: OffsetDateTime,
     shifted_inst: Instant,
@@ -954,7 +957,7 @@ pub(crate) fn total_calendar(
     let target_date =
         zoned_target(shifted.date, shifted_inst, relative_to, neg).ok_or_range_err()?;
 
-    let (trunc_amount, trunc_date, expand_date) = math::date_diff_single_unit(
+    let (trunc_amount, trunc_date, expand_date) = difference::date_diff_single_unit(
         target_date,
         relative_to.date,
         CalendarIncrement::MIN,
@@ -1018,6 +1021,7 @@ pub(crate) static mut SPEC: PyType_Spec =
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::round::AbsMode;
 
     fn td(secs: i64, nanos: i32) -> TimeDelta {
         TimeDelta {
@@ -1045,7 +1049,7 @@ mod tests {
         inc(10, 0)
     }
 
-    fn abs(mode: round::Mode, negative: bool) -> round::AbsMode {
+    fn abs(mode: round::Mode, negative: bool) -> AbsMode {
         mode.to_abs_euclid(negative)
     }
 

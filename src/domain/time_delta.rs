@@ -1,15 +1,13 @@
 use super::{
+    difference::{self, ExactUnit, ExactUnitSet},
     itemized_delta::ItemizedDelta,
+    round,
     scalar::{
         DeltaField, DeltaNanos, DeltaSeconds, NS_PER_HOUR, NS_PER_MINUTE, NS_PER_SEC, Offset,
         SubSecNanos,
     },
 };
-use crate::common::{
-    math::{self, ExactUnit, ExactUnitSet},
-    parse::extract_digit,
-    round,
-};
+use crate::common::parse::extract_digit;
 use std::{fmt, ops::Neg};
 
 /// A duration of time with nanosecond precision.
@@ -145,7 +143,7 @@ impl TimeDelta {
     pub(crate) fn in_exact_units(
         self,
         units: ExactUnitSet,
-        round_increment: math::DifferenceIncrement,
+        round_increment: difference::DifferenceIncrement,
         round_mode: round::AbsMode,
     ) -> Option<ItemizedDelta> {
         debug_assert!(

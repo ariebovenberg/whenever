@@ -6,9 +6,9 @@ pub(crate) use crate::domain::date_delta::{DateDelta, InitError};
 
 use crate::{
     classes::{datetime_delta::DateTimeDelta, time_delta::TimeDelta},
-    common::{scalar::*, shift::parse_calendar_shift_kwargs},
+    common::shift_args::parse_calendar_shift_kwargs,
     docstrings as doc,
-    domain::shift::CalendarShift,
+    domain::{scalar::*, shift::CalendarShift},
     py::*,
     pymodule::State,
 };

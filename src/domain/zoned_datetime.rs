@@ -1,11 +1,13 @@
 use super::{
     date::Date,
+    difference::{self, CalendarIncrement, DifferenceUnitSet},
     instant::Instant,
     itemized_date_delta::ItemizedDateDelta,
     itemized_delta::ItemizedDelta,
     local::{Disambiguation, ResolveError, ResolvePolicy},
     offset_datetime::OffsetDateTime,
     plain_datetime::PlainDateTime,
+    round,
     scalar::Offset,
     time::Time,
 };
@@ -13,9 +15,7 @@ use crate::tz::tzif::TimeZone;
 use crate::{
     common::{
         fmt::{self, Sink},
-        math::{self, CalendarIncrement, DifferenceUnitSet},
         parse::Scan,
-        round,
     },
     tz::tzif::is_valid_key,
 };
@@ -58,11 +58,7 @@ impl ZonedDateTime {
     }
 
     pub(crate) fn to_fixed_offset(&self) -> OffsetDateTime {
-        OffsetDateTime {
-            date: self.date,
-            time: self.time,
-            offset: self.offset,
-        }
+        self.to_plain().assume_offset_unchecked(self.offset)
     }
 
     pub(crate) fn with_date(&self, date: Date) -> Option<OffsetDateTime> {
@@ -238,7 +234,7 @@ pub(crate) fn zoned_since_in_units(
     target_date: Date,
     units: DifferenceUnitSet,
     round_mode: round::Mode,
-    round_increment: math::DifferenceIncrement,
+    round_increment: difference::DifferenceIncrement,
     negative: bool,
 ) -> Option<ItemizedDelta> {
     let (calendar_units, exact_units) = units.split_calendar_exact();
@@ -250,7 +246,7 @@ pub(crate) fn zoned_since_in_units(
         } else {
             CalendarIncrement::MIN
         };
-        math::date_diff(target_date, b.date, increment, calendar_units, negative)?
+        difference::date_diff(target_date, b.date, increment, calendar_units, negative)?
     };
 
     let trunc = b.with_date(trunc_date.into())?.to_instant();

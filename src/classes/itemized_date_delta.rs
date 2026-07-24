@@ -1,4 +1,4 @@
-use crate::{common::scalar::DeltaField, py::*, pymodule::State};
+use crate::{domain::scalar::DeltaField, py::*, pymodule::State};
 
 pub(crate) use crate::domain::itemized_date_delta::ItemizedDateDelta;
 
