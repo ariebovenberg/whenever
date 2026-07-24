@@ -11,7 +11,7 @@ use crate::{
         disambiguation::*,
         fmt,
         math::{self, CalendarIncrement, DifferenceUnit, DifferenceUnitSet, SinceUntilKwargs},
-        pattern, round,
+        pattern, pickle, round,
         scalar::*,
         shift::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
     },
@@ -523,25 +523,7 @@ fn difference(
 }
 
 fn __reduce__(cls: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
-    let PlainDateTime {
-        date: Date { year, month, day },
-        time:
-            Time {
-                hour,
-                minute,
-                second,
-                subsec,
-            },
-    } = slf;
-    let data = pack![
-        year.get(),
-        month.get(),
-        day,
-        hour,
-        minute,
-        second,
-        subsec.get()
-    ];
+    let data = pickle::encode_plain(slf);
     [
         cls.state().unpickle_plain_datetime.newref(),
         [data.to_py()?].into_pytuple()?,
@@ -550,28 +532,9 @@ fn __reduce__(cls: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
 }
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
-    let py_bytes = arg
-        .cast_exact::<PyBytes>()
-        .ok_or_type_err("invalid pickle data")?;
-
-    let mut packed = py_bytes.as_bytes();
-    if packed.len() != 11 {
-        raise_type_err("invalid pickle data")?
-    }
-    PlainDateTime {
-        date: Date {
-            year: Year::new_unchecked(unpack_one!(packed, u16)),
-            month: Month::new_unchecked(unpack_one!(packed, u8)),
-            day: unpack_one!(packed, u8),
-        },
-        time: Time {
-            hour: unpack_one!(packed, u8),
-            minute: unpack_one!(packed, u8),
-            second: unpack_one!(packed, u8),
-            subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
-        },
-    }
-    .to_obj(*state.plain_datetime_type)
+    pickle::decode_plain(arg.expect_bytes()?)
+        .ok_or_type_err(pickle::INVALID_DATA)?
+        .to_obj(*state.plain_datetime_type)
 }
 
 fn from_py_datetime(cls: PyClass<PlainDateTime>, arg: PyObj) -> PyReturn {
@@ -1215,8 +1178,8 @@ mod tests {
 
     fn mkdate(year: u16, month: u8, day: u8) -> Date {
         Date {
-            year: Year::new_unchecked(year),
-            month: Month::new_unchecked(month),
+            year: Year::new(year).unwrap(),
+            month: Month::new(month).unwrap(),
             day,
         }
     }

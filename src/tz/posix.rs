@@ -398,7 +398,8 @@ fn parse_weekday_rule(scan: &mut Scan) -> Option<Rule> {
     scan.expect(b'.')?;
     let d = scan.digit_ranged(b'0'..=b'6')?;
     // In Posix TZ strings, Sunday is 0. In ISO, it's 7
-    let day_of_week = Weekday::from_iso_unchecked(if d == 0 { 7 } else { d });
+    // SAFETY: d was parsed in 0..=6; POSIX zero maps to ISO seven.
+    let day_of_week = unsafe { Weekday::from_iso_unchecked(if d == 0 { 7 } else { d }) };
 
     // A "fifth" occurrence of a weekday doesn't always occur.
     // Interpret it as the last weekday, according to the standard.
@@ -470,8 +471,10 @@ mod tests {
 
     fn mkdate(year: u16, month: u8, day: u8) -> Date {
         Date {
-            year: Year::new_unchecked(year),
-            month: Month::new_unchecked(month),
+            // SAFETY: all test fixtures pass years in 1..=9999.
+            year: unsafe { Year::new_unchecked(year) },
+            // SAFETY: all test fixtures pass months in 1..=12.
+            month: unsafe { Month::new_unchecked(month) },
             day,
         }
     }
