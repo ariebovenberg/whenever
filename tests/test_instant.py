@@ -352,6 +352,20 @@ class TestFromTimestamp:
         with pytest.raises(TypeError):
             Instant.from_timestamp("2020")  # type: ignore[arg-type]
 
+    @pytest.mark.parametrize(
+        "method",
+        [
+            Instant.from_timestamp,
+            Instant.from_timestamp_millis,
+            Instant.from_timestamp_nanos,
+        ],
+    )
+    def test_int_subclass(self, method):
+        class MyInt(int):
+            pass
+
+        assert method(MyInt(0)) == Instant.from_utc(1970, 1, 1)
+
 
 def test_repr():
     d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)

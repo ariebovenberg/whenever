@@ -6,10 +6,13 @@ pub(crate) use crate::domain::offset_datetime::OffsetDateTime;
 
 use crate::classes::plain_datetime::DateTimeBoundaryUnit;
 use crate::{
-    classes::{date::Date, instant::Instant, plain_datetime, time::Time, time_delta::TimeDelta},
+    classes::{date::Date, plain_datetime, time::Time, time_delta::TimeDelta},
     common::{
         fmt::{self, Suffix},
-        instant::{extract_instant, parse_instant_arg},
+        instant::{
+            extract_instant, parse_instant_arg, parse_timestamp, parse_timestamp_millis,
+            parse_timestamp_nanos,
+        },
         pattern, pickle, rfc2822, round_args as round,
         shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
     },
@@ -20,58 +23,9 @@ use crate::{
 };
 
 impl OffsetDateTime {
-    pub(crate) fn to_stdlib_datetime(
-        self,
-        &PyDateTime_CAPI {
-            DateTime_FromDateAndTime,
-            DateTimeType,
-            TimeZone_FromTimeZone,
-            Delta_FromDelta,
-            DeltaType,
-            ..
-        }: &PyDateTime_CAPI,
-    ) -> PyResult<Owned<PyDateTime>> {
-        let OffsetDateTime {
-            date: Date { year, month, day },
-            time:
-                Time {
-                    hour,
-                    minute,
-                    second,
-                    subsec,
-                },
-            offset,
-            ..
-        } = self;
-        // SAFETY: calling CPython API with valid arguments
-        let delta = unsafe {
-            Delta_FromDelta(
-                // Important that we normalize so seconds >= 0
-                offset.get().div_euclid(S_PER_DAY),
-                offset.get().rem_euclid(S_PER_DAY),
-                0,
-                0,
-                DeltaType,
-            )
-        }
-        .own()?;
-        let tz = unsafe { TimeZone_FromTimeZone(delta.as_ptr(), NULL()) }.own()?;
-        unsafe {
-            DateTime_FromDateAndTime(
-                year.get().into(),
-                month.get().into(),
-                day.into(),
-                hour.into(),
-                minute.into(),
-                second.into(),
-                (subsec.get() / 1_000) as _,
-                tz.as_ptr(),
-                DateTimeType,
-            )
-        }
-        .own()
-        // SAFETY: safe to assume result of C API function is the proper type
-        .map(|d| unsafe { d.cast_unchecked::<PyDateTime>() })
+    pub(crate) fn to_stdlib_datetime(self, api: &PyDateTime_CAPI) -> PyResult<Owned<PyDateTime>> {
+        let tz = api.new_timezone(self.offset)?;
+        api.new_datetime(self.to_plain(), Some(*tz))
     }
 
     pub(crate) fn from_stdlib_datetime(dt: PyDateTime) -> PyResult<Self> {
@@ -842,17 +796,10 @@ fn from_timestamp(
     let state = cls.state();
     let offset = check_from_timestamp_args_return_offset("from_timestamp", args, kwargs, state)?;
 
-    if let Some(py_int) = args[0].cast_allow_subclass::<PyInt>() {
-        Instant::from_timestamp(py_int.to_i64()?)
-    } else if let Some(py_float) = args[0].cast_allow_subclass::<PyFloat>() {
-        Instant::from_timestamp_f64(py_float.to_f64()?)
-    } else {
-        raise_type_err("timestamp must be an integer or float")?
-    }
-    .ok_or_range_err()?
-    .to_offset(offset)
-    .ok_or_range_err()?
-    .to_obj(cls)
+    parse_timestamp(args[0])?
+        .to_offset(offset)
+        .ok_or_range_err()?
+        .to_obj(cls)
 }
 
 fn from_timestamp_millis(
@@ -863,8 +810,7 @@ fn from_timestamp_millis(
     let state = cls.state();
     let offset =
         check_from_timestamp_args_return_offset("from_timestamp_millis", args, kwargs, state)?;
-    Instant::from_timestamp_millis(args[0].expect_int("timestamp")?.to_i64()?)
-        .ok_or_range_err()?
+    parse_timestamp_millis(args[0])?
         .to_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)
@@ -878,8 +824,7 @@ fn from_timestamp_nanos(
     let state = cls.state();
     let offset =
         check_from_timestamp_args_return_offset("from_timestamp_nanos", args, kwargs, state)?;
-    Instant::from_timestamp_nanos(args[0].expect_int("timestamp")?.to_i128()?)
-        .ok_or_range_err()?
+    parse_timestamp_nanos(args[0])?
         .to_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)

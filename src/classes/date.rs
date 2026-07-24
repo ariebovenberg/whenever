@@ -73,23 +73,31 @@ impl Date {
 }
 
 impl DateBoundaryUnit {
+    pub(crate) fn match_py(obj: PyObj, state: &State, eq: StrEqFn) -> Option<Self> {
+        Some(if eq(obj, *state.str_year) {
+            Self::Year
+        } else if eq(obj, *state.str_month) {
+            Self::Month
+        } else if eq(obj, *state.str_week_mon) {
+            Self::WeekMon
+        } else if eq(obj, *state.str_week_sun) {
+            Self::WeekSun
+        } else {
+            None?
+        })
+    }
+
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         find_interned(obj, |v, eq| {
-            if eq(v, *state.str_year) {
-                Some(Ok(DateBoundaryUnit::Year))
-            } else if eq(v, *state.str_month) {
-                Some(Ok(DateBoundaryUnit::Month))
-            } else if eq(v, *state.str_week_mon) {
-                Some(Ok(DateBoundaryUnit::WeekMon))
-            } else if eq(v, *state.str_week_sun) {
-                Some(Ok(DateBoundaryUnit::WeekSun))
+            Some(Ok(if let Some(unit) = Self::match_py(v, state, eq) {
+                unit
             } else if eq(v, *state.str_week) {
-                Some(raise_value_err(
+                return Some(raise_value_err(
                     "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
-                ))
+                ));
             } else {
-                None
-            }
+                None?
+            }))
         })
         .transpose()?
         .ok_or_else_value_err(|| format!("Invalid unit: {obj}"))
