@@ -1,16 +1,18 @@
-//! Functionality for rounding values
+//! Python argument parsing for rounding operations.
 use std::num::{NonZero, NonZeroU64, NonZeroU128};
 
 use crate::{
-    classes::time_delta::DeltaIncrement,
-    common::scalar::{
+    docstrings as doc,
+    domain::scalar::{
         NS_PER_DAY, NS_PER_HOUR, NS_PER_MICROSEC, NS_PER_MILLISEC, NS_PER_MINUTE, NS_PER_SEC,
         NS_PER_WEEK, SubSecNanos,
     },
-    docstrings as doc,
+    domain::time_delta::DeltaIncrement,
     py::*,
     pymodule::State,
 };
+
+pub(crate) use crate::domain::round::Mode;
 
 #[derive(Debug)]
 pub(crate) struct ModeStrs {
@@ -23,80 +25,6 @@ pub(crate) struct ModeStrs {
     pub(crate) str_half_even: Owned<PyObj>,
     pub(crate) str_half_trunc: Owned<PyObj>,
     pub(crate) str_half_expand: Owned<PyObj>,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub(crate) enum Mode {
-    Floor,
-    Ceil,
-    Trunc,
-    Expand,
-    HalfFloor,
-    HalfCeil,
-    HalfEven,
-    HalfTrunc,
-    HalfExpand,
-}
-
-/// Rounding mode resolved for the euclidean domain.
-/// After sign-based normalization, these modes can be used directly
-/// in euclidean quotient/remainder rounding without needing the sign.
-///
-/// In the euclidean domain:
-/// - `Trunc`: keep the quotient as-is (≡ floor, towards -∞)
-/// - `Expand`: increment the quotient (≡ ceil, towards +∞)
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub(crate) enum AbsMode {
-    Trunc,
-    Expand,
-    HalfTrunc,
-    HalfExpand,
-    HalfEven,
-}
-
-// FUTURE: can we simplify the different ways of transforming to "abs" round mode?
-impl Mode {
-    /// Resolve sign-dependent modes into sign-independent AbsMode
-    /// for the **euclidean quotient** domain (used by TimeDelta::round, Instant::round).
-    /// Here Floor/Ceil are "native" (already aligned with quotient direction),
-    /// while Trunc/Expand need sign-based swapping.
-    ///
-    /// Use this when rounding a plain signed integer (e.g. nanoseconds, epoch seconds).
-    pub(crate) fn to_abs_euclid(self, is_negative: bool) -> AbsMode {
-        match (self, is_negative) {
-            (Mode::Floor, _) | (Mode::Trunc, false) | (Mode::Expand, true) => AbsMode::Trunc,
-            (Mode::Ceil, _) | (Mode::Expand, false) | (Mode::Trunc, true) => AbsMode::Expand,
-            (Mode::HalfFloor, _) | (Mode::HalfTrunc, false) | (Mode::HalfExpand, true) => {
-                AbsMode::HalfTrunc
-            }
-            (Mode::HalfCeil, _) | (Mode::HalfExpand, false) | (Mode::HalfTrunc, true) => {
-                AbsMode::HalfExpand
-            }
-            (Mode::HalfEven, _) => AbsMode::HalfEven,
-        }
-    }
-
-    /// Resolve sign-dependent modes into sign-independent AbsMode
-    /// for the **sign-magnitude** domain (used by since/until rounding).
-    /// Here Trunc/Expand are "native" (already absolute),
-    /// while Floor/Ceil need sign-based swapping.
-    ///
-    /// Use this when rounding a delta whose sign is tracked separately
-    /// (e.g. "3 months backward", where `neg = true`).
-    pub(crate) fn to_abs_trunc(self, neg: bool) -> AbsMode {
-        let positive = !neg;
-        match (self, positive) {
-            (Mode::Trunc, _) | (Mode::Floor, true) | (Mode::Ceil, false) => AbsMode::Trunc,
-            (Mode::Expand, _) | (Mode::Ceil, true) | (Mode::Floor, false) => AbsMode::Expand,
-            (Mode::HalfTrunc, _) | (Mode::HalfFloor, true) | (Mode::HalfCeil, false) => {
-                AbsMode::HalfTrunc
-            }
-            (Mode::HalfExpand, _) | (Mode::HalfCeil, true) | (Mode::HalfFloor, false) => {
-                AbsMode::HalfExpand
-            }
-            (Mode::HalfEven, _) => AbsMode::HalfEven,
-        }
-    }
 }
 
 impl Mode {
@@ -133,7 +61,7 @@ impl Mode {
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub(crate) enum Unit {
+pub(crate) enum RoundUnit {
     Nanosecond,
     Microsecond,
     Millisecond,
@@ -144,26 +72,26 @@ pub(crate) enum Unit {
     Week,
 }
 
-impl Unit {
-    fn from_py(s: PyObj, state: &State, for_delta: bool) -> PyResult<Unit> {
+impl RoundUnit {
+    fn from_py(s: PyObj, state: &State, for_delta: bool) -> PyResult<RoundUnit> {
         // OPTIMIZE: run the comparisons in order if likelihood
         match_interned_str("unit", s, |v, eq| {
             Some(if eq(v, *state.str_nanosecond) {
-                Unit::Nanosecond
+                RoundUnit::Nanosecond
             } else if eq(v, *state.str_microsecond) {
-                Unit::Microsecond
+                RoundUnit::Microsecond
             } else if eq(v, *state.str_millisecond) {
-                Unit::Millisecond
+                RoundUnit::Millisecond
             } else if eq(v, *state.str_second) {
-                Unit::Second
+                RoundUnit::Second
             } else if eq(v, *state.str_minute) {
-                Unit::Minute
+                RoundUnit::Minute
             } else if eq(v, *state.str_hour) {
-                Unit::Hour
+                RoundUnit::Hour
             } else if eq(v, *state.str_day) {
-                Unit::Day
+                RoundUnit::Day
             } else if for_delta && eq(v, *state.str_week) {
-                Unit::Week
+                RoundUnit::Week
             } else {
                 None?
             })
@@ -172,14 +100,14 @@ impl Unit {
 
     pub(crate) const fn default_increment(self) -> u64 {
         match self {
-            Unit::Nanosecond => 1,
-            Unit::Microsecond => NS_PER_MICROSEC as _,
-            Unit::Millisecond => NS_PER_MILLISEC as _,
-            Unit::Second => NS_PER_SEC as _,
-            Unit::Minute => NS_PER_MINUTE,
-            Unit::Hour => NS_PER_HOUR,
-            Unit::Day => NS_PER_DAY,
-            Unit::Week => NS_PER_WEEK,
+            RoundUnit::Nanosecond => 1,
+            RoundUnit::Microsecond => NS_PER_MICROSEC as _,
+            RoundUnit::Millisecond => NS_PER_MILLISEC as _,
+            RoundUnit::Second => NS_PER_SEC as _,
+            RoundUnit::Minute => NS_PER_MINUTE,
+            RoundUnit::Hour => NS_PER_HOUR,
+            RoundUnit::Day => NS_PER_DAY,
+            RoundUnit::Week => NS_PER_WEEK,
         }
     }
 }
@@ -205,12 +133,18 @@ pub(crate) struct Args {
 static INCREMENT_DIV_MSG: &str =
     "Invalid increment. Must be positive and divide a 24-hour day evenly.";
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub(crate) enum ArgsContext {
+    Standard,
+    Offset,
+}
+
 impl Args {
     pub(crate) fn parse(
-        state: &State,
         args: &[PyObj],
         kwargs: &mut IterKwargs,
-        ignore_dst_kwarg: bool,
+        state: &State,
+        context: ArgsContext,
     ) -> PyResult<Self> {
         let opt_arg = handle_opt_arg("round", args)?;
 
@@ -231,10 +165,10 @@ impl Args {
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU64::new_unchecked(raw_increment as _) });
-            } else if ignore_dst_kwarg && eq(key, *state.str_ignore_dst) {
+            } else if context == ArgsContext::Offset && eq(key, *state.str_ignore_dst) {
                 got_ignore_dst = true;
-            } else if ignore_dst_kwarg && eq(key, *state.str_stale_offset_ok) {
-                suppress_stale = value.is_truthy();
+            } else if context == ArgsContext::Offset && eq(key, *state.str_stale_offset_ok) {
+                suppress_stale = value.is_truthy()?;
             } else {
                 return Ok(false);
             }
@@ -257,10 +191,10 @@ impl Args {
                     }
                     RoundIncrement::Exact(nanos)
                 } else {
-                    let unit = Unit::from_py(arg, state, false)?;
+                    let unit = RoundUnit::from_py(arg, state, false)?;
                     let increment_int = increment_kwarg.unwrap_or(NonZeroU64::MIN);
-                    debug_assert!(unit != Unit::Week);
-                    if unit == Unit::Day {
+                    debug_assert!(unit != RoundUnit::Week);
+                    if unit == RoundUnit::Day {
                         if increment_int.get() != 1 {
                             raise_value_err(INCREMENT_DIV_MSG)?;
                         }
@@ -296,7 +230,7 @@ pub(crate) struct DeltaArgs {
 }
 
 impl DeltaArgs {
-    pub(crate) fn parse(state: &State, args: &[PyObj], kwargs: &mut IterKwargs) -> PyResult<Self> {
+    pub(crate) fn parse(args: &[PyObj], kwargs: &mut IterKwargs, state: &State) -> PyResult<Self> {
         let opt_arg = handle_opt_arg("round", args)?;
         let mut mode = Mode::HalfEven;
         let mut increment_kwarg = None;
@@ -315,7 +249,7 @@ impl DeltaArgs {
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU128::new_unchecked(raw_increment as _) });
             } else if eq(key, *state.str_days_assumed_24h_ok) {
-                suppress_24h_warning = value.is_truthy();
+                suppress_24h_warning = value.is_truthy()?;
             } else {
                 return Ok(false);
             }
@@ -339,8 +273,8 @@ impl DeltaArgs {
                         subsec: delta.subsec,
                     }
                 } else {
-                    let unit = Unit::from_py(arg, state, true)?;
-                    if matches!(unit, Unit::Day | Unit::Week) && !suppress_24h_warning {
+                    let unit = RoundUnit::from_py(arg, state, true)?;
+                    if matches!(unit, RoundUnit::Day | RoundUnit::Week) && !suppress_24h_warning {
                         warn_with_class(
                             *state.warn_days_not_always_24h,
                             doc::DAYS_NOT_ALWAYS_24H_MSG,

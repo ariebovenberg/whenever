@@ -10,6 +10,7 @@ from hypothesis.strategies import floats, integers, text
 from whenever import (
     Date,
     Instant,
+    ItemizedDateDelta,
     ItemizedDelta,
     NaiveArithmeticWarning,
     OffsetDateTime,
@@ -608,6 +609,18 @@ def test_replace():
 
 
 class TestShiftMethods:
+    @pytest.mark.parametrize(
+        "delta, kwargs",
+        [
+            (ItemizedDateDelta(days=1), {"days": 1}),
+            (ItemizedDelta(days=1, hours=2), {"days": 1, "hours": 2}),
+        ],
+    )
+    @suppress(NaiveArithmeticWarning)
+    def test_itemized_delta_arguments(self, delta, kwargs):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        assert d.add(delta) == d.add(**kwargs)
+
     def test_warnings(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with pytest.warns(NaiveArithmeticWarning) as w:
@@ -717,6 +730,18 @@ class TestShiftMethods:
 
 
 class TestNaiveArithmeticOkKwarg:
+    def test_truthiness_error_propagates(self):
+        class BadBool:
+            def __bool__(self):
+                raise RuntimeError("bool failed")
+
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        with pytest.raises(RuntimeError, match="bool failed"):
+            d.add(  # type: ignore[call-overload]
+                hours=1,
+                naive_arithmetic_ok=BadBool(),
+            )
+
     def test_add(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with warnings.catch_warnings():
@@ -820,8 +845,6 @@ class TestShiftOperators:
             d + 42  # type: ignore[operator]
         with pytest.raises(TypeError, match="unsupported operand type"):
             42 + d  # type: ignore[operator]
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            seconds(4) + d  # type: ignore[operator]
 
 
 class TestDifference:

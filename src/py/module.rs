@@ -35,8 +35,22 @@ impl PyStaticType for PyModule {
 }
 
 impl PyModule {
-    #[allow(clippy::mut_from_ref)]
-    pub(crate) fn state<'a>(&self) -> &'a mut MaybeUninit<Option<State>> {
+    pub(crate) fn state(&self) -> &MaybeUninit<Option<State>> {
+        // SAFETY: calling CPython API with valid arguments
+        unsafe {
+            PyModule_GetState(self.as_ptr())
+                .cast::<MaybeUninit<Option<State>>>()
+                .as_ref()
+        }
+        .unwrap()
+    }
+
+    /// Mutably borrow the module-state slot during a module lifecycle transition.
+    ///
+    /// # Safety
+    /// This may only be called during module initialization or teardown, while CPython prevents
+    /// simultaneous access to the active module state.
+    pub(crate) unsafe fn state_mut(&mut self) -> &mut MaybeUninit<Option<State>> {
         // SAFETY: calling CPython API with valid arguments
         unsafe {
             PyModule_GetState(self.as_ptr())

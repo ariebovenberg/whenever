@@ -1,6 +1,8 @@
 //! Parsing of TZif files
 use crate::{
-    common::{ambiguity::Ambiguity, parse::Scan, scalar::*},
+    common::parse::Scan,
+    domain::local::{LocalMapping, LocalSeconds},
+    domain::scalar::*,
     tz::posix::{TzAbbrev, TzMetaResult, TzStr},
 };
 use std::{cmp::Ordering, fmt};
@@ -28,7 +30,7 @@ pub struct TimeZone {
     // For local -> UTC, the transition is may be ambiguous and therefore requires extra information.
     // Read Vec<(X, (Y, Z))> as "UNTIL time X (expressed in local epoch seconds) the offset is Y. At this point
     // it shifts by Z.
-    offsets_by_local: Vec<(EpochSecs, (Offset, OffsetDelta))>,
+    offsets_by_local: Vec<(LocalSeconds, (Offset, OffsetDelta))>,
     // Invariant: if posix TZ isn't given, there must be at least one entry in each of the above
     // vectors.
     end: Option<TzStr>,
@@ -72,7 +74,7 @@ impl TimeZone {
     }
 
     /// Get the UTC offset at the given local time (expressed in epoch seconds).
-    pub fn ambiguity_for_local(&self, t: EpochSecs) -> Ambiguity {
+    pub fn mapping_for_local(&self, t: LocalSeconds) -> LocalMapping {
         bisect(&self.offsets_by_local, t)
             .map(|i| {
                 let (next_transition, (offset, change)) = self.offsets_by_local[i];
@@ -83,19 +85,23 @@ impl TimeZone {
                     change
                 };
                 match ambiguity.get().cmp(&0) {
-                    Ordering::Equal => Ambiguity::Unambiguous(offset),
+                    Ordering::Equal => LocalMapping::Unique { offset },
                     // SAFETY: The shifts here are unchecked since they were
                     // calculated from the offsets themselves.
-                    Ordering::Less => {
-                        Ambiguity::Fold(next_transition, offset, offset.shift(ambiguity).unwrap())
-                    }
-                    Ordering::Greater => {
-                        Ambiguity::Gap(next_transition, offset.shift(ambiguity).unwrap(), offset)
-                    }
+                    Ordering::Less => LocalMapping::Fold {
+                        transition: next_transition,
+                        before: offset,
+                        after: offset.shift(ambiguity).unwrap(),
+                    },
+                    Ordering::Greater => LocalMapping::Gap {
+                        transition: next_transition,
+                        before: offset,
+                        after: offset.shift(ambiguity).unwrap(),
+                    },
                 }
             })
             // If the time is after the last transition, use the POSIX TZ string
-            .or_else(|| self.end.map(|tz| tz.ambiguity_for_local(t)))
+            .or_else(|| self.end.map(|tz| tz.mapping_for_local(t)))
             // If there's no POSIX TZ string, use the last offset.
             // There's not much else we can do.
             .unwrap_or_else(|| {
@@ -106,12 +112,12 @@ impl TimeZone {
                     // if there's no POSIX TZ string.
                     .unwrap()
                     .1;
-                Ambiguity::Unambiguous(
-                    prev_offset
+                LocalMapping::Unique {
+                    offset: prev_offset
                         .shift(last_shift)
                         // SAFETY: last_shift was calculated from prev_offset itself
                         .unwrap(),
-                )
+                }
             })
     }
 
@@ -178,7 +184,7 @@ impl TimeZone {
 /// Bisect the array of (time, value) pairs to find the INDEX at the given time.
 /// Return None if after the last entry.
 #[inline]
-pub(crate) fn bisect<T>(arr: &[(EpochSecs, T)], x: EpochSecs) -> Option<usize> {
+pub(crate) fn bisect<K: Copy + Ord, T>(arr: &[(K, T)], x: K) -> Option<usize> {
     let mut size = arr.len();
     let mut left = 0;
     let mut right = size;
@@ -336,7 +342,7 @@ fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult
 
 fn local_transitions(
     transitions: &[(EpochSecs, Offset)],
-) -> Vec<(EpochSecs, (Offset, OffsetDelta))> {
+) -> Vec<(LocalSeconds, (Offset, OffsetDelta))> {
     let mut result = Vec::with_capacity(transitions.len());
     if transitions.is_empty() {
         return result;
@@ -346,7 +352,7 @@ fn local_transitions(
     for &(epoch, offset) in transitions[1..].iter() {
         // NOTE: we don't check for "impossible" gaps or folds
         result.push((
-            epoch.saturating_offset(offset_prev.max(offset)),
+            LocalSeconds::from_instant_saturating(epoch, offset_prev.max(offset)),
             (offset_prev, offset.sub(offset_prev)),
         ));
         offset_prev = offset;
@@ -557,16 +563,32 @@ mod tests {
         }
     }
 
-    fn unambig(offset: i32) -> Ambiguity {
-        Ambiguity::Unambiguous(offset.try_into().unwrap())
+    fn unique(offset: Offset) -> LocalMapping {
+        LocalMapping::Unique { offset }
     }
 
-    fn fold_at(t: EpochSecs, earlier_offset: Offset, later_offset: Offset) -> Ambiguity {
-        Ambiguity::Fold(t, earlier_offset, later_offset)
+    fn unique_i32(offset: i32) -> LocalMapping {
+        unique(offset.try_into().unwrap())
     }
 
-    fn gap_at(t: EpochSecs, later_offset: Offset, earlier_offset: Offset) -> Ambiguity {
-        Ambiguity::Gap(t, later_offset, earlier_offset)
+    fn fold_at(t: EpochSecs, before: Offset, after: Offset) -> LocalMapping {
+        LocalMapping::Fold {
+            transition: t.datetime(SubSecNanos::MIN).local_seconds(),
+            before,
+            after,
+        }
+    }
+
+    fn gap_at(t: EpochSecs, after: Offset, before: Offset) -> LocalMapping {
+        LocalMapping::Gap {
+            transition: t.datetime(SubSecNanos::MIN).local_seconds(),
+            before,
+            after,
+        }
+    }
+
+    fn mapping(tz: &TimeZone, local: EpochSecs) -> LocalMapping {
+        tz.mapping_for_local(local.datetime(SubSecNanos::MIN).local_seconds())
     }
 
     #[test]
@@ -609,7 +631,10 @@ mod tests {
         assert_eq!(bisect(arr, EpochSecs::new(5).unwrap()), Some(1));
 
         // empty case
-        assert_eq!(bisect::<i64>(&[], EpochSecs::new(25).unwrap()), None);
+        assert_eq!(
+            bisect::<EpochSecs, i64>(&[], EpochSecs::new(25).unwrap()),
+            None
+        );
     }
 
     #[test]
@@ -627,8 +652,8 @@ mod tests {
             0.try_into().unwrap()
         );
         assert_eq!(
-            tzif.ambiguity_for_local(2216250000.try_into().unwrap()),
-            unambig(0)
+            mapping(&tzif, 2216250000.try_into().unwrap()),
+            unique_i32(0)
         )
     }
 
@@ -647,8 +672,8 @@ mod tests {
             (13 * 3_600).try_into().unwrap()
         );
         assert_eq!(
-            tzif.ambiguity_for_local(2216250000.try_into().unwrap()),
-            unambig(13 * 3_600)
+            mapping(&tzif, 2216250000.try_into().unwrap()),
+            unique_i32(13 * 3_600)
         )
     }
 
@@ -666,8 +691,8 @@ mod tests {
             3600.try_into().unwrap()
         );
         assert_eq!(
-            tzif.ambiguity_for_local(EpochSecs::new_unchecked(3155760000)),
-            unambig(3600)
+            mapping(&tzif, EpochSecs::new_unchecked(3155760000)),
+            unique_i32(3600)
         );
     }
 
@@ -712,13 +737,13 @@ mod tests {
         );
         // Just before the last gap
         assert_eq!(
-            tzif.ambiguity_for_local(EpochSecs::new_unchecked(-712150201 - 37800)),
-            Ambiguity::Unambiguous(Offset::new_unchecked(-37800)),
+            mapping(&tzif, EpochSecs::new_unchecked(-712150201 - 37800)),
+            unique(Offset::new_unchecked(-37800)),
         );
         // Start of the gap
         assert_eq!(
-            tzif.ambiguity_for_local(EpochSecs::new_unchecked(-712150200 - 37800)),
-            Ambiguity::Gap(
+            mapping(&tzif, EpochSecs::new_unchecked(-712150200 - 37800)),
+            gap_at(
                 EpochSecs::new_unchecked(-712186200),
                 Offset::new_unchecked(-36000),
                 Offset::new_unchecked(-37800)
@@ -726,8 +751,11 @@ mod tests {
         );
         // Just before end of gap
         assert_eq!(
-            tzif.ambiguity_for_local(EpochSecs::new_unchecked(-712150200 - 37800 + 1800 - 1)),
-            Ambiguity::Gap(
+            mapping(
+                &tzif,
+                EpochSecs::new_unchecked(-712150200 - 37800 + 1800 - 1)
+            ),
+            gap_at(
                 EpochSecs::new_unchecked(-712186200),
                 Offset::new_unchecked(-36000),
                 Offset::new_unchecked(-37800)
@@ -735,13 +763,13 @@ mod tests {
         );
         // End of gap
         assert_eq!(
-            tzif.ambiguity_for_local(EpochSecs::new_unchecked(-712150200 - 37800 + 1800)),
-            Ambiguity::Unambiguous(Offset::new_unchecked(-36000)),
+            mapping(&tzif, EpochSecs::new_unchecked(-712150200 - 37800 + 1800)),
+            unique(Offset::new_unchecked(-36000)),
         );
         // After the gap
         assert_eq!(
-            tzif.ambiguity_for_local(EpochSecs::new_unchecked(-712150200)),
-            Ambiguity::Unambiguous(Offset::new_unchecked(-36000)),
+            mapping(&tzif, EpochSecs::new_unchecked(-712150200)),
+            unique(Offset::new_unchecked(-36000)),
         );
     }
 
@@ -753,8 +781,8 @@ mod tests {
         // The final explicit transition is in April 2008. In October 2024,
         // the POSIX tail defines a gap from 02:00 to 02:30.
         assert_eq!(
-            tzif.ambiguity_for_local(EpochSecs::ymdhms(2024, 10, 6, 2, 0, 0)),
-            Ambiguity::Gap(
+            mapping(&tzif, EpochSecs::ymdhms(2024, 10, 6, 2, 0, 0)),
+            gap_at(
                 EpochSecs::ymdhms(2024, 10, 6, 2, 30, 0),
                 Offset::hhmm(11, 0),
                 Offset::hhmm(10, 30),
@@ -831,31 +859,31 @@ mod tests {
             // before the entire range
             (
                 EpochSecs::ymdhms(1879, 9, 8, 21, 37, 30),
-                Ambiguity::Unambiguous(Offset::hms(0, 17, 30)),
+                unique(Offset::hms(0, 17, 30)),
             ),
             // At the start of the range
             (
                 EpochSecs::ymdhms(1879, 12, 31, 23, 59, 59),
-                Ambiguity::Unambiguous(Offset::hms(0, 17, 30)),
+                unique(Offset::hms(0, 17, 30)),
             ),
             (
                 EpochSecs::ymdhms(1880, 1, 1, 0, 0, 0),
-                Ambiguity::Unambiguous(Offset::hms(0, 17, 30)),
+                unique(Offset::hms(0, 17, 30)),
             ),
             (
                 EpochSecs::ymdhms(1880, 1, 1, 0, 0, 1),
-                Ambiguity::Unambiguous(Offset::hms(0, 17, 30)),
+                unique(Offset::hms(0, 17, 30)),
             ),
             // --- The first transition (a fold) ---
             // well before the fold (no ambiguity)
             (
                 EpochSecs::ymdhms(1882, 10, 28, 17, 49, 11),
-                Ambiguity::Unambiguous(Offset::hms(0, 17, 30)),
+                unique(Offset::hms(0, 17, 30)),
             ),
             // Just before times become ambiguous
             (
                 EpochSecs::ymdhms(1892, 4, 30, 23, 59, 59),
-                Ambiguity::Unambiguous(Offset::hms(0, 17, 30)),
+                unique(Offset::hms(0, 17, 30)),
             ),
             // At the moment times becomes ambiguous
             (
@@ -887,23 +915,23 @@ mod tests {
             // At the exact clock change (no ambiguity)
             (
                 EpochSecs::ymdhms(1892, 5, 1, 0, 17, 30),
-                Ambiguity::Unambiguous(Offset::hhmm(0, 0)),
+                unique(Offset::hhmm(0, 0)),
             ),
             // Directly after the clock change (no ambiguity)
             (
                 EpochSecs::ymdhms(1892, 5, 1, 0, 17, 31),
-                Ambiguity::Unambiguous(Offset::hhmm(0, 0)),
+                unique(Offset::hhmm(0, 0)),
             ),
             // --- A "gap" transition ---
             // Well before the transition
             (
                 EpochSecs::ymdhms(1916, 3, 3, 1, 6, 40),
-                Ambiguity::Unambiguous(Offset::hhmm(1, 0)),
+                unique(Offset::hhmm(1, 0)),
             ),
             // Just before the clock change
             (
                 EpochSecs::ymdhms(1916, 4, 30, 23, 59, 59),
-                Ambiguity::Unambiguous(Offset::hhmm(1, 0)),
+                unique(Offset::hhmm(1, 0)),
             ),
             // At the exact clock change (ambiguity!)
             (
@@ -935,12 +963,12 @@ mod tests {
             // The gap ends (no ambiguity)
             (
                 EpochSecs::ymdhms(1916, 5, 1, 1, 0, 0),
-                Ambiguity::Unambiguous(Offset::hhmm(2, 0)),
+                unique(Offset::hhmm(2, 0)),
             ),
             // A sample of other times
             (
                 EpochSecs::ymdhms(1992, 3, 12, 8, 5, 0),
-                Ambiguity::Unambiguous(Offset::hhmm(1, 0)),
+                unique(Offset::hhmm(1, 0)),
             ),
             (
                 EpochSecs::ymdhms(1992, 3, 29, 2, 5, 0),
@@ -952,13 +980,13 @@ mod tests {
             ),
             (
                 EpochSecs::ymdhms(1992, 8, 31, 23, 5, 0),
-                Ambiguity::Unambiguous(Offset::hhmm(2, 0)),
+                unique(Offset::hhmm(2, 0)),
             ),
             // ---- Transitions after the last explicit one need to use the POSIX TZ string
             // before gap
             (
                 EpochSecs::ymdhms(2040, 3, 25, 1, 59, 59),
-                Ambiguity::Unambiguous(Offset::hhmm(1, 0)),
+                unique(Offset::hhmm(1, 0)),
             ),
             // gap starts
             (
@@ -972,12 +1000,12 @@ mod tests {
             // gap ends
             (
                 EpochSecs::ymdhms(2040, 3, 25, 3, 0, 0),
-                Ambiguity::Unambiguous(Offset::hhmm(2, 0)),
+                unique(Offset::hhmm(2, 0)),
             ),
             // somewhere in summer
             (
                 EpochSecs::ymdhms(2040, 3, 25, 12, 6, 40),
-                Ambiguity::Unambiguous(Offset::hhmm(2, 0)),
+                unique(Offset::hhmm(2, 0)),
             ),
             // Fold starts
             (
@@ -1000,12 +1028,12 @@ mod tests {
             // end of the fold
             (
                 EpochSecs::ymdhms(2053, 10, 26, 3, 0, 0),
-                Ambiguity::Unambiguous(Offset::hhmm(1, 0)),
+                unique(Offset::hhmm(1, 0)),
             ),
         ];
 
         for &(t, expected) in local_cases {
-            assert_eq!(tzif.ambiguity_for_local(t), expected, "t={t:?}");
+            assert_eq!(mapping(&tzif, t), expected, "t={t:?}");
         }
     }
 

@@ -1,55 +1,63 @@
+#[cfg(test)]
+use crate::common::{fmt::Sink, parse::Scan};
 use crate::{
-    classes::{date::Date, plain_datetime::DateTime},
-    common::{
-        fmt::{self, Sink, format_2_digits},
-        parse::Scan,
-        pattern, round,
-        scalar::*,
-    },
+    common::{fmt, pattern, pickle, round_args as round},
     docstrings as doc,
+    domain::scalar::*,
     py::*,
     pymodule::State,
 };
 use core::ffi::{CStr, c_int, c_long, c_void};
 use pyo3_ffi::*;
-use std::{
-    fmt::{Display, Formatter},
-    ptr::null_mut as NULL,
-};
+use std::ptr::null_mut as NULL;
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
-pub struct Time {
-    pub(crate) hour: u8,
-    pub(crate) minute: u8,
-    pub(crate) second: u8,
-    pub(crate) subsec: SubSecNanos,
+pub use crate::domain::time::Time;
+pub(crate) use crate::domain::time::TimeBoundaryUnit;
+
+impl TimeBoundaryUnit {
+    pub(crate) fn match_py(obj: PyObj, state: &State, eq: StrEqFn) -> Option<Self> {
+        Some(if eq(obj, *state.str_hour) {
+            Self::Hour
+        } else if eq(obj, *state.str_minute) {
+            Self::Minute
+        } else if eq(obj, *state.str_second) {
+            Self::Second
+        } else {
+            None?
+        })
+    }
 }
 
 impl Time {
-    pub(crate) const MIN: Time = Time {
-        hour: 0,
-        minute: 0,
-        second: 0,
-        subsec: SubSecNanos::MIN,
-    };
-
-    pub(crate) const MAX: Self = Self {
-        hour: 23,
-        minute: 59,
-        second: 59,
-        subsec: SubSecNanos::MAX,
-    };
-
-    pub(crate) fn new(hour: u8, minute: u8, second: u8, subsec: SubSecNanos) -> Option<Self> {
-        (hour < 24 && minute < 60 && second < 60).then_some(Self {
+    pub(crate) fn to_stdlib_time(
+        self,
+        &PyDateTime_CAPI {
+            Time_FromTime,
+            TimeType,
+            ..
+        }: &PyDateTime_CAPI,
+    ) -> PyReturn {
+        let Time {
             hour,
             minute,
             second,
             subsec,
-        })
+        } = self;
+        // SAFETY: calling C API with valid arguments
+        unsafe {
+            Time_FromTime(
+                hour.into(),
+                minute.into(),
+                second.into(),
+                (subsec.get() / 1_000) as c_int,
+                Py_None(),
+                TimeType,
+            )
+        }
+        .own()
     }
 
-    pub(crate) const fn pyhash(self) -> Py_hash_t {
+    pub(crate) const fn python_hash(self) -> Py_hash_t {
         #[cfg(target_pointer_width = "64")]
         {
             ((self.hour as Py_hash_t) << 48)
@@ -65,39 +73,6 @@ impl Time {
                     | (self.second as Py_hash_t),
                 self.subsec.get() as Py_hash_t,
             )
-        }
-    }
-
-    pub(crate) const fn total_seconds(self) -> u32 {
-        self.hour as u32 * 3600 + self.minute as u32 * 60 + self.second as u32
-    }
-
-    pub(crate) const fn from_sec_subsec(sec: u32, subsec: SubSecNanos) -> Self {
-        Time {
-            hour: (sec / 3600) as u8,
-            minute: ((sec % 3600) / 60) as u8,
-            second: (sec % 60) as u8,
-            subsec,
-        }
-    }
-
-    pub(crate) const fn total_nanos(self) -> u64 {
-        self.subsec.get() as u64 + self.total_seconds() as u64 * 1_000_000_000
-    }
-
-    pub(crate) const fn on(self, d: Date) -> DateTime {
-        DateTime {
-            date: d,
-            time: self,
-        }
-    }
-
-    pub(crate) fn from_total_nanos_unchecked(nanos: u64) -> Self {
-        Time {
-            hour: (nanos / NS_PER_HOUR) as u8,
-            minute: ((nanos % NS_PER_HOUR) / NS_PER_MINUTE) as u8,
-            second: ((nanos % NS_PER_MINUTE) / 1_000_000_000) as u8,
-            subsec: SubSecNanos::from_remainder(nanos),
         }
     }
 
@@ -119,104 +94,7 @@ impl Time {
         }
     }
 
-    /// Read a time string in the ISO 8601 extended format (i.e. with ':' separators)
-    pub(crate) fn read_iso_extended(s: &mut Scan) -> Option<Self> {
-        // FUTURE: potential double checks coming from some callers
-        let hour = s.digits00_23()?;
-        let (minute, second, subsec) = match s.advance_on(b':') {
-            // The "extended" format with mandatory ':' between components
-            Some(true) => {
-                let min = s.digits00_59()?;
-                // seconds are still optional at this point
-                let (sec, subsec) = match s.advance_on(b':') {
-                    Some(true) => s.digits00_60_leap().zip(s.subsec())?,
-                    _ => (0, SubSecNanos::MIN),
-                };
-                (min, sec, subsec)
-            }
-            // No components besides hour
-            _ => (0, 0, SubSecNanos::MIN),
-        };
-        Some(Time {
-            hour,
-            minute,
-            second,
-            subsec,
-        })
-    }
-
-    pub(crate) fn read_iso_basic(s: &mut Scan) -> Option<Self> {
-        let hour = s.digits00_23()?;
-        let (minute, second, subsec) = match s.digits00_59() {
-            Some(m) => {
-                let (sec, sub) = match s.digits00_60_leap() {
-                    Some(n) => (n, s.subsec()?),
-                    None => (0, SubSecNanos::MIN),
-                };
-                (m, sec, sub)
-            }
-            None => (0, 0, SubSecNanos::MIN),
-        };
-        Some(Time {
-            hour,
-            minute,
-            second,
-            subsec,
-        })
-    }
-
-    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
-        match s.get(2) {
-            Some(b':') => Self::read_iso_extended(s),
-            _ => Self::read_iso_basic(s),
-        }
-    }
-
-    pub(crate) fn parse_iso(s: &[u8]) -> Option<Self> {
-        Scan::new(s).parse_all(Self::read_iso)
-    }
-
-    /// For efficiency reasons, formatting is done in two steps:
-    /// (1) Just enough processing to determine the length of the output string
-    /// (2) Writing the actual output to a (correctly sized) buffer
-    pub(crate) fn format_iso(self, unit: fmt::Unit, basic: bool) -> IsoFormat {
-        let (subsec_str, subsec_len) = self.subsec.format_iso();
-        IsoFormat {
-            time: self,
-            basic,
-            subsec_str,
-            subsec_len,
-            unit,
-        }
-    }
-
-    /// Round the time to the specified increment
-    ///
-    /// Returns the rounded time and whether it has wrapped around to the next day (0 or 1)
-    /// The increment is given in ns must be a divisor of 24 hours
-    pub(crate) fn round(self, increment: u64, mode: round::Mode) -> (Self, u64) {
-        debug_assert!(NS_PER_DAY.is_multiple_of(increment));
-        let total_nanos = self.total_nanos();
-        let quotient = total_nanos / increment;
-        let remainder = total_nanos % increment;
-
-        // Time is always non-negative, so trunc=floor and expand=ceil
-        let threshold = match mode {
-            round::Mode::HalfEven => 1.max(increment / 2 + quotient.is_multiple_of(2) as u64),
-            round::Mode::Ceil | round::Mode::Expand => 1,
-            round::Mode::Floor | round::Mode::Trunc => increment + 1,
-            round::Mode::HalfFloor | round::Mode::HalfTrunc => increment / 2 + 1,
-            round::Mode::HalfCeil | round::Mode::HalfExpand => 1.max(increment / 2),
-        };
-        let round_up = remainder >= threshold;
-        let ns_since_midnight = (quotient + round_up as u64) * increment;
-        (
-            Self::from_total_nanos_unchecked(ns_since_midnight % NS_PER_DAY),
-            ns_since_midnight / NS_PER_DAY,
-        )
-    }
-
-    pub(crate) fn from_py(t: PyTime) -> Self {
+    pub(crate) fn from_stdlib_time(t: PyTime) -> Self {
         Time {
             hour: t.hour() as _,
             minute: t.minute() as _,
@@ -226,7 +104,7 @@ impl Time {
         }
     }
 
-    pub(crate) fn from_py_dt(dt: PyDateTime) -> Self {
+    pub(crate) fn from_stdlib_datetime(dt: PyDateTime) -> Self {
         Time {
             hour: dt.hour() as _,
             minute: dt.minute() as _,
@@ -235,176 +113,9 @@ impl Time {
             subsec: SubSecNanos::new_unchecked((dt.microsecond() * 1_000) as _),
         }
     }
-
-    pub(crate) fn start_of(self, u: BoundUnit) -> Self {
-        match u {
-            BoundUnit::Hour => Time {
-                hour: self.hour,
-                ..Time::MIN
-            },
-            BoundUnit::Minute => Time {
-                second: 0,
-                subsec: SubSecNanos::MIN,
-                ..self
-            },
-            BoundUnit::Second => Time {
-                subsec: SubSecNanos::MIN,
-                ..self
-            },
-        }
-    }
-
-    pub(crate) fn end_of(self, u: BoundUnit) -> Self {
-        match u {
-            BoundUnit::Hour => Time {
-                hour: self.hour,
-                ..Time::MAX
-            },
-            BoundUnit::Minute => Time {
-                second: 59,
-                subsec: SubSecNanos::MAX,
-                ..self
-            },
-            BoundUnit::Second => Time {
-                subsec: SubSecNanos::MAX,
-                ..self
-            },
-        }
-    }
-
-    /// Start of the next unit of time, returning the new time and
-    /// whether it has rolled over to the next day
-    pub(crate) fn next_start_of(self, u: BoundUnit) -> (Self, bool) {
-        match u {
-            BoundUnit::Hour => (
-                Time {
-                    hour: (self.hour + 1) % 24,
-                    ..Time::MIN
-                },
-                self.hour == 23,
-            ),
-            BoundUnit::Minute => (
-                Time {
-                    hour: (self.hour + (self.minute == 59) as u8) % 24,
-                    minute: (self.minute + 1) % 60,
-                    ..Time::MIN
-                },
-                self.minute == 59 && self.hour == 23,
-            ),
-            BoundUnit::Second => (
-                Time {
-                    hour: (self.hour + (self.minute == 59 && self.second == 59) as u8) % 24,
-                    minute: (self.minute + (self.second == 59) as u8) % 60,
-                    second: (self.second + 1) % 60,
-                    ..Time::MIN
-                },
-                self.second == 59 && self.minute == 59 && self.hour == 23,
-            ),
-        }
-    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BoundUnit {
-    Hour,
-    Minute,
-    Second,
-}
-
-impl BoundUnit {
-    pub(crate) fn in_secs(self) -> i32 {
-        match self {
-            BoundUnit::Hour => 3600,
-            BoundUnit::Minute => 60,
-            BoundUnit::Second => 1,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct IsoFormat {
-    time: Time,
-    basic: bool,
-    unit: fmt::Unit,
-    subsec_str: [u8; 10],
-    subsec_len: usize,
-}
-
-impl fmt::Chunk for IsoFormat {
-    fn len(&self) -> usize {
-        (match self.unit {
-            fmt::Unit::Hour => 2,
-            fmt::Unit::Minute => 4,
-            fmt::Unit::Second => 6,
-            fmt::Unit::Millisecond => 10,
-            fmt::Unit::Microsecond => 13,
-            fmt::Unit::Nanosecond => 16,
-            fmt::Unit::Auto => 6 + self.subsec_len,
-        }) + if self.basic || self.unit == fmt::Unit::Hour {
-            0
-        } else if self.unit == fmt::Unit::Minute {
-            1
-        } else {
-            2
-        }
-    }
-
-    fn write(&self, buf: &mut impl Sink) {
-        let &IsoFormat {
-            time:
-                Time {
-                    hour,
-                    minute,
-                    second,
-                    ..
-                },
-            basic,
-            unit,
-            subsec_str,
-            subsec_len,
-        } = self;
-        buf.write(format_2_digits(hour).as_ref());
-        if unit == fmt::Unit::Hour {
-            return;
-        }
-        if !basic {
-            buf.write_byte(b':');
-        }
-        buf.write(format_2_digits(minute).as_ref());
-        if unit == fmt::Unit::Minute {
-            return;
-        }
-        if !basic {
-            buf.write_byte(b':');
-        }
-        buf.write(format_2_digits(second).as_ref());
-        if unit == fmt::Unit::Second {
-            return;
-        }
-        let len_to_write = match unit {
-            fmt::Unit::Auto => subsec_len,
-            fmt::Unit::Nanosecond => 10,
-            fmt::Unit::Microsecond => 7,
-            fmt::Unit::Millisecond => 4,
-            _ => unreachable!(), // already handled above
-        };
-        buf.write(&subsec_str[..len_to_write]);
-    }
-}
-
-impl PyWrapped for Time {}
-
-// FUTURE: a trait for faster formatting since timestamp are small and
-// limited in length?
-impl Display for Time {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:02}:{:02}:{:02}{}",
-            self.hour, self.minute, self.second, self.subsec
-        )
-    }
-}
+impl PyPayload for Time {}
 
 pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
     (c"MIN", Time::MIN),
@@ -421,14 +132,14 @@ pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
     (c"MAX", Time::MAX),
 ];
 
-fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: PyClass<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
         let obj = args.iter().next().unwrap();
         if PyStr::isinstance(obj) {
             return parse_iso(cls, obj);
         }
         if let Some(t) = obj.cast_allow_subclass::<PyTime>() {
-            return Time::from_py(t).to_obj(cls);
+            return Time::from_stdlib_time(t).to_obj(cls);
         }
     }
     let mut hour: c_long = 0;
@@ -453,31 +164,26 @@ fn __new__(cls: HeapType<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetu
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     // SAFETY: self type is always passed to __hash__
-    hashmask(unsafe { slf.assume_heaptype::<Time>() }.1.pyhash())
+    hashmask(unsafe { slf.assume_heaptype::<Time>() }.1.python_hash())
 }
 
-fn __richcmp__(cls: HeapType<Time>, slf: Time, arg: PyObj, op: c_int) -> PyReturn {
+fn __richcmp__(cls: PyClass<Time>, slf: Time, arg: PyObj, op: c_int) -> PyReturn {
     match arg.extract(cls) {
-        Some(b) => match op {
-            pyo3_ffi::Py_EQ => slf == b,
-            pyo3_ffi::Py_NE => slf != b,
-            pyo3_ffi::Py_LT => slf < b,
-            pyo3_ffi::Py_LE => slf <= b,
-            pyo3_ffi::Py_GT => slf > b,
-            pyo3_ffi::Py_GE => slf >= b,
-            _ => unreachable!(),
-        }
-        .to_py(),
+        Some(b) => CompareOp::from_ffi(op).apply(slf, b).to_py(),
         None => not_implemented(),
     }
 }
 
 fn __str__(_: PyType, slf: Time) -> PyReturn {
-    PyAsciiStrBuilder::format(slf.format_iso(fmt::Unit::Auto, false))
+    PyAsciiStrBuilder::format(slf.iso_format(fmt::Precision::Auto, false))
 }
 
 fn __repr__(_: PyType, slf: Time) -> PyReturn {
-    PyAsciiStrBuilder::format((b"Time(\"", slf.format_iso(fmt::Unit::Auto, false), b"\")"))
+    PyAsciiStrBuilder::format((
+        b"Time(\"",
+        slf.iso_format(fmt::Precision::Auto, false),
+        b"\")",
+    ))
 }
 
 #[allow(static_mut_refs)]
@@ -512,33 +218,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
 ];
 
-fn to_stdlib(cls: HeapType<Time>, slf: Time) -> PyReturn {
-    let Time {
-        hour,
-        minute,
-        second,
-        subsec,
-    } = slf;
-    let &PyDateTime_CAPI {
-        Time_FromTime,
-        TimeType,
-        ..
-    } = cls.state().py_api()?;
-    // SAFETY: calling C API with valid arguments
-    unsafe {
-        Time_FromTime(
-            hour.into(),
-            minute.into(),
-            second.into(),
-            (subsec.get() / 1_000) as c_int,
-            Py_None(),
-            TimeType,
-        )
-    }
-    .own()
+fn to_stdlib(cls: PyClass<Time>, slf: Time) -> PyReturn {
+    slf.to_stdlib_time(cls.state().py_api()?)
 }
 
-fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
+fn py_time(cls: PyClass<Time>, slf: Time) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"py_time() is deprecated. Use to_stdlib() instead.",
@@ -547,49 +231,43 @@ fn py_time(cls: HeapType<Time>, slf: Time) -> PyReturn {
     to_stdlib(cls, slf)
 }
 
-fn from_py_time(cls: HeapType<Time>, arg: PyObj) -> PyReturn {
+fn from_py_time(cls: PyClass<Time>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"from_py_time() is deprecated. Use Time() constructor instead.",
         1,
     )?;
-    Time::from_py(
+    Time::from_stdlib_time(
         arg.cast_allow_subclass::<PyTime>()
             .ok_or_type_err("argument must be a datetime.time")?,
     )
     .to_obj(cls)
 }
 
-fn format_iso(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn format_iso(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     if !args.is_empty() {
         raise_type_err("format_iso() takes no positional arguments")?;
     }
 
     // As-efficient-as-possible assignment of keyword arguments
-    let mut unit = fmt::Unit::Auto;
+    let mut unit = fmt::Precision::Auto;
     let mut basic = false;
     let state = cls.state();
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
         if eq(key, *state.str_unit) {
-            unit = fmt::Unit::from_py(value, state)?;
+            unit = fmt::Precision::from_py(value, state)?;
         } else if eq(key, *state.str_basic) {
-            if value.is_true() {
-                basic = true;
-            } else if value.is_false() {
-                basic = false;
-            } else {
-                raise_value_err("basic must be True or False")?;
-            }
+            basic = value.expect_bool("basic")?;
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
 
-    PyAsciiStrBuilder::format(slf.format_iso(unit, basic))
+    PyAsciiStrBuilder::format(slf.iso_format(unit, basic))
 }
 
-fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
+fn parse_iso(cls: PyClass<Time>, s: PyObj) -> PyReturn {
     Time::parse_iso(
         s.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
@@ -601,14 +279,8 @@ fn parse_iso(cls: HeapType<Time>, s: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
-fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyReturn {
-    let Time {
-        hour,
-        minute,
-        second,
-        subsec: nanos,
-    } = slf;
-    let data = pack![hour, minute, second, nanos.get()];
+fn __reduce__(cls: PyClass<Time>, slf: Time) -> PyReturn {
+    let data = pickle::encode_time(slf);
     [
         cls.state().unpickle_time.newref(),
         [data.to_py()?].into_pytuple()?,
@@ -616,17 +288,17 @@ fn __reduce__(cls: HeapType<Time>, slf: Time) -> PyReturn {
     .into_pytuple()
 }
 
-fn on(cls: HeapType<Time>, slf: Time, arg: PyObj) -> PyReturn {
+fn on(cls: PyClass<Time>, slf: Time, arg: PyObj) -> PyReturn {
     let state = cls.state();
 
     if let Some(date) = arg.extract(*state.date_type) {
-        DateTime { date, time: slf }.to_obj(*state.plain_datetime_type)
+        slf.on(date).to_obj(*state.plain_datetime_type)
     } else {
         raise_type_err("argument must be a date")
     }
 }
 
-fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn replace(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let state = cls.state();
     if !args.is_empty() {
         raise_type_err("replace() takes no positional arguments")
@@ -635,27 +307,15 @@ fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwar
         let mut minute = slf.minute.into();
         let mut second = slf.second.into();
         let mut nanos = slf.subsec.get() as _;
-        handle_kwargs("replace", kwargs, |key, value, eq| {
-            if eq(key, *state.str_hour) {
-                hour = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_type_err("hour must be an integer")?
-                    .to_long()?;
-            } else if eq(key, *state.str_minute) {
-                minute = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_type_err("minute must be an integer")?
-                    .to_long()?;
-            } else if eq(key, *state.str_second) {
-                second = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_type_err("second must be an integer")?
-                    .to_long()?;
-            } else if eq(key, *state.str_nanosecond) {
-                nanos = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_type_err("nanosecond must be an integer")?
-                    .to_long()?;
+        handle_kwargs("replace", kwargs, |k, v, eq| {
+            if eq(k, *state.str_hour) {
+                hour = v.expect_int("hour")?.to_long()?;
+            } else if eq(k, *state.str_minute) {
+                minute = v.expect_int("minute")?.to_long()?;
+            } else if eq(k, *state.str_second) {
+                second = v.expect_int("second")?.to_long()?;
+            } else if eq(k, *state.str_nanosecond) {
+                nanos = v.expect_int("nanosecond")?.to_long()?;
             } else {
                 return Ok(false);
             }
@@ -667,10 +327,10 @@ fn replace(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwar
     }
 }
 
-fn round(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn round(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let round::Args {
         increment, mode, ..
-    } = round::Args::parse(cls.state(), args, kwargs, false)?;
+    } = round::Args::parse(args, kwargs, cls.state(), round::ArgsContext::Standard)?;
     let increment_ns = match increment {
         round::RoundIncrement::Day => raise_value_err("cannot round Time to day")?,
         round::RoundIncrement::Exact(incr) => incr.get(),
@@ -678,45 +338,26 @@ fn round(cls: HeapType<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs
     slf.round(increment_ns, mode).0.to_obj(cls)
 }
 
-fn format(_cls: HeapType<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
+fn format(_cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
-    let elements = pattern::compile(pattern_str).into_value_err()?;
-    pattern::validate_fields(&elements, pattern::CategorySet::TIME, "Time")?;
-    if pattern::has_12h_without_ampm(&elements) {
-        warn_with_class(
-            exc_user_warning(),
-            c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
-            1,
-        )?;
-    }
-    let vals = pattern::FormatValues {
-        year: Year::MIN,
-        month: Month::MIN,
-        day: 1,
-        weekday: Weekday::Monday,
-        hour: slf.hour,
-        minute: slf.minute,
-        second: slf.second,
-        nanos: slf.subsec,
-        offset_secs: None,
-        tz_id: None,
-        tz_abbrev: None,
-    };
-    pattern::format_to_py(&elements, &vals)
+    let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
+    pattern.validate(pattern::CategorySet::TIME, "Time")?;
+    pattern.warn_if_ambiguous_12h()?;
+    pattern.format(&slf.pattern_values())
 }
 
-fn __format__(cls: HeapType<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
-    if spec_obj.is_truthy() {
+fn __format__(cls: PyClass<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
+    if spec_obj.is_truthy()? {
         format(cls, slf, spec_obj)
     } else {
         __str__(cls.into(), slf)
     }
 }
 
-fn parse(cls: HeapType<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let &[s_obj] = args else {
         raise_type_err(format!(
             "parse() takes exactly 1 positional argument ({} given)",
@@ -736,26 +377,9 @@ fn parse(cls: HeapType<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetu
         .ok_or_type_err("format must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
-    let elements = pattern::compile(fmt_bytes).into_value_err()?;
-    pattern::validate_fields(&elements, pattern::CategorySet::TIME, "Time")?;
-
-    let state = pattern::parse_to_state(&elements, s).into_value_err()?;
-
-    let hour = state.hour.unwrap_or(0);
-    let minute = state.minute.unwrap_or(0);
-    let second = state.second.unwrap_or(0);
-
-    if hour >= 24 || minute >= 60 || second >= 60 {
-        raise_value_err("Invalid time")?;
-    }
-
-    Time {
-        hour,
-        minute,
-        second,
-        subsec: state.nanos,
-    }
-    .to_obj(cls)
+    let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
+    pattern.validate(pattern::CategorySet::TIME, "Time")?;
+    pattern.parse(s).into_value_err()?.time()?.to_obj(cls)
 }
 
 static mut METHODS: &[PyMethodDef] = &[
@@ -778,21 +402,9 @@ static mut METHODS: &[PyMethodDef] = &[
 ];
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
-    let py_bytes = arg
-        .cast_exact::<PyBytes>()
-        .ok_or_type_err("invalid pickle data")?;
-
-    let mut data = py_bytes.as_bytes();
-    if data.len() != 7 {
-        raise_type_err("invalid pickle data")?
-    }
-    Time {
-        hour: unpack_one!(data, u8),
-        minute: unpack_one!(data, u8),
-        second: unpack_one!(data, u8),
-        subsec: SubSecNanos::new_unchecked(unpack_one!(data, i32)),
-    }
-    .to_obj(*state.time_type)
+    pickle::decode_time(arg.expect_bytes()?)
+        .ok_or_type_err(pickle::INVALID_DATA)?
+        .to_obj(*state.time_type)
 }
 
 fn hour(_: PyType, slf: Time) -> PyReturn {
@@ -868,9 +480,9 @@ mod tests {
             subsec: SubSecNanos::new_unchecked(34_090),
         };
 
-        fn testcase(t: Time, basic: bool, unit: fmt::Unit, expect: &[u8]) {
+        fn testcase(t: Time, basic: bool, unit: fmt::Precision, expect: &[u8]) {
             let mut buf = Vec::new();
-            let fmt = t.format_iso(unit, basic);
+            let fmt = t.iso_format(unit, basic);
             fmt.write(&mut buf);
             assert_eq!(
                 &buf,
@@ -888,18 +500,18 @@ mod tests {
             );
         }
 
-        testcase(t1, false, fmt::Unit::Auto, b"01:02:03");
-        testcase(t1, true, fmt::Unit::Millisecond, b"010203.000");
-        testcase(t2, false, fmt::Unit::Microsecond, b"12:34:56.123400");
-        testcase(t2, true, fmt::Unit::Nanosecond, b"123456.123400000");
-        testcase(t3, false, fmt::Unit::Nanosecond, b"12:34:56.000000008");
-        testcase(t4, true, fmt::Unit::Auto, b"123456.00003409");
-        testcase(t4, false, fmt::Unit::Millisecond, b"12:34:56.000");
-        testcase(t4, false, fmt::Unit::Second, b"12:34:56");
-        testcase(t4, true, fmt::Unit::Minute, b"1234");
-        testcase(t4, false, fmt::Unit::Minute, b"12:34");
-        testcase(t4, false, fmt::Unit::Hour, b"12");
-        testcase(t4, true, fmt::Unit::Hour, b"12");
+        testcase(t1, false, fmt::Precision::Auto, b"01:02:03");
+        testcase(t1, true, fmt::Precision::Millisecond, b"010203.000");
+        testcase(t2, false, fmt::Precision::Microsecond, b"12:34:56.123400");
+        testcase(t2, true, fmt::Precision::Nanosecond, b"123456.123400000");
+        testcase(t3, false, fmt::Precision::Nanosecond, b"12:34:56.000000008");
+        testcase(t4, true, fmt::Precision::Auto, b"123456.00003409");
+        testcase(t4, false, fmt::Precision::Millisecond, b"12:34:56.000");
+        testcase(t4, false, fmt::Precision::Second, b"12:34:56");
+        testcase(t4, true, fmt::Precision::Minute, b"1234");
+        testcase(t4, false, fmt::Precision::Minute, b"12:34");
+        testcase(t4, false, fmt::Precision::Hour, b"12");
+        testcase(t4, true, fmt::Precision::Hour, b"12");
     }
 
     #[test]

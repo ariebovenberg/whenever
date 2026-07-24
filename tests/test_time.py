@@ -124,6 +124,10 @@ class TestFormatIso:
         with pytest.raises(TypeError, match="sep"):
             t.format_iso(sep="T")  # type: ignore[call-arg]
 
+        for basic in (0, 1, None, ""):
+            with pytest.raises(TypeError, match="basic must be a boolean"):
+                t.format_iso(basic=basic)  # type: ignore[arg-type]
+
 
 def test_to_stdlib():
     t = Time(1, 2, 3, nanosecond=4_000_000)

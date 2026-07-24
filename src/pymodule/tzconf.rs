@@ -2,7 +2,7 @@
 use crate::{py::*, pymodule::State};
 use std::path::PathBuf;
 
-pub(crate) fn _set_tzpath(state: &mut State, to: PyObj) -> PyReturn {
+pub(crate) fn _set_tzpath(state: &State, to: PyObj) -> PyReturn {
     let Some(py_tuple) = to.cast_exact::<PyTuple>() else {
         raise_type_err("argument must be a tuple")?
     };
@@ -20,12 +20,12 @@ pub(crate) fn _set_tzpath(state: &mut State, to: PyObj) -> PyReturn {
     Ok(none())
 }
 
-pub(crate) fn _clear_tz_cache(state: &mut State) -> PyReturn {
+pub(crate) fn _clear_tz_cache(state: &State) -> PyReturn {
     state.tz_store.clear_all();
     Ok(none())
 }
 
-pub(crate) fn _clear_tz_cache_by_keys(state: &mut State, keys_obj: PyObj) -> PyReturn {
+pub(crate) fn _clear_tz_cache_by_keys(state: &State, keys_obj: PyObj) -> PyReturn {
     let Some(py_tuple) = keys_obj.cast_exact::<PyTuple>() else {
         raise_type_err("argument must be a tuple")?
     };
@@ -44,11 +44,11 @@ pub(crate) fn _clear_tz_cache_by_keys(state: &mut State, keys_obj: PyObj) -> PyR
     Ok(none())
 }
 
-pub(crate) fn _get_tzpath(state: &mut State) -> PyReturn {
+pub(crate) fn _get_tzpath(state: &State) -> PyReturn {
     state.tz_store.get_paths_as_pytuple()
 }
 
-pub(crate) fn reset_system_tz(state: &mut State) -> PyReturn {
+pub(crate) fn reset_system_tz(state: &State) -> PyReturn {
     state.tz_store.reset_system_tz()?;
     Ok(none())
 }

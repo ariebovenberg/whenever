@@ -45,9 +45,10 @@ ItemizedDelta("PT1h90m")      # itemized: components kept as-is
 
 ## Calendar units need context
 
-Because `1 month` has a variable number of days,
-operations that convert between calendar and exact units require a
-**reference date** (the `relative_to` parameter).
+Calendar units are not fixed durations. `1 month` may be 28, 29, 30, or
+31 days, and applying it can clamp at month end. As a result, calendar units
+need a **reference date** for operations that convert them to other units or
+combine them in a calendar-aware way.
 
 ```python
 >>> d = ItemizedDateDelta(months=1)
@@ -60,6 +61,30 @@ operations that convert between calendar and exact units require a
 The same applies to {meth}`~ItemizedDateDelta.in_units`,
 {meth}`~ItemizedDateDelta.add`, and {meth}`~ItemizedDateDelta.subtract`
 when calendar units are involved.
+
+The same rule also means that calendar units do not reliably compose. Adding
+`1 month` twice can differ from adding `2 months` once, because the first step
+may change the reference date for the second step.
+
+When you call `add()` or `subtract()` on itemized deltas **without** a
+`relative_to` reference, the operation is field-wise and emits
+{class}`~whenever.CalendarUnitCompositionWarning`. Field-wise composition is
+literal and sometimes useful, but it should not be confused with sequential
+application to a date or datetime.
+
+For example, month-end clamping makes the two operations differ:
+
+```python
+>>> one_month = ItemizedDateDelta(months=1)
+>>> start = Date("2023-01-31")
+
+>>> start + one_month + one_month
+Date("2023-03-28")
+>>> # Summing fieldwise first applies two months in a single step
+>>> summed = one_month + one_month  # P2M
+>>> start + summed
+Date("2023-03-31")
+```
 
 ## Balancing into different units
 

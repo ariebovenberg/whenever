@@ -295,12 +295,18 @@ ItemizedDateDelta("P2m2d")
 ItemizedDateDelta("P1m30d")
 ```
 
+Without a `relative_to` reference, itemized-delta composition is field-wise.
+That preserves the literal fields, but it can change the meaning of later
+application to a datetime because calendar units do not reliably compose.
+The operation emits
+{class}`~whenever.CalendarUnitCompositionWarning` unless you pass
+`cal_unit_composition_ok=True`.
+
 (delta-operators)=
 ## Operators
 
-Mathematical operators such as `+`, `-`, `*`, and `/`
-are only supported for {class}`TimeDelta`, as these operations
-only make sense for exact time units.
+Multiplication and division are only supported for {class}`TimeDelta`, because
+these operations only make sense for exact time units.
 
 ```python
 >>> delta = TimeDelta(hours=2, minutes=30)
@@ -310,9 +316,18 @@ TimeDelta("PT5h")
 TimeDelta("PT1h15m")
 ```
 
-Operators are not supported for itemized deltas,
-as they may contain calendar units,
-which have variable durations depending on context.
+Itemized deltas also support `+` and `-`, but those operators perform
+field-wise composition and always emit
+{class}`~whenever.CalendarUnitCompositionWarning`.
+Use the method forms if you want to pass `cal_unit_composition_ok=True`
+or if you need calendar-aware composition via `relative_to`.
+
+Dates and datetimes support applying an itemized delta with `+` and `-`.
+Addition is also commutative in spelling, so both `datetime + delta` and
+`delta + datetime` are supported. These operations use the date or datetime
+as their reference and do not emit `CalendarUnitCompositionWarning`.
+As with the equivalent `add()` and `subtract()` methods, calendar clamping
+means that adding and then subtracting the same delta is not always reversible.
 
 (delta-rounding)=
 ## Rounding

@@ -1,12 +1,7 @@
 //! Checked arithmetic for scalar date and time concepts
-use crate::{
-    classes::{date::Date, plain_datetime::DateTime, time::Time},
-    common::{
-        fmt::{self, Sink, format_2_digits},
-        round,
-    },
-    py::{PyInt, PyObj, PyResult, PyReturn, base::ToPy, exc::OptionExt, none, raise_value_err},
-};
+use super::round;
+use super::{date::Date, plain_datetime::PlainDateTime, time::Time};
+use crate::common::fmt::{self, Sink, format_2_digits};
 use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -72,7 +67,7 @@ impl Offset {
         OffsetDelta::new_unchecked(self.0)
     }
 
-    pub(crate) fn format_iso(self, basic: bool) -> OffsetFormat {
+    pub(crate) fn iso_format(self, basic: bool) -> OffsetFormat {
         let total_secs = self.0.abs();
         let sign_char = if self.0 < 0 { b'-' } else { b'+' };
         let secs = total_secs % 60;
@@ -231,11 +226,11 @@ impl EpochSecs {
         self.0
     }
 
-    pub(crate) const fn offset(self, x: Offset) -> Option<Self> {
+    pub(crate) const fn shift_by_offset(self, x: Offset) -> Option<Self> {
         Self::new(self.0 + x.0 as i64)
     }
 
-    pub(crate) fn saturating_offset(self, x: Offset) -> Self {
+    pub(crate) fn saturating_shift_by_offset(self, x: Offset) -> Self {
         Self::clamp(self.0 + x.get() as i64)
     }
 
@@ -253,8 +248,8 @@ impl EpochSecs {
         UnixDays::new_unchecked((self.0.div_euclid(i64::from(S_PER_DAY))) as _)
     }
 
-    pub(crate) fn datetime(self, nanos: SubSecNanos) -> DateTime {
-        DateTime {
+    pub(crate) fn datetime(self, nanos: SubSecNanos) -> PlainDateTime {
+        PlainDateTime {
             date: self.date(),
             time: self.time(nanos),
         }
@@ -341,9 +336,10 @@ impl UnixDays {
         let m_g = if j { m - 12 } else { m };
         let d_g = d + 1;
         Date {
-            // Safety: so long as unix days are in range, the date is valid
-            year: Year::new_unchecked(y_g as _),
-            month: Month::new_unchecked(m_g as _),
+            // SAFETY: the algorithm maps every in-range UnixDays to a valid date.
+            year: unsafe { Year::new_unchecked(y_g as _) },
+            // SAFETY: the algorithm maps every in-range UnixDays to a valid date.
+            month: unsafe { Month::new_unchecked(m_g as _) },
             day: d_g as _,
         }
     }
@@ -368,7 +364,8 @@ impl UnixDays {
     }
 
     pub(crate) fn day_of_week(self) -> Weekday {
-        Weekday::from_iso_unchecked(((self.get() + 3).rem_euclid(7) + 1) as _)
+        // SAFETY: adding one to a remainder modulo seven produces 1..=7.
+        unsafe { Weekday::from_iso_unchecked(((self.get() + 3).rem_euclid(7) + 1) as _) }
     }
 }
 
@@ -403,7 +400,7 @@ pub struct Year(NonZeroU16);
 impl Year {
     pub(crate) const MIN: Year = Year(NonZeroU16::new(1).unwrap());
     pub(crate) const MAX: Year = Year(NonZeroU16::new(9999).unwrap());
-    pub(crate) const fn new(year: u16) -> Option<Self> {
+    pub const fn new(year: u16) -> Option<Self> {
         if year <= Year::MAX.get() {
             match NonZeroU16::new(year) {
                 Some(year) => Some(Self(year)),
@@ -414,7 +411,7 @@ impl Year {
         }
     }
 
-    pub const fn new_unchecked(year: u16) -> Self {
+    pub(crate) const unsafe fn new_unchecked(year: u16) -> Self {
         debug_assert!(year >= Year::MIN.get() && year <= Year::MAX.get());
         Self(unsafe { NonZeroU16::new_unchecked(year) })
     }
@@ -423,12 +420,14 @@ impl Year {
     // that prevents double-checking the bounds
     pub(crate) fn from_long(y: c_long) -> Option<Self> {
         (y >= Year::MIN.get().into() && y <= Year::MAX.get().into())
-            .then(|| Self::new_unchecked(y as u16))
+            // SAFETY: the bounds check excludes zero and values above 9999.
+            .then(|| unsafe { Self::new_unchecked(y as u16) })
     }
 
     pub(crate) fn from_i32(y: i32) -> Option<Self> {
         (y >= Year::MIN.get().into() && y <= Year::MAX.get().into())
-            .then(|| Self::new_unchecked(y as u16))
+            // SAFETY: the bounds check excludes zero and values above 9999.
+            .then(|| unsafe { Self::new_unchecked(y as u16) })
     }
 
     pub(crate) const fn get(self) -> u16 {
@@ -494,21 +493,22 @@ impl Month {
 
     pub(crate) const fn new(n: u8) -> Option<Self> {
         if n >= 1 && n <= 12 {
-            Some(Self::new_unchecked(n))
+            // SAFETY: the branch checks every valid discriminant.
+            Some(unsafe { Self::new_unchecked(n) })
         } else {
             None
         }
     }
 
-    pub(crate) const fn new_unchecked(n: u8) -> Self {
+    pub(crate) const unsafe fn new_unchecked(n: u8) -> Self {
         debug_assert!(n >= 1 && n <= 12);
-        // Safety: Month is repr(u8)
-        unsafe { std::mem::transmute(n) }
+        unsafe { std::mem::transmute::<u8, Self>(n) }
     }
 
     pub(crate) fn from_long(m: c_long) -> Option<Self> {
         (m >= Month::MIN.get().into() && m <= Month::MAX.get().into())
-            .then(|| Self::new_unchecked(m as u8))
+            // SAFETY: the bounds check covers every valid Month discriminant.
+            .then(|| unsafe { Self::new_unchecked(m as u8) })
     }
 
     pub(crate) const fn get(self) -> u8 {
@@ -526,8 +526,8 @@ impl Month {
                 // in range due to division
                 year.get() as i32 + new_month_unclamped.div_euclid(12),
             )?,
-            // SAFETY: remainder of division by 12 is always in range
-            Month::new_unchecked(new_month_unclamped.rem_euclid(12) as u8 + 1),
+            // SAFETY: adding one to a remainder modulo twelve produces 1..=12.
+            unsafe { Month::new_unchecked(new_month_unclamped.rem_euclid(12) as u8 + 1) },
         ))
     }
 }
@@ -779,6 +779,14 @@ impl SubSecNanos {
     pub(crate) const MIN: SubSecNanos = SubSecNanos(0);
     pub(crate) const MAX: SubSecNanos = SubSecNanos(999_999_999);
 
+    pub(crate) const fn new(nanos: i32) -> Option<Self> {
+        if nanos >= Self::MIN.0 && nanos <= Self::MAX.0 {
+            Some(Self(nanos))
+        } else {
+            None
+        }
+    }
+
     pub(crate) const fn new_unchecked(nanos: i32) -> Self {
         debug_assert!(nanos >= Self::MIN.0 && nanos <= Self::MAX.0);
         Self(nanos)
@@ -844,7 +852,7 @@ impl SubSecNanos {
 
     /// Convert the nanoseconds to a string representation,
     /// returning the buffer and the "significant" length (i.e. without trailing zeros)
-    pub(crate) fn format_iso(self) -> ([u8; 10], usize) {
+    pub(crate) fn iso_format(self) -> ([u8; 10], usize) {
         // Early exit for zero
         if self.0 == 0 {
             return (*b".000000000", 0);
@@ -947,9 +955,9 @@ pub(crate) enum Weekday {
 }
 
 impl Weekday {
-    pub(crate) const fn from_iso_unchecked(n: u8) -> Self {
-        // Safety: Weekday is repr(u8)
-        unsafe { std::mem::transmute(n) }
+    pub(crate) const unsafe fn from_iso_unchecked(n: u8) -> Self {
+        debug_assert!(n >= 1 && n <= 7);
+        unsafe { std::mem::transmute::<u8, Self>(n) }
     }
 
     pub(crate) const fn iso(self) -> u8 {
@@ -962,29 +970,15 @@ pub(crate) trait DeltaFieldInner:
     Copy + Eq + std::fmt::Debug + PartialOrd + Neg<Output = Self>
 {
     const SENTINEL: Self;
-    const ZERO: Self;
-    fn unsigned_abs(self) -> u64;
     fn from_i64(val: i64) -> Self;
-    fn from_u64(val: u64) -> Self;
-    fn neg_from_u64(val: u64) -> Self;
     fn to_i64(self) -> i64;
 }
 
 impl DeltaFieldInner for i32 {
     const SENTINEL: Self = i32::MIN;
-    const ZERO: Self = 0;
-    fn unsigned_abs(self) -> u64 {
-        self.unsigned_abs() as u64
-    }
     // FUTURE: make these casts more obviously safe
     fn from_i64(val: i64) -> Self {
         val as i32
-    }
-    fn from_u64(val: u64) -> Self {
-        val as i32
-    }
-    fn neg_from_u64(val: u64) -> Self {
-        -(val as i32)
     }
     fn to_i64(self) -> i64 {
         self as i64
@@ -993,18 +987,8 @@ impl DeltaFieldInner for i32 {
 
 impl DeltaFieldInner for i64 {
     const SENTINEL: Self = i64::MIN;
-    const ZERO: Self = 0;
-    fn unsigned_abs(self) -> u64 {
-        self.unsigned_abs()
-    }
     fn from_i64(val: i64) -> Self {
         val
-    }
-    fn from_u64(val: u64) -> Self {
-        val as i64
-    }
-    fn neg_from_u64(val: u64) -> Self {
-        -(val as i64)
     }
     fn to_i64(self) -> i64 {
         self
@@ -1055,106 +1039,6 @@ impl<T: DeltaFieldInner> DeltaField<T> {
     pub(crate) fn get_or(self, default: T) -> T {
         if self.is_set() { self.0 } else { default }
     }
-
-    pub(crate) fn neg(self) -> Self {
-        if self.is_set() {
-            Self(-self.0)
-        } else {
-            Self::UNSET
-        }
-    }
-
-    pub(crate) fn sign(self) -> i8 {
-        if !self.is_set() || self.0 == T::ZERO {
-            0
-        } else if self.0 > T::ZERO {
-            1
-        } else {
-            -1
-        }
-    }
-
-    pub(crate) fn unsigned_abs(self) -> u64 {
-        debug_assert!(self.is_set());
-        self.0.unsigned_abs()
-    }
-
-    /// Parse a Python integer into a range-checked field value.
-    /// Updates `sign` for mixed-sign detection.
-    pub(crate) fn parse(value: PyObj, sign: &mut i8, max: u64) -> PyResult<Self> {
-        let val = value
-            .cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("field must be an integer")?
-            .to_i64()?;
-        if val == 0 {
-            return Ok(Self::new_unchecked(T::ZERO));
-        }
-        let abs = val.unsigned_abs();
-        if abs > max {
-            raise_value_err("delta out of range")?;
-        }
-        if val > 0 {
-            if *sign == -1 {
-                raise_value_err("mixed sign in delta")?;
-            }
-            *sign = 1;
-        } else {
-            if *sign == 1 {
-                raise_value_err("mixed sign in delta")?;
-            }
-            *sign = -1;
-        }
-        // Safe: range check guarantees val fits in T
-        Ok(Self::new_unchecked(T::from_i64(val)))
-    }
-
-    /// Parse a Python integer or None into a range-checked field.
-    /// For use in replace() and unpickle.
-    pub(crate) fn parse_opt(value: PyObj, max: u64) -> PyResult<Self> {
-        if value.is_none() {
-            Ok(Self::UNSET)
-        } else {
-            let val = value
-                .cast_allow_subclass::<PyInt>()
-                .ok_or_type_err("field must be an integer or None")?
-                .to_i64()?;
-            let abs = val.unsigned_abs();
-            if abs > max {
-                raise_value_err("delta out of range")?;
-            }
-            Ok(Self::new_unchecked(T::from_i64(val)))
-        }
-    }
-
-    /// Create a range-checked field. Returns None if `abs_val > max`.
-    pub(crate) fn new_checked(abs_val: u64, negated: bool, max: u64) -> Option<Self> {
-        if abs_val > max {
-            return None;
-        }
-        let val = if negated && abs_val != 0 {
-            T::neg_from_u64(abs_val)
-        } else {
-            T::from_u64(abs_val)
-        };
-        Some(Self::new_unchecked(val))
-    }
-
-    /// If set, return Some(Python int). If unset, return None.
-    /// For use in __getitem__ (where unset means key not present).
-    pub(crate) fn to_py_if_set(self) -> Option<PyReturn> {
-        self.is_set().then(|| self.0.to_i64().to_py())
-    }
-}
-
-impl<T: DeltaFieldInner> ToPy for DeltaField<T> {
-    /// Convert to Python int (if set) or Python None (if unset).
-    fn to_py(self) -> PyReturn {
-        if self.is_set() {
-            self.0.to_i64().to_py()
-        } else {
-            Ok(none())
-        }
-    }
 }
 
 pub(crate) trait NegateIf {
@@ -1177,27 +1061,27 @@ mod tests {
     #[test]
     fn subsec_format_iso() {
         assert_eq!(
-            SubSecNanos::new_unchecked(123_456_789).format_iso(),
+            SubSecNanos::new_unchecked(123_456_789).iso_format(),
             (*b".123456789", 10)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(0).format_iso(),
+            SubSecNanos::new_unchecked(0).iso_format(),
             (*b".000000000", 0)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(123_000_000).format_iso(),
+            SubSecNanos::new_unchecked(123_000_000).iso_format(),
             (*b".123000000", 4)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(23_456_009).format_iso(),
+            SubSecNanos::new_unchecked(23_456_009).iso_format(),
             (*b".023456009", 10)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(80).format_iso(),
+            SubSecNanos::new_unchecked(80).iso_format(),
             (*b".000000080", 9)
         );
         assert_eq!(
-            SubSecNanos::new_unchecked(100_000_000).format_iso(),
+            SubSecNanos::new_unchecked(100_000_000).iso_format(),
             (*b".100000000", 2)
         );
     }

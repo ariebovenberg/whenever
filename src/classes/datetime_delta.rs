@@ -1,104 +1,29 @@
 use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
-use std::fmt;
-use std::ops::Neg;
 use std::ptr::null_mut as NULL;
+
+pub(crate) use crate::domain::datetime_delta::DateTimeDelta;
 
 use crate::{
     classes::{
-        date_delta::{self, DateDelta, InitError, parse_prefix},
+        date_delta::{DateDelta, InitError},
         time_delta::{
-            self, MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS, TimeDelta,
+            MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS, TimeDelta,
         },
     },
-    common::{math::CalUnit, scalar::*},
     docstrings as doc,
+    domain::scalar::*,
     py::*,
     pymodule::State,
 };
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub(crate) struct DateTimeDelta {
-    // invariant: these never have opposite signs
-    pub(crate) ddelta: DateDelta,
-    pub(crate) tdelta: TimeDelta,
-}
-
 impl DateTimeDelta {
-    pub(crate) fn pyhash(self) -> Py_hash_t {
-        hash_combine(self.ddelta.pyhash(), self.tdelta.pyhash())
-    }
-
-    pub(crate) fn new(ddelta: DateDelta, tdelta: TimeDelta) -> Option<Self> {
-        if ddelta.months.get() >= 0 && ddelta.days.get() >= 0 && tdelta.secs.get() >= 0
-            || ddelta.months.get() <= 0 && ddelta.days.get() <= 0 && tdelta.secs.get() <= 0
-        {
-            Some(Self { ddelta, tdelta })
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn checked_mul(self, factor: i32) -> Option<Self> {
-        let Self { ddelta, tdelta } = self;
-        ddelta
-            .mul(factor)
-            .zip(tdelta.mul(factor.into()))
-            // Safe: multiplication can't result in different signs
-            .map(|(ddelta, tdelta)| Self { ddelta, tdelta })
-    }
-
-    pub(crate) fn add(self, other: Self) -> Result<Self, InitError> {
-        let ddelta = self.ddelta.add(other.ddelta)?;
-        let tdelta = self.tdelta.add(other.tdelta).ok_or(InitError::TooBig)?;
-        // Confirm the signs of date- and timedelta didn't get out of sync
-        if ddelta.months.get() >= 0 && ddelta.days.get() >= 0 && tdelta.secs.get() >= 0
-            || ddelta.months.get() <= 0 && ddelta.days.get() <= 0 && tdelta.secs.get() <= 0
-        {
-            Ok(Self { ddelta, tdelta })
-        } else {
-            Err(InitError::MixedSign)
-        }
-    }
-
-    fn fmt_iso(self) -> String {
-        let mut s = String::with_capacity(8);
-        let DateTimeDelta { ddelta, tdelta } = if self.tdelta.secs.get() < 0
-            || self.ddelta.months.get() < 0
-            || self.ddelta.days.get() < 0
-        {
-            s.push('-');
-            -self
-        } else if self.tdelta.is_zero() && self.ddelta.is_zero() {
-            return "P0D".to_string();
-        } else {
-            self
-        };
-        s.push('P');
-
-        if !ddelta.is_zero() {
-            date_delta::format_components(ddelta, &mut s);
-        }
-        if !tdelta.is_zero() {
-            s.push('T');
-            time_delta::fmt_components_abs(tdelta, &mut s);
-        }
-        s
+    pub(crate) fn python_hash(self) -> Py_hash_t {
+        hash_combine(self.date.python_hash(), self.time.python_hash())
     }
 }
 
-impl PyWrapped for DateTimeDelta {}
-
-impl Neg for DateTimeDelta {
-    type Output = Self;
-
-    fn neg(self) -> Self {
-        Self {
-            ddelta: -self.ddelta,
-            tdelta: -self.tdelta,
-        }
-    }
-}
+impl PyPayload for DateTimeDelta {}
 
 #[inline]
 pub(crate) fn handle_exact_unit(
@@ -131,7 +56,7 @@ pub(crate) fn set_units_from_kwargs(
     days: &mut i32,
     nanos: &mut i128,
     state: &State,
-    eq: fn(PyObj, PyObj) -> bool,
+    eq: StrEqFn,
 ) -> PyResult<bool> {
     if eq(key, *state.str_years) {
         *months = value
@@ -192,33 +117,10 @@ pub(crate) fn set_units_from_kwargs(
     Ok(true)
 }
 
-pub(crate) const SINGLETONS: &[(&CStr, DateTimeDelta); 1] = &[(
-    c"ZERO",
-    DateTimeDelta {
-        ddelta: DateDelta::ZERO,
-        tdelta: TimeDelta::ZERO,
-    },
-)];
-
-impl fmt::Display for DateTimeDelta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // A bit inefficient, but this isn't performance-critical
-        let mut isofmt = self.fmt_iso().into_bytes();
-        // Safe: we know the string is valid ASCII
-        for c in isofmt.iter_mut().skip(2) {
-            if *c != b'T' {
-                *c = c.to_ascii_lowercase();
-            }
-        }
-        f.write_str(
-            // SAFETY: we've built the string ourselves out of ASCII
-            unsafe { std::str::from_utf8_unchecked(&isofmt) },
-        )
-    }
-}
+pub(crate) const SINGLETONS: &[(&CStr, DateTimeDelta); 1] = &[(c"ZERO", DateTimeDelta::ZERO)];
 
 #[inline(never)]
-fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
+fn __new__(cls: PyClass<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let nargs = args.len();
     let nkwargs = kwargs.map_or(0, |k| k.len());
 
@@ -234,11 +136,11 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
     match (nargs, nkwargs) {
         (1, 0) => parse_iso_inner(cls, args.iter().next().unwrap()),
         (0, 0) => DateTimeDelta {
-            ddelta: DateDelta {
+            date: DateDelta {
                 months: DeltaMonths::ZERO,
                 days: DeltaDays::ZERO,
             },
-            tdelta: TimeDelta {
+            time: TimeDelta {
                 secs: DeltaSeconds::ZERO,
                 subsec: SubSecNanos::MIN,
             },
@@ -255,11 +157,11 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
             )?;
             if months >= 0 && days >= 0 && nanos >= 0 || months <= 0 && days <= 0 && nanos <= 0 {
                 DateTimeDelta {
-                    ddelta: DeltaMonths::new(months)
+                    date: DeltaMonths::new(months)
                         .zip(DeltaDays::new(days))
                         .map(|(m, d)| DateDelta { months: m, days: d })
                         .ok_or_range_err()?,
-                    tdelta: TimeDelta::from_nanos(nanos).ok_or_range_err()?,
+                    time: TimeDelta::from_nanos(nanos).ok_or_range_err()?,
                 }
                 .to_obj(cls)
             } else {
@@ -272,12 +174,7 @@ fn __new__(cls: HeapType<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) 
     }
 }
 
-fn __richcmp__(
-    cls: HeapType<DateTimeDelta>,
-    a: DateTimeDelta,
-    b_obj: PyObj,
-    op: c_int,
-) -> PyReturn {
+fn __richcmp__(cls: PyClass<DateTimeDelta>, a: DateTimeDelta, b_obj: PyObj, op: c_int) -> PyReturn {
     match b_obj.extract(cls) {
         Some(b) => match op {
             pyo3_ffi::Py_EQ => (a == b).to_py(),
@@ -292,18 +189,18 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     let (_, d) =
         // SAFETY: first argument guaranteed to be self type
         unsafe { slf.assume_heaptype::<DateTimeDelta>() };
-    hashmask(d.pyhash())
+    hashmask(d.python_hash())
 }
 
-fn __neg__(cls: HeapType<DateTimeDelta>, d: DateTimeDelta) -> PyReturn {
+fn __neg__(cls: PyClass<DateTimeDelta>, d: DateTimeDelta) -> PyReturn {
     (-d).to_obj(cls)
 }
 
 extern "C" fn __bool__(slf: PyObj) -> c_int {
-    let (_, DateTimeDelta { ddelta, tdelta }) =
+    let (_, DateTimeDelta { date, time }) =
         // SAFETY: first argument guaranteed to be self type
         unsafe { slf.assume_heaptype::<DateTimeDelta>() };
-    (!(ddelta.is_zero() && tdelta.is_zero())).into()
+    (!(date.is_zero() && time.is_zero())).into()
 }
 
 fn __repr__(_: PyType, d: DateTimeDelta) -> PyReturn {
@@ -315,7 +212,7 @@ fn __str__(_: PyType, d: DateTimeDelta) -> PyReturn {
 }
 
 fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
-    // These checks are needed because the args could be reversed!
+    // These checks are needed because the args could be reversed.
     let (delta_obj, factor) = if let Some(i) = b.cast_allow_subclass::<PyInt>() {
         (a, i.to_long()?)
     } else if let Some(i) = a.cast_allow_subclass::<PyInt>() {
@@ -326,13 +223,13 @@ fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
 
     if factor == 1 {
         return Ok(delta_obj.newref());
-    };
+    }
 
-    // SAFETY: at this point we know that delta_obj is a DateTimeDelta
+    // SAFETY: one operand is a DateTimeDelta and the other is an int.
     let (delta_type, delta) = unsafe { delta_obj.assume_heaptype::<DateTimeDelta>() };
     i32::try_from(factor)
         .ok()
-        .and_then(|f| delta.checked_mul(f))
+        .and_then(|f| delta.mul(f))
         .ok_or_range_err()?
         .to_obj(delta_type)
 }
@@ -347,63 +244,54 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
 
 #[inline(never)]
 fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
-    // FUTURE: optimize zero cases
-    let type_a = obj_a.type_();
-    let type_b = obj_b.type_();
-    // The easy case: DateTimeDelta + DateTimeDelta
-    let (delta_type, a, mut b) = if type_a == type_b {
-        // SAFETY: Both are the same type, and one of them *must* be a DateTimeDelta
-        let (delta_type, a) = unsafe { obj_a.assume_heaptype::<DateTimeDelta>() };
-        let (_, b) = unsafe { obj_b.assume_heaptype::<DateTimeDelta>() };
-        (delta_type, a, b)
-    // Other cases are more difficult, as they can be triggered
-    // by reflexive operations with arbitrary types.
-    // We need to eliminate them carefully.
-    } else if let Some(state) = type_a.same_module(type_b) {
-        // SAFETY: the way we've structured binary operations within whenever
-        // ensures that the first operand is the self type.
-        let (delta_type, a) = unsafe { obj_a.assume_heaptype::<DateTimeDelta>() };
-        let delta_b = if let Some(ddelta) = obj_b.extract(*state.date_delta_type) {
-            DateTimeDelta {
-                ddelta,
-                tdelta: TimeDelta::ZERO,
+    binary_operation::<DateTimeDelta>(obj_a, obj_b, if negate { "-" } else { "+" }, |operands| {
+        let (cls, slf, mut other) = match operands {
+            BinaryCall::SameType { cls, slf, other } => (cls, slf, *other),
+            BinaryCall::ExtTypes { cls, slf, other } => {
+                let state = cls.state();
+                let other = match_type!(
+                    other,
+                    *state.date_delta_type => |date| {
+                        DateTimeDelta {
+                            date,
+                            time: TimeDelta::ZERO,
+                        }
+                    },
+                    *state.time_delta_type => |time| {
+                        DateTimeDelta {
+                            date: DateDelta::ZERO,
+                            time,
+                        }
+                    },
+                    _ => { return Ok(None) },
+                );
+                (cls, slf, other)
             }
-        } else if let Some(tdelta) = obj_b.extract(*state.time_delta_type) {
-            DateTimeDelta {
-                ddelta: DateDelta::ZERO,
-                tdelta,
-            }
-        } else {
-            // We can safely discount other types within our module
-            return raise_value_err(format!(
-                "unsupported operand type(s) for +/-: {type_a} and {type_b}"
-            ));
+            BinaryCall::OtherTypes => return Ok(None),
         };
-        // SAFETY: at least one of the objects is a DateTimeDelta
-        (delta_type, a, delta_b)
-    } else {
-        return not_implemented();
-    };
-    if negate {
-        b = -b;
-    };
-    a.add(b)
-        .map_err(|e| {
-            value_err(match e {
-                InitError::TooBig => "Addition result out of bounds",
-                InitError::MixedSign => "mixed sign in DateTimeDelta",
-            })
-        })?
-        .to_obj(delta_type)
+        if negate {
+            other = -other;
+        }
+        Ok(Some(
+            slf.add(other)
+                .map_err(|e| {
+                    value_err(match e {
+                        InitError::TooBig => "Addition result out of bounds",
+                        InitError::MixedSign => "mixed sign in DateTimeDelta",
+                    })
+                })?
+                .to_obj(cls)?,
+        ))
+    })
 }
 
-fn __abs__(cls: HeapType<DateTimeDelta>, slf: Wrapped<'_, DateTimeDelta>) -> PyReturn {
-    if slf.ddelta.months.get() >= 0 && slf.ddelta.days.get() >= 0 && !slf.tdelta.is_negative() {
+fn __abs__(cls: PyClass<DateTimeDelta>, slf: PyRef<'_, DateTimeDelta>) -> PyReturn {
+    if slf.date.months.get() >= 0 && slf.date.days.get() >= 0 && !slf.time.is_negative() {
         Ok(slf.newref())
     } else {
         DateTimeDelta {
-            ddelta: slf.ddelta.abs(),
-            tdelta: slf.tdelta.abs(),
+            date: slf.date.abs(),
+            time: slf.time.abs(),
         }
         .to_obj(cls)
     }
@@ -451,7 +339,7 @@ fn format_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
     d.fmt_iso().to_py()
 }
 
-fn parse_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
+fn parse_iso(cls: PyClass<DateTimeDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
@@ -460,78 +348,25 @@ fn parse_iso(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
     parse_iso_inner(cls, arg)
 }
 
-fn parse_iso_inner(cls: HeapType<DateTimeDelta>, arg: PyObj) -> PyReturn {
+fn parse_iso_inner(cls: PyClass<DateTimeDelta>, arg: PyObj) -> PyReturn {
     let binding = arg
         .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
         // called through the constructor
         .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
 
-    let s = &mut binding.as_utf8()?;
+    let s = binding.as_utf8()?;
     let err = || format!("Invalid format or out of range: {arg}");
-    if s.len() < 3 {
-        // at least `P0D`
-        raise_value_err(err())?
-    }
-
-    let negated = parse_prefix(s).ok_or_else_value_err(err)?;
-    // Safe: we checked the string is at least 3 bytes long
-    if s[s.len() - 1].eq_ignore_ascii_case(&b'T') {
-        // catch 'empty' cases
-        raise_value_err(err())?
-    }
-    let mut ddelta = parse_date_components(s).ok_or_else_value_err(err)?;
-    let mut tdelta = if s.is_empty() {
-        TimeDelta::ZERO
-    } else if s[0].eq_ignore_ascii_case(&b'T') {
-        *s = &s[1..];
-        let (nanos, _) = time_delta::parse_all_components(s).ok_or_else_value_err(err)?;
-        TimeDelta::from_nanos(nanos as _).ok_or_else_value_err(err)?
-    } else {
-        raise_value_err(err())?
-    };
-    if negated {
-        ddelta = -ddelta;
-        tdelta = -tdelta;
-    }
-    DateTimeDelta { ddelta, tdelta }.to_obj(cls)
-}
-
-pub(crate) fn parse_date_components(s: &mut &[u8]) -> Option<DateDelta> {
-    let mut months = 0;
-    let mut days = 0;
-    let mut prev_unit: Option<CalUnit> = None;
-
-    while !s.is_empty() && !s[0].eq_ignore_ascii_case(&b'T') {
-        let (value, unit) = date_delta::parse_component(s)?;
-        match (unit, prev_unit.replace(unit)) {
-            // Note: We prevent overflow by limiting how many digits we parse
-            (CalUnit::Years, None) => {
-                months += value * 12;
-            }
-            (CalUnit::Months, None | Some(CalUnit::Years)) => {
-                months += value;
-            }
-            (CalUnit::Weeks, None | Some(CalUnit::Years | CalUnit::Months)) => {
-                days += value * 7;
-            }
-            (CalUnit::Days, _) => {
-                days += value;
-                break;
-            }
-            _ => None?, // i.e. the order of the components is wrong
-        }
-    }
-    DeltaMonths::new(months)
-        .zip(DeltaDays::new(days))
-        .map(|(months, days)| DateDelta { months, days })
+    DateTimeDelta::parse_iso(s)
+        .ok_or_else_value_err(err)?
+        .to_obj(cls)
 }
 
 fn in_months_days_secs_nanos(
     _: PyType,
     DateTimeDelta {
-        ddelta: DateDelta { months, days },
-        tdelta: TimeDelta { secs, subsec },
+        date: DateDelta { months, days },
+        time: TimeDelta { secs, subsec },
     }: DateTimeDelta,
 ) -> PyReturn {
     let mut secs = secs.get();
@@ -550,24 +385,24 @@ fn in_months_days_secs_nanos(
     .into_pytuple()
 }
 
-fn date_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
+fn date_part(cls: PyClass<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
         c"DateTimeDelta.date_part() is deprecated.",
         1,
     )?;
-    slf.ddelta.to_obj(*cls.state().date_delta_type)
+    slf.date.to_obj(*cls.state().date_delta_type)
 }
 
-fn time_part(cls: HeapType<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
-    slf.tdelta.to_obj(*cls.state().time_delta_type)
+fn time_part(cls: PyClass<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
+    slf.time.to_obj(*cls.state().time_delta_type)
 }
 
 fn __reduce__(
-    cls: HeapType<DateTimeDelta>,
+    cls: PyClass<DateTimeDelta>,
     DateTimeDelta {
-        ddelta: DateDelta { months, days },
-        tdelta: TimeDelta { secs, subsec },
+        date: DateDelta { months, days },
+        time: TimeDelta { secs, subsec },
     }: DateTimeDelta,
 ) -> PyReturn {
     [
@@ -588,7 +423,7 @@ fn __reduce__(
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     match args {
         &[months, days, secs, nanos] => DateTimeDelta {
-            ddelta: DateDelta {
+            date: DateDelta {
                 months: DeltaMonths::new_unchecked(
                     months
                         .cast_exact::<PyInt>()
@@ -601,7 +436,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
                         .to_long()? as _,
                 ),
             },
-            tdelta: TimeDelta {
+            time: TimeDelta {
                 secs: DeltaSeconds::new_unchecked(
                     secs.cast_exact::<PyInt>()
                         .ok_or_type_err("invalid pickle data")?

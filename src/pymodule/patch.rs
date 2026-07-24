@@ -1,16 +1,16 @@
 //! Functionality related to patching the current time
-use crate::{classes::instant::Instant, common::scalar::*, py::*, pymodule::State};
+use crate::{classes::instant::Instant, domain::scalar::*, py::*, pymodule::State};
 use std::time::SystemTime;
 
-pub(crate) fn _patch_time_frozen(state: &mut State, arg: PyObj) -> PyReturn {
+pub(crate) fn _patch_time_frozen(state: &State, arg: PyObj) -> PyReturn {
     _patch_time(state, arg, true)
 }
 
-pub(crate) fn _patch_time_keep_ticking(state: &mut State, arg: PyObj) -> PyReturn {
+pub(crate) fn _patch_time_keep_ticking(state: &State, arg: PyObj) -> PyReturn {
     _patch_time(state, arg, false)
 }
 
-pub(crate) fn _patch_time(state: &mut State, arg: PyObj, freeze: bool) -> PyReturn {
+pub(crate) fn _patch_time(state: &State, arg: PyObj, freeze: bool) -> PyReturn {
     let Some(inst) = arg.extract(*state.instant_type) else {
         return raise_type_err("expected an Instant")?;
     };
@@ -19,9 +19,7 @@ pub(crate) fn _patch_time(state: &mut State, arg: PyObj, freeze: bool) -> PyRetu
         .ok()
         .ok_or_type_err("can only set time after 1970")?;
 
-    let patch = &mut state.time_patch;
-
-    patch.set_state(if freeze {
+    let patch_state = if freeze {
         PatchState::Frozen(inst)
     } else {
         PatchState::KeepTicking {
@@ -31,13 +29,17 @@ pub(crate) fn _patch_time(state: &mut State, arg: PyObj, freeze: bool) -> PyRetu
                 .ok()
                 .ok_or_type_err("system time before 1970")?,
         }
-    });
+    };
+    state
+        .time_patch
+        .with_mut(|patch| patch.set_state(patch_state));
     Ok(none())
 }
 
-pub(crate) fn _unpatch_time(state: &mut State) -> PyReturn {
-    let patch = &mut state.time_patch;
-    patch.set_state(PatchState::Unset);
+pub(crate) fn _unpatch_time(state: &State) -> PyReturn {
+    state
+        .time_patch
+        .with_mut(|patch| patch.set_state(PatchState::Unset));
     Ok(none())
 }
 
@@ -101,7 +103,7 @@ impl State {
         let Patch {
             state: status,
             time_machine_installed,
-        } = self.time_patch;
+        } = self.time_patch.with(|patch| *patch);
         match status {
             PatchState::Unset => {
                 if time_machine_installed {

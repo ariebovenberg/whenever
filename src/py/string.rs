@@ -57,41 +57,19 @@ impl PyStaticType for PyStr {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PyBytes {
-    obj: PyObj,
-}
-
-impl PyBase for PyBytes {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyBytes {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
+impl PyObj {
+    /// Extract an exact `bytes` object's contents.
+    pub(crate) fn expect_bytes(&self) -> PyResult<&[u8]> {
+        if unsafe { PyBytes_CheckExact(self.as_ptr()) } == 0 {
+            return raise_type_err("expected bytes argument");
         }
-    }
-}
-
-impl PyStaticType for PyBytes {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
-        unsafe { PyBytes_CheckExact(obj.as_ptr()) != 0 }
-    }
-
-    fn isinstance(obj: impl PyBase) -> bool {
-        unsafe { PyBytes_Check(obj.as_ptr()) != 0 }
-    }
-}
-
-impl PyBytes {
-    pub(crate) fn as_bytes(&self) -> &[u8] {
-        // SAFETY: self is a PyBytes; AsString and Size only fail on type mismatch, impossible here
+        // SAFETY: the exact-type check proves the bytes APIs succeed, and the returned
+        // slice cannot outlive the borrowed argument.
         let p = unsafe { PyBytes_AsString(self.as_ptr()) };
         debug_assert!(!p.is_null());
-        unsafe { std::slice::from_raw_parts(p.cast::<u8>(), PyBytes_Size(self.as_ptr()) as usize) }
+        Ok(unsafe {
+            std::slice::from_raw_parts(p.cast::<u8>(), PyBytes_Size(self.as_ptr()) as usize)
+        })
     }
 }
 

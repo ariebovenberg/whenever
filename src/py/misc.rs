@@ -31,7 +31,8 @@ impl OncePyObj {
     #[cold]
     fn get_slow(&self) -> PyResult<PyObj> {
         let owned = (self.init)()?;
-        let obj = owned.py_owned();
+        // SAFETY: `owned` transfers a valid reference which remains stored in this cell.
+        let obj = unsafe { PyObj::from_ptr_unchecked(owned.into_raw()) };
         match self.ptr.try_init(obj.as_nonnull()) {
             Ok(()) => Ok(obj),
             Err(winner) => {
@@ -108,8 +109,8 @@ pub(crate) fn import(module: &CStr) -> PyReturn {
     unsafe { PyImport_ImportModule(module.as_ptr()) }.own()
 }
 
-pub(crate) fn __get_pydantic_core_schema__<T: PyWrapped>(
-    cls: HeapType<T>,
+pub(crate) fn __get_pydantic_core_schema__<T: PyPayload>(
+    cls: PyClass<T>,
     _: &[PyObj],
     _: &mut IterKwargs,
 ) -> PyReturn {
@@ -121,28 +122,6 @@ pub(crate) fn not_implemented() -> PyReturn {
         // SAFETY: Py_NotImplemented is always non-null
         unsafe { PyObj::from_ptr_unchecked(Py_NotImplemented()) }.newref(),
     )
-}
-
-/// Pack various types into a byte array. Used for pickling.
-macro_rules! pack {
-    [$($x:expr),+] => {{
-        let mut result = Vec::new();
-        $(result.extend_from_slice(&$x.to_le_bytes());)+
-        result
-    }}
-}
-
-/// Unpack a single value from a byte array. Used for unpickling.
-macro_rules! unpack_one {
-    ($arr:ident, $t:ty) => {{
-        const SIZE: usize = std::mem::size_of::<$t>();
-        let data = <$t>::from_le_bytes($arr[..SIZE].try_into().unwrap());
-        #[allow(unused_assignments)]
-        {
-            $arr = &$arr[SIZE..];
-        }
-        data
-    }};
 }
 
 // FUTURE: a more efficient way for specific cases?
@@ -189,6 +168,3 @@ pub(crate) fn traverse(
         }
     }
 }
-
-#[allow(unused_imports)]
-pub(crate) use {pack, unpack_one};

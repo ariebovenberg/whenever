@@ -91,6 +91,25 @@ impl PyInt {
     }
 }
 
+impl PyObj {
+    pub(crate) fn expect_bool(self, name: &str) -> PyResult<bool> {
+        if self.is_true() {
+            Ok(true)
+        } else if self.is_false() {
+            Ok(false)
+        } else {
+            raise_type_err(format!("{name} must be a boolean"))
+        }
+    }
+
+    pub(crate) fn expect_int(self, name: &str) -> PyResult<PyInt> {
+        match self.cast_allow_subclass::<PyInt>() {
+            Some(i) => Ok(i),
+            None => raise_type_err(format!("{name} must be an integer")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PyFloat {
     obj: PyObj,

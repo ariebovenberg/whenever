@@ -1,7 +1,79 @@
 //! Functionality for working with Python's datetime module.
-use super::{base::*, exc::*};
-use crate::common::scalar::{DeltaSeconds, SubSecNanos};
+use super::{base::*, exc::*, refs::*};
+use crate::domain::{
+    plain_datetime::PlainDateTime,
+    scalar::{DeltaSeconds, NS_PER_MICROSEC, Offset, S_PER_DAY, SubSecNanos},
+    time_delta::TimeDelta,
+};
 use pyo3_ffi::*;
+
+pub(crate) trait PyDateTimeApiExt {
+    fn utc_timezone(&self) -> PyObj;
+    fn new_datetime(&self, dt: PlainDateTime, tzinfo: Option<PyObj>)
+    -> PyResult<Owned<PyDateTime>>;
+    fn new_timedelta(&self, delta: TimeDelta) -> PyResult<Owned<PyTimeDelta>>;
+    fn new_timezone(&self, offset: Offset) -> PyReturn;
+}
+
+impl PyDateTimeApiExt for PyDateTime_CAPI {
+    fn utc_timezone(&self) -> PyObj {
+        // SAFETY: TimeZone_UTC is a borrowed reference owned by the initialized datetime module.
+        unsafe { PyObj::from_ptr_unchecked(self.TimeZone_UTC) }
+    }
+
+    fn new_datetime(
+        &self,
+        dt: PlainDateTime,
+        tzinfo: Option<PyObj>,
+    ) -> PyResult<Owned<PyDateTime>> {
+        let date = dt.date;
+        let time = dt.time;
+        // SAFETY: the domain values are valid datetime components and DateTimeType is supplied
+        // by the initialized CPython datetime C API.
+        unsafe {
+            (self.DateTime_FromDateAndTime)(
+                date.year.get().into(),
+                date.month.get().into(),
+                date.day.into(),
+                time.hour.into(),
+                time.minute.into(),
+                time.second.into(),
+                (time.subsec.get() / 1_000) as _,
+                tzinfo.map_or_else(|| Py_None(), |obj| obj.as_ptr()),
+                self.DateTimeType,
+            )
+        }
+        .own()
+        // SAFETY: DateTime_FromDateAndTime returns a datetime instance.
+        .map(|obj| unsafe { obj.cast_unchecked::<PyDateTime>() })
+    }
+
+    fn new_timedelta(&self, delta: TimeDelta) -> PyResult<Owned<PyTimeDelta>> {
+        // SAFETY: values are normalized for CPython and DeltaType comes from the initialized API.
+        unsafe {
+            (self.Delta_FromDelta)(
+                delta.secs.get().div_euclid(S_PER_DAY.into()) as _,
+                delta.secs.get().rem_euclid(S_PER_DAY.into()) as _,
+                (delta.subsec.get() / NS_PER_MICROSEC as i32) as _,
+                0,
+                self.DeltaType,
+            )
+        }
+        .own()
+        // SAFETY: Delta_FromDelta returns a timedelta instance.
+        .map(|obj| unsafe { obj.cast_unchecked::<PyTimeDelta>() })
+    }
+
+    fn new_timezone(&self, offset: Offset) -> PyReturn {
+        // SAFETY: every valid Offset fits within the TimeDelta range.
+        let delta = self.new_timedelta(TimeDelta {
+            secs: DeltaSeconds::new(offset.get().into()).unwrap(),
+            subsec: SubSecNanos::MIN,
+        })?;
+        // SAFETY: delta is a valid timedelta and the null name requests CPython's default name.
+        unsafe { (self.TimeZone_FromTimeZone)(delta.as_ptr(), std::ptr::null_mut()) }.own()
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PyDate {

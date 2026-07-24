@@ -2,6 +2,8 @@ import json
 import os
 import subprocess
 import sys
+import warnings
+from contextlib import nullcontext
 from inspect import signature
 from itertools import chain
 from time import sleep
@@ -11,17 +13,21 @@ from unittest.mock import patch
 import pytest
 from whenever import (
     _EXTENSION_LOADED,
+    CalendarUnitCompositionWarning,
     Date,
     DateDelta,
     DateTimeDelta,
     ImplicitlyIgnoringDST,
     Instant,
     InvalidOffsetError,
+    ItemizedDateDelta,
+    ItemizedDelta,
     MonthDay,
     OffsetDateTime,
     PlainDateTime,
     Time,
     TimeDelta,
+    WheneverWarning,
     YearMonth,
     ZonedDateTime,
     patch_current_time,
@@ -34,6 +40,109 @@ from .common import system_tz_ams
 pytestmark = pytest.mark.filterwarnings(
     "ignore::whenever.WheneverDeprecationWarning"
 )
+
+
+@pytest.mark.parametrize(
+    "dt, delta, expected",
+    [
+        (
+            Date(2021, 1, 31),
+            ItemizedDateDelta(months=1),
+            Date(2021, 2, 28),
+        ),
+        (
+            PlainDateTime(2021, 1, 31),
+            ItemizedDelta(months=1, hours=2),
+            PlainDateTime(2021, 2, 28, 2),
+        ),
+        (
+            OffsetDateTime(2021, 1, 31, offset=0),
+            ItemizedDelta(months=1, hours=2),
+            OffsetDateTime(2021, 2, 28, 2, offset=0),
+        ),
+        (
+            ZonedDateTime(2021, 1, 31, tz="UTC"),
+            ItemizedDelta(months=1, hours=2),
+            ZonedDateTime(2021, 2, 28, 2, tz="UTC"),
+        ),
+    ],
+)
+def test_itemized_delta_datetime_operators(dt, delta, expected):
+    warning = isinstance(dt, (PlainDateTime, OffsetDateTime))
+    with pytest.warns(Warning) if warning else nullcontext():
+        assert dt + delta == expected
+    with pytest.warns(Warning) if warning else nullcontext():
+        assert delta + dt == expected
+    with pytest.warns(Warning) if warning else nullcontext():
+        subtracted = dt - delta
+    with pytest.warns(Warning) if warning else nullcontext():
+        expected_subtracted = dt.subtract(delta)
+    assert subtracted == expected_subtracted
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        lambda dt, delta: dt + delta,
+        lambda dt, delta: delta + dt,
+        lambda dt, delta: dt - delta,
+    ],
+)
+@pytest.mark.parametrize("delta", [ItemizedDelta(hours=1), TimeDelta(hours=1)])
+def test_datetime_operator_warning_location(operation, delta):
+    dt = PlainDateTime(2021, 1, 31)
+    with pytest.warns(Warning) as caught:
+        operation(dt, delta)
+    assert all("_ideltas.py" not in warning.filename for warning in caught)
+
+
+@pytest.mark.parametrize(
+    "delta",
+    [ItemizedDelta(months=1), ItemizedDateDelta(days=1)],
+)
+def test_plain_datetime_calendar_delta_operators_do_not_warn(delta):
+    dt = PlainDateTime(2021, 1, 31)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        dt + delta
+        delta + dt
+        dt - delta
+
+
+def test_zero_time_delta_plain_datetime_addition_warns_from_both_sides():
+    dt = PlainDateTime(2021, 1, 31)
+    delta = TimeDelta.ZERO
+    with pytest.warns(Warning):
+        dt + delta
+    with pytest.warns(Warning):
+        delta + dt
+
+
+@pytest.mark.parametrize(
+    "delta", [ItemizedDelta(hours=1), ItemizedDateDelta(days=1)]
+)
+@pytest.mark.parametrize("method", ["__radd__", "__rsub__"])
+def test_itemized_delta_reflected_operator_not_implemented(delta, method):
+    assert getattr(delta, method)(object()) is NotImplemented
+
+
+@pytest.mark.parametrize(
+    "dt",
+    [
+        PlainDateTime(2021, 1, 31),
+        OffsetDateTime(2021, 1, 31, offset=0),
+        ZonedDateTime(2021, 1, 31, tz="UTC"),
+        Instant.from_utc(2021, 1, 31),
+    ],
+)
+def test_time_delta_reflected_datetime_addition(dt):
+    delta = TimeDelta(hours=2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        expected = dt + delta
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert delta + dt == expected
 
 
 @pytest.mark.skipif(
@@ -65,6 +174,13 @@ def test_type_aliases():
 def test_exceptions():
     assert issubclass(ImplicitlyIgnoringDST, TypeError)
     assert issubclass(InvalidOffsetError, ValueError)
+    from whenever import PotentialDstBugWarning
+
+    assert issubclass(CalendarUnitCompositionWarning, WheneverWarning)
+    assert issubclass(PotentialDstBugWarning, WheneverWarning)
+    assert not issubclass(
+        CalendarUnitCompositionWarning, PotentialDstBugWarning
+    )
 
 
 def test_version():
@@ -111,6 +227,29 @@ def test_star_import_includes_utilities():
             "expected = {'patch_current_time', 'reset_tzpath', "
             "'clear_tzcache', 'available_timezones'}; "
             "assert expected <= namespace.keys()",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_itemized_runtime_annotations_resolve_from_lazy_import():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from typing import get_type_hints; "
+            "import whenever; "
+            "ItemizedDelta = whenever.ItemizedDelta; "
+            "ItemizedDateDelta = whenever.ItemizedDateDelta; "
+            "assert 'whenever._core' not in sys.modules; "
+            "assert get_type_hints(ItemizedDelta.add)['relative_to'] "
+            "is whenever.ZonedDateTime; "
+            "get_type_hints(ItemizedDelta.date_and_time_parts); "
+            "get_type_hints(ItemizedDateDelta.__add__); "
+            "assert get_type_hints(ItemizedDateDelta.total)['relative_to'] "
+            "is whenever.Date",
         ],
         capture_output=True,
         text=True,

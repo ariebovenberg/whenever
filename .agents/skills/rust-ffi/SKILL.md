@@ -15,11 +15,12 @@ The `src/py/` module provides safe wrappers. Key types:
 |------|---------|
 | `PyObj` | Core wrapper around `*mut PyObject`. Has `.extract()` (Copy types), `.extract_ref()` (ref types), `.type_()`, `.is_none()` |
 | `Owned<T>` | RAII refcount wrapper. Use `Owned::new()` to take ownership, `.borrow()` for non-owning access |
-| `HeapType<T>` | A Python heap type that carries module state via `.state()` → `&State` |
-| `PyType` | A Python type object. `.same_module()` checks if two types belong to the same module |
+| `PyClass<T>` | A Python class whose instances contain a Rust `T`; carries module state via `.state()` → `&State` |
+| `PyRef<'a, T>` | A borrowed extension instance together with access to its `T` payload |
+| `PyPayload` | Trait implemented by Rust values stored inside extension objects |
+| `PyType` | A Python type object |
 | `PyReturn` | Alias for `PyResult<Owned<PyObj>>` — the return type of Python-visible functions |
 | `PyErrMarker` | Sentinel indicating the Python error indicator is set |
-| `ContextVarBool` | `Copy` wrapper for a context variable. Has `.get() -> PyResult<bool>` |
 
 Key helpers in `src/py/`:
 - `raise_value_err()`, `raise_type_err()`, `raise_key_err()` — raise Python exceptions
@@ -28,9 +29,13 @@ Key helpers in `src/py/`:
 - `handle_one_arg(fname, args)` — extract exactly one positional arg, or raise TypeError
 - `handle_opt_arg(fname, args)` — extract zero or one positional arg
 - `handle_one_kwarg(fname, key, kwargs)` — extract a single optional kwarg by key
+- `obj.expect_int(name)` — accept a Python int or subclass and raise
+  `TypeError: {name} must be an integer` otherwise
 - `find_interned(value, handler)` — match a PyObj against interned strings, returns `Option`
 - `match_interned_str(name, value, handler)` — like `find_interned` but raises on no match
-- `generic_alloc(type_, data)` — allocate a Python object with given data
+- `match_type!(obj, type => |value| {...}, _ => {...})` — match an extension object against differently typed `PyClass<T>` values; prefix an arm with `ref` for non-`Copy` types
+- `CompareOp::from_ffi(op).apply(a, b)` — apply a CPython rich-comparison operation to ordered Rust values
+- `generic_alloc(cls, data)` — allocate a Python object with the given payload
 - `PyAsciiStrBuilder::format()` — build a Python string without intermediate Rust `String`
 - `PyTuple::with_len()` / `.init_item()` — safe tuple construction
 - `.to_py()` via the `ToPy` trait — convert Rust values to Python objects
@@ -43,24 +48,10 @@ Key helpers in `src/py/`:
 - `HeapType<T>` for each class (date_type, time_delta_type, etc.)
 - Exception classes (`exc_repeated`, `exc_skipped`, etc.)
 - Warning classes (`warn_deprecation`, `warn_days_not_always_24h`, etc.)
-- `ContextVarBool`s for suppressing warnings
 - Interned strings (`str_years`, `str_hour`, `str_units`, etc.)
 - Unpickling functions
 
-Access it via `cls.state()` from any `HeapType<T>`. **Unpack needed fields at the top
-of the function** to avoid repeated `state.` access:
-```rust
-let &State {
-    date_type,
-    str_disambiguate,
-    exc_skipped,
-    time_delta_type,
-    ..
-} = cls.state();
-```
-
-When adding new fields to State, update **three** places: the struct definition,
-the initialization in `init_module`, and `Py_CLEAR` in the traverse/clear functions.
+Access it via `cls.state()` from any `PyClass<T>`.
 
 ## Method registration
 
@@ -73,7 +64,7 @@ Methods are registered in a `static mut METHODS: &[PyMethodDef]` array using mac
 
 The function signatures must match the macro used. For `method_kwargs!`:
 ```rust
-fn my_method(cls: HeapType<MyType>, slf: MyType, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn
+fn my_method(cls: PyClass<MyType>, slf: MyType, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn
 ```
 
 ## Performance philosophy
@@ -81,9 +72,8 @@ fn my_method(cls: HeapType<MyType>, slf: MyType, args: &[PyObj], kwargs: &mut It
 - Avoid unnecessary allocations. Use helpers to build Python objects directly
   (e.g., `PyAsciiStrBuilder` instead of `format!()` → `to_py()`)
 - Prefer `i32`/`i64` over `i128` when possible
-- Use `u8::eq_ignore_ascii_case()` instead of manual case checks
 - Use tuples (not lists) for immutable Python sequences
-- Check pointer equality before falling back to `py_eq` for comparisons
+- For known strings, check pointer equality before falling back to direct Unicode comparison
 
 ## Common patterns
 
@@ -113,22 +103,17 @@ let relative_to = handle_one_kwarg("total", state.str_relative_to, kwargs)?;
 ```
 
 **Building deltas from kwargs (shift/add/subtract methods):**
-Use `handle_delta_unit_kwargs()` for full datetime units, or
-`handle_date_delta_unit_kwargs()` for calendar-only units. These build typed
-`DeltaMonths`/`DeltaDays`/`TimeDelta` directly from kwargs.
+Use `common::shift::parse_datetime_shift_kwargs()` for full datetime units or
+`parse_calendar_shift_kwargs()` for calendar-only units. They return a typed
+`DateTimeShift` or `CalendarShift`; the datetime parser's callback retains
+class-specific kwargs such as `disambiguate` and warning suppression. For a
+positional delta, use `parse_datetime_shift_arg()` or `parse_calendar_shift_arg()`;
+these raise the method-specific type error if the argument is not a supported delta.
 
-**Structured since/until kwarg parsing:**
-```rust
-let SinceUntilKwargs { units, round_mode, round_increment } =
-    SinceUntilKwargs::parse(fname, state, kwargs)?;
-```
-
-**Unit sets:** Use the appropriate bitfield type:
-- `CalUnitSet` — calendar units only (years, months, weeks, days)
-- `ExactUnitSet` — exact units only (weeks through nanoseconds)
-- `DeltaUnitSet` — all delta units (calendar + exact)
-
-Each has `from_py()` for parsing from Python, `.iter()`, `.smallest()`, `.contains()`.
+**Instant-like arguments:**
+Use `common::instant::extract_instant()` when a non-Instant operand should fall through to another
+operation, and `parse_instant_arg()` for a required Instant, OffsetDateTime, or ZonedDateTime
+argument. Both normalize to the domain `Instant`.
 
 **Interned string matching with custom errors:**
 Use `find_interned` + manual error message when you need a specific error format.
@@ -142,13 +127,26 @@ Use `match_interned_str` when the default error format is acceptable.
 
 ## Type-specific gotchas
 
-- **ZonedDateTime** doesn't implement `Ord` in Rust. Compare via `.instant()` for ordering.
+- **ZonedDateTime** doesn't implement `Ord` in Rust. Compare via `.to_instant()` for ordering.
   Non-Copy (contains `Arc<TimeZone>`). Uses `Arc::ptr_eq` + content equality for timezone comparison.
-  DST-aware operations need `ambiguity_for_local()` resolution.
+  DST-aware operations resolve `PlainDateTime::local_seconds()` through
+  `TimeZone::mapping_for_local()` and `PlainDateTime::resolve_in()`.
+- **LocalSeconds** is the local-wall-time coordinate; don't pass `EpochSecs` to local timezone
+  lookup. `LocalMapping`, `Disambiguation`, and `ResolvePolicy` define gap/fold handling in the
+  domain layer. Map `ResolveError` to Python exceptions only in binding code.
 - **OffsetDateTime** compares by instant (`Instant` has `Ord`). Offset is an `Offset` scalar.
-- **PlainDateTime** (`DateTime` in Rust) compares by local date+time. Has `Ord`.
+- Use `PlainDateTime::assume_offset()` when attaching a validated offset and
+  `assume_offset_unchecked()` only when the represented instant is already known to be in range.
+- **PlainDateTime** compares by local date+time. Has `Ord`.
+- **Shift arguments** use `CalendarShift` and `DateTimeShift` in the domain layer. Prefer
+  `Date::shift_by()` and `PlainDateTime::shift_by()` once a shift has been parsed. Python-facing
+  component replacement starts with `PlainDateTime::components()` and uses
+  `DateTimeComponents` in `classes::plain_datetime`.
 - **TimeDelta** stores `secs: DeltaSeconds` + `subsec: SubSecNanos`. Use `.total_nanos() -> i128`.
   Has `.in_single_unit()` and `.in_exact_units()` for unit decomposition.
+- Unit types name their role: `fmt::Precision`, `round::RoundUnit`, and
+  `CalendarUnit`/`DifferenceUnit`/`ExactUnit` in `common::math`. Keep these domains distinct unless
+  their parsing and behavior are demonstrably identical.
 - **ItemizedDelta/ItemizedDateDelta** use `DeltaField<T>` with `i32::MAX` as the UNSET sentinel.
   `DeltaField` has custom `Debug` showing `<unset>` for sentinel values.
 

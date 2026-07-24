@@ -18,6 +18,8 @@ pub(crate) struct PyErrMarker; // sentinel that the Python error indicator is se
 pub(crate) type PyResult<T> = Result<T, PyErrMarker>;
 pub(crate) type PyReturn = PyResult<Owned<PyObj>>;
 
+const RANGE_ERROR_MSG: &str = "Value or calculation out of range";
+
 /// Extension methods for [`PyResult`] to handle Python exceptions.
 pub(crate) trait PyResultExt<T>: Sized {
     /// On error, clears the Python exception and returns `None`.
@@ -100,7 +102,7 @@ pub(crate) fn value_err<U: ToPy>(msg: U) -> PyErrMarker {
     exception(exc_value_error(), msg)
 }
 
-pub(crate) trait OptionExt<T> {
+pub(crate) trait RaiseExt<T> {
     fn ok_or_else_raise<F, M: ToPy>(self, exc: PyObj, fmt: F) -> PyResult<T>
     where
         Self: Sized,
@@ -124,8 +126,7 @@ pub(crate) trait OptionExt<T> {
     where
         Self: Sized,
     {
-        // FUTURE: can/should we intern this somehow, since it's static?
-        self.ok_or_raise(exc_value_error(), "Value or calculation out of range")
+        self.ok_or_raise(exc_value_error(), RANGE_ERROR_MSG)
     }
 
     fn ok_or_else_value_err<F, M: ToPy>(self, fmt: F) -> PyResult<T>
@@ -136,14 +137,6 @@ pub(crate) trait OptionExt<T> {
         self.ok_or_else_raise(exc_value_error(), fmt)
     }
 
-    fn ok_or_else_type_err<F, M: ToPy>(self, fmt: F) -> PyResult<T>
-    where
-        Self: Sized,
-        F: FnOnce() -> M,
-    {
-        self.ok_or_else_raise(exc_type_error(), fmt)
-    }
-
     fn ok_or_type_err<U: ToPy>(self, msg: U) -> PyResult<T>
     where
         Self: Sized,
@@ -152,7 +145,7 @@ pub(crate) trait OptionExt<T> {
     }
 }
 
-impl<T> OptionExt<T> for Option<T> {
+impl<T> RaiseExt<T> for Option<T> {
     fn ok_or_else_raise<F, M: ToPy>(self, exc: PyObj, fmt: F) -> PyResult<T>
     where
         F: FnOnce() -> M,
@@ -161,6 +154,15 @@ impl<T> OptionExt<T> for Option<T> {
             Some(x) => Ok(x),
             None => raise(exc, fmt()),
         }
+    }
+}
+
+impl<T, E: PyBase> RaiseExt<T> for Result<T, Owned<E>> {
+    fn ok_or_else_raise<F, M: ToPy>(self, exc: PyObj, fmt: F) -> PyResult<T>
+    where
+        F: FnOnce() -> M,
+    {
+        self.map_err(|_| exception(exc, fmt()))
     }
 }
 
@@ -187,9 +189,8 @@ pub(crate) fn raise_value_err<T, U: ToPy>(msg: U) -> PyResult<T> {
 }
 
 #[cold]
-pub(crate) fn raise_key_err<T>(key: PyObj) -> PyResult<T> {
-    unsafe { PyErr_SetObject(PyExc_KeyError, key.as_ptr()) };
-    Err(PyErrMarker)
+pub(crate) fn raise_range_err<T>() -> PyResult<T> {
+    raise_value_err(RANGE_ERROR_MSG)
 }
 
 /// Emit a warning using a custom warning class (e.g. a heap-type UserWarning subclass).

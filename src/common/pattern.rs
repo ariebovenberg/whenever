@@ -1,20 +1,23 @@
 //! Pattern-based formatting and parsing.
 //!
-//! A pattern string like `"YYYY-MM-DD hh:mm:ss"` is compiled into a `Vec<Element>`,
-//! then used for formatting values into strings or parsing strings into values.
+//! A pattern string like `"YYYY-MM-DD hh:mm:ss"` is compiled once, then used
+//! for formatting values into strings or parsing strings into values.
 
 // Maintainer's note: this module isn't quite optimized to the standards of the
 // rest of the codebase. But it's fast enough for now.
 // Optimizations can always be done in a future release.
 
-use crate::common::{
-    fmt::{Sink, format_2_digits, format_4_digits},
-    scalar::{Month, Offset, SubSecNanos, Weekday, Year},
-};
 use crate::{
+    common::fmt::{Sink, format_2_digits, format_4_digits},
+    domain::{
+        date::Date,
+        plain_datetime::PlainDateTime,
+        scalar::{Month, Offset, SubSecNanos, Weekday, Year},
+        time::Time,
+    },
     py::{
-        PyAsciiStrBuilder, PyResult,
-        exc::{ResultExt, raise_value_err},
+        PyAsciiStrBuilder, PyResult, PyReturn,
+        exc::{RaiseExt, ResultExt, exc_user_warning, raise_value_err, warn_with_class},
     },
     tz::tzif::is_tz_id_char,
 };
@@ -86,18 +89,61 @@ impl CategorySet {
 // ---- Format values ----
 
 /// Input values available for formatting.
-pub(crate) struct FormatValues<'a> {
-    pub(crate) year: Year,
-    pub(crate) month: Month,
-    pub(crate) day: u8,
-    pub(crate) weekday: Weekday,
-    pub(crate) hour: u8,
-    pub(crate) minute: u8,
-    pub(crate) second: u8,
-    pub(crate) nanos: SubSecNanos,
-    pub(crate) offset_secs: Option<Offset>,
-    pub(crate) tz_id: Option<&'a str>,
-    pub(crate) tz_abbrev: Option<&'a str>,
+pub(crate) struct PatternValues<'a> {
+    year: Year,
+    month: Month,
+    day: u8,
+    weekday: Weekday,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    nanos: SubSecNanos,
+    offset_secs: Option<Offset>,
+    tz_id: Option<&'a str>,
+    tz_abbrev: Option<&'a str>,
+}
+
+impl<'a> PatternValues<'a> {
+    pub(crate) fn with_offset(mut self, offset: Offset) -> Self {
+        self.offset_secs = Some(offset);
+        self
+    }
+
+    pub(crate) fn with_timezone(mut self, id: &'a str, abbreviation: &'a str) -> Self {
+        self.tz_id = Some(id);
+        self.tz_abbrev = Some(abbreviation);
+        self
+    }
+}
+
+impl Date {
+    pub(crate) fn pattern_values<'a>(self) -> PatternValues<'a> {
+        self.at(Time::MIN).pattern_values()
+    }
+}
+
+impl Time {
+    pub(crate) fn pattern_values<'a>(self) -> PatternValues<'a> {
+        Date::MIN.at(self).pattern_values()
+    }
+}
+
+impl PlainDateTime {
+    pub(crate) fn pattern_values<'a>(self) -> PatternValues<'a> {
+        PatternValues {
+            year: self.date.year,
+            month: self.date.month,
+            day: self.date.day,
+            weekday: self.date.day_of_week(),
+            hour: self.time.hour,
+            minute: self.time.minute,
+            second: self.time.second,
+            nanos: self.time.subsec,
+            offset_secs: None,
+            tz_id: None,
+            tz_abbrev: None,
+        }
+    }
 }
 
 // ---- Parse state ----
@@ -105,18 +151,18 @@ pub(crate) struct FormatValues<'a> {
 /// Mutable state accumulating parsed field values.
 #[derive(Debug, Default)]
 pub(crate) struct ParseState {
-    pub(crate) year: Option<Year>,
-    pub(crate) month: Option<Month>,
-    pub(crate) day: Option<u8>,
-    pub(crate) hour: Option<u8>,
-    pub(crate) minute: Option<u8>,
-    pub(crate) second: Option<u8>,
-    pub(crate) nanos: SubSecNanos,
-    pub(crate) ampm: Option<AmPm>,
+    year: Option<Year>,
+    month: Option<Month>,
+    day: Option<u8>,
+    hour: Option<u8>,
+    minute: Option<u8>,
+    second: Option<u8>,
+    nanos: SubSecNanos,
+    ampm: Option<AmPm>,
     pub(crate) offset_secs: Option<Offset>,
     pub(crate) tz_id: Option<String>,
-    pub(crate) weekday: Option<Weekday>,
-    pub(crate) second_absent: bool,
+    weekday: Option<Weekday>,
+    second_absent: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -136,21 +182,81 @@ impl ParseState {
             }
         }
     }
+
+    pub(crate) fn date(&self, required_fields_message: &str) -> PyResult<Date> {
+        let year = self.year.ok_or_value_err(required_fields_message)?;
+        let month = self.month.ok_or_value_err(required_fields_message)?;
+        let day = self.day.ok_or_value_err(required_fields_message)?;
+        Date::new(year, month, day).ok_or_value_err("Invalid date")
+    }
+
+    pub(crate) fn time(&self) -> PyResult<Time> {
+        Time::new(
+            self.hour.unwrap_or(0),
+            self.minute.unwrap_or(0),
+            self.second.unwrap_or(0),
+            self.nanos,
+        )
+        .ok_or_value_err("Invalid time")
+    }
+
+    pub(crate) fn validate_weekday(&self, date: Date) -> PyResult<()> {
+        if let Some(weekday) = self.weekday
+            && date.day_of_week() != weekday
+        {
+            raise_value_err("Parsed weekday does not match the date")?;
+        }
+        Ok(())
+    }
 }
 
 // ---- Pattern elements ----
 
 /// Compiled pattern element: either a literal string or a field specifier.
 #[derive(Debug)]
-pub(crate) enum Element<'a> {
+enum Element<'a> {
     /// A run of literal bytes, borrowing directly from the compiled pattern string.
     Literal(&'a [u8]),
     Field(Field),
 }
 
+#[derive(Debug)]
+pub(crate) struct CompiledPattern<'a> {
+    elements: Vec<Element<'a>>,
+}
+
+impl<'a> CompiledPattern<'a> {
+    pub(crate) fn compile(pattern: &'a [u8]) -> Result<Self, String> {
+        compile(pattern).map(|elements| Self { elements })
+    }
+
+    pub(crate) fn validate(&self, allowed: CategorySet, type_name: &str) -> PyResult<()> {
+        validate_fields(&self.elements, allowed, type_name)
+    }
+
+    pub(crate) fn warn_if_ambiguous_12h(&self) -> PyResult<()> {
+        if has_12h_without_ampm(&self.elements) {
+            warn_with_class(
+                exc_user_warning(),
+                c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
+                1,
+            )?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn format(&self, values: &PatternValues<'_>) -> PyReturn {
+        format_to_py(&self.elements, values)
+    }
+
+    pub(crate) fn parse(&self, input: &[u8]) -> Result<ParseState, String> {
+        parse_to_state(&self.elements, input)
+    }
+}
+
 /// A field specifier in a pattern.
 #[derive(Debug, Copy, Clone)]
-pub(crate) enum Field {
+enum Field {
     Year4,
     Year2,
     MonthNum,
@@ -361,7 +467,7 @@ fn is_reserved_char(ch: u8) -> bool {
 // ---- Pattern compilation ----
 
 /// Compile a pattern string into a list of elements.
-pub(crate) fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
+fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
     if pattern.len() > 1000 {
         return Err("Pattern string too long (max 1000 characters)".to_string());
     }
@@ -680,7 +786,7 @@ fn state_key_name(key: u8) -> &'static str {
 }
 
 /// Check if the pattern has 12-hour without AM/PM (for warning by caller).
-pub(crate) fn has_12h_without_ampm(elements: &[Element<'_>]) -> bool {
+fn has_12h_without_ampm(elements: &[Element<'_>]) -> bool {
     let mut has_12h = false;
     let mut has_ampm = false;
     for el in elements {
@@ -788,7 +894,7 @@ fn write_offset(secs: i32, width: u8, use_z: bool, sink: &mut impl Sink) {
     }
 }
 
-fn write_field<S: Sink>(field: Field, vals: &FormatValues, sink: &mut S) -> Result<(), String> {
+fn write_field<S: Sink>(field: Field, vals: &PatternValues, sink: &mut S) -> Result<(), String> {
     match field {
         Field::Year4 => sink.write(&format_4_digits(vals.year.get())),
         Field::Year2 => sink.write(&format_2_digits((vals.year.get() % 100) as u8)),
@@ -900,7 +1006,7 @@ fn write_field<S: Sink>(field: Field, vals: &FormatValues, sink: &mut S) -> Resu
 /// Both passes must produce identical output for the same `(elements, vals)`.
 fn format_elements<S: Sink>(
     elements: &[Element<'_>],
-    vals: &FormatValues,
+    vals: &PatternValues,
     sink: &mut S,
 ) -> Result<(), String> {
     for el in elements {
@@ -918,7 +1024,7 @@ fn format_elements<S: Sink>(
 /// all required values are present); the second pass writes directly into a
 /// presized Python string object via [`PyAsciiStrBuilder`], avoiding any
 /// intermediate Rust string allocation.
-pub(crate) fn format_to_py(elements: &[Element<'_>], vals: &FormatValues) -> crate::py::PyReturn {
+fn format_to_py(elements: &[Element<'_>], vals: &PatternValues) -> PyReturn {
     let mut counter = ByteCounter::new();
     format_elements(elements, vals, &mut counter).into_value_err()?;
     let mut builder = PyAsciiStrBuilder::new(counter.len())?;
@@ -932,7 +1038,7 @@ pub(crate) fn format_to_py(elements: &[Element<'_>], vals: &FormatValues) -> cra
 // ---- Parsing ----
 
 /// Parse a string using compiled pattern elements.
-pub(crate) fn parse_to_state(elements: &[Element<'_>], s: &[u8]) -> Result<ParseState, String> {
+fn parse_to_state(elements: &[Element<'_>], s: &[u8]) -> Result<ParseState, String> {
     if s.len() > 1000 {
         return Err("Input string too long (max 1000 characters)".to_string());
     }
@@ -1213,17 +1319,15 @@ fn parse_field(
             Ok(p)
         }
         Field::MonthAbbr => {
-            // value from MONTH_ABBR_SORTED is already 1-12
             let (v, p) = parse_name_match(s, pos, &MONTH_ABBR_SORTED, "month")?;
-            // SAFETY: MONTH_ABBR_SORTED values are all in 1..=12.
-            state.month = Some(Month::new_unchecked(v as u8));
+            // SAFETY: MONTH_ABBR_SORTED only contains month values in 1..=12.
+            state.month = Some(unsafe { Month::new_unchecked(v as u8) });
             Ok(p)
         }
         Field::MonthFull => {
-            // value from MONTH_FULL_SORTED is already 1-12
             let (v, p) = parse_name_match(s, pos, &MONTH_FULL_SORTED, "month")?;
-            // SAFETY: MONTH_FULL_SORTED values are all in 1..=12.
-            state.month = Some(Month::new_unchecked(v as u8));
+            // SAFETY: MONTH_FULL_SORTED only contains month values in 1..=12.
+            state.month = Some(unsafe { Month::new_unchecked(v as u8) });
             Ok(p)
         }
         Field::Day => {
@@ -1237,17 +1341,15 @@ fn parse_field(
             Ok(p)
         }
         Field::WeekdayAbbr => {
-            // value from WEEKDAY_ABBR_SORTED is 0-indexed (0=Mon); convert to 1-indexed ISO.
             let (v, p) = parse_name_match(s, pos, &WEEKDAY_ABBR_SORTED, "weekday")?;
-            // SAFETY: WEEKDAY_ABBR_SORTED values are 0..=6, so (v+1) is 1..=7.
-            state.weekday = Some(Weekday::from_iso_unchecked((v + 1) as u8));
+            // SAFETY: WEEKDAY_ABBR_SORTED contains values in 0..=6.
+            state.weekday = Some(unsafe { Weekday::from_iso_unchecked((v + 1) as u8) });
             Ok(p)
         }
         Field::WeekdayFull => {
-            // value from WEEKDAY_FULL_SORTED is 0-indexed (0=Mon); convert to 1-indexed ISO.
             let (v, p) = parse_name_match(s, pos, &WEEKDAY_FULL_SORTED, "weekday")?;
-            // SAFETY: WEEKDAY_FULL_SORTED values are 0..=6, so (v+1) is 1..=7.
-            state.weekday = Some(Weekday::from_iso_unchecked((v + 1) as u8));
+            // SAFETY: WEEKDAY_FULL_SORTED contains values in 0..=6.
+            state.weekday = Some(unsafe { Weekday::from_iso_unchecked((v + 1) as u8) });
             Ok(p)
         }
         Field::Hour24 => {
@@ -1419,7 +1521,7 @@ fn parse_field(
 // ---- Validation ----
 
 /// Raise a `ValueError` if any element's field is not in `allowed`.
-pub(crate) fn validate_fields(
+fn validate_fields(
     elements: &[Element<'_>],
     allowed: CategorySet,
     type_name: &str,

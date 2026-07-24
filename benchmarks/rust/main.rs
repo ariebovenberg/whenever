@@ -4,9 +4,9 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 
 use _whenever::classes::date::Date;
-use _whenever::classes::plain_datetime::DateTime;
-use _whenever::common::scalar::{EpochSecs, UnixDays};
-use _whenever::common::scalar::{Month, Year};
+use _whenever::classes::plain_datetime::PlainDateTime;
+use _whenever::domain::scalar::UnixDays;
+use _whenever::domain::scalar::{Month, Year};
 use _whenever::tz::posix::TzStr;
 use _whenever::tz::tzif::TimeZone;
 use std::hint::black_box;
@@ -21,7 +21,7 @@ pub fn date_from_unix_days(c: &mut Criterion) {
 pub fn parse_plain_datetime(c: &mut Criterion) {
     c.bench_function("Parse plain datetime", |b| {
         b.iter(|| {
-            DateTime::parse(black_box(b"2023-03-02 02:09:09")).unwrap();
+            PlainDateTime::parse(black_box(b"2023-03-02 02:09:09")).unwrap();
         })
     });
 }
@@ -37,14 +37,16 @@ pub fn offset_for_local_time(c: &mut Criterion) {
     let tzif = TimeZone::parse_tzif(TZ_AMS, None).unwrap();
 
     c.bench_function("offset for local", |b| {
-        let t = EpochSecs::new(1719946800).unwrap();
-        b.iter(|| tzif.ambiguity_for_local(black_box(t)))
+        let t = PlainDateTime::parse(b"2024-07-02 23:00:00")
+            .unwrap()
+            .local_seconds();
+        b.iter(|| tzif.mapping_for_local(black_box(t)))
     });
 }
 
 pub fn tomorrow(c: &mut Criterion) {
     c.bench_function("tomorrow for date", |b| {
-        let date = black_box(Date::new(Year::new_unchecked(2023), Month::March, 2).unwrap());
+        let date = black_box(Date::new(Year::new(2023).unwrap(), Month::March, 2).unwrap());
         b.iter(|| {
             date.tomorrow().unwrap();
         })
