@@ -10,7 +10,7 @@ impl Disambiguation {
     ) -> PyResult<Option<Self>> {
         match kwargs.next() {
             Some((name, value)) => {
-                if kwargs.len() == 1 {
+                if kwargs.original_len() == 1 {
                     if unicode_eq(name, *state.str_disambiguate) {
                         Self::from_py(value, state).map(Some)
                     } else {
@@ -22,7 +22,7 @@ impl Disambiguation {
                     raise_type_err(format!(
                         "{}() takes at most 1 keyword argument, got {}",
                         fname,
-                        kwargs.len()
+                        kwargs.original_len()
                     ))
                 }
             }

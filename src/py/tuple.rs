@@ -51,9 +51,13 @@ impl PyTuple {
 }
 
 impl Owned<PyTuple> {
-    /// Set an item in a tuple being constructed.
-    /// Takes ownership of the value (steals the reference).
-    pub(crate) fn init_item(&self, index: Py_ssize_t, value: Owned<impl PyBase>) {
+    /// Set an item in a tuple being constructed, stealing the value's reference.
+    ///
+    /// # Safety
+    ///
+    /// `index` must be in bounds and refer to an uninitialized slot, and the tuple must not have
+    /// been exposed to Python.
+    pub(crate) unsafe fn init_item_unchecked(&self, index: Py_ssize_t, value: Owned<impl PyBase>) {
         unsafe { PyTuple_SET_ITEM(self.as_ptr(), index, value.into_raw()) };
     }
 }
@@ -85,7 +89,8 @@ impl<const N: usize, T: PyBase> IntoPyTuple for [Owned<T>; N] {
     fn into_pytuple(self) -> PyReturn {
         let tuple = PyTuple::with_len(N as _)?;
         for (i, item) in self.into_iter().enumerate() {
-            tuple.init_item(i as _, item);
+            // SAFETY: the tuple has N uninitialized slots and enumerate visits each exactly once.
+            unsafe { tuple.init_item_unchecked(i as _, item) };
         }
         Ok(tuple.into_obj())
     }

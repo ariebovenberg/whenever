@@ -842,7 +842,9 @@ fn parse_strptime(
         1,
     )?;
     let format_obj = match kwargs.next() {
-        Some((key, value)) if kwargs.len() == 1 && unicode_eq(key, *state.str_format) => value,
+        Some((key, value)) if kwargs.original_len() == 1 && unicode_eq(key, *state.str_format) => {
+            value
+        }
         _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
     };
     let &[arg_obj] = args else {

@@ -106,10 +106,10 @@ impl<const N: usize> ToPy for [u8; N] {
 /// Helper for building a Python `str` object incrementally, without
 /// having to allocate a Rust `String` first.
 ///
-/// SAFETY: This only supports ASCII strings (i.e. code points 0..=127).
-/// There is no bounds checking, so the caller must ensure that only
-/// valid ASCII characters are written, and that the total length does
-/// not exceed the length specified at creation.
+/// This only supports ASCII strings (i.e. code points 0..=127). Its crate-private callers must
+/// ensure that chunks report their exact output length and emit only ASCII within that length.
+/// Violating these invariants is a programming error: release builds perform no bounds checking,
+/// while debug builds assert them.
 #[derive(Debug)]
 pub(crate) struct PyAsciiStrBuilder {
     obj: Owned<PyObj>, // the PyUnicode object being built. Owned ensures cleanup.

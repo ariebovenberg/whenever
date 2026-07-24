@@ -5,7 +5,7 @@ use pyo3_ffi::*;
 pub(crate) struct IterKwargs {
     keys: *mut PyObject,
     values: *const *mut PyObject,
-    size: isize,
+    original_len: isize,
     pos: isize,
 }
 
@@ -14,7 +14,7 @@ impl IterKwargs {
         Self {
             keys,
             values,
-            size: if keys.is_null() {
+            original_len: if keys.is_null() {
                 0
             } else {
                 // SAFETY: calling C API with valid arguments
@@ -24,8 +24,8 @@ impl IterKwargs {
         }
     }
 
-    pub(crate) fn len(&self) -> isize {
-        self.size
+    pub(crate) fn original_len(&self) -> isize {
+        self.original_len
     }
 }
 
@@ -33,7 +33,7 @@ impl Iterator for IterKwargs {
     type Item = (PyObj, PyObj);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.pos == self.size {
+        if self.pos == self.original_len {
             return None;
         }
         let item = unsafe {

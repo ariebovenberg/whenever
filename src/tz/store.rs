@@ -219,7 +219,8 @@ impl TzStore {
         let paths = self.paths.get()?;
         let tuple = PyTuple::with_len(paths.len() as _)?;
         for (i, p) in paths.iter().enumerate() {
-            tuple.init_item(i as _, p.to_string_lossy().as_ref().to_py()?);
+            // SAFETY: the tuple has paths.len() uninitialized slots and enumerate visits each once.
+            unsafe { tuple.init_item_unchecked(i as _, p.to_string_lossy().as_ref().to_py()?) };
         }
         // SAFETY: PyTuple is a PyObj subtype
         Ok(unsafe { tuple.cast_unchecked() })
