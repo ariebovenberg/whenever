@@ -37,39 +37,21 @@ pub(crate) const SINGLETONS: &[(&CStr, PlainDateTime); 2] =
 impl DateTimeBoundaryUnit {
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         find_interned(obj, |v, eq| {
-            if eq(v, *state.str_year) {
-                Some(Ok(DateTimeBoundaryUnit::Date(date::DateBoundaryUnit::Year)))
-            } else if eq(v, *state.str_month) {
-                Some(Ok(DateTimeBoundaryUnit::Date(
-                    date::DateBoundaryUnit::Month,
-                )))
-            } else if eq(v, *state.str_week_mon) {
-                Some(Ok(DateTimeBoundaryUnit::Date(
-                    date::DateBoundaryUnit::WeekMon,
-                )))
-            } else if eq(v, *state.str_week_sun) {
-                Some(Ok(DateTimeBoundaryUnit::Date(
-                    date::DateBoundaryUnit::WeekSun,
-                )))
-            } else if eq(v, *state.str_day) {
-                Some(Ok(DateTimeBoundaryUnit::Day))
-            } else if eq(v, *state.str_hour) {
-                Some(Ok(DateTimeBoundaryUnit::Time(time::TimeBoundaryUnit::Hour)))
-            } else if eq(v, *state.str_minute) {
-                Some(Ok(DateTimeBoundaryUnit::Time(
-                    time::TimeBoundaryUnit::Minute,
-                )))
-            } else if eq(v, *state.str_second) {
-                Some(Ok(DateTimeBoundaryUnit::Time(
-                    time::TimeBoundaryUnit::Second,
-                )))
-            } else if eq(v, *state.str_week) {
-                Some(raise_value_err(
-                    "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
-                ))
-            } else {
-                None
-            }
+            Some(Ok(
+                if let Some(unit) = date::DateBoundaryUnit::match_py(v, state, eq) {
+                    Self::Date(unit)
+                } else if eq(v, *state.str_day) {
+                    Self::Day
+                } else if let Some(unit) = time::TimeBoundaryUnit::match_py(v, state, eq) {
+                    Self::Time(unit)
+                } else if eq(v, *state.str_week) {
+                    return Some(raise_value_err(
+                        "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
+                    ));
+                } else {
+                    None?
+                },
+            ))
         })
         .transpose()?
         .ok_or_else_value_err(|| format!("Invalid unit: {obj}"))
@@ -77,39 +59,8 @@ impl DateTimeBoundaryUnit {
 }
 
 impl PlainDateTime {
-    fn to_stdlib_datetime(
-        self,
-        &PyDateTime_CAPI {
-            DateTime_FromDateAndTime,
-            DateTimeType,
-            ..
-        }: &PyDateTime_CAPI,
-    ) -> PyReturn {
-        let PlainDateTime {
-            date: Date { year, month, day },
-            time:
-                Time {
-                    hour,
-                    minute,
-                    second,
-                    subsec,
-                },
-        } = self;
-        // SAFETY: calling C API with valid arguments
-        unsafe {
-            DateTime_FromDateAndTime(
-                year.get().into(),
-                month.get().into(),
-                day.into(),
-                hour.into(),
-                minute.into(),
-                second.into(),
-                (subsec.get() / 1_000) as _,
-                Py_None(),
-                DateTimeType,
-            )
-        }
-        .own()
+    fn to_stdlib_datetime(self, api: &PyDateTime_CAPI) -> PyReturn {
+        api.new_datetime(self, None).map(Owned::into_obj)
     }
 
     fn from_stdlib_datetime(dt: PyDateTime) -> PyResult<Self> {

@@ -527,7 +527,7 @@ impl DifferenceUnitSet {
 }
 
 /// Unit accepted by `TimeDelta.total()`.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum TotalUnit {
     Years,
     Months,
@@ -539,6 +539,38 @@ pub(crate) enum TotalUnit {
     Milliseconds,
     Microseconds,
     Nanoseconds,
+}
+
+impl TryFrom<TotalUnit> for CalendarUnit {
+    type Error = ();
+
+    fn try_from(unit: TotalUnit) -> Result<Self, Self::Error> {
+        Ok(match unit {
+            TotalUnit::Years => Self::Years,
+            TotalUnit::Months => Self::Months,
+            TotalUnit::Weeks => Self::Weeks,
+            TotalUnit::Days => Self::Days,
+            _ => return Err(()),
+        })
+    }
+}
+
+impl TryFrom<TotalUnit> for DifferenceUnit {
+    type Error = ();
+
+    fn try_from(unit: TotalUnit) -> Result<Self, Self::Error> {
+        Ok(match unit {
+            TotalUnit::Years => Self::Years,
+            TotalUnit::Months => Self::Months,
+            TotalUnit::Weeks => Self::Weeks,
+            TotalUnit::Days => Self::Days,
+            TotalUnit::Hours => Self::Hours,
+            TotalUnit::Minutes => Self::Minutes,
+            TotalUnit::Seconds => Self::Seconds,
+            TotalUnit::Nanoseconds => Self::Nanoseconds,
+            _ => return Err(()),
+        })
+    }
 }
 
 impl TotalUnit {
