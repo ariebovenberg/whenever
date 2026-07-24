@@ -572,6 +572,7 @@ class TestRound:
             ("millisecond", 2001),
             ("hour", 48),
             ("hour", 20),
+            ("hour", (1 << 63) - 1),
         ],
     )
     def test_invalid_increment(self, unit, increment):
