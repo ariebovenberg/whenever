@@ -343,18 +343,20 @@ fn __reduce__(cls: PyClass<DateDelta>, DateDelta { months, days }: DateDelta) ->
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     match args {
         &[months_obj, days_obj] => {
-            let months = DeltaMonths::new_unchecked(
+            let months = DeltaMonths::from_i64(
                 months_obj
                     .cast_exact::<PyInt>()
                     .ok_or_type_err("invalid pickle data")?
-                    .to_long()? as _,
-            );
-            let days = DeltaDays::new_unchecked(
+                    .to_i64()?,
+            )
+            .ok_or_value_err("invalid pickle data")?;
+            let days = DeltaDays::from_i64(
                 days_obj
                     .cast_exact::<PyInt>()
                     .ok_or_type_err("invalid pickle data")?
-                    .to_long()? as _,
-            );
+                    .to_i64()?,
+            )
+            .ok_or_value_err("invalid pickle data")?;
             DateDelta::new(months, days)
                 .ok_or_value_err("invalid pickle data")?
                 .to_obj(*state.date_delta_type)
