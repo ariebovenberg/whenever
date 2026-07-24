@@ -1456,7 +1456,7 @@ ItemizedDelta(\"P1yT2h\")
 pub(crate) const ITEMIZEDDELTA_SIGN: &CStr = c"\
 The sign of the delta, 1, 0, or -1";
 pub(crate) const ITEMIZEDDELTA_SUBTRACT: &CStr = c"\
-subtract($self, arg=..., /, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
+subtract($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
 --
 
 Subtract time from this delta, returning a new delta.";
