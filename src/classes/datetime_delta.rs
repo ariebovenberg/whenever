@@ -18,8 +18,8 @@ use crate::{
 };
 
 impl DateTimeDelta {
-    pub(crate) fn pyhash(self) -> Py_hash_t {
-        hash_combine(self.date.pyhash(), self.time.pyhash())
+    pub(crate) fn python_hash(self) -> Py_hash_t {
+        hash_combine(self.date.python_hash(), self.time.python_hash())
     }
 }
 
@@ -189,7 +189,7 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     let (_, d) =
         // SAFETY: first argument guaranteed to be self type
         unsafe { slf.assume_heaptype::<DateTimeDelta>() };
-    hashmask(d.pyhash())
+    hashmask(d.python_hash())
 }
 
 fn __neg__(cls: PyClass<DateTimeDelta>, d: DateTimeDelta) -> PyReturn {

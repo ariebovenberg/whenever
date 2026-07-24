@@ -770,14 +770,14 @@ impl SinceUntilKwargs {
 }
 
 impl SinceUntilKwargs {
-    pub(crate) fn parse(fname: &str, state: &State, kwargs: &mut IterKwargs) -> PyResult<Self> {
-        Self::parse_with(fname, state, kwargs, |_, _, _| Ok(false))
+    pub(crate) fn parse(fname: &str, kwargs: &mut IterKwargs, state: &State) -> PyResult<Self> {
+        Self::parse_with(fname, kwargs, state, |_, _, _| Ok(false))
     }
 
     pub(crate) fn parse_with<F>(
         fname: &str,
-        state: &State,
         kwargs: &mut IterKwargs,
+        state: &State,
         mut extra_handler: F,
     ) -> PyResult<Self>
     where

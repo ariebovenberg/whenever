@@ -113,7 +113,7 @@ impl Offset {
         })
     }
 
-    pub(crate) fn from_obj(obj: PyObj, tdelta_cls: PyClass<TimeDelta>) -> PyResult<Self> {
+    pub(crate) fn from_py(obj: PyObj, tdelta_cls: PyClass<TimeDelta>) -> PyResult<Self> {
         if let Some(py_int) = obj.cast_exact::<PyInt>() {
             Offset::from_hours(py_int.to_long()?)
                 .ok_or_value_err("offset must be between -24 and 24 hours")
@@ -171,7 +171,7 @@ fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
     let offset_obj = offset
         .borrow_opt()
         .ok_or_type_err("missing required keyword argument: 'offset'")?;
-    let offset = Offset::from_obj(offset_obj, *cls.state().time_delta_type)?;
+    let offset = Offset::from_py(offset_obj, *cls.state().time_delta_type)?;
     Date::from_longs(year, month, day)
         .ok_or_value_err("invalid date")?
         .at(Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?)
@@ -183,20 +183,20 @@ fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
 fn __repr__(_: PyType, OffsetDateTime { date, time, offset }: OffsetDateTime) -> PyReturn {
     PyAsciiStrBuilder::format((
         b"OffsetDateTime(\"",
-        date.format_iso(false),
+        date.iso_format(false),
         b' ',
-        time.format_iso(fmt::Precision::Auto, false),
-        offset.format_iso(false),
+        time.iso_format(fmt::Precision::Auto, false),
+        offset.iso_format(false),
         b"\")",
     ))
 }
 
 fn __str__(_: PyType, OffsetDateTime { date, time, offset }: OffsetDateTime) -> PyReturn {
     PyAsciiStrBuilder::format((
-        date.format_iso(false),
+        date.iso_format(false),
         b'T',
-        time.format_iso(fmt::Precision::Auto, false),
-        offset.format_iso(false),
+        time.iso_format(fmt::Precision::Auto, false),
+        offset.iso_format(false),
     ))
 }
 
@@ -219,7 +219,7 @@ pub(crate) extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
         unsafe { slf.assume_heaptype::<OffsetDateTime>() }
             .1
             .to_instant()
-            .pyhash(),
+            .python_hash(),
     )
 }
 
@@ -331,7 +331,7 @@ fn to_fixed_offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, args: &[Py
         [] => slf.to_obj(cls),
         [offset_obj] => slf
             .to_instant()
-            .to_offset(Offset::from_obj(offset_obj, *cls.state().time_delta_type)?)
+            .to_offset(Offset::from_py(offset_obj, *cls.state().time_delta_type)?)
             .ok_or_range_err()?
             .to_obj(cls),
         _ => raise_type_err("to_fixed_offset() takes at most 1 argument"),
@@ -341,13 +341,13 @@ fn to_fixed_offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, args: &[Py
 fn to_tz(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
     slf.to_instant()
-        .into_zoned_py(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
+        .into_zoned_obj(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
 }
 
 fn to_system_tz(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let state = cls.state();
     slf.to_instant()
-        .into_zoned_py(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
+        .into_zoned_obj(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
 
 fn assume_tz(
@@ -388,7 +388,7 @@ fn assume_tz(
 
     if matches!(mismatch, OffsetMismatch::KeepInstant) || actual_offset == slf.offset {
         // Offsets match (or we're keeping the instant): create ZDT from instant
-        return instant.into_zoned_py(tz, *state.zoned_datetime_type);
+        return instant.into_zoned_obj(tz, *state.zoned_datetime_type);
     }
 
     match mismatch {
@@ -404,7 +404,7 @@ fn assume_tz(
             .to_plain()
             .resolve_compatible(&tz)
             .ok_or_range_err()?
-            .into_zoned_py_unchecked(tz, *state.zoned_datetime_type),
+            .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type),
         OffsetMismatch::KeepInstant => unreachable!(),
     }
 }
@@ -498,8 +498,8 @@ fn start_of(
     }
     slf.to_plain()
         .start_of_unit(DateTimeBoundaryUnit::from_py(
-            state,
             handle_one_arg("start_of", args)?,
+            state,
         )?)
         .ok_or_range_err()?
         .assume_offset(slf.offset)
@@ -523,8 +523,8 @@ fn end_of(
     }
     slf.to_plain()
         .end_of_unit(DateTimeBoundaryUnit::from_py(
-            state,
             handle_one_arg("end_of", args)?,
+            state,
         )?)
         .ok_or_range_err()?
         .assume_offset(slf.offset)
@@ -663,7 +663,7 @@ fn replace(
         } else if eq(k, *state.str_stale_offset_ok) {
             suppress_stale = v.is_truthy()?;
         } else if eq(k, *state.str_offset) {
-            offset = Offset::from_obj(v, *state.time_delta_type)?;
+            offset = Offset::from_py(v, *state.time_delta_type)?;
         } else {
             return components.set_from_kwarg(k, v, state, eq);
         }
@@ -690,7 +690,7 @@ fn now(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) ->
         raise_type_err("now() takes exactly 1 positional argument")?
     };
     check_ignore_dst_and_stale_offset("now", kwargs, state, doc::OFFSET_NOW_STALE_MSG)?;
-    let offset = Offset::from_obj(offset_obj, *state.time_delta_type)?;
+    let offset = Offset::from_py(offset_obj, *state.time_delta_type)?;
     state
         .now()?
         .to_offset(offset)
@@ -849,7 +849,7 @@ fn check_from_timestamp_args_return_offset(
         } else if eq(key, *state.str_stale_offset_ok) {
             suppress_stale = value.is_truthy()?;
         } else if eq(key, *state.str_offset) {
-            offset = Some(Offset::from_obj(value, *state.time_delta_type)?);
+            offset = Some(Offset::from_py(value, *state.time_delta_type)?);
         } else {
             return Ok(false);
         }
@@ -979,7 +979,7 @@ fn round(
         mode,
         got_ignore_dst,
         suppress_stale,
-    } = round::Args::parse(state, args, kwargs, true)?;
+    } = round::Args::parse(args, kwargs, state, round::ArgsContext::Offset)?;
     if got_ignore_dst {
         warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
     }
@@ -1042,7 +1042,7 @@ fn offset_since(
 
     let same_offset = slf.offset == other.offset;
 
-    match SinceUntilKwargs::parse(fname, state, kwargs)? {
+    match SinceUntilKwargs::parse(fname, kwargs, state)? {
         SinceUntilKwargs::Total(unit) => {
             let (a, b) = if flip { (other, slf) } else { (slf, other) };
             // Single unit: return float

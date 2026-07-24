@@ -715,7 +715,7 @@ class Date(_Base):
         >>> Date(1992, 9, 4).format_iso(basic=True)
         '19920904'
         """
-        return _format_date(self._py_date, basic)
+        return _format_date(self._py_date, _expect_bool(basic, "basic"))
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Date:
@@ -1487,7 +1487,9 @@ class Time(_Base):
         >>> Time(4, 0, 59, nanosecond=40_000).format_iso(basic=True)
         '040059.00004'
         """
-        return _format_time(self._py, self._nanos, unit, basic)
+        return _format_time(
+            self._py, self._nanos, unit, _expect_bool(basic, "basic")
+        )
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Time:
@@ -8210,14 +8212,19 @@ def _format_dt(
 ) -> str:
     if sep not in ("T", " "):
         raise ValueError("sep must be either 'T' or ' '")
-    elif type(basic) is not bool:
-        raise TypeError("basic must be a boolean")
+    basic = _expect_bool(basic, "basic")
 
     return (
         f"{_format_date(dt, basic)}{sep}"
         f"{_format_time(dt, ns, unit, basic)}"
         f"{_format_offset(offset, basic)}"
     )
+
+
+def _expect_bool(value: object, name: str) -> bool:
+    if type(value) is not bool:
+        raise TypeError(f"{name} must be a boolean")
+    return value
 
 
 def _check_invalid_replace_kwargs(kwargs: Any) -> None:

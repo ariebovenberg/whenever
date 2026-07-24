@@ -29,14 +29,14 @@ use crate::{
 };
 
 impl TimeDelta {
-    pub(crate) fn from_py_unchecked(delta: PyTimeDelta) -> Self {
+    pub(crate) fn from_stdlib_timedelta_unchecked(delta: PyTimeDelta) -> Self {
         Self {
             secs: delta.whole_seconds().unwrap(),
             subsec: delta.subsec(),
         }
     }
 
-    pub(crate) const fn pyhash(self) -> Py_hash_t {
+    pub(crate) const fn python_hash(self) -> Py_hash_t {
         #[cfg(target_pointer_width = "64")]
         {
             hash_combine(self.subsec.get() as Py_hash_t, self.secs.get() as Py_hash_t)
@@ -53,7 +53,7 @@ impl TimeDelta {
         }
     }
 
-    pub(crate) fn from_py(d: PyTimeDelta) -> Option<Self> {
+    pub(crate) fn from_stdlib_timedelta(d: PyTimeDelta) -> Option<Self> {
         Some(TimeDelta {
             secs: d.whole_seconds()?,
             subsec: d.subsec(),
@@ -161,7 +161,9 @@ fn __new__(cls: PyClass<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> Py
                 let d = arg
                     .cast_exact::<PyTimeDelta>()
                     .ok_or_type_err("argument must be datetime.timedelta exactly")?;
-                TimeDelta::from_py(d).ok_or_range_err()?.to_obj(cls)
+                TimeDelta::from_stdlib_timedelta(d)
+                    .ok_or_range_err()?
+                    .to_obj(cls)
             } else {
                 raise_type_err("TimeDelta() requires an ISO 8601 string or datetime.timedelta")
             }
@@ -243,7 +245,7 @@ fn __richcmp__(cls: PyClass<TimeDelta>, a: TimeDelta, arg: PyObj, op: c_int) -> 
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     // SAFETY: we know self is passed to this method
-    hashmask(unsafe { slf.assume_heaptype::<TimeDelta>().1 }.pyhash()) as Py_hash_t
+    hashmask(unsafe { slf.assume_heaptype::<TimeDelta>().1 }.python_hash()) as Py_hash_t
 }
 
 fn __neg__(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
@@ -645,7 +647,9 @@ fn from_py_timedelta(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
         1,
     )?;
     if let Some(d) = arg.cast_exact::<PyTimeDelta>() {
-        TimeDelta::from_py(d).ok_or_range_err()?.to_obj(cls)
+        TimeDelta::from_stdlib_timedelta(d)
+            .ok_or_range_err()?
+            .to_obj(cls)
     } else {
         raise_type_err("argument must be datetime.timedelta exactly")
     }
@@ -735,7 +739,7 @@ fn round(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let round::DeltaArgs { increment, mode } = round::DeltaArgs::parse(cls.state(), args, kwargs)?;
+    let round::DeltaArgs { increment, mode } = round::DeltaArgs::parse(args, kwargs, cls.state())?;
     slf.round(increment, mode.to_abs_euclid(slf.is_negative()))
         .ok_or_range_err()?
         .to_obj(cls)
@@ -838,7 +842,7 @@ fn in_units(
 
         // PlainDateTime/OffsetDateTime: treat local time as UTC (no DST).
         // Emit appropriate warnings only when calendar or day/week units are involved.
-        let b_dt = resolve_local_relative_to(arg, state, has_cal_or_date, has_cal_or_date)?;
+        let b_dt = resolve_local_relative_to(arg, state, has_cal_or_date)?;
 
         // Compute the shifted datetime by treating b_dt as UTC anchor.
         let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
@@ -925,7 +929,7 @@ fn total(
     // diff, emitting appropriate warnings. Same approach as Python's
     // `assume_tz("UTC")` trick (to_tz("UTC") would be wrong: it re-interprets
     // the instant in UTC rather than keeping the local date as the anchor).
-    let b_dt = resolve_local_relative_to(arg, state, true, true)?;
+    let b_dt = resolve_local_relative_to(arg, state, true)?;
 
     let neg = slf.is_negative();
     let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;

@@ -67,14 +67,14 @@ impl Date {
         }
     }
 
-    pub(crate) const fn hash(self) -> i32 {
+    pub(crate) const fn python_hash(self) -> i32 {
         // SAFETY: Date has the same size as i32, and Python uses its packed value as the hash.
         unsafe { mem::transmute(self) }
     }
 }
 
 impl DateBoundaryUnit {
-    pub(crate) fn from_py(state: &State, obj: PyObj) -> PyResult<Self> {
+    pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         find_interned(obj, |v, eq| {
             if eq(v, *state.str_year) {
                 Some(Ok(DateBoundaryUnit::Year))
@@ -128,16 +128,16 @@ fn __richcmp__(cls: PyClass<Date>, a: Date, b_obj: PyObj, op: c_int) -> PyReturn
 }
 
 fn __str__(_: PyType, slf: Date) -> PyReturn {
-    PyAsciiStrBuilder::format(slf.format_iso(false))
+    PyAsciiStrBuilder::format(slf.iso_format(false))
 }
 
 fn __repr__(_: PyType, slf: Date) -> PyReturn {
-    PyAsciiStrBuilder::format((b"Date(\"", slf.format_iso(false), b"\")"))
+    PyAsciiStrBuilder::format((b"Date(\"", slf.iso_format(false), b"\")"))
 }
 
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     // SAFETY: we know self is passed to this method
-    unsafe { slf.assume_heaptype::<Date>() }.1.hash() as Py_hash_t
+    unsafe { slf.assume_heaptype::<Date>() }.1.python_hash() as Py_hash_t
 }
 
 #[allow(static_mut_refs)]
@@ -223,20 +223,14 @@ fn format_iso(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKw
 
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
         if eq(key, *state.str_basic) {
-            if value.is_true() {
-                basic = true;
-            } else if value.is_false() {
-                basic = false;
-            } else {
-                raise_type_err("basic must be a bool")?
-            }
+            basic = value.expect_bool("basic")?;
         } else {
             return Ok(false);
         };
         Ok(true)
     })?;
 
-    PyAsciiStrBuilder::format(slf.format_iso(basic))
+    PyAsciiStrBuilder::format(slf.iso_format(basic))
 }
 
 fn parse_iso(cls: PyClass<Date>, s: PyObj) -> PyReturn {
@@ -363,12 +357,12 @@ fn nth_weekday(cls: PyClass<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
 }
 
 fn start_of(cls: PyClass<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
-    let unit = DateBoundaryUnit::from_py(cls.state(), unit_obj)?;
+    let unit = DateBoundaryUnit::from_py(unit_obj, cls.state())?;
     slf.start_of(unit).ok_or_range_err()?.to_obj(cls)
 }
 
 fn end_of(cls: PyClass<Date>, slf: Date, unit_obj: PyObj) -> PyReturn {
-    let unit = DateBoundaryUnit::from_py(cls.state(), unit_obj)?;
+    let unit = DateBoundaryUnit::from_py(unit_obj, cls.state())?;
     slf.end_of(unit).ok_or_range_err()?.to_obj(cls)
 }
 
