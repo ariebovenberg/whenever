@@ -5,6 +5,7 @@ pub mod instant;
 pub mod math;
 pub mod parse;
 pub mod pattern;
+pub mod pickle;
 pub mod rfc2822;
 pub mod round;
 pub mod shift;

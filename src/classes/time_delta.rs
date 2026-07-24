@@ -20,7 +20,7 @@ use crate::{
             self, CalendarIncrement, DifferenceUnitSet, ExactUnit, ExactUnitSet, SinceUntilKwargs,
             TotalUnit,
         },
-        round,
+        pickle, round,
         scalar::*,
     },
     docstrings as doc,
@@ -555,8 +555,7 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 fn __reduce__(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    let TimeDelta { secs, subsec } = slf;
-    let data = pack![secs.get(), subsec.get()];
+    let data = pickle::encode_time_delta(slf);
     [
         cls.state().unpickle_time_delta.newref(),
         [data.to_py()?].into_pytuple()?,
@@ -565,18 +564,9 @@ fn __reduce__(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
 }
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
-    let py_bytes = arg
-        .cast_exact::<PyBytes>()
-        .ok_or_type_err("invalid pickle data")?;
-    let mut data = py_bytes.as_bytes();
-    if data.len() != 12 {
-        raise_value_err("invalid pickle data")?;
-    }
-    TimeDelta {
-        secs: DeltaSeconds::new_unchecked(unpack_one!(data, i64)),
-        subsec: SubSecNanos::new_unchecked(unpack_one!(data, i32)),
-    }
-    .to_obj(*state.time_delta_type)
+    pickle::decode_time_delta(arg.expect_bytes()?)
+        .ok_or_value_err(pickle::INVALID_DATA)?
+        .to_obj(*state.time_delta_type)
 }
 
 fn in_nanoseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {

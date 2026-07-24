@@ -13,7 +13,7 @@ use crate::{
         instant::{extract_instant, parse_instant_arg},
         math::{self, CalendarIncrement, SinceUntilKwargs},
         parse::Scan,
-        pattern, round,
+        pattern, pickle, round,
         scalar::*,
         shift::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
     },
@@ -426,31 +426,12 @@ fn to_tz(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, tz_obj: PyObj) -> PyR
 
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     let &[data, tz_obj] = args else {
-        raise_type_err("invalid pickle data")?
+        raise_type_err(pickle::INVALID_DATA)?
     };
-    let py_bytes = data
-        .cast_exact::<PyBytes>()
-        .ok_or_type_err("invalid pickle data")?;
-    let mut packed = py_bytes.as_bytes();
-    if packed.len() != 15 {
-        raise_type_err("invalid pickle data")?;
-    }
-    ZonedDateTime {
-        date: Date {
-            year: Year::new_unchecked(unpack_one!(packed, u16)),
-            month: Month::new_unchecked(unpack_one!(packed, u8)),
-            day: unpack_one!(packed, u8),
-        },
-        time: Time {
-            hour: unpack_one!(packed, u8),
-            minute: unpack_one!(packed, u8),
-            second: unpack_one!(packed, u8),
-            subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
-        },
-        offset: Offset::new_unchecked(unpack_one!(packed, i32)),
-        tz: state.tz_store.obj_get(tz_obj)?,
-    }
-    .to_obj(*state.zoned_datetime_type)
+    pickle::decode_offset(data.expect_bytes()?)
+        .ok_or_type_err(pickle::INVALID_DATA)?
+        .into_zoned_unchecked(state.tz_store.obj_get(tz_obj)?)
+        .to_obj(*state.zoned_datetime_type)
 }
 
 fn to_stdlib(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -907,31 +888,11 @@ fn timestamp_nanos(_: PyType, slf: &ZonedDateTime) -> PyReturn {
 }
 
 fn __reduce__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    let ZonedDateTime {
-        date: Date { year, month, day },
-        time:
-            Time {
-                hour,
-                minute,
-                second,
-                subsec,
-            },
-        offset,
-        ref tz,
-    } = *slf;
+    let tz = &slf.tz;
     if tz.key.is_none() {
         return raise_value_err("cannot pickle ZonedDateTime with unknown timezone ID");
     }
-    let data = pack![
-        year.get(),
-        month.get(),
-        day,
-        hour,
-        minute,
-        second,
-        subsec.get(),
-        offset.get()
-    ];
+    let data = pickle::encode_offset(slf.to_fixed_offset());
     let tz_key = tz
         .key
         .as_ref()

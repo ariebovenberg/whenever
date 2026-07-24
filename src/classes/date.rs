@@ -15,7 +15,7 @@ use crate::{
     },
     common::{
         math::{self, CalendarIncrement, CalendarUnit, CalendarUnitSet, DateDifferenceUnits},
-        pattern, round,
+        pattern, pickle, round,
         scalar::*,
         shift::{parse_calendar_shift_arg, parse_calendar_shift_kwargs},
     },
@@ -59,9 +59,10 @@ impl Date {
 
     pub(crate) fn from_stdlib_date(d: PyDate) -> Self {
         Date {
-            // SAFETY: dates coming from Python are always valid
-            year: Year::new_unchecked(d.year() as _),
-            month: Month::new_unchecked(d.month() as _),
+            // SAFETY: stdlib dates always have years in 1..=9999.
+            year: unsafe { Year::new_unchecked(d.year() as _) },
+            // SAFETY: stdlib dates always have months in 1..=12.
+            month: unsafe { Month::new_unchecked(d.month() as _) },
             day: d.day() as _,
         }
     }
@@ -378,12 +379,13 @@ fn extract_weekday(state: &State, arg: PyObj) -> PyResult<Weekday> {
         .get()?
         .iter()
         .position(|m| m.eq(&arg))
-        .map(|i| Weekday::from_iso_unchecked(i as u8 + 1))
+        // SAFETY: weekday_enum_members contains exactly seven entries.
+        .map(|i| unsafe { Weekday::from_iso_unchecked(i as u8 + 1) })
         .ok_or_type_err("weekday must be a Weekday enum member")
 }
 
-fn __reduce__(cls: PyClass<Date>, Date { year, month, day }: Date) -> PyReturn {
-    let data = pack![year.get(), month.get(), day];
+fn __reduce__(cls: PyClass<Date>, slf: Date) -> PyReturn {
+    let data = pickle::encode_date(slf);
     [
         cls.state().unpickle_date.newref(),
         [data.to_py()?].into_pytuple()?,
@@ -814,19 +816,9 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
 ];
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
-    let binding = arg
-        .cast_exact::<PyBytes>()
-        .ok_or_type_err("invalid pickle data")?;
-    let mut packed = binding.as_bytes();
-    if packed.len() != 4 {
-        raise_value_err("invalid pickle data")?
-    }
-    Date {
-        year: Year::new_unchecked(unpack_one!(packed, u16)),
-        month: Month::new_unchecked(unpack_one!(packed, u8)),
-        day: unpack_one!(packed, u8),
-    }
-    .to_obj(*state.date_type)
+    pickle::decode_date(arg.expect_bytes()?)
+        .ok_or_value_err(pickle::INVALID_DATA)?
+        .to_obj(*state.date_type)
 }
 
 fn year(_: PyType, slf: Date) -> PyReturn {
@@ -862,8 +854,8 @@ mod tests {
 
     fn mkdate(year: u16, month: u8, day: u8) -> Date {
         Date {
-            year: Year::new_unchecked(year),
-            month: Month::new_unchecked(month),
+            year: Year::new(year).unwrap(),
+            month: Month::new(month).unwrap(),
             day,
         }
     }
