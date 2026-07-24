@@ -200,13 +200,13 @@ impl Args {
                         }
                         RoundIncrement::Day
                     } else {
-                        RoundIncrement::Exact(unsafe {
-                            let n = unit.default_increment() * increment_int.get();
-                            if !NS_PER_DAY.is_multiple_of(n) {
-                                raise_value_err(INCREMENT_DIV_MSG)?;
-                            }
-                            NonZero::<u64>::new_unchecked(n)
-                        })
+                        let nanos = unit
+                            .default_increment()
+                            .checked_mul(increment_int.get())
+                            .and_then(NonZeroU64::new)
+                            .filter(|n| NS_PER_DAY.is_multiple_of(n.get()))
+                            .ok_or_value_err(INCREMENT_DIV_MSG)?;
+                        RoundIncrement::Exact(nanos)
                     }
                 }
             }
