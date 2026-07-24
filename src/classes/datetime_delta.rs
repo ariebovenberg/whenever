@@ -422,35 +422,37 @@ fn __reduce__(
 
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     match args {
-        &[months, days, secs, nanos] => DateTimeDelta {
-            date: DateDelta {
-                months: DeltaMonths::new_unchecked(
+        &[months, days, secs, nanos] => {
+            let date = DateDelta::new(
+                DeltaMonths::from_i64(
                     months
                         .cast_exact::<PyInt>()
                         .ok_or_type_err("invalid pickle data")?
-                        .to_long()? as _,
-                ),
-                days: DeltaDays::new_unchecked(
+                        .to_i64()?,
+                )
+                .ok_or_value_err("invalid pickle data")?,
+                DeltaDays::from_i64(
                     days.cast_exact::<PyInt>()
                         .ok_or_type_err("invalid pickle data")?
-                        .to_long()? as _,
-                ),
-            },
-            time: TimeDelta {
-                secs: DeltaSeconds::new_unchecked(
-                    secs.cast_exact::<PyInt>()
-                        .ok_or_type_err("invalid pickle data")?
-                        .to_long()? as _,
-                ),
-                subsec: SubSecNanos::new_unchecked(
-                    nanos
-                        .cast_exact::<PyInt>()
-                        .ok_or_type_err("invalid pickle data")?
-                        .to_long()? as _,
-                ),
-            },
+                        .to_i64()?,
+                )
+                .ok_or_value_err("invalid pickle data")?,
+            )
+            .ok_or_value_err("invalid pickle data")?;
+            let secs = secs
+                .cast_exact::<PyInt>()
+                .ok_or_type_err("invalid pickle data")?
+                .to_i64()?;
+            let nanos = nanos
+                .cast_exact::<PyInt>()
+                .ok_or_type_err("invalid pickle data")?
+                .to_i64()?;
+            let time = TimeDelta::from_nanos(secs as i128 * NS_PER_SEC as i128 + nanos as i128)
+                .ok_or_value_err("invalid pickle data")?;
+            DateTimeDelta::new(date, time)
+                .ok_or_value_err("invalid pickle data")?
+                .to_obj(*state.datetime_delta_type)
         }
-        .to_obj(*state.datetime_delta_type),
         _ => raise_type_err("invalid pickle data")?,
     }
 }

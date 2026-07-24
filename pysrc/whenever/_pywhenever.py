@@ -3599,10 +3599,10 @@ class DateTimeDelta(_Base):
 def _unpkl_dtdelta(
     months: int, days: int, secs: int, nanos: int
 ) -> DateTimeDelta:
-    new = _object_new(DateTimeDelta)
-    new._date_part = DateDelta._from_months_days(months, days)
-    new._time_part = TimeDelta(seconds=secs, nanoseconds=nanos)
-    return new
+    return DateTimeDelta._from_parts(
+        DateDelta._from_months_days(months, days),
+        TimeDelta(seconds=secs, nanoseconds=nanos),
+    )
 
 
 DateTimeDelta.ZERO = DateTimeDelta._from_parts(
