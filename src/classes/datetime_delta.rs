@@ -11,8 +11,8 @@ use crate::{
             MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS, TimeDelta,
         },
     },
-    common::scalar::*,
     docstrings as doc,
+    domain::scalar::*,
     py::*,
     pymodule::State,
 };

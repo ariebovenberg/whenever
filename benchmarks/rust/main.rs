@@ -5,8 +5,8 @@ use criterion::{Criterion, criterion_group, criterion_main};
 
 use _whenever::classes::date::Date;
 use _whenever::classes::plain_datetime::PlainDateTime;
-use _whenever::common::scalar::UnixDays;
-use _whenever::common::scalar::{Month, Year};
+use _whenever::domain::scalar::UnixDays;
+use _whenever::domain::scalar::{Month, Year};
 use _whenever::tz::posix::TzStr;
 use _whenever::tz::tzif::TimeZone;
 use std::hint::black_box;

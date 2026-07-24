@@ -7,11 +7,9 @@
 // rest of the codebase. But it's fast enough for now.
 // Optimizations can always be done in a future release.
 
-use crate::common::{
-    fmt::{Sink, format_2_digits, format_4_digits},
-    scalar::{Month, Offset, SubSecNanos, Weekday, Year},
-};
 use crate::{
+    common::fmt::{Sink, format_2_digits, format_4_digits},
+    domain::scalar::{Month, Offset, SubSecNanos, Weekday, Year},
     py::{
         PyAsciiStrBuilder, PyResult,
         exc::{ResultExt, raise_value_err},

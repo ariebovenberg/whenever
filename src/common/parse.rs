@@ -1,5 +1,5 @@
 //! Helpers related to parsing
-use crate::common::scalar::SubSecNanos;
+use crate::domain::scalar::SubSecNanos;
 use std::{
     fmt::Debug,
     ops::{Index, RangeInclusive, RangeTo},
