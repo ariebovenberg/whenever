@@ -14,7 +14,7 @@ use crate::{
 };
 
 impl DateDelta {
-    pub(crate) fn pyhash(self) -> Py_hash_t {
+    pub(crate) fn python_hash(self) -> Py_hash_t {
         #[cfg(target_pointer_width = "64")]
         {
             self.months.get() as Py_hash_t | ((self.days.get() as Py_hash_t) << 32)
@@ -66,8 +66,7 @@ pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
         1,
     )?;
     amount
-        .cast_allow_subclass::<PyInt>()
-        .ok_or_type_err("argument must be int")?
+        .expect_int("argument")?
         .to_long()?
         .checked_mul(12)
         .and_then(DeltaMonths::from_long)
@@ -82,15 +81,10 @@ pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
         c"months() is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
-    DeltaMonths::from_long(
-        amount
-            .cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("argument must be int")?
-            .to_long()?,
-    )
-    .map(DateDelta::from_months)
-    .ok_or_range_err()?
-    .to_obj(*state.date_delta_type)
+    DeltaMonths::from_long(amount.expect_int("argument")?.to_long()?)
+        .map(DateDelta::from_months)
+        .ok_or_range_err()?
+        .to_obj(*state.date_delta_type)
 }
 
 pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
@@ -100,8 +94,7 @@ pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
         1,
     )?;
     amount
-        .cast_allow_subclass::<PyInt>()
-        .ok_or_type_err("argument must be int")?
+        .expect_int("argument")?
         .to_long()?
         .checked_mul(7)
         .and_then(DeltaDays::from_long)
@@ -116,15 +109,10 @@ pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
         c"days() is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
-    DeltaDays::from_long(
-        amount
-            .cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("argument must be int")?
-            .to_long()?,
-    )
-    .map(DateDelta::from_days)
-    .ok_or_range_err()?
-    .to_obj(*state.date_delta_type)
+    DeltaDays::from_long(amount.expect_int("argument")?.to_long()?)
+        .map(DateDelta::from_days)
+        .ok_or_range_err()?
+        .to_obj(*state.date_delta_type)
 }
 
 fn __richcmp__(cls: PyClass<DateDelta>, a: DateDelta, b_obj: PyObj, op: c_int) -> PyReturn {
@@ -258,7 +246,9 @@ fn __abs__(cls: PyClass<DateDelta>, slf: PyRef<'_, DateDelta>) -> PyReturn {
 extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     hashmask(
         // SAFETY: self argument is always the DateDelta type
-        unsafe { slf.assume_heaptype::<DateDelta>() }.1.pyhash(),
+        unsafe { slf.assume_heaptype::<DateDelta>() }
+            .1
+            .python_hash(),
     )
 }
 

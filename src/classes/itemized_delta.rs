@@ -8,7 +8,7 @@ pub(crate) use crate::domain::itemized_delta::ItemizedDelta;
 
 impl<T: DeltaFieldInner> DeltaField<T> {
     /// Construct from a Python int or None in an itemized delta tuple.
-    pub(crate) fn from_py_opt(obj: PyObj) -> PyResult<Self> {
+    pub(crate) fn from_optional_py(obj: PyObj) -> PyResult<Self> {
         if obj.is_none() {
             Ok(Self::UNSET)
         } else {
@@ -40,14 +40,14 @@ impl ItemizedDelta {
         debug_assert!(tup.len() == 8);
         let mut iter = tup.iter();
         Ok(Some(Self {
-            years: DeltaField::from_py_opt(iter.next().unwrap())?,
-            months: DeltaField::from_py_opt(iter.next().unwrap())?,
-            weeks: DeltaField::from_py_opt(iter.next().unwrap())?,
-            days: DeltaField::from_py_opt(iter.next().unwrap())?,
-            hours: DeltaField::from_py_opt(iter.next().unwrap())?,
-            minutes: DeltaField::from_py_opt(iter.next().unwrap())?,
-            seconds: DeltaField::from_py_opt(iter.next().unwrap())?,
-            nanos: DeltaField::from_py_opt(iter.next().unwrap())?,
+            years: DeltaField::from_optional_py(iter.next().unwrap())?,
+            months: DeltaField::from_optional_py(iter.next().unwrap())?,
+            weeks: DeltaField::from_optional_py(iter.next().unwrap())?,
+            days: DeltaField::from_optional_py(iter.next().unwrap())?,
+            hours: DeltaField::from_optional_py(iter.next().unwrap())?,
+            minutes: DeltaField::from_optional_py(iter.next().unwrap())?,
+            seconds: DeltaField::from_optional_py(iter.next().unwrap())?,
+            nanos: DeltaField::from_optional_py(iter.next().unwrap())?,
         }))
     }
 

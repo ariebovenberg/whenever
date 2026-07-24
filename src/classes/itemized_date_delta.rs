@@ -11,10 +11,10 @@ impl ItemizedDateDelta {
         debug_assert!(tup.len() == 4);
         let mut iter = tup.iter();
         Ok(Some(Self {
-            years: DeltaField::from_py_opt(iter.next().unwrap())?,
-            months: DeltaField::from_py_opt(iter.next().unwrap())?,
-            weeks: DeltaField::from_py_opt(iter.next().unwrap())?,
-            days: DeltaField::from_py_opt(iter.next().unwrap())?,
+            years: DeltaField::from_optional_py(iter.next().unwrap())?,
+            months: DeltaField::from_optional_py(iter.next().unwrap())?,
+            weeks: DeltaField::from_optional_py(iter.next().unwrap())?,
+            days: DeltaField::from_optional_py(iter.next().unwrap())?,
         }))
     }
 
