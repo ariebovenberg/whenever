@@ -46,7 +46,7 @@ pub fn offset_for_local_time(c: &mut Criterion) {
 
 pub fn tomorrow(c: &mut Criterion) {
     c.bench_function("tomorrow for date", |b| {
-        let date = black_box(Date::new(Year::new_unchecked(2023), Month::March, 2).unwrap());
+        let date = black_box(Date::new(Year::new(2023).unwrap(), Month::March, 2).unwrap());
         b.iter(|| {
             date.tomorrow().unwrap();
         })

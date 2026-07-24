@@ -1727,7 +1727,7 @@ class Time(_Base):
 # to the pickling format in the future
 def _unpkl_time(data: bytes) -> Time:
     *args, nanos = unpack("<BBBI", data)
-    return Time._from_py_unchecked(_time(*args), nanos)
+    return Time(*args, nanosecond=nanos)
 
 
 Time.MIN = Time()
@@ -4594,6 +4594,8 @@ class Instant(_ExactTime):
 # Backwards compatibility for instances pickled before 0.8.0
 def _unpkl_utc(data: bytes) -> Instant:
     secs, nanos = unpack("<qL", data)
+    if nanos >= 1_000_000_000:
+        raise ValueError(f"nanosecond out of range: {nanos}")
     return Instant._from_py_unchecked(
         _fromtimestamp(secs - 62_135_683_200, _UTC), nanos
     )
@@ -4603,6 +4605,8 @@ def _unpkl_utc(data: bytes) -> Instant:
 # to the pickling format in the future
 def _unpkl_inst(data: bytes) -> Instant:
     secs, nanos = unpack("<qL", data)
+    if nanos >= 1_000_000_000:
+        raise ValueError(f"nanosecond out of range: {nanos}")
     return Instant._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
 
 
@@ -5685,8 +5689,11 @@ class OffsetDateTime(_ExactAndLocalTime):
 # Also, it allows backwards-compatible changes to the pickling format.
 def _unpkl_offset(data: bytes) -> OffsetDateTime:
     *args, nanos, offset_secs = unpack("<HBBBBBil", data)
-    args += (0, _timezone(_timedelta(seconds=offset_secs)))
-    return OffsetDateTime._from_py_unchecked(_datetime(*args), nanos)
+    return OffsetDateTime(
+        *args,
+        nanosecond=nanos,
+        offset=TimeDelta(seconds=offset_secs),
+    )
 
 
 @final
@@ -6912,9 +6919,13 @@ class ZonedDateTime(_ExactAndLocalTime):
 # Also, it allows backwards-compatible changes to the pickling format.
 def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
     *args, nanos, offset_secs = unpack("<HBBBBBil", data)
+    if nanos >= 1_000_000_000:
+        raise ValueError(f"nanosecond out of range: {nanos}")
     return ZonedDateTime._from_py_unchecked(
         # mypy thinks tzinfo is passed twice. We know it's not.
-        _datetime(*args, tzinfo=mk_fixed_tzinfo(offset_secs)),  # type: ignore[misc]
+        check_utc_bounds(
+            _datetime(*args, tzinfo=mk_fixed_tzinfo(offset_secs))  # type: ignore[misc]
+        ),
         nanos,
         get_tz(tzid),
     )
@@ -7795,7 +7806,7 @@ class PlainDateTime(_LocalTime):
 @no_type_check
 def _unpkl_local(data: bytes) -> PlainDateTime:
     *args, nanos = unpack("<HBBBBBi", data)
-    return PlainDateTime._from_py_unchecked(_datetime(*args), nanos)
+    return PlainDateTime(*args, nanosecond=nanos)
 
 
 class PotentialDstBugWarning(WheneverWarning):

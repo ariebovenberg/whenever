@@ -20,7 +20,7 @@ use crate::{
     },
     common::{
         fmt::{self, Suffix},
-        pattern, rfc2822, round,
+        pattern, pickle, rfc2822, round,
         scalar::*,
     },
     docstrings as doc,
@@ -432,28 +432,9 @@ impl OffsetMismatch {
 }
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
-    let py_bytes = arg
-        .cast_exact::<PyBytes>()
-        .ok_or_type_err("invalid pickle data")?;
-    let mut packed = py_bytes.as_bytes();
-    if packed.len() != 15 {
-        raise_value_err("invalid pickle data")?;
-    }
-    OffsetDateTime::new_unchecked(
-        Date {
-            year: Year::new_unchecked(unpack_one!(packed, u16)),
-            month: Month::new_unchecked(unpack_one!(packed, u8)),
-            day: unpack_one!(packed, u8),
-        },
-        Time {
-            hour: unpack_one!(packed, u8),
-            minute: unpack_one!(packed, u8),
-            second: unpack_one!(packed, u8),
-            subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
-        },
-        Offset::new_unchecked(unpack_one!(packed, i32)),
-    )
-    .to_obj(*state.offset_datetime_type)
+    pickle::decode_offset(arg.expect_bytes()?)
+        .ok_or_value_err(pickle::INVALID_DATA)?
+        .to_obj(*state.offset_datetime_type)
 }
 
 fn to_stdlib(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
@@ -836,27 +817,7 @@ fn difference(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> 
 }
 
 fn __reduce__(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    let OffsetDateTime {
-        date: Date { year, month, day },
-        time:
-            Time {
-                hour,
-                minute,
-                second,
-                subsec,
-            },
-        offset,
-    } = slf;
-    let data = pack![
-        year.get(),
-        month.get(),
-        day,
-        hour,
-        minute,
-        second,
-        subsec.get(),
-        offset.get()
-    ];
+    let data = pickle::encode_offset(slf);
     [
         cls.state().unpickle_offset_datetime.newref(),
         [data.to_py()?].into_pytuple()?,

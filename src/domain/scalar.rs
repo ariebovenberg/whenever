@@ -336,9 +336,10 @@ impl UnixDays {
         let m_g = if j { m - 12 } else { m };
         let d_g = d + 1;
         Date {
-            // Safety: so long as unix days are in range, the date is valid
-            year: Year::new_unchecked(y_g as _),
-            month: Month::new_unchecked(m_g as _),
+            // SAFETY: the algorithm maps every in-range UnixDays to a valid date.
+            year: unsafe { Year::new_unchecked(y_g as _) },
+            // SAFETY: the algorithm maps every in-range UnixDays to a valid date.
+            month: unsafe { Month::new_unchecked(m_g as _) },
             day: d_g as _,
         }
     }
@@ -363,7 +364,8 @@ impl UnixDays {
     }
 
     pub(crate) fn day_of_week(self) -> Weekday {
-        Weekday::from_iso_unchecked(((self.get() + 3).rem_euclid(7) + 1) as _)
+        // SAFETY: adding one to a remainder modulo seven produces 1..=7.
+        unsafe { Weekday::from_iso_unchecked(((self.get() + 3).rem_euclid(7) + 1) as _) }
     }
 }
 
@@ -398,7 +400,7 @@ pub struct Year(NonZeroU16);
 impl Year {
     pub(crate) const MIN: Year = Year(NonZeroU16::new(1).unwrap());
     pub(crate) const MAX: Year = Year(NonZeroU16::new(9999).unwrap());
-    pub(crate) const fn new(year: u16) -> Option<Self> {
+    pub const fn new(year: u16) -> Option<Self> {
         if year <= Year::MAX.get() {
             match NonZeroU16::new(year) {
                 Some(year) => Some(Self(year)),
@@ -409,7 +411,7 @@ impl Year {
         }
     }
 
-    pub const fn new_unchecked(year: u16) -> Self {
+    pub(crate) const unsafe fn new_unchecked(year: u16) -> Self {
         debug_assert!(year >= Year::MIN.get() && year <= Year::MAX.get());
         Self(unsafe { NonZeroU16::new_unchecked(year) })
     }
@@ -418,12 +420,14 @@ impl Year {
     // that prevents double-checking the bounds
     pub(crate) fn from_long(y: c_long) -> Option<Self> {
         (y >= Year::MIN.get().into() && y <= Year::MAX.get().into())
-            .then(|| Self::new_unchecked(y as u16))
+            // SAFETY: the bounds check excludes zero and values above 9999.
+            .then(|| unsafe { Self::new_unchecked(y as u16) })
     }
 
     pub(crate) fn from_i32(y: i32) -> Option<Self> {
         (y >= Year::MIN.get().into() && y <= Year::MAX.get().into())
-            .then(|| Self::new_unchecked(y as u16))
+            // SAFETY: the bounds check excludes zero and values above 9999.
+            .then(|| unsafe { Self::new_unchecked(y as u16) })
     }
 
     pub(crate) const fn get(self) -> u16 {
@@ -489,21 +493,22 @@ impl Month {
 
     pub(crate) const fn new(n: u8) -> Option<Self> {
         if n >= 1 && n <= 12 {
-            Some(Self::new_unchecked(n))
+            // SAFETY: the branch checks every valid discriminant.
+            Some(unsafe { Self::new_unchecked(n) })
         } else {
             None
         }
     }
 
-    pub(crate) const fn new_unchecked(n: u8) -> Self {
+    pub(crate) const unsafe fn new_unchecked(n: u8) -> Self {
         debug_assert!(n >= 1 && n <= 12);
-        // Safety: Month is repr(u8)
-        unsafe { std::mem::transmute(n) }
+        unsafe { std::mem::transmute::<u8, Self>(n) }
     }
 
     pub(crate) fn from_long(m: c_long) -> Option<Self> {
         (m >= Month::MIN.get().into() && m <= Month::MAX.get().into())
-            .then(|| Self::new_unchecked(m as u8))
+            // SAFETY: the bounds check covers every valid Month discriminant.
+            .then(|| unsafe { Self::new_unchecked(m as u8) })
     }
 
     pub(crate) const fn get(self) -> u8 {
@@ -521,8 +526,8 @@ impl Month {
                 // in range due to division
                 year.get() as i32 + new_month_unclamped.div_euclid(12),
             )?,
-            // SAFETY: remainder of division by 12 is always in range
-            Month::new_unchecked(new_month_unclamped.rem_euclid(12) as u8 + 1),
+            // SAFETY: adding one to a remainder modulo twelve produces 1..=12.
+            unsafe { Month::new_unchecked(new_month_unclamped.rem_euclid(12) as u8 + 1) },
         ))
     }
 }
@@ -774,6 +779,14 @@ impl SubSecNanos {
     pub(crate) const MIN: SubSecNanos = SubSecNanos(0);
     pub(crate) const MAX: SubSecNanos = SubSecNanos(999_999_999);
 
+    pub(crate) const fn new(nanos: i32) -> Option<Self> {
+        if nanos >= Self::MIN.0 && nanos <= Self::MAX.0 {
+            Some(Self(nanos))
+        } else {
+            None
+        }
+    }
+
     pub(crate) const fn new_unchecked(nanos: i32) -> Self {
         debug_assert!(nanos >= Self::MIN.0 && nanos <= Self::MAX.0);
         Self(nanos)
@@ -942,9 +955,9 @@ pub(crate) enum Weekday {
 }
 
 impl Weekday {
-    pub(crate) const fn from_iso_unchecked(n: u8) -> Self {
-        // Safety: Weekday is repr(u8)
-        unsafe { std::mem::transmute(n) }
+    pub(crate) const unsafe fn from_iso_unchecked(n: u8) -> Self {
+        debug_assert!(n >= 1 && n <= 7);
+        unsafe { std::mem::transmute::<u8, Self>(n) }
     }
 
     pub(crate) const fn iso(self) -> u8 {

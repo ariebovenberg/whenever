@@ -1213,17 +1213,15 @@ fn parse_field(
             Ok(p)
         }
         Field::MonthAbbr => {
-            // value from MONTH_ABBR_SORTED is already 1-12
             let (v, p) = parse_name_match(s, pos, &MONTH_ABBR_SORTED, "month")?;
-            // SAFETY: MONTH_ABBR_SORTED values are all in 1..=12.
-            state.month = Some(Month::new_unchecked(v as u8));
+            // SAFETY: MONTH_ABBR_SORTED only contains month values in 1..=12.
+            state.month = Some(unsafe { Month::new_unchecked(v as u8) });
             Ok(p)
         }
         Field::MonthFull => {
-            // value from MONTH_FULL_SORTED is already 1-12
             let (v, p) = parse_name_match(s, pos, &MONTH_FULL_SORTED, "month")?;
-            // SAFETY: MONTH_FULL_SORTED values are all in 1..=12.
-            state.month = Some(Month::new_unchecked(v as u8));
+            // SAFETY: MONTH_FULL_SORTED only contains month values in 1..=12.
+            state.month = Some(unsafe { Month::new_unchecked(v as u8) });
             Ok(p)
         }
         Field::Day => {
@@ -1237,17 +1235,15 @@ fn parse_field(
             Ok(p)
         }
         Field::WeekdayAbbr => {
-            // value from WEEKDAY_ABBR_SORTED is 0-indexed (0=Mon); convert to 1-indexed ISO.
             let (v, p) = parse_name_match(s, pos, &WEEKDAY_ABBR_SORTED, "weekday")?;
-            // SAFETY: WEEKDAY_ABBR_SORTED values are 0..=6, so (v+1) is 1..=7.
-            state.weekday = Some(Weekday::from_iso_unchecked((v + 1) as u8));
+            // SAFETY: WEEKDAY_ABBR_SORTED contains values in 0..=6.
+            state.weekday = Some(unsafe { Weekday::from_iso_unchecked((v + 1) as u8) });
             Ok(p)
         }
         Field::WeekdayFull => {
-            // value from WEEKDAY_FULL_SORTED is 0-indexed (0=Mon); convert to 1-indexed ISO.
             let (v, p) = parse_name_match(s, pos, &WEEKDAY_FULL_SORTED, "weekday")?;
-            // SAFETY: WEEKDAY_FULL_SORTED values are 0..=6, so (v+1) is 1..=7.
-            state.weekday = Some(Weekday::from_iso_unchecked((v + 1) as u8));
+            // SAFETY: WEEKDAY_FULL_SORTED contains values in 0..=6.
+            state.weekday = Some(unsafe { Weekday::from_iso_unchecked((v + 1) as u8) });
             Ok(p)
         }
         Field::Hour24 => {

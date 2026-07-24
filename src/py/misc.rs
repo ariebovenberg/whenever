@@ -124,28 +124,6 @@ pub(crate) fn not_implemented() -> PyReturn {
     )
 }
 
-/// Pack various types into a byte array. Used for pickling.
-macro_rules! pack {
-    [$($x:expr),+] => {{
-        let mut result = Vec::new();
-        $(result.extend_from_slice(&$x.to_le_bytes());)+
-        result
-    }}
-}
-
-/// Unpack a single value from a byte array. Used for unpickling.
-macro_rules! unpack_one {
-    ($arr:ident, $t:ty) => {{
-        const SIZE: usize = std::mem::size_of::<$t>();
-        let data = <$t>::from_le_bytes($arr[..SIZE].try_into().unwrap());
-        #[allow(unused_assignments)]
-        {
-            $arr = &$arr[SIZE..];
-        }
-        data
-    }};
-}
-
 // FUTURE: a more efficient way for specific cases?
 pub(crate) const fn hashmask(hash: Py_hash_t) -> Py_hash_t {
     if hash == -1 {
@@ -190,6 +168,3 @@ pub(crate) fn traverse(
         }
     }
 }
-
-#[allow(unused_imports)]
-pub(crate) use {pack, unpack_one};

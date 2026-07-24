@@ -175,7 +175,8 @@ impl Date {
             day += 1;
         } else if month < Month::December {
             day = 1;
-            month = Month::new_unchecked(month.get() + 1);
+            // SAFETY: this branch excludes December, so incrementing stays within 1..=12.
+            month = unsafe { Month::new_unchecked(month.get() + 1) };
         } else {
             day = 1;
             month = Month::January;
@@ -193,7 +194,8 @@ impl Date {
         if day > 1 {
             day -= 1;
         } else if month > Month::January {
-            month = Month::new_unchecked(month.get() - 1);
+            // SAFETY: this branch excludes January, so decrementing stays within 1..=12.
+            month = unsafe { Month::new_unchecked(month.get() - 1) };
             day = year.days_in_month(month);
         } else {
             day = 31;
@@ -215,7 +217,8 @@ impl Date {
 
         if nearest_thursday_doy <= 0 {
             iso_year -= 1;
-            let prev_year_days = if Year::new_unchecked(iso_year as u16).is_leap() {
+            // SAFETY: only dates after year 1 can belong to the preceding ISO year.
+            let prev_year_days = if unsafe { Year::new_unchecked(iso_year as u16) }.is_leap() {
                 366
             } else {
                 365
@@ -333,5 +336,6 @@ pub(crate) fn extract_year(s: &[u8], index: usize) -> Option<Year> {
             + extract_digit(s, index + 3)? as u16,
     )
     .filter(|&year| year > 0)
-    .map(Year::new_unchecked)
+    // SAFETY: the filter excludes zero and four digits cannot exceed 9999.
+    .map(|year| unsafe { Year::new_unchecked(year) })
 }

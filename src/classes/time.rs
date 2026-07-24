@@ -2,7 +2,7 @@
 use crate::common::{fmt::Sink, parse::Scan};
 use crate::{
     classes::plain_datetime::PlainDateTime,
-    common::{fmt, pattern, round, scalar::*},
+    common::{fmt, pattern, pickle, round, scalar::*},
     docstrings as doc,
     py::*,
     pymodule::State,
@@ -272,13 +272,7 @@ fn parse_iso(cls: PyClass<Time>, s: PyObj) -> PyReturn {
 }
 
 fn __reduce__(cls: PyClass<Time>, slf: Time) -> PyReturn {
-    let Time {
-        hour,
-        minute,
-        second,
-        subsec: nanos,
-    } = slf;
-    let data = pack![hour, minute, second, nanos.get()];
+    let data = pickle::encode_time(slf);
     [
         cls.state().unpickle_time.newref(),
         [data.to_py()?].into_pytuple()?,
@@ -436,21 +430,9 @@ static mut METHODS: &[PyMethodDef] = &[
 ];
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
-    let py_bytes = arg
-        .cast_exact::<PyBytes>()
-        .ok_or_type_err("invalid pickle data")?;
-
-    let mut data = py_bytes.as_bytes();
-    if data.len() != 7 {
-        raise_type_err("invalid pickle data")?
-    }
-    Time {
-        hour: unpack_one!(data, u8),
-        minute: unpack_one!(data, u8),
-        second: unpack_one!(data, u8),
-        subsec: SubSecNanos::new_unchecked(unpack_one!(data, i32)),
-    }
-    .to_obj(*state.time_type)
+    pickle::decode_time(arg.expect_bytes()?)
+        .ok_or_type_err(pickle::INVALID_DATA)?
+        .to_obj(*state.time_type)
 }
 
 fn hour(_: PyType, slf: Time) -> PyReturn {

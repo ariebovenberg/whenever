@@ -15,7 +15,7 @@ use crate::{
     common::{
         fmt::{self, Suffix},
         instant::{extract_instant, parse_instant_arg},
-        pattern, rfc2822, round,
+        pattern, pickle, rfc2822, round,
         scalar::*,
     },
     docstrings as doc,
@@ -281,8 +281,8 @@ fn exact_eq(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     }
 }
 
-fn __reduce__(cls: PyClass<Instant>, Instant { epoch, subsec }: Instant) -> PyReturn {
-    let data = pack![epoch.get(), subsec.get()];
+fn __reduce__(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
+    let data = pickle::encode_instant(slf);
     [
         cls.state().unpickle_instant.newref(),
         [data.to_py()?].into_pytuple()?,
@@ -291,34 +291,16 @@ fn __reduce__(cls: PyClass<Instant>, Instant { epoch, subsec }: Instant) -> PyRe
 }
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
-    let binding = arg
-        .cast_exact::<PyBytes>()
-        .ok_or_type_err("invalid pickle data")?;
-    let mut packed = binding.as_bytes();
-    if packed.len() != 12 {
-        raise_value_err("invalid pickle data")?;
-    }
-    Instant {
-        epoch: EpochSecs::new_unchecked(unpack_one!(packed, i64)),
-        subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
-    }
-    .to_obj(*state.instant_type)
+    pickle::decode_instant(arg.expect_bytes()?)
+        .ok_or_value_err(pickle::INVALID_DATA)?
+        .to_obj(*state.instant_type)
 }
 
 // Backwards compatibility: an unpickler for Instants pickled before 0.8.0
 pub(crate) fn unpickle_pre_0_8(state: &State, arg: PyObj) -> PyReturn {
-    let binding = arg
-        .cast_exact::<PyBytes>()
-        .ok_or_type_err("invalid pickle data")?;
-    let mut packed = binding.as_bytes();
-    if packed.len() != 12 {
-        raise_value_err("invalid pickle data")?;
-    }
-    Instant {
-        epoch: EpochSecs::new_unchecked(unpack_one!(packed, i64) + EpochSecs::MIN.get() - 86_400),
-        subsec: SubSecNanos::new_unchecked(unpack_one!(packed, i32)),
-    }
-    .to_obj(*state.instant_type)
+    pickle::decode_pre_0_8_instant(arg.expect_bytes()?)
+        .ok_or_value_err(pickle::INVALID_DATA)?
+        .to_obj(*state.instant_type)
 }
 
 fn timestamp(_: PyType, slf: Instant) -> PyReturn {

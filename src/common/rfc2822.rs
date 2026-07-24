@@ -97,7 +97,8 @@ fn parse_weekday(s: &mut Scan) -> Option<Weekday> {
             WEEKDAY_NAMES.iter().enumerate().find_map(|(i, &b)| {
                 day_str
                     .eq_ignore_ascii_case(b)
-                    .then(|| Weekday::from_iso_unchecked(i as u8 + 1))
+                    // SAFETY: enumerate indices are 0..=6.
+                    .then(|| unsafe { Weekday::from_iso_unchecked(i as u8 + 1) })
             })
         })
         .and_then(|day| {
@@ -115,7 +116,8 @@ fn parse_date(s: &mut Scan, expect_weekday: Option<Weekday>) -> Option<Date> {
         MONTH_NAMES.iter().enumerate().find_map(|(i, &b)| {
             month_str
                 .eq_ignore_ascii_case(b)
-                .then(|| Month::new_unchecked(i as u8 + 1))
+                // SAFETY: enumerate indices are 0..=11.
+                .then(|| unsafe { Month::new_unchecked(i as u8 + 1) })
         })
     })?;
     s.ascii_whitespace().then_some(())?;
@@ -125,16 +127,21 @@ fn parse_date(s: &mut Scan, expect_weekday: Option<Weekday>) -> Option<Date> {
             4 => extract_year(y_str, 0),
             2 => extract_2_digits(y_str, 0).map(|y| {
                 if y < 50 {
-                    Year::new_unchecked(2000 + y as u16)
+                    // SAFETY: a two-digit year below 50 maps to 2000..=2049.
+                    unsafe { Year::new_unchecked(2000 + y as u16) }
                 } else {
-                    Year::new_unchecked(1900 + y as u16)
+                    // SAFETY: the other two-digit years map to 1950..=1999.
+                    unsafe { Year::new_unchecked(1900 + y as u16) }
                 }
             }),
-            3 => Some(Year::new_unchecked(
-                1900 + (extract_digit(y_str, 0)? as u16) * 100
-                    + (extract_digit(y_str, 1)? as u16) * 10
-                    + (extract_digit(y_str, 2)? as u16),
-            )),
+            // SAFETY: three decimal digits plus 1900 produce 1900..=2899.
+            3 => Some(unsafe {
+                Year::new_unchecked(
+                    1900 + (extract_digit(y_str, 0)? as u16) * 100
+                        + (extract_digit(y_str, 1)? as u16) * 10
+                        + (extract_digit(y_str, 2)? as u16),
+                )
+            }),
             _ => None,
         })?;
     s.ascii_whitespace();
