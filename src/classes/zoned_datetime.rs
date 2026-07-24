@@ -867,7 +867,7 @@ fn check_from_timestamp_args_return_tz(
     fname: &str,
 ) -> PyResult<Arc<TimeZone>> {
     match (args, kwargs.next()) {
-        (&[_], Some((key, value))) if kwargs.len() == 1 => {
+        (&[_], Some((key, value))) if kwargs.original_len() == 1 => {
             if unicode_eq(key, *state.str_tz) {
                 state.tz_store.obj_get(value)
             } else {
@@ -883,7 +883,7 @@ fn check_from_timestamp_args_return_tz(
         _ => raise_type_err(format!(
             "{}() expected 2 arguments, got {}",
             fname,
-            args.len() + (kwargs.len() as usize)
+            args.len() + (kwargs.original_len() as usize)
         )),
     }
 }
@@ -997,7 +997,7 @@ fn shift_method(
         [arg] => {
             match kwargs.next() {
                 Some((key, value))
-                    if kwargs.len() == 1 && unicode_eq(key, *state.str_disambiguate) =>
+                    if kwargs.original_len() == 1 && unicode_eq(key, *state.str_disambiguate) =>
                 {
                     dis = Some(Disambiguation::from_py(value, state)?)
                 }

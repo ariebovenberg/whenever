@@ -1,6 +1,5 @@
 use core::{
     ffi::{CStr, c_int, c_long, c_void},
-    mem,
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
@@ -67,8 +66,7 @@ impl Date {
     }
 
     pub(crate) const fn python_hash(self) -> i32 {
-        // SAFETY: Date has the same size as i32, and Python uses its packed value as the hash.
-        unsafe { mem::transmute(self) }
+        self.year.get() as i32 | (self.day as i32) << 16 | (self.month.get() as i32) << 24
     }
 }
 
@@ -488,7 +486,7 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let shift = match (args, kwargs.len()) {
+    let shift = match (args, kwargs.original_len()) {
         (&[arg], 0) => parse_calendar_shift_arg(fname, arg, state)?,
         ([], _) => parse_calendar_shift_kwargs(fname, kwargs, state)?,
         _ => raise_type_err(format!(
@@ -862,6 +860,13 @@ mod tests {
                 None
             );
         }
+    }
+
+    #[test]
+    fn test_python_hash() {
+        assert_eq!(mkdate(1, 1, 1).python_hash(), 0x0101_0001);
+        assert_eq!(mkdate(2021, 1, 2).python_hash(), 0x0102_07e5);
+        assert_eq!(mkdate(9999, 12, 31).python_hash(), 0x0c1f_270f);
     }
 
     #[test]

@@ -758,7 +758,7 @@ fn add_method(
     kwargs: &mut IterKwargs,
     negate: bool,
 ) -> PyReturn {
-    let other = match (args.first(), kwargs.len()) {
+    let other = match (args.first(), kwargs.original_len()) {
         (Some(_), n) if n > 0 => raise_type_err("cannot mix positional and keyword arguments")?,
         (Some(arg), _) => arg.extract(cls).ok_or_type_err(if negate {
             "subtract() argument must be a whenever.TimeDelta"

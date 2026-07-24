@@ -37,7 +37,7 @@ Key helpers in `src/py/`:
 - `CompareOp::from_ffi(op).apply(a, b)` — apply a CPython rich-comparison operation to ordered Rust values
 - `generic_alloc(cls, data)` — allocate a Python object with the given payload
 - `PyAsciiStrBuilder::format()` — build a Python string without intermediate Rust `String`
-- `PyTuple::with_len()` / `.init_item()` — safe tuple construction
+- `PyTuple::with_len()` / unsafe `.init_item_unchecked()` — allocate and initialize tuple slots
 - `.to_py()` via the `ToPy` trait — convert Rust values to Python objects
 - `.to_tuple()` — convert a Python sequence to a tuple (prefer over `seq_len`+`seq_getitem`)
 - `import(module_name)` — import a Python module (don't call `PyImport_ImportModule` directly)

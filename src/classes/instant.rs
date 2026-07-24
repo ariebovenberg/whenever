@@ -383,7 +383,7 @@ fn shift_method(
 
     match *args {
         [arg] => {
-            if kwargs.len() != 0 {
+            if kwargs.original_len() != 0 {
                 raise_type_err(format!(
                     "{fname}() can't mix positional and keyword arguments"
                 ))?;
