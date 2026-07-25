@@ -30,7 +30,7 @@ use crate::{
     tz::tzif::TimeZone,
 };
 use core::{
-    ffi::{c_int, c_long, c_void},
+    ffi::{c_int, c_void},
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
@@ -158,20 +158,25 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
     };
 
     let state = cls.state();
-    let mut year: c_long = 0;
-    let mut month: c_long = 0;
-    let mut day: c_long = 0;
-    let mut hour: c_long = 0;
-    let mut minute: c_long = 0;
-    let mut second: c_long = 0;
-    let mut nanosecond: c_long = 0;
+    let mut year: i64 = 0;
+    let mut month: i64 = 0;
+    let mut day: i64 = 0;
+    let mut hour: i64 = 0;
+    let mut minute: i64 = 0;
+    let mut second: i64 = 0;
+    let mut nanosecond: i64 = 0;
     let mut tz: *mut PyObject = NULL();
     let mut disambiguate: *mut PyObject = NULL();
 
+    let fmt = if IS_LP64 {
+        c"lll|lll$lOO:ZonedDateTime"
+    } else {
+        c"LLL|LLL$LOO:ZonedDateTime"
+    };
     parse_args_kwargs!(
         args,
         kwargs,
-        c"lll|lll$lOO:ZonedDateTime",
+        fmt,
         year,
         month,
         day,
@@ -186,9 +191,9 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
     let tz = state
         .tz_store
         .obj_get(tz.borrow_opt().ok_or_type_err("`tz` argment is required")?)?;
-    let date = Date::from_longs(year, month, day).ok_or_value_err("invalid date")?;
-    let time =
-        Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?;
+    let date = Date::from_i64_components(year, month, day).ok_or_value_err("invalid date")?;
+    let time = Time::from_i64_components(hour, minute, second, nanosecond)
+        .ok_or_value_err("invalid time")?;
     let dis = disambiguate
         .borrow_opt()
         .map_or(Ok(Disambiguation::Compatible), |o| {
@@ -733,19 +738,24 @@ fn now_in_system_tz(cls: PyClass<ZonedDateTime>) -> PyReturn {
 
 fn from_system_tz(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     let state = cls.state();
-    let mut year: c_long = 0;
-    let mut month: c_long = 0;
-    let mut day: c_long = 0;
-    let mut hour: c_long = 0;
-    let mut minute: c_long = 0;
-    let mut second: c_long = 0;
-    let mut nanosecond: c_long = 0;
+    let mut year: i64 = 0;
+    let mut month: i64 = 0;
+    let mut day: i64 = 0;
+    let mut hour: i64 = 0;
+    let mut minute: i64 = 0;
+    let mut second: i64 = 0;
+    let mut nanosecond: i64 = 0;
     let mut disambiguate: *mut PyObject = NULL();
 
+    let fmt = if IS_LP64 {
+        c"lll|lll$lO:ZonedDateTime"
+    } else {
+        c"LLL|LLL$LO:ZonedDateTime"
+    };
     parse_args_kwargs!(
         args,
         kwargs,
-        c"lll|lll$lO:ZonedDateTime",
+        fmt,
         year,
         month,
         day,
@@ -762,9 +772,10 @@ fn from_system_tz(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyD
         .map_or(Ok(Disambiguation::Compatible), |o| {
             Disambiguation::from_py(o, state)
         })?;
-    Date::from_longs(year, month, day)
+    Date::from_i64_components(year, month, day)
         .ok_or_value_err("invalid date")?
-        .at(Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?)
+        .at(Time::from_i64_components(hour, minute, second, nanosecond)
+            .ok_or_value_err("invalid time")?)
         .resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
         .into_zoned_obj_unchecked(tz, cls)
 }

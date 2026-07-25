@@ -323,14 +323,10 @@ class TestMultiply:
 
     def test_month_range(self):
         DateDelta(months=2) * 59993  # just allowed
-        with pytest.raises(
-            (ValueError, OverflowError), match="bounds|range|C long"
-        ):
+        with pytest.raises((ValueError, OverflowError), match="bounds|range"):
             DateDelta(months=2) * 59995
 
-        with pytest.raises(
-            (ValueError, OverflowError), match="bounds|range|C long"
-        ):
+        with pytest.raises((ValueError, OverflowError), match="bounds|range"):
             DateDelta(months=2) * (1 << 31 + 1)
 
     @pytest.mark.parametrize(

@@ -7,7 +7,7 @@ use crate::{
     py::*,
     pymodule::State,
 };
-use core::ffi::{CStr, c_int, c_long, c_void};
+use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
 use std::ptr::null_mut as NULL;
 
@@ -76,18 +76,18 @@ impl Time {
         }
     }
 
-    pub(crate) fn from_longs(
-        hour: c_long,
-        minute: c_long,
-        second: c_long,
-        nanos: c_long,
+    pub(crate) fn from_i64_components(
+        hour: i64,
+        minute: i64,
+        second: i64,
+        nanos: i64,
     ) -> Option<Self> {
         if (0..24).contains(&hour) && (0..60).contains(&minute) && (0..60).contains(&second) {
             Some(Time {
                 hour: hour as u8,
                 minute: minute as u8,
                 second: second as u8,
-                subsec: SubSecNanos::from_long(nanos)?,
+                subsec: SubSecNanos::from_i64(nanos)?,
             })
         } else {
             None
@@ -142,22 +142,19 @@ fn __new__(cls: PyClass<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
             return Time::from_stdlib_time(t).to_obj(cls);
         }
     }
-    let mut hour: c_long = 0;
-    let mut minute: c_long = 0;
-    let mut second: c_long = 0;
-    let mut nanosecond: c_long = 0;
+    let mut hour: i64 = 0;
+    let mut minute: i64 = 0;
+    let mut second: i64 = 0;
+    let mut nanosecond: i64 = 0;
 
-    parse_args_kwargs!(
-        args,
-        kwargs,
-        c"|lll$l:Time",
-        hour,
-        minute,
-        second,
-        nanosecond
-    );
+    let fmt = if IS_LP64 {
+        c"|lll$l:Time"
+    } else {
+        c"|LLL$L:Time"
+    };
+    parse_args_kwargs!(args, kwargs, fmt, hour, minute, second, nanosecond);
 
-    Time::from_longs(hour, minute, second, nanosecond)
+    Time::from_i64_components(hour, minute, second, nanosecond)
         .ok_or_value_err("invalid time component value")?
         .to_obj(cls)
 }
@@ -309,19 +306,19 @@ fn replace(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwarg
         let mut nanos = slf.subsec.get() as _;
         handle_kwargs("replace", kwargs, |k, v, eq| {
             if eq(k, *state.str_hour) {
-                hour = v.expect_int("hour")?.to_long()?;
+                hour = v.expect_int("hour")?.to_i64()?;
             } else if eq(k, *state.str_minute) {
-                minute = v.expect_int("minute")?.to_long()?;
+                minute = v.expect_int("minute")?.to_i64()?;
             } else if eq(k, *state.str_second) {
-                second = v.expect_int("second")?.to_long()?;
+                second = v.expect_int("second")?.to_i64()?;
             } else if eq(k, *state.str_nanosecond) {
-                nanos = v.expect_int("nanosecond")?.to_long()?;
+                nanos = v.expect_int("nanosecond")?.to_i64()?;
             } else {
                 return Ok(false);
             }
             Ok(true)
         })?;
-        Time::from_longs(hour, minute, second, nanos)
+        Time::from_i64_components(hour, minute, second, nanos)
             .ok_or_value_err("invalid time component value")?
             .to_obj(cls)
     }

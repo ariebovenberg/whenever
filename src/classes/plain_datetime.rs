@@ -22,7 +22,7 @@ use crate::{
     pymodule::State,
 };
 use core::{
-    ffi::{CStr, c_int, c_long, c_void},
+    ffi::{CStr, c_int, c_void},
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
@@ -89,30 +89,27 @@ fn __new__(cls: PyClass<PlainDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
         }
         return raise_type_err("PlainDateTime() requires an ISO 8601 string or datetime.datetime");
     }
-    let mut year: c_long = 0;
-    let mut month: c_long = 0;
-    let mut day: c_long = 0;
-    let mut hour: c_long = 0;
-    let mut minute: c_long = 0;
-    let mut second: c_long = 0;
-    let mut nanosecond: c_long = 0;
+    let mut year: i64 = 0;
+    let mut month: i64 = 0;
+    let mut day: i64 = 0;
+    let mut hour: i64 = 0;
+    let mut minute: i64 = 0;
+    let mut second: i64 = 0;
+    let mut nanosecond: i64 = 0;
 
+    let fmt = if IS_LP64 {
+        c"lll|lll$l:PlainDateTime"
+    } else {
+        c"LLL|LLL$L:PlainDateTime"
+    };
     parse_args_kwargs!(
-        args,
-        kwargs,
-        c"lll|lll$l:PlainDateTime",
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        nanosecond,
+        args, kwargs, fmt, year, month, day, hour, minute, second, nanosecond,
     );
 
-    Date::from_longs(year, month, day)
+    Date::from_i64_components(year, month, day)
         .ok_or_value_err("invalid date")?
-        .at(Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?)
+        .at(Time::from_i64_components(hour, minute, second, nanosecond)
+            .ok_or_value_err("invalid time")?)
         .to_obj(cls)
 }
 
@@ -284,13 +281,13 @@ static mut SLOTS: &[PyType_Slot] = &[
 ];
 
 pub(crate) struct DateTimeComponents {
-    year: c_long,
-    month: c_long,
-    day: c_long,
-    hour: c_long,
-    minute: c_long,
-    second: c_long,
-    nanosecond: c_long,
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: i64,
+    nanosecond: i64,
 }
 
 impl PlainDateTime {
@@ -317,19 +314,19 @@ impl DateTimeComponents {
         eq: StrEqFn,
     ) -> PyResult<bool> {
         if eq(key, *state.str_year) {
-            self.year = value.expect_int("year")?.to_long()?;
+            self.year = value.expect_int("year")?.to_i64()?;
         } else if eq(key, *state.str_month) {
-            self.month = value.expect_int("month")?.to_long()?;
+            self.month = value.expect_int("month")?.to_i64()?;
         } else if eq(key, *state.str_day) {
-            self.day = value.expect_int("day")?.to_long()?;
+            self.day = value.expect_int("day")?.to_i64()?;
         } else if eq(key, *state.str_hour) {
-            self.hour = value.expect_int("hour")?.to_long()?;
+            self.hour = value.expect_int("hour")?.to_i64()?;
         } else if eq(key, *state.str_minute) {
-            self.minute = value.expect_int("minute")?.to_long()?;
+            self.minute = value.expect_int("minute")?.to_i64()?;
         } else if eq(key, *state.str_second) {
-            self.second = value.expect_int("second")?.to_long()?;
+            self.second = value.expect_int("second")?.to_i64()?;
         } else if eq(key, *state.str_nanosecond) {
-            self.nanosecond = value.expect_int("nanosecond")?.to_long()?;
+            self.nanosecond = value.expect_int("nanosecond")?.to_i64()?;
         } else {
             return Ok(false);
         }
@@ -338,9 +335,9 @@ impl DateTimeComponents {
 
     pub(crate) fn into_plain(self) -> PyResult<PlainDateTime> {
         Ok(PlainDateTime {
-            date: Date::from_longs(self.year, self.month, self.day)
+            date: Date::from_i64_components(self.year, self.month, self.day)
                 .ok_or_value_err("invalid date")?,
-            time: Time::from_longs(self.hour, self.minute, self.second, self.nanosecond)
+            time: Time::from_i64_components(self.hour, self.minute, self.second, self.nanosecond)
                 .ok_or_value_err("invalid time")?,
         })
     }
