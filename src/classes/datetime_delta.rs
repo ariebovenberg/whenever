@@ -62,7 +62,7 @@ pub(crate) fn set_units_from_kwargs(
         *months = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("years must be an integer")?
-            .to_long()?
+            .to_i64()?
             .checked_mul(12)
             .and_then(|y| y.try_into().ok())
             .and_then(|y| months.checked_add(y))
@@ -71,7 +71,7 @@ pub(crate) fn set_units_from_kwargs(
         *months = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("months must be an integer")?
-            .to_long()?
+            .to_i64()?
             .try_into()
             .ok()
             .and_then(|m| months.checked_add(m))
@@ -80,7 +80,7 @@ pub(crate) fn set_units_from_kwargs(
         *days = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("weeks must be an integer")?
-            .to_long()?
+            .to_i64()?
             .checked_mul(7)
             .and_then(|d| d.try_into().ok())
             .and_then(|d| days.checked_add(d))
@@ -89,7 +89,7 @@ pub(crate) fn set_units_from_kwargs(
         *days = value
             .cast_allow_subclass::<PyInt>()
             .ok_or_value_err("days must be an integer")?
-            .to_long()?
+            .to_i64()?
             .try_into()
             .ok()
             .and_then(|d| days.checked_add(d))
@@ -214,9 +214,9 @@ fn __str__(_: PyType, d: DateTimeDelta) -> PyReturn {
 fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
     // These checks are needed because the args could be reversed.
     let (delta_obj, factor) = if let Some(i) = b.cast_allow_subclass::<PyInt>() {
-        (a, i.to_long()?)
+        (a, i.to_i64()?)
     } else if let Some(i) = a.cast_allow_subclass::<PyInt>() {
-        (b, i.to_long()?)
+        (b, i.to_i64()?)
     } else {
         return not_implemented();
     };

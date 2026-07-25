@@ -1,5 +1,5 @@
 use core::{
-    ffi::{CStr, c_int, c_long, c_void},
+    ffi::{CStr, c_int, c_void},
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
@@ -25,9 +25,9 @@ use crate::{
 pub(crate) const SINGLETONS: &[(&CStr, Date); 2] = &[(c"MIN", Date::MIN), (c"MAX", Date::MAX)];
 
 impl Date {
-    pub(crate) fn from_longs(y: c_long, m: c_long, day: c_long) -> Option<Self> {
-        let year = Year::from_long(y)?;
-        let month = Month::from_long(m)?;
+    pub(crate) fn from_i64_components(y: i64, m: i64, day: i64) -> Option<Self> {
+        let year = Year::from_i64(y)?;
+        let month = Month::from_i64(m)?;
         (day >= 1 && day <= year.days_in_month(month) as _).then_some(Date {
             year,
             month,
@@ -116,11 +116,12 @@ fn __new__(cls: PyClass<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
         }
         return raise_type_err("Date() requires an ISO 8601 string or datetime.date");
     }
-    let mut year: c_long = 0;
-    let mut month: c_long = 0;
-    let mut day: c_long = 0;
-    parse_args_kwargs!(args, kwargs, c"lll:Date", year, month, day);
-    Date::from_longs(year, month, day)
+    let mut year: i64 = 0;
+    let mut month: i64 = 0;
+    let mut day: i64 = 0;
+    let fmt = if IS_LP64 { c"lll:Date" } else { c"LLL:Date" };
+    parse_args_kwargs!(args, kwargs, fmt, year, month, day);
+    Date::from_i64_components(year, month, day)
         .ok_or_value_err("invalid date value")?
         .to_obj(cls)
 }
@@ -658,17 +659,17 @@ fn replace(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwarg
     let mut day = slf.day.into();
     handle_kwargs("replace", kwargs, |k, v, eq| {
         if eq(k, *state.str_year) {
-            year = v.expect_int("year")?.to_long()?;
+            year = v.expect_int("year")?.to_i64()?;
         } else if eq(k, *state.str_month) {
-            month = v.expect_int("month")?.to_long()?;
+            month = v.expect_int("month")?.to_i64()?;
         } else if eq(k, *state.str_day) {
-            day = v.expect_int("day")?.to_long()?;
+            day = v.expect_int("day")?.to_i64()?;
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
-    Date::from_longs(year, month, day)
+    Date::from_i64_components(year, month, day)
         .ok_or_value_err("invalid date components")?
         .to_obj(cls)
 }

@@ -1,8 +1,10 @@
 //! Functionality for Python's int and float types
 use super::{base::*, exc::*, refs::*};
-use core::ffi::c_long;
 use core::mem;
 use pyo3_ffi::*;
+
+/// Whether CPython's native `l` integer parser writes a 64-bit value on this platform.
+pub(crate) const IS_LP64: bool = cfg!(all(target_pointer_width = "64", not(windows)));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PyInt {
@@ -34,16 +36,14 @@ impl PyStaticType for PyInt {
 }
 
 impl PyInt {
-    pub(crate) fn to_long(self) -> PyResult<c_long> {
-        match unsafe { PyLong_AsLong(self.as_ptr()) } {
-            x if x != -1 || unsafe { PyErr_Occurred() }.is_null() => Ok(x),
-            // The error message is set for us
-            _ => Err(PyErrMarker),
-        }
-    }
-
     pub(crate) fn to_i64(self) -> PyResult<i64> {
-        match unsafe { PyLong_AsLongLong(self.as_ptr()) } {
+        // PyLong_AsLong is measurably faster on LP64, where its result is already 64 bits.
+        let value = if IS_LP64 {
+            (unsafe { PyLong_AsLong(self.as_ptr()) }) as i64
+        } else {
+            unsafe { PyLong_AsLongLong(self.as_ptr()) }
+        };
+        match value {
             x if x != -1 || unsafe { PyErr_Occurred() }.is_null() => Ok(x),
             // The error message is set for us
             _ => Err(PyErrMarker),

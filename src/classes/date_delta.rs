@@ -65,11 +65,7 @@ pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
         c"years() is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
-    amount
-        .expect_int("argument")?
-        .to_long()?
-        .checked_mul(12)
-        .and_then(DeltaMonths::from_long)
+    DeltaMonths::from_i64_years(amount.expect_int("argument")?.to_i64()?)
         .map(DateDelta::from_months)
         .ok_or_range_err()?
         .to_obj(*state.date_delta_type)
@@ -81,7 +77,7 @@ pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
         c"months() is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
-    DeltaMonths::from_long(amount.expect_int("argument")?.to_long()?)
+    DeltaMonths::from_i64(amount.expect_int("argument")?.to_i64()?)
         .map(DateDelta::from_months)
         .ok_or_range_err()?
         .to_obj(*state.date_delta_type)
@@ -93,11 +89,7 @@ pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
         c"weeks() is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
-    amount
-        .expect_int("argument")?
-        .to_long()?
-        .checked_mul(7)
-        .and_then(DeltaDays::from_long)
+    DeltaDays::from_i64_weeks(amount.expect_int("argument")?.to_i64()?)
         .map(DateDelta::from_days)
         .ok_or_range_err()?
         .to_obj(*state.date_delta_type)
@@ -109,7 +101,7 @@ pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
         c"days() is deprecated; use ItemizedDateDelta instead.",
         1,
     )?;
-    DeltaDays::from_long(amount.expect_int("argument")?.to_long()?)
+    DeltaDays::from_i64(amount.expect_int("argument")?.to_i64()?)
         .map(DateDelta::from_days)
         .ok_or_range_err()?
         .to_obj(*state.date_delta_type)
@@ -142,9 +134,9 @@ fn __str__(_: PyType, d: DateDelta) -> PyReturn {
 fn __mul__(a: PyObj, b: PyObj) -> PyReturn {
     // These checks are needed because the args could be reversed.
     let (delta_obj, factor) = if let Some(i) = b.cast_allow_subclass::<PyInt>() {
-        (a, i.to_long()?)
+        (a, i.to_i64()?)
     } else if let Some(i) = a.cast_allow_subclass::<PyInt>() {
-        (b, i.to_long()?)
+        (b, i.to_i64()?)
     } else {
         return not_implemented();
     };

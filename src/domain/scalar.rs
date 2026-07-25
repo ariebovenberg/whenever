@@ -2,7 +2,7 @@
 use super::round;
 use super::{date::Date, plain_datetime::PlainDateTime, time::Time};
 use crate::common::fmt::{self, Sink, format_2_digits};
-use std::{ffi::c_long, num::NonZeroU16, ops::Neg};
+use std::{num::NonZeroU16, ops::Neg};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Sign {
@@ -31,7 +31,7 @@ impl Offset {
         }
     }
 
-    pub(crate) fn from_hours(hrs: c_long) -> Option<Self> {
+    pub(crate) fn from_hours(hrs: i64) -> Option<Self> {
         (-23..=23)
             .contains(&hrs)
             .then(|| Self::new_unchecked(hrs as i32 * 3600))
@@ -416,9 +416,7 @@ impl Year {
         Self(unsafe { NonZeroU16::new_unchecked(year) })
     }
 
-    // A slightly faster way to create a Year from a c_long
-    // that prevents double-checking the bounds
-    pub(crate) fn from_long(y: c_long) -> Option<Self> {
+    pub(crate) fn from_i64(y: i64) -> Option<Self> {
         (y >= Year::MIN.get().into() && y <= Year::MAX.get().into())
             // SAFETY: the bounds check excludes zero and values above 9999.
             .then(|| unsafe { Self::new_unchecked(y as u16) })
@@ -505,7 +503,7 @@ impl Month {
         unsafe { std::mem::transmute::<u8, Self>(n) }
     }
 
-    pub(crate) fn from_long(m: c_long) -> Option<Self> {
+    pub(crate) fn from_i64(m: i64) -> Option<Self> {
         (m >= Month::MIN.get().into() && m <= Month::MAX.get().into())
             // SAFETY: the bounds check covers every valid Month discriminant.
             .then(|| unsafe { Self::new_unchecked(m as u8) })
@@ -567,11 +565,6 @@ impl DeltaMonths {
 
     pub(crate) const fn new_unchecked(months: i32) -> Self {
         Self(months)
-    }
-
-    pub(crate) fn from_long(months: c_long) -> Option<Self> {
-        (months >= Self::MIN.get() as c_long && months <= Self::MAX.get() as c_long)
-            .then(|| Self::new_unchecked(months as i32))
     }
 
     pub(crate) fn from_i64(months: i64) -> Option<Self> {
@@ -642,11 +635,6 @@ impl DeltaDays {
 
     pub(crate) fn get(self) -> i32 {
         self.0
-    }
-
-    pub(crate) fn from_long(days: c_long) -> Option<Self> {
-        (days >= Self::MIN.get() as c_long && days <= Self::MAX.get() as c_long)
-            .then(|| Self::new_unchecked(days as i32))
     }
 
     pub(crate) fn from_i64(days: i64) -> Option<Self> {
@@ -792,8 +780,8 @@ impl SubSecNanos {
         Self(nanos)
     }
 
-    pub(crate) fn from_long(n: c_long) -> Option<Self> {
-        (n >= Self::MIN.get() as c_long && n <= Self::MAX.get() as c_long)
+    pub(crate) fn from_i64(n: i64) -> Option<Self> {
+        (n >= Self::MIN.get() as i64 && n <= Self::MAX.get() as i64)
             .then(|| Self::new_unchecked(n as i32))
     }
 

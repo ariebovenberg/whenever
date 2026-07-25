@@ -1,4 +1,4 @@
-use core::ffi::{CStr, c_int, c_long, c_void};
+use core::ffi::{CStr, c_int, c_void};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
@@ -60,7 +60,7 @@ impl Offset {
 
     pub(crate) fn from_py(obj: PyObj, tdelta_cls: PyClass<TimeDelta>) -> PyResult<Self> {
         if let Some(py_int) = obj.cast_exact::<PyInt>() {
-            Offset::from_hours(py_int.to_long()?)
+            Offset::from_hours(py_int.to_i64()?)
                 .ok_or_value_err("offset must be between -24 and 24 hours")
         } else if let Some(TimeDelta { secs, subsec }) = obj.extract(tdelta_cls) {
             if subsec.get() == 0 {
@@ -90,36 +90,32 @@ fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
         }
         return raise_type_err("OffsetDateTime() requires an ISO 8601 string or datetime.datetime");
     }
-    let mut year: c_long = 0;
-    let mut month: c_long = 0;
-    let mut day: c_long = 0;
-    let mut hour: c_long = 0;
-    let mut minute: c_long = 0;
-    let mut second: c_long = 0;
-    let mut nanosecond: c_long = 0;
+    let mut year: i64 = 0;
+    let mut month: i64 = 0;
+    let mut day: i64 = 0;
+    let mut hour: i64 = 0;
+    let mut minute: i64 = 0;
+    let mut second: i64 = 0;
+    let mut nanosecond: i64 = 0;
     let mut offset: *mut PyObject = NULL();
 
+    let fmt = if IS_LP64 {
+        c"lll|lll$lO:OffsetDateTime"
+    } else {
+        c"LLL|LLL$LO:OffsetDateTime"
+    };
     parse_args_kwargs!(
-        args,
-        kwargs,
-        c"lll|lll$lO:OffsetDateTime",
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        nanosecond,
-        offset
+        args, kwargs, fmt, year, month, day, hour, minute, second, nanosecond, offset
     );
 
     let offset_obj = offset
         .borrow_opt()
         .ok_or_type_err("missing required keyword argument: 'offset'")?;
     let offset = Offset::from_py(offset_obj, *cls.state().time_delta_type)?;
-    Date::from_longs(year, month, day)
+    Date::from_i64_components(year, month, day)
         .ok_or_value_err("invalid date")?
-        .at(Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?)
+        .at(Time::from_i64_components(hour, minute, second, nanosecond)
+            .ok_or_value_err("invalid time")?)
         .assume_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)

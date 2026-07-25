@@ -1,4 +1,4 @@
-use core::ffi::{CStr, c_int, c_long, c_void};
+use core::ffi::{CStr, c_int, c_void};
 use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
@@ -107,30 +107,27 @@ fn __new__(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyRe
 }
 
 fn from_utc(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
-    let mut year: c_long = 0;
-    let mut month: c_long = 0;
-    let mut day: c_long = 0;
-    let mut hour: c_long = 0;
-    let mut minute: c_long = 0;
-    let mut second: c_long = 0;
-    let mut nanosecond: c_long = 0;
+    let mut year: i64 = 0;
+    let mut month: i64 = 0;
+    let mut day: i64 = 0;
+    let mut hour: i64 = 0;
+    let mut minute: i64 = 0;
+    let mut second: i64 = 0;
+    let mut nanosecond: i64 = 0;
 
+    let fmt = if IS_LP64 {
+        c"lll|lll$l:Instant.from_utc"
+    } else {
+        c"LLL|LLL$L:Instant.from_utc"
+    };
     parse_args_kwargs!(
-        args,
-        kwargs,
-        c"lll|lll$l:Instant.from_utc",
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        nanosecond
+        args, kwargs, fmt, year, month, day, hour, minute, second, nanosecond
     );
 
-    Date::from_longs(year, month, day)
+    Date::from_i64_components(year, month, day)
         .ok_or_value_err("invalid date")?
-        .at(Time::from_longs(hour, minute, second, nanosecond).ok_or_value_err("invalid time")?)
+        .at(Time::from_i64_components(hour, minute, second, nanosecond)
+            .ok_or_value_err("invalid time")?)
         .assume_utc()
         .to_obj(cls)
 }

@@ -58,6 +58,11 @@ class TestInit:
             nanoseconds=0,
         )
 
+    def test_seconds_beyond_i32_range(self):
+        assert DateTimeDelta(seconds=1 << 31).time_part() == TimeDelta(
+            seconds=1 << 31
+        )
+
     def test_negative(self):
         d = DateTimeDelta(
             years=-1,

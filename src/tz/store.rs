@@ -282,7 +282,7 @@ impl TzStore {
         ) else {
             raise_type_err(ERR_MSG)?
         };
-        let tz_type = tz_type_obj.to_long()?;
+        let tz_type = tz_type_obj.to_i64()?;
         let tz_value = tz_value_obj.as_str()?;
 
         match tz_type {
