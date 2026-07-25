@@ -71,23 +71,22 @@ impl Date {
 }
 
 impl DateBoundaryUnit {
-    pub(crate) fn match_py(obj: PyObj, state: &State, eq: StrEqFn) -> Option<Self> {
-        Some(if eq(obj, *state.str_year) {
-            Self::Year
-        } else if eq(obj, *state.str_month) {
-            Self::Month
-        } else if eq(obj, *state.str_week_mon) {
-            Self::WeekMon
-        } else if eq(obj, *state.str_week_sun) {
-            Self::WeekSun
-        } else {
-            None?
-        })
+    pub(crate) fn match_interned(obj: PyObj, state: &State, eq: StrEqFn) -> Option<Self> {
+        find_interned_by(
+            obj,
+            &[
+                (*state.str_year, Self::Year),
+                (*state.str_month, Self::Month),
+                (*state.str_week_mon, Self::WeekMon),
+                (*state.str_week_sun, Self::WeekSun),
+            ],
+            eq,
+        )
     }
 
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
-        find_interned(obj, |v, eq| {
-            Some(Ok(if let Some(unit) = Self::match_py(v, state, eq) {
+        find_interned_with(obj, |v, eq| {
+            Some(Ok(if let Some(unit) = Self::match_interned(v, state, eq) {
                 unit
             } else if eq(v, *state.str_week) {
                 return Some(raise_value_err(

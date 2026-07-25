@@ -31,18 +31,15 @@ impl Disambiguation {
     }
 
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
-        match_interned_str("disambiguate", obj, |v, eq| {
-            Some(if eq(v, *state.str_compatible) {
-                Disambiguation::Compatible
-            } else if eq(v, *state.str_raise) {
-                Disambiguation::Reject
-            } else if eq(v, *state.str_earlier) {
-                Disambiguation::Earlier
-            } else if eq(v, *state.str_later) {
-                Disambiguation::Later
-            } else {
-                None?
-            })
-        })
+        match_interned_str(
+            "disambiguate",
+            obj,
+            &[
+                (*state.str_compatible, Disambiguation::Compatible),
+                (*state.str_raise, Disambiguation::Reject),
+                (*state.str_earlier, Disambiguation::Earlier),
+                (*state.str_later, Disambiguation::Later),
+            ],
+        )
     }
 }

@@ -132,7 +132,7 @@ pub(crate) enum Precision {
 
 impl Precision {
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
-        match_interned_str("unit", obj, |v, eq| {
+        match_interned_str_with("unit", obj, |v, eq| {
             if eq(v, *state.str_millisecond) {
                 Some(Self::Millisecond)
             } else if eq(v, *state.str_hour) {
@@ -231,32 +231,26 @@ pub(crate) fn format_iso(
     let mut tz_display = TzDisplay::Always;
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
         if eq(key, *state.str_sep) {
-            sep = match_interned_str("sep", value, |v, eq| {
-                if eq(v, *state.str_space) {
-                    Some(b' ')
-                } else if eq(v, *state.str_t) {
-                    Some(b'T')
-                } else {
-                    None
-                }
-            })?;
+            sep = match_interned_str(
+                "sep",
+                value,
+                &[(*state.str_space, b' '), (*state.str_t, b'T')],
+            )?;
         } else if eq(key, *state.str_unit) {
             unit = Precision::from_py(value, state)?;
         } else if eq(key, *state.str_basic) {
             basic = value.expect_bool("basic")?;
         // Only allow the tz argument if we have a timezone suffix
         } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(key, *state.str_tz) {
-            tz_display = match_interned_str("tz", value, |v, eq| {
-                if eq(v, *state.str_auto) {
-                    Some(TzDisplay::Auto)
-                } else if eq(v, *state.str_never) {
-                    Some(TzDisplay::Never)
-                } else if eq(v, *state.str_always) {
-                    Some(TzDisplay::Always)
-                } else {
-                    None
-                }
-            })?;
+            tz_display = match_interned_str(
+                "tz",
+                value,
+                &[
+                    (*state.str_auto, TzDisplay::Auto),
+                    (*state.str_never, TzDisplay::Never),
+                    (*state.str_always, TzDisplay::Always),
+                ],
+            )?;
         } else {
             return Ok(false);
         }

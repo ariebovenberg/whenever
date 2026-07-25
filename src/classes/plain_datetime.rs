@@ -36,13 +36,13 @@ pub(crate) const SINGLETONS: &[(&CStr, PlainDateTime); 2] =
 
 impl DateTimeBoundaryUnit {
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
-        find_interned(obj, |v, eq| {
+        find_interned_with(obj, |v, eq| {
             Some(Ok(
-                if let Some(unit) = date::DateBoundaryUnit::match_py(v, state, eq) {
+                if let Some(unit) = date::DateBoundaryUnit::match_interned(v, state, eq) {
                     Self::Date(unit)
                 } else if eq(v, *state.str_day) {
                     Self::Day
-                } else if let Some(unit) = time::TimeBoundaryUnit::match_py(v, state, eq) {
+                } else if let Some(unit) = time::TimeBoundaryUnit::match_interned(v, state, eq) {
                     Self::Time(unit)
                 } else if eq(v, *state.str_week) {
                     return Some(raise_value_err(

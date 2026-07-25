@@ -31,8 +31,14 @@ Key helpers in `src/py/`:
 - `handle_one_kwarg(fname, key, kwargs)` — extract a single optional kwarg by key
 - `obj.expect_int(name)` — accept a Python int or subclass and raise
   `TypeError: {name} must be an integer` otherwise
-- `find_interned(value, handler)` — match a PyObj against interned strings, returns `Option`
-- `match_interned_str(name, value, handler)` — like `find_interned` but raises on no match
+- `find_interned(value, &[(string, value), ...])` — match a `PyObj` against an
+  interned-string/value table, returning `Option`
+- `match_interned_str(name, value, &[(string, value), ...])` — like `find_interned` but
+  raises on no match
+- `find_interned_with(value, handler)` — compose multiple interned-string matchers while
+  retaining one global pointer-equality pass before Unicode comparison
+- `find_interned_by(value, choices, eq)` — match one table using the equality function supplied
+  by `find_interned_with`
 - `match_type!(obj, type => |value| {...}, _ => {...})` — match an extension object against differently typed `PyClass<T>` values; prefix an arm with `ref` for non-`Copy` types
 - `CompareOp::from_ffi(op).apply(a, b)` — apply a CPython rich-comparison operation to ordered Rust values
 - `generic_alloc(cls, data)` — allocate a Python object with the given payload
@@ -118,6 +124,10 @@ argument. Both normalize to the domain `Instant`.
 **Interned string matching with custom errors:**
 Use `find_interned` + manual error message when you need a specific error format.
 Use `match_interned_str` when the default error format is acceptable.
+For composed subsets, use `find_interned_with(value, |v, eq| ...)`, call
+`find_interned_by(v, choices, eq)` for table-shaped subsets, and use `eq(v, expected)` for
+individual strings. Do not call top-level `find_interned` separately for each subset: that would
+perform Unicode comparison before later subsets have had their pointer-equality pass.
 
 **Error handling:**
 - `raise_value_err("msg")?` for ValueError

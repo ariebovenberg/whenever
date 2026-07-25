@@ -338,6 +338,7 @@ fn assume_tz(
     }
 }
 
+#[derive(Clone, Copy)]
 enum OffsetMismatch {
     Raise,
     KeepInstant,
@@ -346,17 +347,15 @@ enum OffsetMismatch {
 
 impl OffsetMismatch {
     fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
-        match_interned_str("offset_mismatch", obj, |v, eq| {
-            Some(if eq(v, *state.str_raise) {
-                Self::Raise
-            } else if eq(v, *state.str_keep_instant) {
-                Self::KeepInstant
-            } else if eq(v, *state.str_keep_local) {
-                Self::KeepLocal
-            } else {
-                None?
-            })
-        })
+        match_interned_str(
+            "offset_mismatch",
+            obj,
+            &[
+                (*state.str_raise, Self::Raise),
+                (*state.str_keep_instant, Self::KeepInstant),
+                (*state.str_keep_local, Self::KeepLocal),
+            ],
+        )
     }
 }
 

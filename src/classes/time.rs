@@ -15,16 +15,16 @@ pub use crate::domain::time::Time;
 pub(crate) use crate::domain::time::TimeBoundaryUnit;
 
 impl TimeBoundaryUnit {
-    pub(crate) fn match_py(obj: PyObj, state: &State, eq: StrEqFn) -> Option<Self> {
-        Some(if eq(obj, *state.str_hour) {
-            Self::Hour
-        } else if eq(obj, *state.str_minute) {
-            Self::Minute
-        } else if eq(obj, *state.str_second) {
-            Self::Second
-        } else {
-            None?
-        })
+    pub(crate) fn match_interned(obj: PyObj, state: &State, eq: StrEqFn) -> Option<Self> {
+        find_interned_by(
+            obj,
+            &[
+                (*state.str_hour, Self::Hour),
+                (*state.str_minute, Self::Minute),
+                (*state.str_second, Self::Second),
+            ],
+            eq,
+        )
     }
 }
 

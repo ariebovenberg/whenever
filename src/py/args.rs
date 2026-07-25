@@ -86,11 +86,18 @@ fn ptr_eq(a: PyObj, b: PyObj) -> bool {
 }
 
 #[inline]
+fn unicode_eq_known(a: PyObj, b: PyObj) -> bool {
+    debug_assert!(unsafe { PyUnicode_Check(a.as_ptr()) != 0 });
+    debug_assert!(unsafe { PyUnicode_Check(b.as_ptr()) != 0 });
+    unsafe { PyUnicode_Compare(a.as_ptr(), b.as_ptr()) == 0 }
+}
+
+#[inline]
 pub(crate) fn unicode_eq(a: PyObj, b: PyObj) -> bool {
     debug_assert!(unsafe { PyUnicode_Check(b.as_ptr()) != 0 });
     // The value being matched may not be a string. The expected names are always State's interned
     // strings, so valid values can be compared without invoking Python-level equality.
-    unsafe { PyUnicode_Check(a.as_ptr()) != 0 && PyUnicode_Compare(a.as_ptr(), b.as_ptr()) == 0 }
+    (unsafe { PyUnicode_Check(a.as_ptr()) != 0 }) && unicode_eq_known(a, b)
 }
 
 pub(crate) type StrEqFn = fn(PyObj, PyObj) -> bool;
@@ -156,25 +163,54 @@ pub(crate) fn handle_one_arg(fname: &str, args: &[PyObj]) -> PyResult<PyObj> {
     }
 }
 
-/// Helper to efficiently match a value against a set of known interned strings.
-/// The handler closure is called twice, first with pointer equality (very fast),
-/// and only if that fails, with direct Unicode comparison (slower).
-pub(crate) fn match_interned_str<T, F>(name: &str, value: PyObj, mut handler: F) -> PyResult<T>
+/// Match composed sets of interned strings with one global pointer-first pass.
+#[inline]
+pub(crate) fn find_interned_with<T, F>(value: PyObj, mut handler: F) -> Option<T>
 where
     F: FnMut(PyObj, StrEqFn) -> Option<T>,
 {
-    handler(value, ptr_eq)
-        .or_else(|| handler(value, unicode_eq))
+    handler(value, ptr_eq).or_else(|| {
+        if unsafe { PyUnicode_Check(value.as_ptr()) } != 0 {
+            handler(value, unicode_eq_known)
+        } else {
+            None
+        }
+    })
+}
+
+#[inline]
+pub(crate) fn find_interned_by<T: Copy>(
+    value: PyObj,
+    choices: &[(PyObj, T)],
+    eq: StrEqFn,
+) -> Option<T> {
+    choices
+        .iter()
+        .find_map(|&(expected, result)| eq(value, expected).then_some(result))
+}
+
+#[inline]
+pub(crate) fn find_interned<T: Copy>(value: PyObj, choices: &[(PyObj, T)]) -> Option<T> {
+    find_interned_with(value, |v, eq| find_interned_by(v, choices, eq))
+}
+
+#[inline]
+pub(crate) fn match_interned_str<T: Copy>(
+    name: &str,
+    value: PyObj,
+    choices: &[(PyObj, T)],
+) -> PyResult<T> {
+    find_interned(value, choices)
         .ok_or_else_value_err(|| format!("Invalid value for {name}: {value}"))
 }
 
-/// Like `match_interned_str`, but returns `None` if no match is found
-/// instead of raising an error.
-pub(crate) fn find_interned<T, F>(value: PyObj, mut handler: F) -> Option<T>
+#[inline]
+pub(crate) fn match_interned_str_with<T, F>(name: &str, value: PyObj, handler: F) -> PyResult<T>
 where
     F: FnMut(PyObj, StrEqFn) -> Option<T>,
 {
-    handler(value, ptr_eq).or_else(|| handler(value, unicode_eq))
+    find_interned_with(value, handler)
+        .ok_or_else_value_err(|| format!("Invalid value for {name}: {value}"))
 }
 
 pub(crate) use parse_args_kwargs;

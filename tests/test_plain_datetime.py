@@ -1714,6 +1714,21 @@ class TestInLeapYear:
 
 
 class TestStartOf:
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("year", PlainDateTime(2024, 1, 1)),
+            ("day", PlainDateTime(2024, 8, 15)),
+            ("hour", PlainDateTime(2024, 8, 15, 14)),
+        ],
+    )
+    def test_str_subclass(self, unit, expected):
+        class StrSubclass(str):
+            pass
+
+        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
+        assert dt.start_of(StrSubclass(unit)) == expected
+
     def test_year(self):
         dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
         result = dt.start_of("year")

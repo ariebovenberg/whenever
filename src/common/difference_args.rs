@@ -128,31 +128,21 @@ impl DifferenceUnitSet {
 
 impl TotalUnit {
     fn match_py(v: PyObj, state: &State) -> Option<Self> {
-        find_interned(v, |v, eq| {
-            Some(if eq(v, *state.str_years) {
-                Self::Years
-            } else if eq(v, *state.str_months) {
-                Self::Months
-            } else if eq(v, *state.str_weeks) {
-                Self::Weeks
-            } else if eq(v, *state.str_days) {
-                Self::Days
-            } else if eq(v, *state.str_hours) {
-                Self::Hours
-            } else if eq(v, *state.str_minutes) {
-                Self::Minutes
-            } else if eq(v, *state.str_seconds) {
-                Self::Seconds
-            } else if eq(v, *state.str_milliseconds) {
-                Self::Milliseconds
-            } else if eq(v, *state.str_microseconds) {
-                Self::Microseconds
-            } else if eq(v, *state.str_nanoseconds) {
-                Self::Nanoseconds
-            } else {
-                None?
-            })
-        })
+        find_interned(
+            v,
+            &[
+                (*state.str_years, Self::Years),
+                (*state.str_months, Self::Months),
+                (*state.str_weeks, Self::Weeks),
+                (*state.str_days, Self::Days),
+                (*state.str_hours, Self::Hours),
+                (*state.str_minutes, Self::Minutes),
+                (*state.str_seconds, Self::Seconds),
+                (*state.str_milliseconds, Self::Milliseconds),
+                (*state.str_microseconds, Self::Microseconds),
+                (*state.str_nanoseconds, Self::Nanoseconds),
+            ],
+        )
     }
 
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
