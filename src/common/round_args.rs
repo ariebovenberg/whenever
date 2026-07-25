@@ -33,30 +33,21 @@ impl Mode {
     }
 
     pub(crate) fn from_py_named(name: &str, s: PyObj, strs: &ModeStrs) -> PyResult<Mode> {
-        match_interned_str(name, s, |v, eq| {
-            if eq(v, *strs.str_floor) {
-                Mode::Floor
-            } else if eq(v, *strs.str_ceil) {
-                Mode::Ceil
-            } else if eq(v, *strs.str_trunc) {
-                Mode::Trunc
-            } else if eq(v, *strs.str_expand) {
-                Mode::Expand
-            } else if eq(v, *strs.str_half_floor) {
-                Mode::HalfFloor
-            } else if eq(v, *strs.str_half_ceil) {
-                Mode::HalfCeil
-            } else if eq(v, *strs.str_half_even) {
-                Mode::HalfEven
-            } else if eq(v, *strs.str_half_trunc) {
-                Mode::HalfTrunc
-            } else if eq(v, *strs.str_half_expand) {
-                Mode::HalfExpand
-            } else {
-                None?
-            }
-            .into()
-        })
+        match_interned_str(
+            name,
+            s,
+            &[
+                (*strs.str_floor, Mode::Floor),
+                (*strs.str_ceil, Mode::Ceil),
+                (*strs.str_trunc, Mode::Trunc),
+                (*strs.str_expand, Mode::Expand),
+                (*strs.str_half_floor, Mode::HalfFloor),
+                (*strs.str_half_ceil, Mode::HalfCeil),
+                (*strs.str_half_even, Mode::HalfEven),
+                (*strs.str_half_trunc, Mode::HalfTrunc),
+                (*strs.str_half_expand, Mode::HalfExpand),
+            ],
+        )
     }
 }
 
@@ -75,26 +66,21 @@ pub(crate) enum RoundUnit {
 impl RoundUnit {
     fn from_py(s: PyObj, state: &State, for_delta: bool) -> PyResult<RoundUnit> {
         // OPTIMIZE: run the comparisons in order if likelihood
-        match_interned_str("unit", s, |v, eq| {
-            Some(if eq(v, *state.str_nanosecond) {
-                RoundUnit::Nanosecond
-            } else if eq(v, *state.str_microsecond) {
-                RoundUnit::Microsecond
-            } else if eq(v, *state.str_millisecond) {
-                RoundUnit::Millisecond
-            } else if eq(v, *state.str_second) {
-                RoundUnit::Second
-            } else if eq(v, *state.str_minute) {
-                RoundUnit::Minute
-            } else if eq(v, *state.str_hour) {
-                RoundUnit::Hour
-            } else if eq(v, *state.str_day) {
-                RoundUnit::Day
-            } else if for_delta && eq(v, *state.str_week) {
-                RoundUnit::Week
-            } else {
-                None?
-            })
+        match_interned_str_with("unit", s, |v, eq| {
+            find_interned_by(
+                v,
+                &[
+                    (*state.str_nanosecond, RoundUnit::Nanosecond),
+                    (*state.str_microsecond, RoundUnit::Microsecond),
+                    (*state.str_millisecond, RoundUnit::Millisecond),
+                    (*state.str_second, RoundUnit::Second),
+                    (*state.str_minute, RoundUnit::Minute),
+                    (*state.str_hour, RoundUnit::Hour),
+                    (*state.str_day, RoundUnit::Day),
+                ],
+                eq,
+            )
+            .or_else(|| (for_delta && eq(v, *state.str_week)).then_some(RoundUnit::Week))
         })
     }
 
