@@ -9,7 +9,9 @@ use crate::{
     },
     common::{
         disambiguation::*,
-        fmt, pattern, pickle, round_args as round,
+        fmt,
+        format_args::{self, Suffix},
+        pattern, pickle, round_args as round,
         shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
     },
     docstrings as doc,
@@ -134,13 +136,13 @@ fn format_iso(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    fmt::format_iso(
+    format_args::format_datetime_iso(
         slf.date,
         slf.time,
         cls.state(),
         args,
         kwargs,
-        fmt::Suffix::Absent,
+        Suffix::Absent,
     )
 }
 

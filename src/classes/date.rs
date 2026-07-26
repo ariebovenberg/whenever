@@ -10,7 +10,7 @@ pub(crate) use crate::domain::date::DateBoundaryUnit;
 use crate::{
     classes::{date_delta::DateDelta, itemized_date_delta::ItemizedDateDelta},
     common::{
-        pattern, pickle, round_args as round,
+        format_args, pattern, pickle, round_args as round,
         shift_args::{parse_calendar_shift_arg, parse_calendar_shift_kwargs},
     },
     docstrings as doc,
@@ -220,22 +220,7 @@ fn month_day(cls: PyClass<Date>, Date { month, day, .. }: Date) -> PyReturn {
 }
 
 fn format_iso(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    if !args.is_empty() {
-        raise_type_err("format_iso() takes no positional arguments")?
-    }
-    let mut basic = false;
-    let state = cls.state();
-
-    handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, *state.str_basic) {
-            basic = value.expect_bool("basic")?;
-        } else {
-            return Ok(false);
-        };
-        Ok(true)
-    })?;
-
-    PyAsciiStrBuilder::format(slf.iso_format(basic))
+    format_args::format_date_iso(slf, cls.state(), args, kwargs)
 }
 
 fn parse_iso(cls: PyClass<Date>, s: PyObj) -> PyReturn {

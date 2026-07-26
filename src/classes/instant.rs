@@ -13,7 +13,8 @@ use crate::{
         time_delta::{DeltaIncrement, TimeDelta, timedelta_from_kwargs},
     },
     common::{
-        fmt::{self, Suffix},
+        fmt,
+        format_args::{self, Suffix},
         instant::{
             extract_instant, parse_instant_arg, parse_timestamp, parse_timestamp_millis,
             parse_timestamp_nanos,
@@ -337,7 +338,7 @@ fn format_iso(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let PlainDateTime { date, time } = slf.to_utc_plain();
-    fmt::format_iso(date, time, cls.state(), args, kwargs, Suffix::Zulu)
+    format_args::format_datetime_iso(date, time, cls.state(), args, kwargs, Suffix::Zulu)
 }
 
 fn parse_iso(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
