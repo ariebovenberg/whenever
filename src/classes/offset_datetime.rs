@@ -553,7 +553,7 @@ fn format_iso(
 }
 
 fn parse_iso(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
-    OffsetDateTime::parse(
+    OffsetDateTime::parse_iso(
         arg.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
@@ -957,7 +957,7 @@ fn offset_since(
         DifferenceSpec::Total(unit) => {
             let (a, b) = if flip { (other, slf) } else { (slf, other) };
             // Single unit: return float
-            match unit.to_exact(false) {
+            match unit.to_exact() {
                 Ok(u) => {
                     // Exact unit: absolute time difference.
                     // For nanoseconds (in_nanos == 1), return int to preserve full precision.

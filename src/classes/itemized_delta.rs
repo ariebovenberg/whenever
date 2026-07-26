@@ -16,17 +16,16 @@ impl<T: DeltaFieldInner> DeltaField<T> {
                 .cast_allow_subclass::<PyInt>()
                 .ok_or_type_err("expected int or None")?
                 .to_i64()?;
-            Ok(Self::new_unchecked(T::from_i64(value)))
+            Ok(Self::new_unchecked(T::from_i64(value).ok_or_range_err()?))
         }
     }
 }
 
 impl<T: DeltaFieldInner> ToPy for DeltaField<T> {
     fn to_py(self) -> PyReturn {
-        if self.is_set() {
-            self.unwrap().to_i64().to_py()
-        } else {
-            Ok(none())
+        match self.as_option() {
+            Some(v) => v.to_i64().to_py(),
+            None => Ok(none()),
         }
     }
 }

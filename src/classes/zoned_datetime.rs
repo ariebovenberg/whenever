@@ -1140,7 +1140,7 @@ fn zoned_since_float(
     unit: difference::DifferenceUnit,
     neg: bool,
 ) -> PyReturn {
-    match unit.to_exact(false) {
+    match unit.to_exact() {
         Ok(u) => {
             // For nanoseconds (in_nanos == 1), return int to preserve full precision.
             let nanos = a.to_instant().diff(b.to_instant()).total_nanos();

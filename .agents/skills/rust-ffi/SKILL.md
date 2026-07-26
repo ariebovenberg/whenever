@@ -153,13 +153,15 @@ perform Unicode comparison before later subsets have had their pointer-equality 
   component replacement starts with `PlainDateTime::components()` and uses
   `DateTimeComponents` in `classes::plain_datetime`.
 - **TimeDelta** stores `secs: DeltaSeconds` + `subsec: SubSecNanos`. Use `.total_nanos() -> i128`.
-  Has `.in_single_unit()` and `.in_exact_units()` for unit decomposition.
+  Has `.in_single_unit()` and `.in_exact_units()` for unit decomposition, and owns the pure
+  `parse_iso()` implementation; map its parse errors to Python exceptions in the binding.
 - Unit types name their role: `fmt::Precision`, `round::RoundUnit`, and
   `CalendarUnit`/`DifferenceUnit`/`ExactUnit` in `common::math`. Keep these domains distinct unless
   their parsing and behavior are demonstrably identical. Keep `common::fmt` free of Python
   argument parsing; `common::format_args` adapts Python `format_iso` arguments to its pure types.
-- **ItemizedDelta/ItemizedDateDelta** use `DeltaField<T>` with `i32::MAX` as the UNSET sentinel.
-  `DeltaField` has custom `Debug` showing `<unset>` for sentinel values.
+- **ItemizedDelta/ItemizedDateDelta** use `DeltaField<T>` with the integer type's `MIN` value as
+  the UNSET sentinel. `DeltaField` has custom `Debug` showing `<unset>` for sentinel values and
+  `.as_option()` for checked extraction.
 
 ## Development philosophy
 

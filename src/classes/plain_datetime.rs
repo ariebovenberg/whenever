@@ -147,7 +147,7 @@ fn format_iso(
 }
 
 fn parse_iso(cls: PyClass<PlainDateTime>, arg: PyObj) -> PyReturn {
-    PlainDateTime::parse(
+    PlainDateTime::parse_iso(
         arg.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
@@ -753,7 +753,7 @@ pub(crate) fn plain_since_float(
     unit: DifferenceUnit,
     neg: bool,
 ) -> PyReturn {
-    match unit.to_exact(true) {
+    match unit.to_exact_assuming_24h_days() {
         Ok(u) => {
             // Exact unit (including weeks/days as 24h): divide by unit nanoseconds.
             // For nanoseconds (in_nanos == 1), return int to preserve full precision.
@@ -847,7 +847,7 @@ fn plain_since_in_units(
     let (mut calendar_results, trunc_date, expand_date) = if calendar_units.is_empty() {
         (ItemizedDateDelta::UNSET, b.date.into(), a.date.into())
     } else {
-        let inc = if smallest_unit.to_exact(false).is_err() {
+        let inc = if smallest_unit.to_exact().is_err() {
             round_increment.to_calendar().ok_or_range_err()?
         } else {
             CalendarIncrement::MIN
@@ -1092,7 +1092,7 @@ mod tests {
         ];
         for &(str, y, m, d, h, min, s, ns) in cases {
             assert_eq!(
-                PlainDateTime::parse(str),
+                PlainDateTime::parse_iso(str),
                 Some(PlainDateTime {
                     date: mkdate(y, m, d),
                     time: Time {
@@ -1109,16 +1109,22 @@ mod tests {
     #[test]
     fn test_parse_invalid() {
         // dot but no fractional digits
-        assert_eq!(PlainDateTime::parse(b"2023-03-02 02:09:09."), None);
+        assert_eq!(PlainDateTime::parse_iso(b"2023-03-02 02:09:09."), None);
         // too many fractions
         assert_eq!(
-            PlainDateTime::parse(b"2023-03-02 02:09:09.1234567890"),
+            PlainDateTime::parse_iso(b"2023-03-02 02:09:09.1234567890"),
             None
         );
         // invalid minute
-        assert_eq!(PlainDateTime::parse(b"2023-03-02 02:69:09.123456789"), None);
+        assert_eq!(
+            PlainDateTime::parse_iso(b"2023-03-02 02:69:09.123456789"),
+            None
+        );
         // invalid date
-        assert_eq!(PlainDateTime::parse(b"2023-02-29 02:29:09.123456789"), None);
+        assert_eq!(
+            PlainDateTime::parse_iso(b"2023-02-29 02:29:09.123456789"),
+            None
+        );
     }
 
     #[test]

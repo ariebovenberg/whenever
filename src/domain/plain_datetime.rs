@@ -140,7 +140,7 @@ impl PlainDateTime {
         Some(PlainDateTime { date, time })
     }
 
-    pub fn parse(s: &[u8]) -> Option<Self> {
+    pub fn parse_iso(s: &[u8]) -> Option<Self> {
         Scan::new(s).parse_all(Self::read_iso)
     }
 }

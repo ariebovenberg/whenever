@@ -21,7 +21,7 @@ pub fn date_from_unix_days(c: &mut Criterion) {
 pub fn parse_plain_datetime(c: &mut Criterion) {
     c.bench_function("Parse plain datetime", |b| {
         b.iter(|| {
-            PlainDateTime::parse(black_box(b"2023-03-02 02:09:09")).unwrap();
+            PlainDateTime::parse_iso(black_box(b"2023-03-02 02:09:09")).unwrap();
         })
     });
 }
@@ -37,7 +37,7 @@ pub fn offset_for_local_time(c: &mut Criterion) {
     let tzif = TimeZone::parse_tzif(TZ_AMS, None).unwrap();
 
     c.bench_function("offset for local", |b| {
-        let t = PlainDateTime::parse(b"2024-07-02 23:00:00")
+        let t = PlainDateTime::parse_iso(b"2024-07-02 23:00:00")
             .unwrap()
             .local_seconds();
         b.iter(|| tzif.mapping_for_local(black_box(t)))
