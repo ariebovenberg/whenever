@@ -18,6 +18,12 @@ pub(crate) struct TimeDelta {
     pub(crate) subsec: SubSecNanos,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum ParseError {
+    Invalid,
+    OutOfRange,
+}
+
 impl TimeDelta {
     pub(crate) const MIN: Self = Self {
         secs: DeltaSeconds::MIN,
@@ -73,6 +79,20 @@ impl TimeDelta {
         self.secs.get() == 0 && self.subsec.get() == 0
     }
 
+    pub(crate) fn parse_iso(mut s: &[u8]) -> Result<Self, ParseError> {
+        let negate = (s.len() >= 4)
+            .then(|| parse_prefix(&mut s))
+            .flatten()
+            .ok_or(ParseError::Invalid)?;
+        let (nanos, is_empty) = parse_all_components(&mut s).ok_or(ParseError::Invalid)?;
+        if is_empty {
+            return Err(ParseError::Invalid);
+        }
+        Self::from_nanos(i128::try_from(nanos).map_err(|_| ParseError::OutOfRange)?)
+            .ok_or(ParseError::OutOfRange)
+            .map(|d| d.negate_if(negate))
+    }
+
     pub(crate) fn abs(self) -> Self {
         if self.secs.get() >= 0 { self } else { -self }
     }
@@ -91,14 +111,13 @@ impl TimeDelta {
         debug_assert!(increment.secs > 0 || increment.subsec.get() > 0);
         if increment.secs == 0 && NS_PER_SEC.is_multiple_of(increment.subsec.as_u32()) {
             let (extra_secs, subsec) = self.subsec.round(increment.subsec.as_u32(), abs_mode);
-            Self {
+            Some(Self {
                 secs: self.secs.add(extra_secs).unwrap(),
                 subsec,
-            }
+            })
         } else {
-            self.round_u128(increment.total_nanos(), abs_mode)?
+            self.round_u128(increment.total_nanos(), abs_mode)
         }
-        .into()
     }
 
     fn round_u128(self, increment: u128, abs_mode: round::AbsMode) -> Option<Self> {
@@ -156,34 +175,39 @@ impl TimeDelta {
 
         let mut remaining = rounded.total_nanos();
         let mut target = ItemizedDelta::UNSET;
-        type Setter = fn(&mut ItemizedDelta, i128);
+        type Setter = fn(&mut ItemizedDelta, i128) -> Option<()>;
         let fields: &[(ExactUnit, Setter)] = &[
-            (ExactUnit::Weeks, |target, value| {
-                target.weeks = DeltaField::new_unchecked(value as i32)
+            (ExactUnit::Weeks, |t, v| {
+                t.weeks = DeltaField::new_unchecked(i32::try_from(v).ok()?);
+                Some(())
             }),
-            (ExactUnit::Days, |target, value| {
-                target.days = DeltaField::new_unchecked(value as i32)
+            (ExactUnit::Days, |t, v| {
+                t.days = DeltaField::new_unchecked(i32::try_from(v).ok()?);
+                Some(())
             }),
-            (ExactUnit::Hours, |target, value| {
-                target.hours = DeltaField::new_unchecked(value as i32)
+            (ExactUnit::Hours, |t, v| {
+                t.hours = DeltaField::new_unchecked(i32::try_from(v).ok()?);
+                Some(())
             }),
-            (ExactUnit::Minutes, |target, value| {
-                target.minutes = DeltaField::new_unchecked(value as i64)
+            (ExactUnit::Minutes, |t, v| {
+                t.minutes = DeltaField::new_unchecked(i64::try_from(v).ok()?);
+                Some(())
             }),
-            (ExactUnit::Seconds, |target, value| {
-                target.seconds = DeltaField::new_unchecked(value as i64)
+            (ExactUnit::Seconds, |t, v| {
+                t.seconds = DeltaField::new_unchecked(i64::try_from(v).ok()?);
+                Some(())
             }),
         ];
-        for &(unit, setter) in fields {
+        for &(unit, set) in fields {
             if units.contains(unit) {
                 let per = unit.in_nanos() as i128;
                 let value = remaining / per;
                 remaining %= per;
-                setter(&mut target, value);
+                set(&mut target, value)?;
             }
         }
         if units.contains(ExactUnit::Nanoseconds) {
-            target.nanos = DeltaField::new_unchecked(remaining as i32);
+            target.nanos = DeltaField::new_unchecked(i32::try_from(remaining).ok()?);
         }
         Some(target)
     }

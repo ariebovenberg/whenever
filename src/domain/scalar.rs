@@ -152,7 +152,7 @@ impl std::fmt::Display for Offset {
     }
 }
 
-/// Difference between two offsets in seconds. +/- 48 hours
+/// Difference between two offsets in seconds, less than 48 hours in either direction.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub(crate) struct OffsetDelta(i32);
 
@@ -163,15 +163,6 @@ impl OffsetDelta {
     pub(crate) const fn new_unchecked(secs: i32) -> Self {
         debug_assert!(secs >= Self::MIN.0 && secs <= Self::MAX.0);
         Self(secs)
-    }
-
-    #[allow(dead_code)]
-    pub(crate) const fn new(secs: i32) -> Option<Self> {
-        if secs >= Self::MIN.0 && secs <= Self::MAX.0 {
-            Some(Self(secs))
-        } else {
-            None
-        }
     }
 
     pub(crate) const fn get(self) -> i32 {
@@ -197,7 +188,7 @@ impl Neg for OffsetDelta {
 pub struct EpochSecs(i64);
 
 impl EpochSecs {
-    // 0000-01-01 00:00 to 9999-12-31 23:59
+    // 0001-01-01 00:00 to 9999-12-31 23:59
     pub(crate) const MIN: EpochSecs = EpochSecs(-62_135_596_800);
     pub(crate) const MAX: EpochSecs = EpochSecs(253_402_300_799);
     pub const fn new_unchecked(secs: i64) -> Self {
@@ -280,11 +271,11 @@ impl EpochSecs {
 pub struct UnixDays(i32);
 
 impl UnixDays {
-    // 0000-01-01 to 9999-12-31
+    // 0001-01-01 to 9999-12-31
     pub(crate) const MIN: UnixDays = UnixDays(-719_162);
     pub(crate) const MAX: UnixDays = UnixDays(2_932_896);
-    pub fn new_unchecked(days: i32) -> Self {
-        debug_assert!((Self::MIN.0..=Self::MAX.0).contains(&days));
+    pub const fn new_unchecked(days: i32) -> Self {
+        debug_assert!(days >= Self::MIN.0 && days <= Self::MAX.0);
         Self(days)
     }
 
@@ -344,7 +335,12 @@ impl UnixDays {
         }
     }
 
-    pub(crate) fn add_unchecked(self, days: i32) -> Self {
+    pub(crate) unsafe fn add_unchecked(self, days: i32) -> Self {
+        debug_assert!(
+            self.0
+                .checked_add(days)
+                .is_some_and(|v| (Self::MIN.0..=Self::MAX.0).contains(&v))
+        );
         Self(self.0 + days)
     }
 
@@ -564,6 +560,7 @@ impl DeltaMonths {
     }
 
     pub(crate) const fn new_unchecked(months: i32) -> Self {
+        debug_assert!(months >= Self::MIN.0 && months <= Self::MAX.0);
         Self(months)
     }
 
@@ -573,15 +570,14 @@ impl DeltaMonths {
     }
 
     pub(crate) fn from_i64_years(years: i64) -> Option<Self> {
-        (years <= Year::MAX.get() as i64 && years >= -(Year::MAX.get() as i64))
-            .then(|| Self::new_unchecked((years * 12) as i32))
+        years.checked_mul(12).and_then(Self::from_i64)
     }
 
-    pub(crate) fn get(self) -> i32 {
+    pub(crate) const fn get(self) -> i32 {
         self.0
     }
 
-    pub(crate) fn abs(self) -> Self {
+    pub(crate) const fn abs(self) -> Self {
         Self(self.0.abs())
     }
 
@@ -594,7 +590,7 @@ impl DeltaMonths {
         Self::new(self.0 + d.get())
     }
 
-    pub(crate) fn is_zero(self) -> bool {
+    pub(crate) const fn is_zero(self) -> bool {
         self.0 == 0
     }
 }
@@ -633,7 +629,7 @@ impl DeltaDays {
         Self(days)
     }
 
-    pub(crate) fn get(self) -> i32 {
+    pub(crate) const fn get(self) -> i32 {
         self.0
     }
 
@@ -643,11 +639,10 @@ impl DeltaDays {
     }
 
     pub(crate) fn from_i64_weeks(weeks: i64) -> Option<Self> {
-        (weeks >= DeltaDays::MIN.get() as i64 / 7 && weeks <= DeltaDays::MAX.get() as i64 / 7)
-            .then(|| Self::new_unchecked((weeks * 7) as i32))
+        weeks.checked_mul(7).and_then(Self::from_i64)
     }
 
-    pub(crate) fn abs(self) -> Self {
+    pub(crate) const fn abs(self) -> Self {
         Self(self.0.abs())
     }
 
@@ -660,7 +655,7 @@ impl DeltaDays {
         Self::new(self.0 + d.get())
     }
 
-    pub(crate) fn is_zero(self) -> bool {
+    pub(crate) const fn is_zero(self) -> bool {
         self.0 == 0
     }
 }
@@ -954,19 +949,16 @@ impl Weekday {
 }
 
 /// Trait for types that can be used as delta field values with a sentinel
-pub(crate) trait DeltaFieldInner:
-    Copy + Eq + std::fmt::Debug + PartialOrd + Neg<Output = Self>
-{
+pub(crate) trait DeltaFieldInner: Copy + Eq + std::fmt::Debug {
     const SENTINEL: Self;
-    fn from_i64(val: i64) -> Self;
+    fn from_i64(val: i64) -> Option<Self>;
     fn to_i64(self) -> i64;
 }
 
 impl DeltaFieldInner for i32 {
     const SENTINEL: Self = i32::MIN;
-    // FUTURE: make these casts more obviously safe
-    fn from_i64(val: i64) -> Self {
-        val as i32
+    fn from_i64(val: i64) -> Option<Self> {
+        i32::try_from(val).ok().filter(|&v| v != Self::SENTINEL)
     }
     fn to_i64(self) -> i64 {
         self as i64
@@ -975,8 +967,8 @@ impl DeltaFieldInner for i32 {
 
 impl DeltaFieldInner for i64 {
     const SENTINEL: Self = i64::MIN;
-    fn from_i64(val: i64) -> Self {
-        val
+    fn from_i64(val: i64) -> Option<Self> {
+        (val != Self::SENTINEL).then_some(val)
     }
     fn to_i64(self) -> i64 {
         self
@@ -1014,9 +1006,8 @@ impl<T: DeltaFieldInner> DeltaField<T> {
         self.0 != T::SENTINEL
     }
 
-    pub(crate) fn unwrap(self) -> T {
-        debug_assert!(self.is_set());
-        self.0
+    pub(crate) fn as_option(self) -> Option<T> {
+        self.is_set().then_some(self.0)
     }
 
     pub(crate) fn replace_unchecked(&mut self, val: T) {
@@ -1072,5 +1063,18 @@ mod tests {
             SubSecNanos::new_unchecked(100_000_000).iso_format(),
             (*b".100000000", 2)
         );
+    }
+
+    #[test]
+    fn checked_delta_conversions() {
+        assert_eq!(DeltaMonths::from_i64_years(1).unwrap().get(), 12);
+        assert!(DeltaMonths::from_i64_years(i64::MAX).is_none());
+        assert_eq!(DeltaDays::from_i64_weeks(1).unwrap().get(), 7);
+        assert!(DeltaDays::from_i64_weeks(i64::MAX).is_none());
+
+        assert_eq!(i32::from_i64(i32::MAX as i64), Some(i32::MAX));
+        assert_eq!(i32::from_i64(i32::MIN as i64), None);
+        assert_eq!(i32::from_i64(i32::MAX as i64 + 1), None);
+        assert_eq!(i64::from_i64(i64::MIN), None);
     }
 }

@@ -209,10 +209,42 @@ impl CalendarUnit {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+struct UnitMask(u8);
+
+impl UnitMask {
+    const EMPTY: Self = Self(0);
+
+    fn insert(&mut self, index: u8) {
+        self.0 |= 1 << index;
+    }
+
+    const fn contains(self, index: u8) -> bool {
+        self.0 & (1 << index) != 0
+    }
+
+    const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    const fn intersects(self, mask: u8) -> bool {
+        self.0 & mask != 0
+    }
+
+    const fn intersection(self, mask: u8) -> Self {
+        Self(self.0 & mask)
+    }
+
+    fn smallest_index(self) -> u8 {
+        debug_assert!(!self.is_empty());
+        7 - self.0.leading_zeros() as u8
+    }
+}
+
 /// Bitfield set of calendar units. Bit 0 = Years, bit 3 = Days. Exact units (Hours, Minutes,
 /// Seconds, Nanoseconds, etc.) are not included.
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub(crate) struct CalendarUnitSet(u8);
+pub(crate) struct CalendarUnitSet(UnitMask);
 
 impl std::fmt::Debug for CalendarUnitSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -223,7 +255,7 @@ impl std::fmt::Debug for CalendarUnitSet {
             CalendarUnit::Weeks,
             CalendarUnit::Days,
         ] {
-            if self.0 & (1 << unit as u8) != 0 {
+            if self.0.contains(unit as u8) {
                 list.entry(&unit);
             }
         }
@@ -232,23 +264,22 @@ impl std::fmt::Debug for CalendarUnitSet {
 }
 
 impl CalendarUnitSet {
-    pub(crate) const EMPTY: Self = Self(0);
+    pub(crate) const EMPTY: Self = Self(UnitMask::EMPTY);
 
     pub(crate) fn insert(&mut self, unit: CalendarUnit) {
-        self.0 |= 1 << unit as u8;
+        self.0.insert(unit as u8);
     }
 
     pub(crate) fn is_empty(self) -> bool {
-        self.0 == 0
+        self.0.is_empty()
     }
 
     pub(crate) fn smallest(self) -> CalendarUnit {
-        debug_assert!(!self.is_empty());
-        CalendarUnit::from_index_unchecked(7 - self.0.leading_zeros() as u8)
+        CalendarUnit::from_index_unchecked(self.0.smallest_index())
     }
 
     pub(crate) fn iter(self) -> CalendarUnitSetIter {
-        CalendarUnitSetIter(self.0)
+        CalendarUnitSetIter(self.0.0)
     }
 }
 
@@ -284,7 +315,15 @@ pub(crate) enum DifferenceUnit {
 }
 
 impl DifferenceUnit {
-    pub(crate) fn to_exact(self, days_are_24h: bool) -> Result<ExactUnit, CalendarUnit> {
+    pub(crate) fn to_exact(self) -> Result<ExactUnit, CalendarUnit> {
+        self.to_exact_with_days(false)
+    }
+
+    pub(crate) fn to_exact_assuming_24h_days(self) -> Result<ExactUnit, CalendarUnit> {
+        self.to_exact_with_days(true)
+    }
+
+    fn to_exact_with_days(self, days_are_24h: bool) -> Result<ExactUnit, CalendarUnit> {
         Ok(match self {
             DifferenceUnit::Weeks if days_are_24h => ExactUnit::Weeks,
             DifferenceUnit::Days if days_are_24h => ExactUnit::Days,
@@ -373,7 +412,7 @@ impl ExactUnit {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub(crate) struct ExactUnitSet(u8);
+pub(crate) struct ExactUnitSet(UnitMask);
 
 impl std::fmt::Debug for ExactUnitSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -388,7 +427,7 @@ impl std::fmt::Debug for ExactUnitSet {
             ExactUnit::Microseconds,
             ExactUnit::Nanoseconds,
         ] {
-            if self.0 & (1 << unit as u8) != 0 {
+            if self.0.contains(unit as u8) {
                 list.entry(&unit);
             }
         }
@@ -397,29 +436,28 @@ impl std::fmt::Debug for ExactUnitSet {
 }
 
 impl ExactUnitSet {
-    pub(crate) const EMPTY: Self = Self(0);
+    pub(crate) const EMPTY: Self = Self(UnitMask::EMPTY);
 
     pub(crate) fn insert(&mut self, unit: ExactUnit) {
-        self.0 |= 1 << (unit as u8);
+        self.0.insert(unit as u8);
     }
 
     pub(crate) fn contains(self, unit: ExactUnit) -> bool {
-        self.0 & (1 << (unit as u8)) != 0
+        self.0.contains(unit as u8)
     }
 
     pub(crate) fn is_empty(self) -> bool {
-        self.0 == 0
+        self.0.is_empty()
     }
 
     pub(crate) fn smallest(self) -> ExactUnit {
-        debug_assert!(!self.is_empty());
-        ExactUnit::from_index(7 - self.0.leading_zeros() as u8)
+        ExactUnit::from_index(self.0.smallest_index())
     }
 }
 
 /// Bitfield set of units. Bit 0 = Years, bit 7 = Nanoseconds.
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub(crate) struct DifferenceUnitSet(u8);
+pub(crate) struct DifferenceUnitSet(UnitMask);
 
 impl std::fmt::Debug for DifferenceUnitSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -434,7 +472,7 @@ impl std::fmt::Debug for DifferenceUnitSet {
             DifferenceUnit::Seconds,
             DifferenceUnit::Nanoseconds,
         ] {
-            if self.0 & (1 << unit as u8) != 0 {
+            if self.0.contains(unit as u8) {
                 list.entry(&unit);
             }
         }
@@ -445,35 +483,32 @@ impl std::fmt::Debug for DifferenceUnitSet {
 const CAL_MASK: u8 = 0x0F; // bits 0-3: Years, Months, Weeks, Days
 
 impl DifferenceUnitSet {
-    pub(crate) const EMPTY: Self = Self(0);
+    pub(crate) const EMPTY: Self = Self(UnitMask::EMPTY);
 
     pub(crate) fn insert(&mut self, unit: DifferenceUnit) {
-        self.0 |= 1 << unit as u8;
-    }
-
-    pub(crate) fn is_empty(self) -> bool {
-        self.0 == 0
+        self.0.insert(unit as u8);
     }
 
     pub(crate) fn has_days_or_weeks(self) -> bool {
-        self.0 & ((1 << DifferenceUnit::Days as u8) | (1 << DifferenceUnit::Weeks as u8)) != 0
+        self.0
+            .intersects((1 << DifferenceUnit::Days as u8) | (1 << DifferenceUnit::Weeks as u8))
     }
 
     pub(crate) fn has_calendar(self) -> bool {
-        self.0 & CAL_MASK != 0
+        self.0.intersects(CAL_MASK)
     }
 
     pub(crate) fn has_exact(self) -> bool {
-        self.0 & 0xF0 != 0 // bits 4-7: Hours, Minutes, Seconds, Nanoseconds
+        self.0.intersects(0xF0) // bits 4-7: Hours, Minutes, Seconds, Nanoseconds
     }
 
     /// The calendar-only subset (years, months, weeks, days)
     pub(crate) fn calendar_only(self) -> CalendarUnitSet {
-        CalendarUnitSet(self.0 & CAL_MASK)
+        CalendarUnitSet(self.0.intersection(CAL_MASK))
     }
 
     pub(crate) fn contains(self, unit: DifferenceUnit) -> bool {
-        self.0 & (1 << unit as u8) != 0
+        self.0.contains(unit as u8)
     }
 
     /// The exact-only subset (hours, minutes, seconds, nanoseconds).
@@ -516,8 +551,7 @@ impl DifferenceUnitSet {
 
     /// The smallest (highest-numbered) unit in the set
     pub(crate) fn smallest(self) -> DifferenceUnit {
-        debug_assert!(!self.is_empty());
-        DifferenceUnit::from_index(7 - self.0.leading_zeros() as u8)
+        DifferenceUnit::from_index(self.0.smallest_index())
     }
 
     /// Split into calendar and exact unit sets
@@ -574,7 +608,15 @@ impl TryFrom<TotalUnit> for DifferenceUnit {
 }
 
 impl TotalUnit {
-    pub(crate) fn to_exact(self, days_are_24h: bool) -> Result<ExactUnit, CalendarUnit> {
+    pub(crate) fn to_exact(self) -> Result<ExactUnit, CalendarUnit> {
+        self.to_exact_with_days(false)
+    }
+
+    pub(crate) fn to_exact_assuming_24h_days(self) -> Result<ExactUnit, CalendarUnit> {
+        self.to_exact_with_days(true)
+    }
+
+    fn to_exact_with_days(self, days_are_24h: bool) -> Result<ExactUnit, CalendarUnit> {
         Ok(match self {
             TotalUnit::Weeks if days_are_24h => ExactUnit::Weeks,
             TotalUnit::Days if days_are_24h => ExactUnit::Days,
@@ -619,7 +661,7 @@ impl DifferenceSpec {
 
     pub(crate) fn has_exact_output(self) -> bool {
         match self {
-            DifferenceSpec::Total(u) => u.to_exact(false).is_ok(),
+            DifferenceSpec::Total(u) => u.to_exact().is_ok(),
             DifferenceSpec::InUnits { units, .. } => units.has_exact(),
         }
     }

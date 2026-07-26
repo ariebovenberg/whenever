@@ -303,24 +303,30 @@ impl TzStr {
 impl Rule {
     fn for_year(self, year: Year, transition_time: TransitionTime) -> LocalSeconds {
         let date = match self {
-            Rule::DayOfYear(d) => year
-                .unix_days_at_jan1()
-                // Safe: no overflow since it stays within the year
-                .add_unchecked(
-                    (d.get()
-                        // The 366th day will blow up for non-leap years.
-                        // It's unlikely that a TZ string would specify this,
-                        // so we'll just clamp it to the last day of the year.
-                        .min(365 + year.is_leap() as u16)
-                        - 1) as _,
-                )
-                .date(),
+            Rule::DayOfYear(d) => {
+                // SAFETY: the clamped day remains within the requested year.
+                unsafe {
+                    year.unix_days_at_jan1().add_unchecked(
+                        (d.get()
+                            // The 366th day will blow up for non-leap years.
+                            // It's unlikely that a TZ string would specify this,
+                            // so we'll just clamp it to the last day of the year.
+                            .min(365 + year.is_leap() as u16)
+                            - 1) as _,
+                    )
+                }
+                .date()
+            }
 
-            Rule::JulianDayOfYear(d) => year
-                .unix_days_at_jan1()
-                // Safe: No overflow since it stays within the year
-                .add_unchecked((d.get() - 1) as i32 + (year.is_leap() && d.get() > 59) as i32)
-                .date(),
+            Rule::JulianDayOfYear(d) => {
+                // SAFETY: the Julian day, adjusted for leap years, remains within the year.
+                unsafe {
+                    year.unix_days_at_jan1().add_unchecked(
+                        (d.get() - 1) as i32 + (year.is_leap() && d.get() > 59) as i32,
+                    )
+                }
+                .date()
+            }
 
             Self::LastWeekday(w, m) => {
                 // SAFETY: -1 always produces a valid result (every month has

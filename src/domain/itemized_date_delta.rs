@@ -53,7 +53,7 @@ impl ItemizedDateDelta {
     ) {
         let field = unit.field(self);
         field.replace_unchecked(round_by_days(
-            field.unwrap(),
+            field.as_option().unwrap(),
             target,
             trunc,
             expand,
@@ -76,7 +76,7 @@ impl ItemizedDateDelta {
     ) {
         let field = unit.field(self);
         field.replace_unchecked(round_by_time(
-            field.unwrap(),
+            field.as_option().unwrap(),
             target,
             trunc,
             expand,

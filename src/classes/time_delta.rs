@@ -2,9 +2,7 @@ use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
 use std::ptr::null_mut as NULL;
 
-pub(crate) use crate::domain::time_delta::{
-    DeltaIncrement, TimeDelta, parse_all_components, parse_prefix,
-};
+pub(crate) use crate::domain::time_delta::{DeltaIncrement, TimeDelta};
 
 use crate::{
     classes::{
@@ -23,6 +21,7 @@ use crate::{
             TotalUnit,
         },
         scalar::*,
+        time_delta::ParseError,
     },
     py::*,
     pymodule::State,
@@ -700,24 +699,11 @@ fn parse_iso(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
         // NOTE: this exception message also needs to make sense when
         // called through the constructor
         .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
-    let s = &mut py_str.as_utf8()?;
-    let err = || format!("Invalid format: {arg}");
-
-    let negate = (s.len() >= 4)
-        .then(|| parse_prefix(s))
-        .flatten()
-        .ok_or_else_value_err(err)?;
-
-    let (nanos, is_empty) = parse_all_components(s).ok_or_else_value_err(err)?;
-
-    // i.e. there must be at least one component (`PT` alone is invalid)
-    if is_empty {
-        raise_value_err(err())?;
+    match TimeDelta::parse_iso(py_str.as_utf8()?) {
+        Ok(d) => d.to_obj(cls),
+        Err(ParseError::Invalid) => raise_value_err(format!("Invalid format: {arg}")),
+        Err(ParseError::OutOfRange) => raise_range_err(),
     }
-    TimeDelta::from_nanos(i128::try_from(nanos).ok().ok_or_range_err()?)
-        .ok_or_range_err()?
-        .negate_if(negate)
-        .to_obj(cls)
 }
 
 fn round(
@@ -886,7 +872,12 @@ fn total(
         Ok(true)
     })?;
 
-    let calendar_unit = match unit.to_exact(relative_to_arg.is_none()) {
+    let exact_unit = if relative_to_arg.is_none() {
+        unit.to_exact_assuming_24h_days()
+    } else {
+        unit.to_exact()
+    };
+    let calendar_unit = match exact_unit {
         Ok(ExactUnit::Nanoseconds) => {
             // Special case for nanoseconds: always return an int
             return slf.total_nanos().to_py();

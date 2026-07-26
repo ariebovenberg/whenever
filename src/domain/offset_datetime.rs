@@ -46,7 +46,7 @@ impl OffsetDateTime {
         self.to_plain().shift_by(shift)?.assume_offset(offset)
     }
 
-    pub(crate) fn parse(s: &[u8]) -> Option<Self> {
+    pub(crate) fn parse_iso(s: &[u8]) -> Option<Self> {
         Scan::new(s).parse_all(Self::read_iso)
     }
 

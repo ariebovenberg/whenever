@@ -342,7 +342,7 @@ fn format_iso(
 }
 
 fn parse_iso(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
-    OffsetDateTime::parse(
+    OffsetDateTime::parse_iso(
         s_obj
             .cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
