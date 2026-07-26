@@ -2,6 +2,7 @@
 pub mod difference_args;
 pub mod disambiguation;
 pub mod fmt;
+pub mod format_args;
 pub mod instant;
 pub mod parse;
 pub mod pattern;

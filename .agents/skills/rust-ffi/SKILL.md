@@ -156,7 +156,8 @@ perform Unicode comparison before later subsets have had their pointer-equality 
   Has `.in_single_unit()` and `.in_exact_units()` for unit decomposition.
 - Unit types name their role: `fmt::Precision`, `round::RoundUnit`, and
   `CalendarUnit`/`DifferenceUnit`/`ExactUnit` in `common::math`. Keep these domains distinct unless
-  their parsing and behavior are demonstrably identical.
+  their parsing and behavior are demonstrably identical. Keep `common::fmt` free of Python
+  argument parsing; `common::format_args` adapts Python `format_iso` arguments to its pure types.
 - **ItemizedDelta/ItemizedDateDelta** use `DeltaField<T>` with `i32::MAX` as the UNSET sentinel.
   `DeltaField` has custom `Debug` showing `<unset>` for sentinel values.
 

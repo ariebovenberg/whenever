@@ -9,7 +9,8 @@ use crate::{
     },
     common::{
         disambiguation::*,
-        fmt::{self, Suffix},
+        fmt,
+        format_args::{self, Suffix},
         instant::{
             extract_instant, parse_instant_arg, parse_timestamp, parse_timestamp_millis,
             parse_timestamp_nanos,
@@ -629,7 +630,7 @@ fn format_iso(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    fmt::format_iso(
+    format_args::format_datetime_iso(
         slf.date,
         slf.time,
         cls.state(),

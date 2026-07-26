@@ -1,7 +1,7 @@
 #[cfg(test)]
 use crate::common::{fmt::Sink, parse::Scan};
 use crate::{
-    common::{fmt, pattern, pickle, round_args as round},
+    common::{fmt, format_args, pattern, pickle, round_args as round},
     docstrings as doc,
     domain::scalar::*,
     py::*,
@@ -242,26 +242,7 @@ fn from_py_time(cls: PyClass<Time>, arg: PyObj) -> PyReturn {
 }
 
 fn format_iso(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    if !args.is_empty() {
-        raise_type_err("format_iso() takes no positional arguments")?;
-    }
-
-    // As-efficient-as-possible assignment of keyword arguments
-    let mut unit = fmt::Precision::Auto;
-    let mut basic = false;
-    let state = cls.state();
-    handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, *state.str_unit) {
-            unit = fmt::Precision::from_py(value, state)?;
-        } else if eq(key, *state.str_basic) {
-            basic = value.expect_bool("basic")?;
-        } else {
-            return Ok(false);
-        }
-        Ok(true)
-    })?;
-
-    PyAsciiStrBuilder::format(slf.iso_format(unit, basic))
+    format_args::format_time_iso(slf, cls.state(), args, kwargs)
 }
 
 fn parse_iso(cls: PyClass<Time>, s: PyObj) -> PyReturn {
