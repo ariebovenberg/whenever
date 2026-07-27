@@ -60,8 +60,8 @@ and their key differences. Click on the features to learn more about them.
 | {ref}`Convert to units <delta-in-units>`     | {meth}`~TimeDelta.in_units` | {meth}`~ItemizedDateDelta.in_units` [^1] | {meth}`~ItemizedDelta.in_units` [^1] |
 | {ref}`Summing into one unit <delta-total>`     | {meth}`~TimeDelta.total` | {meth}`~ItemizedDateDelta.total` [^1] | {meth}`~ItemizedDelta.total` [^1] |
 | {ref}`Comparison <delta-cmp>`           | {meth}`> <TimeDelta.__gt__>` , {meth}`< <TimeDelta.__lt__>` , {meth}`>= <TimeDelta.__ge__>` , {meth}`<= <TimeDelta.__le__>` | n/a                   | n/a                    |
-| {ref}`Addition/subtraction <delta-add-sub>`  | {meth}`~TimeDelta.add` / {meth}`~TimeDelta.subtract` | {meth}`~ItemizedDateDelta.add` / {meth}`~ItemizedDateDelta.subtract` [^1] | {meth}`~ItemizedDelta.add` / {meth}`~ItemizedDelta.subtract` [^1] |
-| {ref}`Operators <delta-operators>` | {meth}`+ <TimeDelta.__add__>` , {meth}`- <TimeDelta.__sub__>` , {meth}`* <TimeDelta.__mul__>` , {meth}`/ <TimeDelta.__truediv__>` , {meth}`// <TimeDelta.__floordiv__>` , {meth}`% <TimeDelta.__mod__>` | n/a                   | n/a                    |
+| {ref}`Addition/subtraction <delta-add-sub>`  | {meth}`~TimeDelta.add` / {meth}`~TimeDelta.subtract` | {meth}`~ItemizedDateDelta.add` / {meth}`~ItemizedDateDelta.subtract` | {meth}`~ItemizedDelta.add` / {meth}`~ItemizedDelta.subtract` |
+| {ref}`Operators <delta-operators>` | {meth}`+ <TimeDelta.__add__>` , {meth}`- <TimeDelta.__sub__>` , {meth}`* <TimeDelta.__mul__>` , {meth}`/ <TimeDelta.__truediv__>` , {meth}`// <TimeDelta.__floordiv__>` , {meth}`% <TimeDelta.__mod__>` | `+`, `-` | `+`, `-` |
 | {ref}`Rounding <delta-rounding>` | {meth}`~TimeDelta.round`  | with {meth}`~ItemizedDateDelta.in_units`          | with {meth}`~ItemizedDelta.in_units`          |
 | Applies to...     | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` <br> {class}`Instant` | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` <br> {class}`Date` | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` |
 | Similar to... | {class}`~datetime.timedelta` | {class}`~collections.Counter` | {class}`~collections.Counter` |
@@ -282,10 +282,10 @@ of the two deltas:
 TimeDelta("PT3h30m")
 ```
 
-"Itemized" deltas do require a relative date or datetime context
+"Itemized" delta composition can use a relative date or datetime context
 to resolve calendar units when adding or subtracting.
-For example, adding "1 month" to "30 days" requires knowing the starting date
-to determine the resulting duration:
+For example, the calendar-aware composition of "1 month" and "30 days"
+depends on the starting date:
 
 ```python
 >>> one_month = ItemizedDateDelta(months=1)
