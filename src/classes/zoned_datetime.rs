@@ -392,7 +392,7 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
         raise_type_err(pickle::INVALID_DATA)?
     };
     pickle::decode_offset(data.expect_bytes()?)
-        .ok_or_type_err(pickle::INVALID_DATA)?
+        .ok_or_value_err(pickle::INVALID_DATA)?
         .into_zoned_unchecked(state.tz_store.obj_get(tz_obj)?)
         .to_obj(*state.zoned_datetime_type)
 }
@@ -417,13 +417,12 @@ fn to_instant(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 
 fn to_fixed_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, args: &[PyObj]) -> PyReturn {
     let state = cls.state();
-    match *args {
-        [] => slf.to_plain().assume_offset_unchecked(slf.offset),
-        [arg] => slf
+    match handle_opt_arg("to_fixed_offset", args)? {
+        None => slf.to_plain().assume_offset_unchecked(slf.offset),
+        Some(arg) => slf
             .to_instant()
             .to_offset(Offset::from_py(arg, *state.time_delta_type)?)
             .ok_or_range_err()?,
-        _ => raise_type_err("to_fixed_offset() takes at most 1 argument")?,
     }
     .to_obj(*state.offset_datetime_type)
 }
@@ -561,12 +560,7 @@ fn replace_date(
 ) -> PyReturn {
     let state = cls.state();
 
-    let &[arg] = args else {
-        raise_type_err(format!(
-            "replace_date() takes exactly 1 argument but {} were given",
-            args.len()
-        ))?
-    };
+    let arg = handle_one_arg("replace_date", args)?;
 
     let dis = Disambiguation::from_only_kwarg(kwargs, "replace_date", state)?;
     let ZonedDateTime {
@@ -596,12 +590,7 @@ fn replace_time(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let &[arg] = args else {
-        raise_type_err(format!(
-            "replace_time() takes exactly 1 argument but {} were given",
-            args.len()
-        ))?
-    };
+    let arg = handle_one_arg("replace_time", args)?;
 
     let dis = Disambiguation::from_only_kwarg(kwargs, "replace_time", state)?;
     let ZonedDateTime {
@@ -682,9 +671,7 @@ fn replace(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    if !args.is_empty() {
-        raise_type_err("replace() takes no positional arguments")?;
-    }
+    handle_no_args("replace", args)?;
     let state = cls.state();
     let mut components = slf.to_plain().components();
     let offset = slf.offset;
@@ -883,9 +870,7 @@ fn check_from_timestamp_args_return_tz(
             if unicode_eq(key, *state.str_tz) {
                 state.tz_store.obj_get(value)
             } else {
-                raise_type_err(format!(
-                    "{fname}() got an unexpected keyword argument {key}"
-                ))
+                raise_unexpected_kwarg(fname, key)
             }
         }
         (&[_], None) => raise_type_err(format!(
@@ -1005,8 +990,8 @@ fn shift_method(
     let state = cls.state();
     let mut dis = None;
 
-    let shift = match *args {
-        [arg] => {
+    let shift = match handle_opt_arg(fname, args)? {
+        Some(arg) => {
             match kwargs.next() {
                 Some((key, value))
                     if kwargs.original_len() == 1 && unicode_eq(key, *state.str_disambiguate) =>
@@ -1014,13 +999,11 @@ fn shift_method(
                     dis = Some(Disambiguation::from_py(value, state)?)
                 }
                 None => {}
-                _ => raise_type_err(format!(
-                    "{fname}() can't mix positional and keyword arguments"
-                ))?,
+                _ => raise_mixed_args(fname)?,
             };
             parse_datetime_shift_arg(fname, arg, state)?
         }
-        [] => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
+        None => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
             if eq(k, *state.str_disambiguate) {
                 dis = Disambiguation::from_py(v, state)?.into();
                 Ok(true)
@@ -1028,11 +1011,6 @@ fn shift_method(
                 Ok(false)
             }
         })?,
-        _ => raise_type_err(format!(
-            "{}() takes at most 1 positional argument, got {}",
-            fname,
-            args.len()
-        ))?,
     };
 
     slf.shift(shift.negate_if(negate), dis, state, cls)
@@ -1260,12 +1238,7 @@ fn __format__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, spec_obj: PyObj)
 }
 
 fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let &[s_obj] = args else {
-        raise_type_err(format!(
-            "parse() takes exactly 1 positional argument ({} given)",
-            args.len()
-        ))?
-    };
+    let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("parse() argument must be str")?;

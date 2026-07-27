@@ -47,5 +47,3 @@ you must opt in with a dedicated method
 (e.g. {meth}`~whenever.Instant.to_system_tz`,
 {meth}`~whenever.PlainDateTime.assume_system_tz`)
 so the dependency is visible in the code.
-
-<!-- FUTURE: something about .to_* and .assume_* APIs -->

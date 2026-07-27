@@ -257,14 +257,13 @@ pub(crate) fn to_instant(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> P
 }
 
 fn to_fixed_offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, args: &[PyObj]) -> PyReturn {
-    match *args {
-        [] => slf.to_obj(cls),
-        [offset_obj] => slf
+    match handle_opt_arg("to_fixed_offset", args)? {
+        None => slf.to_obj(cls),
+        Some(offset_obj) => slf
             .to_instant()
             .to_offset(Offset::from_py(offset_obj, *cls.state().time_delta_type)?)
             .ok_or_range_err()?
             .to_obj(cls),
-        _ => raise_type_err("to_fixed_offset() takes at most 1 argument"),
     }
 }
 
@@ -287,12 +286,7 @@ fn assume_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let &[tz_obj] = args else {
-        raise_type_err(format!(
-            "assume_tz() takes 1 positional argument but {} were given",
-            args.len()
-        ))?
-    };
+    let tz_obj = handle_one_arg("assume_tz", args)?;
 
     // Parse offset_mismatch kwarg
     let mut mismatch_obj: Option<PyObj> = None;
@@ -497,9 +491,7 @@ fn replace_date(
         state,
         doc::OFFSET_REPLACE_STALE_MSG,
     )?;
-    let &[arg] = args else {
-        raise_type_err("replace_date() takes exactly 1 positional argument")?
-    };
+    let arg = handle_one_arg("replace_date", args)?;
     if let Some(date) = arg.extract(*state.date_type) {
         date.at(time)
             .assume_offset(offset)
@@ -523,9 +515,7 @@ fn replace_time(
         state,
         doc::OFFSET_REPLACE_STALE_MSG,
     )?;
-    let &[arg] = args else {
-        raise_type_err("replace_time() takes exactly 1 positional argument")?
-    };
+    let arg = handle_one_arg("replace_time", args)?;
     if let Some(time) = arg.extract(*state.time_type) {
         date.at(time)
             .assume_offset(offset)
@@ -570,9 +560,7 @@ fn replace(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    if !args.is_empty() {
-        raise_type_err("replace() takes no positional arguments")?
-    }
+    handle_no_args("replace", args)?;
     let state = cls.state();
     let mut components = slf.to_plain().components();
     let mut offset = slf.offset;
@@ -608,9 +596,7 @@ fn replace(
 
 fn now(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let state = cls.state();
-    let &[offset_obj] = args else {
-        raise_type_err("now() takes exactly 1 positional argument")?
-    };
+    let offset_obj = handle_one_arg("now", args)?;
     check_ignore_dst_and_stale_offset("now", kwargs, state, doc::OFFSET_NOW_STALE_MSG)?;
     let offset = Offset::from_py(offset_obj, *state.time_delta_type)?;
     state
@@ -681,22 +667,20 @@ fn shift_method(
     let mut got_ignore_dst = false;
     let mut suppress_stale = false;
 
-    let shift = match *args {
-        [arg] => {
+    let shift = match handle_opt_arg(fname, args)? {
+        Some(arg) => {
             for (key, value) in kwargs.by_ref() {
                 if unicode_eq(key, *state.str_ignore_dst) {
                     got_ignore_dst = true;
                 } else if unicode_eq(key, *state.str_stale_offset_ok) {
                     suppress_stale = value.is_truthy()?;
                 } else {
-                    raise_type_err(format!(
-                        "{fname}() can't mix positional and keyword arguments"
-                    ))?;
+                    raise_mixed_args(fname)?;
                 }
             }
             parse_datetime_shift_arg(fname, arg, state)?
         }
-        [] => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
+        None => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
             if eq(k, *state.str_ignore_dst) {
                 got_ignore_dst = true;
                 Ok(true)
@@ -707,11 +691,6 @@ fn shift_method(
                 Ok(false)
             }
         })?,
-        _ => raise_type_err(format!(
-            "{}() takes at most 1 positional argument, got {}",
-            fname,
-            args.len()
-        ))?,
     };
 
     if got_ignore_dst {
@@ -843,12 +822,7 @@ fn parse_strptime(
         }
         _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
     };
-    let &[arg_obj] = args else {
-        raise_type_err(format!(
-            "parse_strptime() takes exactly 1 positional argument, got {}",
-            args.len()
-        ))?
-    };
+    let arg_obj = handle_one_arg("parse_strptime", args)?;
 
     let parsed = state
         .strptime
@@ -1051,12 +1025,7 @@ fn __format__(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, spec_obj: PyObj
 }
 
 fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let &[s_obj] = args else {
-        raise_type_err(format!(
-            "parse() takes exactly 1 positional argument ({} given)",
-            args.len()
-        ))?
-    };
+    let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("parse() argument must be str")?;

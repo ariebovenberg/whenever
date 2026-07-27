@@ -11,6 +11,7 @@ use crate::{
             MAX_HOURS, MAX_MICROSECONDS, MAX_MILLISECONDS, MAX_MINUTES, MAX_SECS, TimeDelta,
         },
     },
+    common::pickle,
     docstrings as doc,
     domain::scalar::*,
     py::*,
@@ -25,7 +26,6 @@ impl DateTimeDelta {
 
 impl PyPayload for DateTimeDelta {}
 
-#[inline]
 pub(crate) fn handle_exact_unit(
     value: PyObj,
     max: u64,
@@ -48,7 +48,6 @@ pub(crate) fn handle_exact_unit(
 }
 
 // Also return UnitSet
-#[inline]
 pub(crate) fn set_units_from_kwargs(
     key: PyObj,
     value: PyObj,
@@ -427,33 +426,33 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
                 DeltaMonths::from_i64(
                     months
                         .cast_exact::<PyInt>()
-                        .ok_or_type_err("invalid pickle data")?
+                        .ok_or_type_err(pickle::INVALID_DATA)?
                         .to_i64()?,
                 )
-                .ok_or_value_err("invalid pickle data")?,
+                .ok_or_value_err(pickle::INVALID_DATA)?,
                 DeltaDays::from_i64(
                     days.cast_exact::<PyInt>()
-                        .ok_or_type_err("invalid pickle data")?
+                        .ok_or_type_err(pickle::INVALID_DATA)?
                         .to_i64()?,
                 )
-                .ok_or_value_err("invalid pickle data")?,
+                .ok_or_value_err(pickle::INVALID_DATA)?,
             )
-            .ok_or_value_err("invalid pickle data")?;
+            .ok_or_value_err(pickle::INVALID_DATA)?;
             let secs = secs
                 .cast_exact::<PyInt>()
-                .ok_or_type_err("invalid pickle data")?
+                .ok_or_type_err(pickle::INVALID_DATA)?
                 .to_i64()?;
             let nanos = nanos
                 .cast_exact::<PyInt>()
-                .ok_or_type_err("invalid pickle data")?
+                .ok_or_type_err(pickle::INVALID_DATA)?
                 .to_i64()?;
             let time = TimeDelta::from_nanos(secs as i128 * NS_PER_SEC as i128 + nanos as i128)
-                .ok_or_value_err("invalid pickle data")?;
+                .ok_or_value_err(pickle::INVALID_DATA)?;
             DateTimeDelta::new(date, time)
-                .ok_or_value_err("invalid pickle data")?
+                .ok_or_value_err(pickle::INVALID_DATA)?
                 .to_obj(*state.datetime_delta_type)
         }
-        _ => raise_type_err("invalid pickle data")?,
+        _ => raise_type_err(pickle::INVALID_DATA)?,
     }
 }
 

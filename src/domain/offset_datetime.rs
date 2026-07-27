@@ -8,7 +8,6 @@ use super::{
     time_delta::TimeDelta,
 };
 use crate::{common::parse::Scan, tz::tzif::is_valid_key};
-use std::fmt;
 
 /// A date and time with a fixed offset from UTC.
 /// Invariant: the instant represented by the date and time is always within range.
@@ -111,13 +110,6 @@ impl Offset {
             None => {}
         }
         Some(Self::new_unchecked(total).with_sign(sign))
-    }
-}
-
-impl fmt::Display for OffsetDateTime {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { date, time, offset } = self;
-        write!(f, "{date}T{time}{offset}")
     }
 }
 

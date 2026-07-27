@@ -80,7 +80,6 @@ pub(crate) const SINGLETONS: &[(&CStr, TimeDelta); 3] = &[
     (c"MAX", TimeDelta::MAX),
 ];
 
-#[inline]
 pub(crate) fn set_timedelta_from_kwargs(
     key: PyObj,
     value: PyObj,
@@ -744,17 +743,19 @@ fn add_method(
     kwargs: &mut IterKwargs,
     negate: bool,
 ) -> PyReturn {
-    let other = match (args.first(), kwargs.original_len()) {
-        (Some(_), n) if n > 0 => raise_type_err("cannot mix positional and keyword arguments")?,
-        (Some(arg), _) => arg.extract(cls).ok_or_type_err(if negate {
+    let fname = if negate { "subtract" } else { "add" };
+    let arg = handle_opt_arg(fname, args)?;
+    if arg.is_some() && kwargs.original_len() != 0 {
+        raise_mixed_args(fname)?;
+    }
+    let other = match arg {
+        Some(arg) => arg.extract(cls).ok_or_type_err(if negate {
             "subtract() argument must be a whenever.TimeDelta"
         } else {
             "add() argument must be a whenever.TimeDelta"
         })?,
-        (None, 0) => return slf.to_obj(cls),
-        (None, _) => {
-            timedelta_from_kwargs(if negate { "subtract" } else { "add" }, kwargs, cls.state())?
-        }
+        None if kwargs.original_len() == 0 => return slf.to_obj(cls),
+        None => timedelta_from_kwargs(fname, kwargs, cls.state())?,
     }
     .negate_if(negate);
     slf.add(other).ok_or_range_err()?.to_obj(cls)

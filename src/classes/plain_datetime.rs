@@ -127,7 +127,12 @@ fn __repr__(_: PyType, slf: PlainDateTime) -> PyReturn {
 }
 
 fn __str__(_: PyType, slf: PlainDateTime) -> PyReturn {
-    format!("{slf}").to_py()
+    let PlainDateTime { date, time } = slf;
+    PyAsciiStrBuilder::format((
+        date.iso_format(false),
+        b'T',
+        time.iso_format(fmt::Precision::Auto, false),
+    ))
 }
 
 fn format_iso(
@@ -307,7 +312,6 @@ impl PlainDateTime {
 }
 
 impl DateTimeComponents {
-    #[inline]
     pub(crate) fn set_from_kwarg(
         &mut self,
         key: PyObj,
@@ -351,9 +355,7 @@ fn replace(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    if !args.is_empty() {
-        raise_type_err("replace() takes no positional arguments")?
-    }
+    handle_no_args("replace", args)?;
     let state = cls.state();
     let mut components = slf.components();
     handle_kwargs("replace", kwargs, |k, v, eq| {
@@ -393,22 +395,20 @@ fn shift_method(
     let mut got_ignore_dst = false;
     let mut suppress_unaware = false;
 
-    let shift = match *args {
-        [arg] => {
+    let shift = match handle_opt_arg(fname, args)? {
+        Some(arg) => {
             for (key, value) in kwargs.by_ref() {
                 if unicode_eq(key, *state.str_ignore_dst) {
                     got_ignore_dst = true;
                 } else if unicode_eq(key, *state.str_naive_arithmetic_ok) {
                     suppress_unaware = value.is_truthy()?;
                 } else {
-                    raise_type_err(format!(
-                        "{fname}() can't mix positional and keyword arguments"
-                    ))?;
+                    raise_mixed_args(fname)?;
                 }
             }
             parse_datetime_shift_arg(fname, arg, state)?
         }
-        [] => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
+        None => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
             if eq(k, *state.str_ignore_dst) {
                 got_ignore_dst = true;
                 Ok(true)
@@ -419,11 +419,6 @@ fn shift_method(
                 Ok(false)
             }
         })?,
-        _ => raise_type_err(format!(
-            "{}() takes at most 1 positional argument, got {}",
-            fname,
-            args.len()
-        ))?,
     };
 
     if got_ignore_dst {
@@ -457,12 +452,10 @@ fn difference(
         } else if unicode_eq(key, *state.str_naive_arithmetic_ok) {
             suppress_unaware = value.is_truthy()?;
         } else {
-            raise_type_err(format!("Unknown keyword argument: {key}"))?;
+            raise_unexpected_kwarg("difference", key)?;
         }
     }
-    let [arg] = *args else {
-        raise_type_err("difference() takes exactly 1 argument")?
-    };
+    let arg = handle_one_arg("difference", args)?;
     if let Some(dt) = arg.extract(cls) {
         if !suppress_unaware {
             warn_with_class(*state.warn_naive_arithmetic, doc::PLAIN_DIFF_UNAWARE_MSG, 1)?;
@@ -486,7 +479,7 @@ fn __reduce__(cls: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     pickle::decode_plain(arg.expect_bytes()?)
-        .ok_or_type_err(pickle::INVALID_DATA)?
+        .ok_or_value_err(pickle::INVALID_DATA)?
         .to_obj(*state.plain_datetime_type)
 }
 
@@ -569,12 +562,7 @@ fn parse_strptime(
         }
         _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
     };
-    let &[arg_obj] = args else {
-        raise_type_err(format!(
-            "parse_strptime() takes exactly 1 positional argument, got {}",
-            args.len()
-        ))?
-    };
+    let arg_obj = handle_one_arg("parse_strptime", args)?;
 
     let parsed = state
         .strptime
@@ -604,12 +592,7 @@ fn assume_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let &[tz_obj] = args else {
-        raise_type_err(format!(
-            "assume_tz() takes 1 positional argument but {} were given",
-            args.len()
-        ))?
-    };
+    let tz_obj = handle_one_arg("assume_tz", args)?;
 
     let dis = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?
         .unwrap_or(Disambiguation::Compatible);
@@ -625,11 +608,9 @@ fn assume_system_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    if !args.is_empty() {
-        raise_type_err("assume_system_tz() takes no positional arguments")?
-    }
+    handle_no_args("assume_system_tz", args)?;
 
-    let dis = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?
+    let dis = Disambiguation::from_only_kwarg(kwargs, "assume_system_tz", state)?
         .unwrap_or(Disambiguation::Compatible);
     let tz = state.tz_store.get_system_tz()?;
     slf.resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
@@ -925,12 +906,7 @@ fn __format__(cls: PyClass<PlainDateTime>, slf: PlainDateTime, spec_obj: PyObj) 
 }
 
 fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let &[s_obj] = args else {
-        raise_type_err(format!(
-            "parse() takes exactly 1 positional argument ({} given)",
-            args.len()
-        ))?
-    };
+    let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("parse() argument must be str")?;

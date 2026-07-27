@@ -278,31 +278,28 @@ fn on(cls: PyClass<Time>, slf: Time, arg: PyObj) -> PyReturn {
 
 fn replace(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let state = cls.state();
-    if !args.is_empty() {
-        raise_type_err("replace() takes no positional arguments")
-    } else {
-        let mut hour = slf.hour.into();
-        let mut minute = slf.minute.into();
-        let mut second = slf.second.into();
-        let mut nanos = slf.subsec.get() as _;
-        handle_kwargs("replace", kwargs, |k, v, eq| {
-            if eq(k, *state.str_hour) {
-                hour = v.expect_int("hour")?.to_i64()?;
-            } else if eq(k, *state.str_minute) {
-                minute = v.expect_int("minute")?.to_i64()?;
-            } else if eq(k, *state.str_second) {
-                second = v.expect_int("second")?.to_i64()?;
-            } else if eq(k, *state.str_nanosecond) {
-                nanos = v.expect_int("nanosecond")?.to_i64()?;
-            } else {
-                return Ok(false);
-            }
-            Ok(true)
-        })?;
-        Time::from_i64_components(hour, minute, second, nanos)
-            .ok_or_value_err("invalid time component value")?
-            .to_obj(cls)
-    }
+    handle_no_args("replace", args)?;
+    let mut hour = slf.hour.into();
+    let mut minute = slf.minute.into();
+    let mut second = slf.second.into();
+    let mut nanos = slf.subsec.get() as _;
+    handle_kwargs("replace", kwargs, |k, v, eq| {
+        if eq(k, *state.str_hour) {
+            hour = v.expect_int("hour")?.to_i64()?;
+        } else if eq(k, *state.str_minute) {
+            minute = v.expect_int("minute")?.to_i64()?;
+        } else if eq(k, *state.str_second) {
+            second = v.expect_int("second")?.to_i64()?;
+        } else if eq(k, *state.str_nanosecond) {
+            nanos = v.expect_int("nanosecond")?.to_i64()?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    })?;
+    Time::from_i64_components(hour, minute, second, nanos)
+        .ok_or_value_err("invalid time component value")?
+        .to_obj(cls)
 }
 
 fn round(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
@@ -336,12 +333,7 @@ fn __format__(cls: PyClass<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
 }
 
 fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let &[s_obj] = args else {
-        raise_type_err(format!(
-            "parse() takes exactly 1 positional argument ({} given)",
-            args.len()
-        ))?
-    };
+    let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("parse() argument must be str")?;
@@ -381,7 +373,7 @@ static mut METHODS: &[PyMethodDef] = &[
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     pickle::decode_time(arg.expect_bytes()?)
-        .ok_or_type_err(pickle::INVALID_DATA)?
+        .ok_or_value_err(pickle::INVALID_DATA)?
         .to_obj(*state.time_type)
 }
 

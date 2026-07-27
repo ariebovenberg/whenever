@@ -240,7 +240,6 @@ impl fmt::Display for TimeDelta {
     }
 }
 
-#[inline]
 pub(crate) fn fmt_components_abs(delta: TimeDelta, result: &mut String) {
     let TimeDelta { secs, subsec } = delta;
     debug_assert!(secs.get() >= 0);

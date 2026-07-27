@@ -379,12 +379,10 @@ fn shift_method(
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
 
-    match *args {
-        [arg] => {
+    match handle_opt_arg(fname, args)? {
+        Some(arg) => {
             if kwargs.original_len() != 0 {
-                raise_type_err(format!(
-                    "{fname}() can't mix positional and keyword arguments"
-                ))?;
+                raise_mixed_args(fname)?;
             }
             if let Some(d) = arg.extract(*state.time_delta_type) {
                 instant
@@ -395,17 +393,13 @@ fn shift_method(
                 raise_type_err(format!("{fname}() argument must be a TimeDelta"))?
             }
         }
-        [] => {
+        None => {
             let tdelta = timedelta_from_kwargs(fname, kwargs, state)?;
             instant
                 .shift(tdelta.negate_if(negate))
                 .ok_or_range_err()?
                 .to_obj(cls)
         }
-        _ => raise_type_err(format!(
-            "{fname}() takes at most 1 positional argument, got {}",
-            args.len()
-        ))?,
     }
 }
 
@@ -422,12 +416,11 @@ fn to_tz(cls: PyClass<Instant>, slf: Instant, tz_obj: PyObj) -> PyReturn {
 
 fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyReturn {
     let state = cls.state();
-    match *args {
-        [] => slf.to_utc_plain().assume_offset_unchecked(Offset::ZERO),
-        [arg] => slf
+    match handle_opt_arg("to_fixed_offset", args)? {
+        None => slf.to_utc_plain().assume_offset_unchecked(Offset::ZERO),
+        Some(arg) => slf
             .to_offset(Offset::from_py(arg, *state.time_delta_type)?)
             .ok_or_range_err()?,
-        _ => raise_type_err("to_fixed_offset() takes at most 1 argument")?,
     }
     .to_obj(*state.offset_datetime_type)
 }
@@ -502,12 +495,7 @@ fn __format__(cls: PyClass<Instant>, slf: Instant, spec_obj: PyObj) -> PyReturn 
 }
 
 fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let &[s_obj] = args else {
-        raise_type_err(format!(
-            "parse() takes exactly 1 positional argument ({} given)",
-            args.len()
-        ))?
-    };
+    let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("parse() argument must be str")?;
