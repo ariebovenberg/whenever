@@ -114,7 +114,7 @@ let relative_to = handle_one_kwarg("total", state.str_relative_to, kwargs)?;
 ```
 
 **Building deltas from kwargs (shift/add/subtract methods):**
-Use `common::shift::parse_datetime_shift_kwargs()` for full datetime units or
+Use `common::shift_args::parse_datetime_shift_kwargs()` for full datetime units or
 `parse_calendar_shift_kwargs()` for calendar-only units. They return a typed
 `DateTimeShift` or `CalendarShift`; the datetime parser's callback retains
 class-specific kwargs such as `disambiguate` and warning suppression. For a
@@ -161,8 +161,8 @@ perform Unicode comparison before later subsets have had their pointer-equality 
   Has `.in_single_unit()` and `.in_exact_units()` for unit decomposition, and owns the pure
   `parse_iso()` implementation; map its parse errors to Python exceptions in the binding.
 - Unit types name their role: `fmt::Precision`, `round::RoundUnit`, and
-  `CalendarUnit`/`DifferenceUnit`/`ExactUnit` in `common::math`. Keep these domains distinct unless
-  their parsing and behavior are demonstrably identical. Keep `common::fmt` free of Python
+  `CalendarUnit`/`DifferenceUnit`/`ExactUnit` in `domain::difference`. Keep these domains distinct
+  unless their parsing and behavior are demonstrably identical. Keep `common::fmt` free of Python
   argument parsing; `common::format_args` adapts Python `format_iso` arguments to its pure types.
 - **ItemizedDelta/ItemizedDateDelta** use `DeltaField<T>` with the integer type's `MIN` value as
   the UNSET sentinel. `DeltaField` has custom `Debug` showing `<unset>` for sentinel values and

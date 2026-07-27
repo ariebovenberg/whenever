@@ -362,27 +362,27 @@ out [Ry](https://pypi.org/project/ry/).
 ## Why aren't all operators supported for all types?
 
 Some operators may be conspicuously missing for certain types, even
-though they could be implemented. For example:
+though they could be implemented. Whenever provides operators where their
+meaning is useful and can be documented clearly.
+
+For example, dates and datetimes support applying itemized deltas with `+`
+and `-`:
 
 ```python
->>> Date(2024, 1, 31) + ItemizedDateDelta(months=1) # Error
+>>> Date(2024, 1, 31) + ItemizedDateDelta(months=1)
+Date("2024-02-29")
 ```
 
-This is because operators are only implemented where they are *mathematically
-intuitive*. For example, when `a + (b + c) = (a + b) + c` and `(a + b) - b = a`.
-This isn't the case when working with months
-or years, since adding a month to January 31st gives a different result
-than adding a month to February 28th. To avoid confusion, these
-operators are simply not implemented. There are methods like
-`add()` and `subtract()` that can be used
-instead, which don't come with the same mathematical expectations:
+These operators use the same calendar clamping rules as `add()` and
+`subtract()`. As a result, adding and then subtracting the same delta is not
+always reversible. Itemized deltas also support `+` and `-` with each other;
+these perform field-wise composition and warn by default because applying the
+combined delta may differ from applying its parts sequentially.
 
-```python
->>> Date(2024, 1, 31).add(months=1)
->>> Date(2024, 1, 31).add(ItemizedDateDelta(months=1))
-```
+Operators without a generally useful interpretation remain unavailable. For
+example, itemized deltas cannot be multiplied or divided.
 
-For the same reason, the `-` operator between two datetimes always
+The `-` operator between two datetimes always
 returns a {class}`~whenever.TimeDelta`—an exact elapsed duration where
 subtraction is unambiguous.
 If you need a difference in calendar units like years, months, or days,

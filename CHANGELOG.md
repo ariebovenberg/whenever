@@ -24,6 +24,11 @@
   `ItemizedDateDelta` values from Rust-backed operations.
 - Drop support for PyPy 3.10. PyPy 3.11 remains supported.
 
+**Fixed**
+
+- Fixed an overflow when validating extremely large rounding increments in the
+  Rust extension. They now raise `ValueError`.
+
 ## 0.10.3 (2026-07-17)
 
 - Fixed the pure Python implementation accepting invalid basic-format times
