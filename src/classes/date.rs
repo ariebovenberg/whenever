@@ -633,9 +633,7 @@ fn days_until(cls: PyClass<Date>, slf: Date, other: PyObj) -> PyReturn {
 }
 
 fn replace(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    if !args.is_empty() {
-        raise_type_err("replace() takes no positional arguments")?
-    }
+    handle_no_args("replace", args)?;
 
     let state = cls.state();
     let mut year = slf.year.get().into();
@@ -697,12 +695,7 @@ fn __format__(cls: PyClass<Date>, slf: Date, spec_obj: PyObj) -> PyReturn {
 }
 
 fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
-    let &[s_obj] = args else {
-        raise_type_err(format!(
-            "parse() takes exactly 1 positional argument ({} given)",
-            args.len()
-        ))?
-    };
+    let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("parse() argument must be str")?;

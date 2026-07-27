@@ -6,7 +6,7 @@ pub(crate) use crate::domain::date_delta::{DateDelta, InitError};
 
 use crate::{
     classes::{datetime_delta::DateTimeDelta, time_delta::TimeDelta},
-    common::shift_args::parse_calendar_shift_kwargs,
+    common::{pickle, shift_args::parse_calendar_shift_kwargs},
     docstrings as doc,
     domain::{scalar::*, shift::CalendarShift},
     py::*,
@@ -338,22 +338,22 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
             let months = DeltaMonths::from_i64(
                 months_obj
                     .cast_exact::<PyInt>()
-                    .ok_or_type_err("invalid pickle data")?
+                    .ok_or_type_err(pickle::INVALID_DATA)?
                     .to_i64()?,
             )
-            .ok_or_value_err("invalid pickle data")?;
+            .ok_or_value_err(pickle::INVALID_DATA)?;
             let days = DeltaDays::from_i64(
                 days_obj
                     .cast_exact::<PyInt>()
-                    .ok_or_type_err("invalid pickle data")?
+                    .ok_or_type_err(pickle::INVALID_DATA)?
                     .to_i64()?,
             )
-            .ok_or_value_err("invalid pickle data")?;
+            .ok_or_value_err(pickle::INVALID_DATA)?;
             DateDelta::new(months, days)
-                .ok_or_value_err("invalid pickle data")?
+                .ok_or_value_err(pickle::INVALID_DATA)?
                 .to_obj(*state.date_delta_type)
         }
-        _ => raise_type_err("invalid pickle data")?,
+        _ => raise_type_err(pickle::INVALID_DATA)?,
     }
 }
 

@@ -8,26 +8,9 @@ impl Disambiguation {
         fname: &str,
         state: &State,
     ) -> PyResult<Option<Self>> {
-        match kwargs.next() {
-            Some((name, value)) => {
-                if kwargs.original_len() == 1 {
-                    if unicode_eq(name, *state.str_disambiguate) {
-                        Self::from_py(value, state).map(Some)
-                    } else {
-                        raise_type_err(format!(
-                            "{fname}() got an unexpected keyword argument {name}"
-                        ))
-                    }
-                } else {
-                    raise_type_err(format!(
-                        "{}() takes at most 1 keyword argument, got {}",
-                        fname,
-                        kwargs.original_len()
-                    ))
-                }
-            }
-            None => Ok(None),
-        }
+        handle_one_kwarg(fname, *state.str_disambiguate, kwargs)?
+            .map(|v| Self::from_py(v, state))
+            .transpose()
     }
 
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {

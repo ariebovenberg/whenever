@@ -81,9 +81,7 @@ pub(crate) fn format_date_iso(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    if !args.is_empty() {
-        raise_type_err("format_iso() takes no positional arguments")?;
-    }
+    handle_no_args("format_iso", args)?;
     let mut basic = false;
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
         if eq(key, *state.str_basic) {
@@ -102,9 +100,7 @@ pub(crate) fn format_time_iso(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    if !args.is_empty() {
-        raise_type_err("format_iso() takes no positional arguments")?;
-    }
+    handle_no_args("format_iso", args)?;
     let mut unit = Precision::Auto;
     let mut basic = false;
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
@@ -121,7 +117,6 @@ pub(crate) fn format_time_iso(
 }
 
 /// Format a date and time with an optional timezone suffix.
-#[inline]
 pub(crate) fn format_datetime_iso(
     date: Date,
     time: Time,
@@ -130,9 +125,7 @@ pub(crate) fn format_datetime_iso(
     kwargs: &mut IterKwargs,
     suffix: Suffix<'_>,
 ) -> PyReturn {
-    if !args.is_empty() {
-        raise_type_err("format_iso() takes no positional arguments")?;
-    }
+    handle_no_args("format_iso", args)?;
 
     let mut sep = b'T';
     let mut unit = Precision::Auto;

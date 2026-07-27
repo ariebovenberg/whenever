@@ -152,12 +152,6 @@ pub(crate) enum DateTimeBoundaryUnit {
     Day,
 }
 
-impl std::fmt::Display for PlainDateTime {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}T{}", self.date, self.time)
-    }
-}
-
 fn is_datetime_sep(c: u8) -> bool {
     c == b'T' || c == b' ' || c == b't'
 }

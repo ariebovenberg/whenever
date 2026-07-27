@@ -26,9 +26,12 @@ Key helpers in `src/py/`:
 - `raise_value_err()`, `raise_type_err()`, `raise_key_err()` — raise Python exceptions
 - `warn_with_class(cls, msg, stacklevel)` — emit a Python warning. Takes `PyObj`, not a raw pointer
 - `handle_kwargs(fname, kwargs, handler)` — iterate kwargs with interned string matching
+- `handle_no_args(fname, args)` — reject positional arguments
 - `handle_one_arg(fname, args)` — extract exactly one positional arg, or raise TypeError
 - `handle_opt_arg(fname, args)` — extract zero or one positional arg
 - `handle_one_kwarg(fname, key, kwargs)` — extract a single optional kwarg by key
+- `raise_mixed_args(fname)`, `raise_unexpected_kwarg(fname, key)` — keep common argument errors
+  consistent in class-specific parsers
 - `obj.expect_int(name)` — accept a Python int or subclass and raise
   `TypeError: {name} must be an integer` otherwise
 - `find_interned(value, &[(string, value), ...])` — match a `PyObj` against an
@@ -85,6 +88,8 @@ fn my_method(cls: PyClass<MyType>, slf: MyType, args: &[PyObj], kwargs: &mut Ite
 
 **Positional argument handling:**
 ```rust
+// No positional args:
+handle_no_args("method_name", args)?;
 // Exactly one required arg:
 let arg = handle_one_arg("method_name", args)?;
 // Zero or one optional arg:

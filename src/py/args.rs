@@ -113,9 +113,7 @@ where
         // In the rare case they aren't, we fall back to value comparison.
         // Doing it this way is faster than always doing value comparison outright.
         if !handler(key, value, ptr_eq)? && !handler(key, value, unicode_eq)? {
-            return raise_type_err(format!(
-                "{fname}() got an unexpected keyword argument: {key}"
-            ));
+            return raise_unexpected_kwarg(fname, key);
         }
     }
     Ok(())
@@ -131,10 +129,19 @@ where
         if unicode_eq(k, key) {
             result = Some(v);
         } else {
-            raise_type_err(format!("{fname}() got an unexpected keyword argument: {k}"))?;
+            raise_unexpected_kwarg(fname, k)?;
         }
     }
     Ok(result)
+}
+
+/// Reject positional arguments.
+pub(crate) fn handle_no_args(fname: &str, args: &[PyObj]) -> PyResult<()> {
+    if args.is_empty() {
+        Ok(())
+    } else {
+        raise_type_err(format!("{fname}() takes no positional arguments"))
+    }
 }
 
 /// Parse one (optional) positional argument, and raise an error if the number of arguments is more
@@ -161,6 +168,20 @@ pub(crate) fn handle_one_arg(fname: &str, args: &[PyObj]) -> PyResult<PyObj> {
             args.len()
         ))
     }
+}
+
+#[cold]
+pub(crate) fn raise_unexpected_kwarg<T>(fname: &str, key: PyObj) -> PyResult<T> {
+    raise_type_err(format!(
+        "{fname}() got an unexpected keyword argument: {key}"
+    ))
+}
+
+#[cold]
+pub(crate) fn raise_mixed_args<T>(fname: &str) -> PyResult<T> {
+    raise_type_err(format!(
+        "{fname}() can't mix positional and keyword arguments"
+    ))
 }
 
 /// Match composed sets of interned strings with one global pointer-first pass.
