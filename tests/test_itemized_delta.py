@@ -1,4 +1,5 @@
 import pickle
+import warnings
 from collections import Counter
 from collections.abc import ItemsView, KeysView, Mapping, Sequence, ValuesView
 from typing import Any, Literal, cast
@@ -1001,22 +1002,58 @@ class TestAddSub:
         )
 
     def test_without_relative_to(self):
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with pytest.warns(CalendarUnitCompositionWarning) as caught:
             result = ItemizedDelta(hours=1).add(days=2, minutes=3)
         assert result.exact_eq(ItemizedDelta(days=2, hours=1, minutes=3))
+        message = str(caught[0].message)
+        assert (
+            "Calling `.add()` or `.subtract()` without `relative_to`"
+            in message
+        )
+        assert "cal_unit_composition_ok=True" in message
+        assert "guide/warnings.html" in message
 
         with pytest.warns(CalendarUnitCompositionWarning):
             result = ItemizedDelta(days=2).subtract(ItemizedDateDelta(days=1))
         assert result.exact_eq(ItemizedDelta(days=1))
 
     def test_operator_composition(self):
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
             result = ItemizedDelta(hours=1) + ItemizedDelta(minutes=2)
         assert result.exact_eq(ItemizedDelta(hours=1, minutes=2))
 
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = ItemizedDelta(hours=1) - ItemizedDelta(minutes=-2)
+        assert result.exact_eq(ItemizedDelta(hours=1, minutes=2))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = ItemizedDateDelta(days=0) + ItemizedDelta(hours=1)
+        assert result.exact_eq(ItemizedDelta(days=0, hours=1))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = ItemizedDateDelta(days=0) - ItemizedDelta(hours=1)
+        assert result.exact_eq(ItemizedDelta(days=0, hours=-1))
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = ItemizedDelta(months=0, hours=1).add(minutes=2)
+        assert result.exact_eq(ItemizedDelta(months=0, hours=1, minutes=2))
+
         with pytest.warns(CalendarUnitCompositionWarning):
+            result = ItemizedDelta(days=2) + ItemizedDelta(hours=1)
+        assert result.exact_eq(ItemizedDelta(days=2, hours=1))
+
+        with pytest.warns(CalendarUnitCompositionWarning) as caught:
             result = ItemizedDateDelta(days=2) + ItemizedDelta(hours=1)
         assert result.exact_eq(ItemizedDelta(days=2, hours=1))
+        message = str(caught[0].message)
+        assert "Using `+` or `-` between two itemized deltas" in message
+        assert "cal_unit_composition_ok=True" in message
+        assert "guide/warnings.html" in message
 
         with pytest.warns(CalendarUnitCompositionWarning):
             result = ItemizedDelta(days=2) - ItemizedDateDelta(days=1)
@@ -1028,10 +1065,10 @@ class TestAddSub:
 
     def test_cal_unit_composition_ok_suppresses_warning(self):
         result = ItemizedDelta(hours=1).add(
-            ItemizedDateDelta(days=0),
+            ItemizedDateDelta(days=1),
             cal_unit_composition_ok=True,
         )
-        assert result.exact_eq(ItemizedDelta(hours=1, days=0))
+        assert result.exact_eq(ItemizedDelta(hours=1, days=1))
 
     def test_no_op_does_not_warn(self):
         d = ItemizedDelta(hours=1)

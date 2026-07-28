@@ -198,6 +198,10 @@ class TestInit:
             TimeDelta(days=1)
         assert len(w) == 1
         assert w[0].category is DaysAssumed24HoursWarning
+        message = str(w[0].message)
+        assert "using days or weeks as exact time" in message
+        assert "days_assumed_24h_ok=True" in message
+        assert "guide/warnings.html" in message
         # The warning filename must not point to library internals
         assert "_pywhenever" not in w[0].filename
 

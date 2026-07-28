@@ -299,8 +299,9 @@ Without a `relative_to` reference, itemized-delta composition is field-wise.
 That preserves the literal fields, but it can change the meaning of later
 application to a datetime because calendar units do not reliably compose.
 The operation emits
-{class}`~whenever.CalendarUnitCompositionWarning` unless you pass
-`cal_unit_composition_ok=True`.
+{class}`~whenever.CalendarUnitCompositionWarning` when either operand contains
+nonzero calendar units, unless you pass `cal_unit_composition_ok=True`.
+Exact-only composition does not warn.
 
 (delta-operators)=
 ## Operators
@@ -317,8 +318,9 @@ TimeDelta("PT1h15m")
 ```
 
 Itemized deltas also support `+` and `-`, but those operators perform
-field-wise composition and always emit
-{class}`~whenever.CalendarUnitCompositionWarning`.
+field-wise composition and emit
+{class}`~whenever.CalendarUnitCompositionWarning` when either operand contains
+nonzero calendar units. Exact-only composition does not warn.
 Use the method forms if you want to pass `cal_unit_composition_ok=True`
 or if you need calendar-aware composition via `relative_to`.
 

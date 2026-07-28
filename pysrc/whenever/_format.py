@@ -11,6 +11,8 @@ from collections.abc import Iterable
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+from ._common import WheneverWarning
+
 if TYPE_CHECKING:
     from typing import Sequence
 
@@ -930,8 +932,11 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
         )
     if has_12h and not has_ampm:
         warnings.warn(
-            "12-hour format (i/ii) without AM/PM designator (a/aa) "
-            "may be ambiguous",
+            "The pattern uses a 12-hour clock (`i` or `ii`) without an AM/PM "
+            "field (`a` or `aa`). A value such as `03:00` could mean either "
+            "3 AM or 3 PM. Add `a` or `aa`, or use the 24-hour fields `h` or "
+            "`hh`.",
+            WheneverWarning,
             stacklevel=4,
         )
 

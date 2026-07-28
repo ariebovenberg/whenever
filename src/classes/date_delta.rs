@@ -34,7 +34,7 @@ fn __new__(cls: PyClass<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> Py
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
-        c"DateDelta is deprecated; use ItemizedDateDelta instead.",
+        c"DateDelta is deprecated and will be removed in a future release; use ItemizedDateDelta instead.",
         1,
     )?;
     match args.len() {
@@ -62,7 +62,7 @@ fn __new__(cls: PyClass<DateDelta>, args: PyTuple, kwargs: Option<PyDict>) -> Py
 pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
         *state.warn_deprecation,
-        c"years() is deprecated; use ItemizedDateDelta instead.",
+        c"years() is deprecated and will be removed in a future release; use ItemizedDateDelta instead.",
         1,
     )?;
     DeltaMonths::from_i64_years(amount.expect_int("argument")?.to_i64()?)
@@ -74,7 +74,7 @@ pub(crate) fn years(state: &State, amount: PyObj) -> PyReturn {
 pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
         *state.warn_deprecation,
-        c"months() is deprecated; use ItemizedDateDelta instead.",
+        c"months() is deprecated and will be removed in a future release; use ItemizedDateDelta instead.",
         1,
     )?;
     DeltaMonths::from_i64(amount.expect_int("argument")?.to_i64()?)
@@ -86,7 +86,7 @@ pub(crate) fn months(state: &State, amount: PyObj) -> PyReturn {
 pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
         *state.warn_deprecation,
-        c"weeks() is deprecated; use ItemizedDateDelta instead.",
+        c"weeks() is deprecated and will be removed in a future release; use ItemizedDateDelta instead.",
         1,
     )?;
     DeltaDays::from_i64_weeks(amount.expect_int("argument")?.to_i64()?)
@@ -98,7 +98,7 @@ pub(crate) fn weeks(state: &State, amount: PyObj) -> PyReturn {
 pub(crate) fn days(state: &State, amount: PyObj) -> PyReturn {
     warn_with_class(
         *state.warn_deprecation,
-        c"days() is deprecated; use ItemizedDateDelta instead.",
+        c"days() is deprecated and will be removed in a future release; use ItemizedDateDelta instead.",
         1,
     )?;
     DeltaDays::from_i64(amount.expect_int("argument")?.to_i64()?)
@@ -192,7 +192,7 @@ fn add_method(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
                         }
                         warn_with_class(
                             *state.warn_deprecation,
-                            c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                            c"DateTimeDelta is deprecated and will be removed in a future release; use ItemizedDelta instead.",
                             1,
                         )?;
                         DateTimeDelta::new(*slf, tdelta)
@@ -294,7 +294,7 @@ fn format_iso(_: PyType, slf: DateDelta) -> PyReturn {
 fn parse_iso(cls: PyClass<DateDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"DateDelta is deprecated; use ItemizedDateDelta instead.",
+        c"DateDelta is deprecated and will be removed in a future release; use ItemizedDateDelta instead.",
         1,
     )?;
     parse_iso_inner(cls, arg)

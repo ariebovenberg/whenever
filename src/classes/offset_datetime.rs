@@ -368,7 +368,7 @@ fn to_stdlib(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
 fn py_datetime(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"py_datetime() is deprecated. Use to_stdlib() instead.",
+        c"py_datetime() is deprecated and will be removed in a future release; use to_stdlib() instead.",
         1,
     )?;
     to_stdlib(cls, slf)
@@ -610,7 +610,7 @@ fn from_py_datetime(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
-        c"from_py_datetime() is deprecated. Use OffsetDateTime() constructor instead.",
+        c"from_py_datetime() is deprecated and will be removed in a future release; use OffsetDateTime() instead.",
         1,
     )?;
     if let Some(py_dt) = arg.cast_allow_subclass::<PyDateTime>() {
@@ -813,7 +813,7 @@ fn parse_strptime(
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
-        c"parse_strptime() is deprecated; use parse() with a format pattern instead.",
+        c"parse_strptime() is deprecated and will be removed in a future release; use parse() with a pattern string instead.",
         1,
     )?;
     let format_obj = match kwargs.next() {
@@ -1005,14 +1005,14 @@ fn offset_since(
     }
 }
 
-fn format(_: PyClass<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -> PyReturn {
+fn format(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "OffsetDateTime")?;
-    pattern.warn_if_ambiguous_12h()?;
+    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
     pattern.format(&slf.to_plain().pattern_values().with_offset(slf.offset))
 }
 

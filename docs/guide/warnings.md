@@ -147,10 +147,11 @@ operators cannot accept keyword arguments. Use the method equivalents instead:
 - `dt_a - dt_b` → `dt_a.difference(dt_b)` (for {class}`~whenever.PlainDateTime`,
   pass `naive_arithmetic_ok=True`)
 
-For itemized-delta composition, operators always emit
-{class}`~whenever.CalendarUnitCompositionWarning`. Use the method form if you
-want to pass `cal_unit_composition_ok=True` instead of relying on a global
-warning filter.
+For itemized-delta composition, operators emit
+{class}`~whenever.CalendarUnitCompositionWarning` when either operand contains
+nonzero calendar units. Exact-only composition does not warn. Use the method
+form if you want to pass `cal_unit_composition_ok=True` instead of relying on
+a global warning filter.
 
 Alternatively, suppress operator warnings with Python's standard
 {func}`warnings.filterwarnings`.

@@ -31,6 +31,7 @@ from ._common import (
     PLAIN_SHIFT_UNAWARE_MSG,
     SPHINX_RUNNING,  # noqa
     UNSET,
+    WARNING_HANDLING_DOCS_MSG,
     WheneverWarning,
     _Base,
     add_alternate_constructors,
@@ -121,15 +122,33 @@ def _resolve_rounding(
     return mode, increment
 
 
-CALENDAR_UNIT_COMPOSITION_MSG = (
-    "Itemized delta composition is field-wise and may not preserve the "
-    "result of sequential application. Calendar units, particularly months, "
-    "do not compose reliably without a reference date. Use `relative_to` for "
-    "calendar-aware composition, or `TimeDelta` for exact-duration arithmetic. "
-    "Pass `cal_unit_composition_ok=True` to suppress this warning, or use "
-    "Python's standard warning filters. See "
-    "https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG = (
+    "Using `+` or `-` between two itemized deltas combines their fields instead "
+    "of applying the deltas one after another. With calendar units such as "
+    "months or days, the combined delta can produce a different date because "
+    "calendar arithmetic may clamp at month boundaries. To apply the deltas "
+    "sequentially, apply each one to the date or datetime in a separate step. "
+    "To create one delta relative to a starting point, use the corresponding "
+    "`.add()` or `.subtract()` method with `relative_to=...` and "
+    "`in_units=...`. If field-wise composition is intentional, use that method "
+    "with `cal_unit_composition_ok=True`. " + WARNING_HANDLING_DOCS_MSG
 )
+
+CALENDAR_UNIT_METHOD_COMPOSITION_MSG = (
+    "Calling `.add()` or `.subtract()` without `relative_to` combines the "
+    "itemized deltas field by field. With calendar units such as months or "
+    "days, the resulting delta may behave differently from applying the deltas "
+    "one after another. Pass `relative_to=...` and `in_units=...` to create a "
+    "delta relative to a specific starting point. If field-wise composition is "
+    "intentional, pass `cal_unit_composition_ok=True`. "
+    + WARNING_HANDLING_DOCS_MSG
+)
+
+
+def _has_nonzero_calendar_units(
+    delta: Mapping[str, int] | ItemizedDelta | ItemizedDateDelta,
+) -> bool:
+    return any(map(delta.get, DATE_DELTA_UNITS))
 
 
 class CalendarUnitCompositionWarning(WheneverWarning):
@@ -147,6 +166,8 @@ class CalendarUnitCompositionWarning(WheneverWarning):
     Calendar units do not compose reliably: for example, adding one month to
     January 31 may clamp to the end of February, so adding another month from
     there can differ from adding two months to January 31 in one step.
+    The warning is only emitted when either operand contains a nonzero calendar
+    unit; exact-only composition does not warn.
 
     To preserve calendar-aware semantics, pass ``relative_to=...`` and
     ``in_units=...`` to :meth:`~whenever.ItemizedDelta.add` or
@@ -1020,8 +1041,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     ) -> ItemizedDelta:
         """Add time to this delta, returning a new delta.
 
-        Without a `relative_to` reference, composition is field-wise.
-        That warning can be suppressed with `cal_unit_composition_ok=True`.
+        Without a `relative_to` reference, composition is field-wise and warns
+        when nonzero calendar units are involved. The warning can be suppressed
+        with `cal_unit_composition_ok=True`.
         """
 
         # Normalize the input into a single unit->value mapping
@@ -1060,9 +1082,12 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 )
             if round_mode is not UNSET or round_increment is not UNSET:
                 raise TypeError("rounding requires `relative_to`")
-            if not cal_unit_composition_ok:
+            if not cal_unit_composition_ok and (
+                _has_nonzero_calendar_units(self)
+                or _has_nonzero_calendar_units(other)
+            ):
                 warn(
-                    CALENDAR_UNIT_COMPOSITION_MSG,
+                    CALENDAR_UNIT_METHOD_COMPOSITION_MSG,
                     CalendarUnitCompositionWarning,
                     stacklevel=2,
                 )
@@ -1205,11 +1230,14 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             return _shift_datetime_operator(other, self, False)
         if not isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
             return NotImplemented
-        warn(
-            CALENDAR_UNIT_COMPOSITION_MSG,
-            CalendarUnitCompositionWarning,
-            stacklevel=2,
-        )
+        if _has_nonzero_calendar_units(self) or _has_nonzero_calendar_units(
+            other
+        ):
+            warn(
+                CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG,
+                CalendarUnitCompositionWarning,
+                stacklevel=2,
+            )
         return ItemizedDelta(**_items_add(self, other))
 
     def __radd__(
@@ -1233,11 +1261,14 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     ) -> ItemizedDelta:
         if not isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
             return NotImplemented
-        warn(
-            CALENDAR_UNIT_COMPOSITION_MSG,
-            CalendarUnitCompositionWarning,
-            stacklevel=2,
-        )
+        if _has_nonzero_calendar_units(self) or _has_nonzero_calendar_units(
+            other
+        ):
+            warn(
+                CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG,
+                CalendarUnitCompositionWarning,
+                stacklevel=2,
+            )
         return ItemizedDelta(**_items_add(self, -other))
 
     def __rsub__(
@@ -2134,9 +2165,12 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 )
             if round_mode is not UNSET or round_increment is not UNSET:
                 raise TypeError("rounding requires `relative_to`")
-            if not cal_unit_composition_ok:
+            if not cal_unit_composition_ok and (
+                _has_nonzero_calendar_units(self)
+                or _has_nonzero_calendar_units(other)
+            ):
                 warn(
-                    CALENDAR_UNIT_COMPOSITION_MSG,
+                    CALENDAR_UNIT_METHOD_COMPOSITION_MSG,
                     CalendarUnitCompositionWarning,
                     stacklevel=2,
                 )
@@ -2296,11 +2330,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         ):
             return _shift_datetime_operator(other, self, False)
         if isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
-            warn(
-                CALENDAR_UNIT_COMPOSITION_MSG,
-                CalendarUnitCompositionWarning,
-                stacklevel=2,
-            )
+            if _has_nonzero_calendar_units(
+                self
+            ) or _has_nonzero_calendar_units(other):
+                warn(
+                    CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG,
+                    CalendarUnitCompositionWarning,
+                    stacklevel=2,
+                )
             return type(other)(**_items_add(self, other))
         else:
             return NotImplemented
@@ -2329,11 +2366,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         self, other: ItemizedDateDelta | ItemizedDelta
     ) -> ItemizedDateDelta | ItemizedDelta:
         if isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
-            warn(
-                CALENDAR_UNIT_COMPOSITION_MSG,
-                CalendarUnitCompositionWarning,
-                stacklevel=2,
-            )
+            if _has_nonzero_calendar_units(
+                self
+            ) or _has_nonzero_calendar_units(other):
+                warn(
+                    CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG,
+                    CalendarUnitCompositionWarning,
+                    stacklevel=2,
+                )
             return type(other)(**_items_add(self, -other))
         else:
             return NotImplemented

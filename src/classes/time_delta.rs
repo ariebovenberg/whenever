@@ -424,7 +424,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                     }
                     warn_with_class(
                         *state.warn_deprecation,
-                        c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                        c"DateTimeDelta is deprecated and will be removed in a future release; use ItemizedDelta instead.",
                         1,
                     )?;
                     Ok(Some(
@@ -572,7 +572,7 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
 fn in_nanoseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"in_nanoseconds is deprecated, use total('nanoseconds') instead",
+        c"in_nanoseconds() is deprecated and will be removed in a future release; use total('nanoseconds') instead.",
         1,
     )?;
     slf.total_nanos().to_py()
@@ -581,7 +581,7 @@ fn in_nanoseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
 fn in_microseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"in_microseconds is deprecated, use total('microseconds') instead",
+        c"in_microseconds() is deprecated and will be removed in a future release; use total('microseconds') instead.",
         1,
     )?;
     let TimeDelta { secs, subsec } = slf;
@@ -591,7 +591,7 @@ fn in_microseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
 fn in_milliseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"in_milliseconds is deprecated, use total('milliseconds') instead",
+        c"in_milliseconds() is deprecated and will be removed in a future release; use total('milliseconds') instead.",
         1,
     )?;
     let TimeDelta { secs, subsec } = slf;
@@ -601,7 +601,7 @@ fn in_milliseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
 fn in_seconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"in_seconds is deprecated, use total('seconds') instead",
+        c"in_seconds() is deprecated and will be removed in a future release; use total('seconds') instead.",
         1,
     )?;
     let TimeDelta { secs, subsec } = slf;
@@ -611,7 +611,7 @@ fn in_seconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
 fn in_minutes(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"in_minutes is deprecated, use total('minutes') instead",
+        c"in_minutes() is deprecated and will be removed in a future release; use total('minutes') instead.",
         1,
     )?;
     let TimeDelta { secs, subsec } = slf;
@@ -621,7 +621,7 @@ fn in_minutes(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
 fn in_hours(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"in_hours is deprecated, use total('hours') instead",
+        c"in_hours() is deprecated and will be removed in a future release; use total('hours') instead.",
         1,
     )?;
     let TimeDelta { secs, subsec } = slf;
@@ -631,7 +631,7 @@ fn in_hours(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
 fn in_days_of_24h(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"in_days_of_24h is deprecated, use total('days') instead",
+        c"in_days_of_24h() is deprecated and will be removed in a future release; use total('days') instead.",
         1,
     )?;
     let TimeDelta { secs, subsec } = slf;
@@ -641,7 +641,7 @@ fn in_days_of_24h(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
 fn from_py_timedelta(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"from_py_timedelta() is deprecated. Use TimeDelta() constructor instead.",
+        c"from_py_timedelta() is deprecated and will be removed in a future release; use TimeDelta() instead.",
         1,
     )?;
     if let Some(d) = arg.cast_exact::<PyTimeDelta>() {
@@ -663,7 +663,7 @@ fn to_stdlib(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
 fn py_timedelta(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"py_timedelta() is deprecated. Use to_stdlib() instead.",
+        c"py_timedelta() is deprecated and will be removed in a future release; use to_stdlib() instead.",
         1,
     )?;
     to_stdlib(cls, slf)

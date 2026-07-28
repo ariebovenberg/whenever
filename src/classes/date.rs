@@ -186,7 +186,7 @@ fn to_stdlib(cls: PyClass<Date>, slf: Date) -> PyReturn {
 fn py_date(cls: PyClass<Date>, slf: Date) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"py_date() is deprecated. Use to_stdlib() instead.",
+        c"py_date() is deprecated and will be removed in a future release; use to_stdlib() instead.",
         1,
     )?;
     to_stdlib(cls, slf)
@@ -195,7 +195,7 @@ fn py_date(cls: PyClass<Date>, slf: Date) -> PyReturn {
 fn from_py_date(cls: PyClass<Date>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"from_py_date() is deprecated. Use Date() constructor instead.",
+        c"from_py_date() is deprecated and will be removed in a future release; use Date() instead.",
         1,
     )?;
     Date::from_stdlib_date(
@@ -382,7 +382,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         BinaryCall::SameType { cls, slf, other } => {
             warn_with_class(
                 *cls.state().warn_deprecation,
-                c"Using the `-` operator on Date is deprecated; use the .since() method with explicit units instead.",
+                c"Using the `-` operator on Date is deprecated and will be removed in a future release; use the .since() method with explicit units instead.",
                 1,
             )?;
 
@@ -416,7 +416,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             };
             warn_with_class(
                 *state.warn_deprecation,
-                c"Using the `-` operator on Date is deprecated; use the .subtract() method instead.",
+                c"Using the `-` operator on Date is deprecated and will be removed in a future release; use the .subtract() method instead.",
                 1,
             )?;
             Ok(Some(
@@ -441,7 +441,7 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         };
         warn_with_class(
             *state.warn_deprecation,
-            c"Using the + operator on Date is deprecated; use the .add() method instead.",
+            c"Using the + operator on Date is deprecated and will be removed in a future release; use the .add() method instead.",
             1,
         )?;
         Ok(Some(
@@ -603,7 +603,7 @@ fn date_since_float(a: Date, b: Date, unit: CalendarUnit) -> PyReturn {
 fn days_since(cls: PyClass<Date>, slf: Date, other: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"days_since() is deprecated; use since() with total='days' instead.",
+        c"days_since() is deprecated and will be removed in a future release; use since() with total='days' instead.",
         1,
     )?;
     slf.unix_days()
@@ -620,7 +620,7 @@ fn days_since(cls: PyClass<Date>, slf: Date, other: PyObj) -> PyReturn {
 fn days_until(cls: PyClass<Date>, slf: Date, other: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"days_until() is deprecated; use until() with total='days' instead.",
+        c"days_until() is deprecated and will be removed in a future release; use until() with total='days' instead.",
         1,
     )?;
     other
@@ -675,14 +675,14 @@ fn today_in_system_tz(cls: PyClass<Date>) -> PyReturn {
         .to_obj(cls)
 }
 
-fn format(_: PyClass<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
+fn format(cls: PyClass<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::DATE, "Date")?;
-    pattern.warn_if_ambiguous_12h()?;
+    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
     pattern.format(&slf.pattern_values())
 }
 

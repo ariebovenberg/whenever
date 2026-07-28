@@ -40,6 +40,7 @@ from ._common import (
     PLAIN_SHIFT_UNAWARE_MSG,
     SPHINX_RUNNING,
     UNSET,
+    WARNING_HANDLING_DOCS_MSG,
     WheneverDeprecationWarning,
     WheneverWarning,
     _Base,
@@ -667,7 +668,8 @@ class Date(_Base):
             Use :meth:`to_stdlib` instead.
         """
         warn(
-            "py_date() is deprecated; use to_stdlib() instead.",
+            "py_date() is deprecated and will be removed in a future release; "
+            "use to_stdlib() instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -685,7 +687,8 @@ class Date(_Base):
             Use the constructor ``Date(d)`` instead.
         """
         warn(
-            "from_py_date() is deprecated; use Date() instead.",
+            "from_py_date() is deprecated and will be removed in a future release; "
+            "use Date() instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -903,7 +906,8 @@ class Date(_Base):
 
         """
         warn(
-            "days_since() is deprecated; use since() with total='days' instead.",
+            "days_since() is deprecated and will be removed in a future release; "
+            "use since() with total='days' instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -917,7 +921,8 @@ class Date(_Base):
             Use :meth:`until` with `unit="days"` instead.
         """
         warn(
-            "days_until() is deprecated; use until() with total='days' instead.",
+            "days_until() is deprecated and will be removed in a future release; "
+            "use until() with total='days' instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -1110,7 +1115,8 @@ class Date(_Base):
         """
         if isinstance(p, DateDelta):
             warn(
-                "Using the + operator on Date is deprecated; "
+                "Using the + operator on Date is deprecated and will be removed "
+                "in a future release; "
                 "use the .add() method instead.",
                 WheneverDeprecationWarning,
                 stacklevel=2,
@@ -1161,7 +1167,8 @@ class Date(_Base):
         """
         if isinstance(d, DateDelta):
             warn(
-                "Using the `-` operator on Date is deprecated; "
+                "Using the `-` operator on Date is deprecated and will be removed "
+                "in a future release; "
                 "use the .subtract() method instead.",
                 WheneverDeprecationWarning,
                 stacklevel=2,
@@ -1169,7 +1176,8 @@ class Date(_Base):
             return self.subtract(months=d._months, days=d._days)
         elif isinstance(d, Date):
             warn(
-                "Using the `-` operator on Date is deprecated; "
+                "Using the `-` operator on Date is deprecated and will be removed "
+                "in a future release; "
                 "use the .since() method with explicit units instead.",
                 WheneverDeprecationWarning,
                 stacklevel=2,
@@ -1426,7 +1434,8 @@ class Time(_Base):
             Use :meth:`to_stdlib` instead.
         """
         warn(
-            "py_time() is deprecated; use to_stdlib() instead.",
+            "py_time() is deprecated and will be removed in a future release; "
+            "use to_stdlib() instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -1444,7 +1453,8 @@ class Time(_Base):
             Use the constructor ``Time(t)`` instead.
         """
         warn(
-            "from_py_time() is deprecated; use Time() instead.",
+            "from_py_time() is deprecated and will be removed in a future release; "
+            "use Time() instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -1967,7 +1977,8 @@ class TimeDelta(_Base):
             Use :meth:`total` with ``'days'`` instead.
         """
         warn(
-            "in_days_of_24h is deprecated, use total('days') instead",
+            "in_days_of_24h() is deprecated and will be removed in a future "
+            "release; use total('days') instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -1985,7 +1996,8 @@ class TimeDelta(_Base):
             Use :meth:`total` with ``'hours'`` instead.
         """
         warn(
-            "in_hours is deprecated, use total('hours') instead",
+            "in_hours() is deprecated and will be removed in a future release; "
+            "use total('hours') instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -2003,7 +2015,8 @@ class TimeDelta(_Base):
             Use :meth:`total` with ``'minutes'`` instead.
         """
         warn(
-            "in_minutes is deprecated, use total('minutes') instead",
+            "in_minutes() is deprecated and will be removed in a future release; "
+            "use total('minutes') instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -2021,7 +2034,8 @@ class TimeDelta(_Base):
             Use :meth:`total` with ``'seconds'`` instead.
         """
         warn(
-            "in_seconds is deprecated, use total('seconds') instead",
+            "in_seconds() is deprecated and will be removed in a future release; "
+            "use total('seconds') instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -2039,7 +2053,8 @@ class TimeDelta(_Base):
             Use :meth:`total` with ``'milliseconds'`` instead.
         """
         warn(
-            "in_milliseconds is deprecated, use total('milliseconds') instead",
+            "in_milliseconds() is deprecated and will be removed in a future "
+            "release; use total('milliseconds') instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -2057,7 +2072,8 @@ class TimeDelta(_Base):
             Use :meth:`total` with ``'microseconds'`` instead.
         """
         warn(
-            "in_microseconds is deprecated, use total('microseconds') instead",
+            "in_microseconds() is deprecated and will be removed in a future "
+            "release; use total('microseconds') instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -2075,7 +2091,8 @@ class TimeDelta(_Base):
             Use :meth:`total` with ``'nanoseconds'`` instead.
         """
         warn(
-            "in_nanoseconds is deprecated, use total('nanoseconds') instead",
+            "in_nanoseconds() is deprecated and will be removed in a future "
+            "release; use total('nanoseconds') instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -2242,7 +2259,8 @@ class TimeDelta(_Base):
             Use :meth:`to_stdlib` instead.
         """
         warn(
-            "py_timedelta() is deprecated; use to_stdlib() instead.",
+            "py_timedelta() is deprecated and will be removed in a future release; "
+            "use to_stdlib() instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -2271,7 +2289,8 @@ class TimeDelta(_Base):
             Use the constructor ``TimeDelta(td)`` instead.
         """
         warn(
-            "from_py_timedelta() is deprecated; use TimeDelta() instead.",
+            "from_py_timedelta() is deprecated and will be removed in a future "
+            "release; use TimeDelta() instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -2771,7 +2790,8 @@ class DateDelta(_Base):
         self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
     ) -> None:
         warn(
-            "DateDelta is deprecated; use ItemizedDateDelta instead.",
+            "DateDelta is deprecated and will be removed in a future release; "
+            "use ItemizedDateDelta instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -2787,7 +2807,10 @@ class DateDelta(_Base):
 
     __init__ = add_alternate_constructors(
         __init__,
-        deprecation_msg="DateDelta is deprecated; use ItemizedDateDelta instead.",
+        deprecation_msg=(
+            "DateDelta is deprecated and will be removed in a future release; "
+            "use ItemizedDateDelta instead."
+        ),
     )
 
     @classmethod
@@ -2949,7 +2972,8 @@ class DateDelta(_Base):
         The number of digits in each component is limited to 8.
         """
         warn(
-            "DateDelta is deprecated; use ItemizedDateDelta instead.",
+            "DateDelta is deprecated and will be removed in a future release; "
+            "use ItemizedDateDelta instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -2979,7 +3003,8 @@ class DateDelta(_Base):
             )
         elif isinstance(other, TimeDelta):
             warn(
-                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                "DateTimeDelta is deprecated and will be removed in a future "
+                "release; use ItemizedDelta instead.",
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -2993,7 +3018,8 @@ class DateDelta(_Base):
     def __radd__(self, other: TimeDelta) -> DateTimeDelta:
         if isinstance(other, TimeDelta):
             warn(
-                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                "DateTimeDelta is deprecated and will be removed in a future "
+                "release; use ItemizedDelta instead.",
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -3025,7 +3051,8 @@ class DateDelta(_Base):
             )
         elif isinstance(other, TimeDelta):
             warn(
-                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                "DateTimeDelta is deprecated and will be removed in a future "
+                "release; use ItemizedDelta instead.",
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -3036,7 +3063,8 @@ class DateDelta(_Base):
     def __rsub__(self, other: TimeDelta) -> DateTimeDelta:
         if isinstance(other, TimeDelta):
             warn(
-                "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+                "DateTimeDelta is deprecated and will be removed in a future "
+                "release; use ItemizedDelta instead.",
                 WheneverDeprecationWarning,
                 stacklevel=2,
             )
@@ -3214,7 +3242,8 @@ class DateTimeDelta(_Base):
         nanoseconds: int = 0,
     ) -> None:
         warn(
-            "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+            "DateTimeDelta is deprecated and will be removed in a future release; "
+            "use ItemizedDelta instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -3240,7 +3269,10 @@ class DateTimeDelta(_Base):
 
     __init__ = add_alternate_constructors(
         __init__,
-        deprecation_msg="DateTimeDelta is deprecated; use ItemizedDelta instead.",
+        deprecation_msg=(
+            "DateTimeDelta is deprecated and will be removed in a future release; "
+            "use ItemizedDelta instead."
+        ),
     )
 
     ZERO: ClassVar[DateTimeDelta]
@@ -3252,7 +3284,9 @@ class DateTimeDelta(_Base):
         .. deprecated:: 0.10.0
         """
         warn(
-            "DateTimeDelta.date_part() is deprecated.",
+            "DateTimeDelta.date_part() is deprecated and will be removed in a "
+            "future release. Migrate to ItemizedDelta and use "
+            ".date_and_time_parts() instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -3400,7 +3434,8 @@ class DateTimeDelta(_Base):
         DateTimeDelta(-P1w11dT4h)
         """
         warn(
-            "DateTimeDelta is deprecated; use ItemizedDelta instead.",
+            "DateTimeDelta is deprecated and will be removed in a future release; "
+            "use ItemizedDelta instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -3646,7 +3681,8 @@ class _BasicConversions(_Base):
         Its ``fold`` attribute is used to disambiguate.
         """
         warn(
-            "from_py_datetime() is deprecated; use the constructor instead.",
+            "from_py_datetime() is deprecated and will be removed in a future "
+            "release; use the constructor instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -3676,7 +3712,8 @@ class _BasicConversions(_Base):
             Use :meth:`to_stdlib` instead.
         """
         warn(
-            "py_datetime() is deprecated; use to_stdlib() instead.",
+            "py_datetime() is deprecated and will be removed in a future release; "
+            "use to_stdlib() instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -4716,9 +4753,10 @@ class OffsetDateTime(_ExactAndLocalTime):
         Warning
         -------
         Getting the current time as an ``OffsetDateTime`` with a fixed UTC offset
-        may be incorrect: the offset doesn't update when DST or other timezone
-        rules change. Use ``ZonedDateTime.now('<tz>')`` if you know the timezone,
-        or ``Instant.now()`` for timezone-agnostic exact time.
+        is correct for that offset, but the offset may be stale for the region you
+        intend: fixed offsets don't update when DST or other timezone rules change.
+        Use ``ZonedDateTime.now('<tz>')`` if you know the timezone, or
+        ``Instant.now()`` for timezone-agnostic exact time.
         Pass ``stale_offset_ok=True`` to suppress.
         """
         if ignore_dst is not UNSET:
@@ -4809,8 +4847,9 @@ class OffsetDateTime(_ExactAndLocalTime):
         Warning
         -------
         Converting a UNIX timestamp to ``OffsetDateTime`` with a fixed UTC offset
-        may produce an incorrect result: you can't know from the offset alone
-        whether DST applies to this timestamp. Use
+        is correct for that offset, but the offset may be stale for the region you
+        intend at that timestamp: a fixed offset contains no DST or other timezone
+        rules. Use
         ``ZonedDateTime.from_timestamp(ts, tz='<tz>')`` if you know the timezone,
         or ``Instant.from_timestamp()`` for timezone-agnostic exact time.
         Pass ``stale_offset_ok=True`` to suppress.
@@ -5180,7 +5219,8 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         """
         warn(
-            "parse_strptime() is deprecated; "
+            "parse_strptime() is deprecated and will be removed in a future "
+            "release; "
             "use parse() with a pattern string instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
@@ -6649,7 +6689,8 @@ class ZonedDateTime(_ExactAndLocalTime):
             Use ``start_of("day")`` instead.
         """
         warn(
-            'start_of_day() is deprecated; use start_of("day") instead.',
+            "start_of_day() is deprecated and will be removed in a future release; "
+            'use start_of("day") instead.',
             WheneverDeprecationWarning,
             stacklevel=2,
         )
@@ -7659,7 +7700,8 @@ class PlainDateTime(_LocalTime):
 
         """
         warn(
-            "parse_strptime() is deprecated; "
+            "parse_strptime() is deprecated and will be removed in a future "
+            "release; "
             "use parse() with a pattern string instead.",
             WheneverDeprecationWarning,
             stacklevel=2,
@@ -7979,53 +8021,51 @@ class ImplicitlyIgnoringDST(TypeError):
 
 
 OFFSET_NOW_STALE_MSG = (
-    "Getting the current time as an OffsetDateTime with a fixed UTC offset may be incorrect: "
-    "the offset doesn't update when DST or other timezone rules change. "
-    "Use ZonedDateTime.now('<tz>') if you know the timezone, or "
-    "Instant.now() for timezone-agnostic exact time. "
-    "Pass `stale_offset_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+    "You are getting the current time using a fixed UTC offset. A fixed offset "
+    "has no timezone rules, so it may be stale for the region you intend—no "
+    "longer matching that region's actual offset after a DST or other rule "
+    "change. If you mean a named timezone, use ZonedDateTime.now('<tz>'); if "
+    "you only need the current instant, use Instant.now(). If the fixed offset "
+    "is intentional, pass `stale_offset_ok=True`. " + WARNING_HANDLING_DOCS_MSG
 )
 
 OFFSET_FROM_TIMESTAMP_STALE_MSG = (
-    "Converting a UNIX timestamp to OffsetDateTime with a fixed UTC offset may produce "
-    "an incorrect result: you can't know from the offset alone whether DST "
-    "is in effect at this timestamp. "
-    "Use ZonedDateTime.from_timestamp(ts, tz='<tz>') if you know the timezone, or "
-    "Instant.from_timestamp() for timezone-agnostic exact time. "
-    "Pass `stale_offset_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+    "You are converting a timestamp using a fixed UTC offset. The result is "
+    "correct for that offset, but the offset may be stale at this timestamp—no "
+    "longer matching the actual offset used by the region you intend. If you "
+    "mean a named timezone, use ZonedDateTime.from_timestamp(ts, tz='<tz>'); "
+    "if you only need the instant, use Instant.from_timestamp(ts). If the fixed "
+    "offset is intentional, pass `stale_offset_ok=True`. "
+    + WARNING_HANDLING_DOCS_MSG
 )
 
 OFFSET_REPLACE_STALE_MSG = (
-    "Replacing fields of an OffsetDateTime keeps the fixed UTC offset, which may no longer "
-    "be correct after the change (e.g. replacing the month on a European-timezone datetime "
-    "may move it into a different DST period). "
+    "Replacing fields of an OffsetDateTime keeps its fixed UTC offset. The "
+    "offset may become stale—no longer matching the region's actual offset—if "
+    "the result is in a different DST or timezone-rule period (e.g. after "
+    "replacing the month on a European-timezone datetime). "
     "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware field replacement. "
-    "Pass `stale_offset_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+    "If the fixed offset is intentional, pass `stale_offset_ok=True`. "
+    + WARNING_HANDLING_DOCS_MSG
 )
 
 OFFSET_ROUND_STALE_MSG = (
-    "Rounding an OffsetDateTime keeps the fixed UTC offset, which may not be accurate "
-    "in the rare case that the rounded time crosses a DST or other timezone boundary. "
+    "Rounding an OffsetDateTime keeps its fixed UTC offset. The offset may "
+    "become stale—no longer matching the region's actual offset—if the rounded "
+    "time crosses a DST or other timezone boundary. "
     "Convert to a ZonedDateTime first (using .assume_tz()) for timezone-aware rounding. "
-    "Pass `stale_offset_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+    "If the fixed offset is intentional, pass `stale_offset_ok=True`. "
+    + WARNING_HANDLING_DOCS_MSG
 )
 
 OFFSET_START_END_OF_STALE_MSG = (
-    "Getting the start/end of a unit on an OffsetDateTime keeps the fixed UTC offset, "
-    "which may not be correct for the resulting time "
+    "Getting the start or end of a unit on an OffsetDateTime keeps its fixed "
+    "UTC offset. The offset may become stale—no longer matching the region's "
+    "actual offset—at the resulting time "
     "(e.g. the start of the year may have a different UTC offset due to DST). "
     "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware results. "
-    "Pass `stale_offset_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+    "If the fixed offset is intentional, pass `stale_offset_ok=True`. "
+    + WARNING_HANDLING_DOCS_MSG
 )
 
 PLAIN_DIFF_UNAWARE_MSG = (
@@ -8035,9 +8075,8 @@ PLAIN_DIFF_UNAWARE_MSG = (
     "gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, "
     "so only 1 real hour elapsed. "
     "Use .assume_tz('<tz>') for both values if you know the timezone. "
-    "Pass `naive_arithmetic_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+    "If timezone transitions are intentionally irrelevant here, pass "
+    "`naive_arithmetic_ok=True`. " + WARNING_HANDLING_DOCS_MSG
 )
 
 PLAIN_RELATIVE_TO_UNAWARE_MSG = (
@@ -8045,19 +8084,19 @@ PLAIN_RELATIVE_TO_UNAWARE_MSG = (
     "without a timezone, converting between calendar units (months, days) and "
     "exact time units (hours, seconds) is ambiguous across DST boundaries. "
     "Use .assume_tz('<tz>') for timezone-aware results. "
-    "Pass `naive_arithmetic_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+    "If timezone transitions are intentionally irrelevant here, pass "
+    "`naive_arithmetic_ok=True`. " + WARNING_HANDLING_DOCS_MSG
 )
 
 STALE_OFFSET_CALENDAR_MSG = (
-    "Computing calendar units (years, months, weeks, days) relative to an OffsetDateTime "
-    "assumes the UTC offset remains constant throughout the period. "
-    "If the region has since changed its rules (e.g. DST), the result may be off by an hour. "
-    "Use ZonedDateTime for DST-aware calendar arithmetic. "
-    "Pass `stale_offset_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+    "You are calculating calendar units relative to an OffsetDateTime. Because "
+    "it contains only a fixed offset, Whenever must assume that the offset "
+    "remains constant throughout the calculation. That offset may be stale "
+    "during part of the period if the value represents a region that crosses a "
+    "DST or other rule change, producing an incorrect result. Use a "
+    "ZonedDateTime for timezone-aware calendar arithmetic. If the fixed-offset "
+    "assumption is intentional, pass `stale_offset_ok=True`. "
+    + WARNING_HANDLING_DOCS_MSG
 )
 
 CANNOT_ROUND_DAY_MSG = (
@@ -8086,19 +8125,19 @@ FORMAT_ISO_NO_TZ_MSG = (
 )
 
 DAYS_NOT_ALWAYS_24H_MSG = (
-    "This operation assumes days are exactly 24 hours. "
-    "Calendar days may be 23 or 25 hours long during DST transitions. "
-    "If you're working with UTC, or deliberately want fixed-length days, this is correct. "
-    "For DST-aware operations, consider using ZonedDateTime arithmetic instead, "
-    "or passing the `relative_to` argument where available. "
-    "Pass `days_assumed_24h_ok=True` to suppress this warning, "
-    "or use Python's standard warning filters. "
-    "See https://whenever.readthedocs.io/en/latest/guide/warnings.html"
+    "You are using days or weeks as exact time, so Whenever will treat each day "
+    "as exactly 24 hours. A calendar day can be 23 or 25 hours during a DST "
+    "transition, so this may differ from calendar arithmetic. If you mean "
+    "calendar days, perform the operation on a ZonedDateTime or pass "
+    "`relative_to=...` where supported. If fixed 24-hour periods are "
+    "intentional, pass `days_assumed_24h_ok=True`. "
+    + WARNING_HANDLING_DOCS_MSG
 )
 
 IGNORE_DST_DEPRECATED_MSG = (
-    "The `ignore_dst` parameter is deprecated. "
-    "Use `stale_offset_ok` or `naive_arithmetic_ok` instead."
+    "`ignore_dst` is deprecated and will be removed in a future release. For "
+    "OffsetDateTime operations, use `stale_offset_ok`; for PlainDateTime "
+    "operations, use `naive_arithmetic_ok`."
 )
 
 
@@ -8609,7 +8648,8 @@ def years(i: int, /) -> DateDelta:
         Use :class:`~whenever.ItemizedDateDelta` instead
     """
     warn(
-        "years() is deprecated; use ItemizedDateDelta instead.",
+        "years() is deprecated and will be removed in a future release; "
+        "use ItemizedDateDelta instead.",
         WheneverDeprecationWarning,
         stacklevel=2,
     )
@@ -8625,7 +8665,8 @@ def months(i: int, /) -> DateDelta:
         Use :class:`~whenever.ItemizedDateDelta` instead
     """
     warn(
-        "months() is deprecated; use ItemizedDateDelta instead.",
+        "months() is deprecated and will be removed in a future release; "
+        "use ItemizedDateDelta instead.",
         WheneverDeprecationWarning,
         stacklevel=2,
     )
@@ -8641,7 +8682,8 @@ def weeks(i: int, /) -> DateDelta:
         Use :class:`~whenever.ItemizedDateDelta` instead
     """
     warn(
-        "weeks() is deprecated; use ItemizedDateDelta instead.",
+        "weeks() is deprecated and will be removed in a future release; "
+        "use ItemizedDateDelta instead.",
         WheneverDeprecationWarning,
         stacklevel=2,
     )
@@ -8657,7 +8699,8 @@ def days(i: int, /) -> DateDelta:
         Use :class:`~whenever.ItemizedDateDelta` instead
     """
     warn(
-        "days() is deprecated; use ItemizedDateDelta instead.",
+        "days() is deprecated and will be removed in a future release; "
+        "use ItemizedDateDelta instead.",
         WheneverDeprecationWarning,
         stacklevel=2,
     )

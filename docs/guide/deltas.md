@@ -68,7 +68,8 @@ may change the reference date for the second step.
 
 When you call `add()` or `subtract()` on itemized deltas **without** a
 `relative_to` reference, the operation is field-wise and emits
-{class}`~whenever.CalendarUnitCompositionWarning`. Field-wise composition is
+{class}`~whenever.CalendarUnitCompositionWarning` when nonzero calendar units
+are involved. Exact-only composition does not warn. Field-wise composition is
 literal and sometimes useful, but it should not be confused with sequential
 application to a date or datetime.
 
