@@ -9,6 +9,7 @@ from whenever import (
     OffsetDateTime,
     PlainDateTime,
     Time,
+    WheneverWarning,
     ZonedDateTime,
     hours,
     minutes,
@@ -123,7 +124,9 @@ class TestCompilePattern:
             warnings.simplefilter("always")
             t.format("ii:mm")
             assert len(w) == 1
-            assert "ambiguous" in str(w[0].message).lower()
+            assert w[0].category is WheneverWarning
+            assert "without an AM/PM field" in str(w[0].message)
+            assert "24-hour fields" in str(w[0].message)
 
     def test_yy_parse_disabled(self):
         with pytest.raises(ValueError, match="YY.*only.*formatting"):

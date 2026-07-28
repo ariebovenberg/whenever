@@ -405,7 +405,7 @@ fn to_stdlib(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 fn py_datetime(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"py_datetime() is deprecated. Use to_stdlib() instead.",
+        c"py_datetime() is deprecated and will be removed in a future release; use to_stdlib() instead.",
         1,
     )?;
     to_stdlib(cls, slf)
@@ -771,7 +771,7 @@ fn from_system_tz(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyD
 fn from_py_datetime(cls: PyClass<ZonedDateTime>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"from_py_datetime() is deprecated. Use ZonedDateTime() constructor instead.",
+        c"from_py_datetime() is deprecated and will be removed in a future release; use ZonedDateTime() instead.",
         1,
     )?;
     let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() else {
@@ -1026,7 +1026,7 @@ fn difference(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> P
 fn start_of_day(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"start_of_day() is deprecated; use start_of(\"day\") instead.",
+        c"start_of_day() is deprecated and will be removed in a future release; use start_of(\"day\") instead.",
         1,
     )?;
     slf.to_plain()
@@ -1209,14 +1209,14 @@ fn zoned_since(
     }
 }
 
-fn format(_cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) -> PyReturn {
+fn format(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET_TZ, "ZonedDateTime")?;
-    pattern.warn_if_ambiguous_12h()?;
+    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
     let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
     // SAFETY: TzAbbrev always contains valid ASCII bytes
     let abbrev_str = unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) };

@@ -222,7 +222,7 @@ fn to_stdlib(cls: PyClass<Time>, slf: Time) -> PyReturn {
 fn py_time(cls: PyClass<Time>, slf: Time) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"py_time() is deprecated. Use to_stdlib() instead.",
+        c"py_time() is deprecated and will be removed in a future release; use to_stdlib() instead.",
         1,
     )?;
     to_stdlib(cls, slf)
@@ -231,7 +231,7 @@ fn py_time(cls: PyClass<Time>, slf: Time) -> PyReturn {
 fn from_py_time(cls: PyClass<Time>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"from_py_time() is deprecated. Use Time() constructor instead.",
+        c"from_py_time() is deprecated and will be removed in a future release; use Time() instead.",
         1,
     )?;
     Time::from_stdlib_time(
@@ -313,14 +313,14 @@ fn round(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs)
     slf.round(increment_ns, mode).0.to_obj(cls)
 }
 
-fn format(_cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
+fn format(cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::TIME, "Time")?;
-    pattern.warn_if_ambiguous_12h()?;
+    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
     pattern.format(&slf.pattern_values())
 }
 

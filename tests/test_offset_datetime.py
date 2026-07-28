@@ -640,8 +640,12 @@ class TestFromTimestamp:
         with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
             method(0, offset=3, ignore_dst=True)
 
-        with pytest.warns(StaleOffsetWarning):
+        with pytest.warns(StaleOffsetWarning) as caught:
             method(0, offset=3)
+        message = str(caught[0].message)
+        assert "offset may be stale at this timestamp" in message
+        assert "correct for that offset" in message
+        assert "guide/warnings.html" in message
 
     @suppress(StaleOffsetWarning)
     def test_float(self):
@@ -990,8 +994,12 @@ class TestNow:
         with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
             OffsetDateTime.now(3, ignore_dst=True)
 
-        with pytest.warns(StaleOffsetWarning):
+        with pytest.warns(StaleOffsetWarning) as caught:
             OffsetDateTime.now(hours(5))
+        message = str(caught[0].message)
+        assert "may be stale for the region you intend" in message
+        assert "ZonedDateTime.now" in message
+        assert "guide/warnings.html" in message
 
     @suppress(StaleOffsetWarning)
     def test_int(self):

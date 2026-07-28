@@ -75,9 +75,6 @@ pub(crate) fn exc_runtime_error() -> PyObj {
 pub(crate) fn exc_zero_division_error() -> PyObj {
     unsafe { PyObj::from_ptr_unchecked(PyExc_ZeroDivisionError) }
 }
-pub(crate) fn exc_user_warning() -> PyObj {
-    unsafe { PyObj::from_ptr_unchecked(PyExc_UserWarning) }
-}
 pub(crate) fn exc_overflow_error() -> PyObj {
     unsafe { PyObj::from_ptr_unchecked(PyExc_OverflowError) }
 }

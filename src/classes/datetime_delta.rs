@@ -129,7 +129,7 @@ fn __new__(cls: PyClass<DateTimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
-        c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
+        c"DateTimeDelta is deprecated and will be removed in a future release; use ItemizedDelta instead.",
         1,
     )?;
     match (nargs, nkwargs) {
@@ -341,7 +341,7 @@ fn format_iso(_: PyType, d: DateTimeDelta) -> PyReturn {
 fn parse_iso(cls: PyClass<DateTimeDelta>, arg: PyObj) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"DateTimeDelta is deprecated; use ItemizedDelta instead.",
+        c"DateTimeDelta is deprecated and will be removed in a future release; use ItemizedDelta instead.",
         1,
     )?;
     parse_iso_inner(cls, arg)
@@ -387,7 +387,7 @@ fn in_months_days_secs_nanos(
 fn date_part(cls: PyClass<DateTimeDelta>, slf: DateTimeDelta) -> PyReturn {
     warn_with_class(
         *cls.state().warn_deprecation,
-        c"DateTimeDelta.date_part() is deprecated.",
+        c"DateTimeDelta.date_part() is deprecated and will be removed in a future release. Migrate to ItemizedDelta and use .date_and_time_parts() instead.",
         1,
     )?;
     slf.date.to_obj(*cls.state().date_delta_type)

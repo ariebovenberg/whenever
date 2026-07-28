@@ -305,7 +305,7 @@ fn py_datetime(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
-        c"py_datetime() is deprecated. Use to_stdlib() instead.",
+        c"py_datetime() is deprecated and will be removed in a future release; use to_stdlib() instead.",
         1,
     )?;
     to_stdlib(cls, slf)
@@ -315,7 +315,7 @@ fn from_py_datetime(cls: PyClass<Instant>, obj: PyObj) -> PyReturn {
     let state = cls.state();
     warn_with_class(
         *state.warn_deprecation,
-        c"from_py_datetime() is deprecated. Use Instant() constructor instead.",
+        c"from_py_datetime() is deprecated and will be removed in a future release; use Instant() instead.",
         1,
     )?;
     if let Some(dt) = obj.cast_allow_subclass::<PyDateTime>() {
@@ -471,14 +471,14 @@ fn round(cls: PyClass<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterK
     .to_obj(cls)
 }
 
-fn format(_cls: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
+fn format(cls: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "Instant")?;
-    pattern.warn_if_ambiguous_12h()?;
+    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
     pattern.format(
         &slf.to_utc_plain()
             .pattern_values()

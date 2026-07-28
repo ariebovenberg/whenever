@@ -16,8 +16,8 @@ use crate::{
         time::Time,
     },
     py::{
-        PyAsciiStrBuilder, PyResult, PyReturn,
-        exc::{RaiseExt, ResultExt, exc_user_warning, raise_value_err, warn_with_class},
+        PyAsciiStrBuilder, PyObj, PyResult, PyReturn,
+        exc::{RaiseExt, ResultExt, raise_value_err, warn_with_class},
     },
     tz::tzif::is_tz_id_char,
 };
@@ -234,11 +234,11 @@ impl<'a> CompiledPattern<'a> {
         validate_fields(&self.elements, allowed, type_name)
     }
 
-    pub(crate) fn warn_if_ambiguous_12h(&self) -> PyResult<()> {
+    pub(crate) fn warn_if_ambiguous_12h(&self, warning_cls: PyObj) -> PyResult<()> {
         if has_12h_without_ampm(&self.elements) {
             warn_with_class(
-                exc_user_warning(),
-                c"12-hour format (ii) without AM/PM designator (a/aa) may be ambiguous",
+                warning_cls,
+                c"The pattern uses a 12-hour clock (`i` or `ii`) without an AM/PM field (`a` or `aa`). A value such as `03:00` could mean either 3 AM or 3 PM. Add `a` or `aa`, or use the 24-hour fields `h` or `hh`.",
                 1,
             )?;
         }
