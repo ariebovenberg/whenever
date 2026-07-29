@@ -60,8 +60,8 @@ check-docstrings:
 
 .PHONY: fix
 fix:
-	uv $(UV_ARGS) run --no-sync ruff check $(RUFF_ARGS) --select I --fix .
-	uv $(UV_ARGS) run --no-sync ruff format $(RUFF_ARGS) .
+	uv $(UV_ARGS) run --no-sync ruff check $(RUFF_ARGS) --select I --fix src/ tests/ scripts/
+	uv $(UV_ARGS) run --no-sync ruff format $(RUFF_ARGS) src/ tests/ scripts/
 	cargo fmt
 
 .PHONY: docs
@@ -93,8 +93,8 @@ test: test-py test-rs
 .PHONY: ci-lint
 ci-lint: check-readme check-docstrings
 	uv $(UV_ARGS) lock --check
-	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) .
-	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check .
+	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) src/ tests/ scripts/
+	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check src/ tests/ scripts/
 	cargo fmt -- --check
 	# hash seed to ensure deterministic import order by slotscheck
 	uv $(UV_ARGS) run env PYTHONPATH=pysrc/ PYTHONHASHSEED=3 slotscheck $(SLOTSCHECK_ARGS) pysrc

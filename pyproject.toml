@@ -7,7 +7,7 @@ maintainers = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.10.4.dev0"
+version = "0.10.4"
 license = "MIT"
 description = "Modern datetime library for Python"
 requires-python = ">=3.10"
@@ -45,10 +45,10 @@ test = [
     "pytest-cov>=7.1.0,<8",
     "pytest-order>=1.4.0,<2",
     "pytest>=9.0.3,<10",
-    "hypothesis>=6.152.7,<7",
+    "hypothesis>=6,<7",
 ]
 typing = [
-    "mypy>=2.2.0,<2.3",
+    "mypy>=2.3,<2.4",
 ]
 integrations = [
     "time_machine>=3.2,<4; implementation_name == 'cpython'",
@@ -56,12 +56,12 @@ integrations = [
     "pydantic>=2.10,<3",
 ]
 dev-extra = [
-    "ruff>=0.15,<0.16",
+    "ruff>=0.16,<0.17",
     "slotscheck>=0.20,<0.21",
     "build",
     "packaging>=26.2",
     "setuptools-rust",
-    "twine>=6.2.0",
+    "twine>=7,<8",
 ]
 benchmark = [
     "arrow>=1.4,<2",
