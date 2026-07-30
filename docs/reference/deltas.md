@@ -41,12 +41,6 @@ each suited for different use cases:
 - Use {class}`ItemizedDelta` if you need to work with *both* with calendar units
   (years, months, days) and exact time units (hours, minutes, seconds).
 
-```{note}
-{class}`ItemizedDelta` and {class}`ItemizedDateDelta` were introduced in version 0.10,
-and replace the (now deprecated) {class}`DateTimeDelta` and {class}`DateDelta` classes.
-```
-
-
 Here is a summary of the three delta types provided,
 and their key differences. Click on the features to learn more about them.
 

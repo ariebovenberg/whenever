@@ -123,12 +123,6 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
             "_unpkl_tdelta",
             (struct.pack("<qI", 9999 * 366 * 24 * 3_600, 1),),
         ),
-        ("_unpkl_ddelta", (1 << 40, 0)),
-        ("_unpkl_ddelta", (1, -1)),
-        ("_unpkl_dtdelta", (1 << 40, 0, 0, 0)),
-        ("_unpkl_dtdelta", (1, -1, 0, 0)),
-        ("_unpkl_dtdelta", (1, 0, -1, 0)),
-        ("_unpkl_dtdelta", (0, 0, 9999 * 366 * 24 * 3_600, 1)),
         (
             "_unpkl_offset",
             (struct.pack("<HBBBBBil", 2024, 1, 1, 0, 0, 0, 0, 86_400),),
@@ -166,20 +160,6 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
 def test_malformed_payload_is_rejected(name: str, args: tuple[object, ...]):
     with pytest.raises((TypeError, ValueError, OverflowError, struct.error)):
         getattr(w, name)(*args)
-
-
-@pytest.mark.parametrize(
-    ("secs", "nanos", "expected"),
-    [
-        (0, 1_000_000_000, (1, 0)),
-        (0, -1, (0, -1)),
-    ],
-)
-def test_legacy_datetime_delta_unpickler_normalizes_subseconds(
-    secs: int, nanos: int, expected: tuple[int, int]
-):
-    value = getattr(w, "_unpkl_dtdelta")(0, 0, secs, nanos)
-    assert value.in_months_days_secs_nanos()[2:] == expected
 
 
 @pytest.mark.parametrize(

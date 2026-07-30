@@ -301,32 +301,6 @@ fn to_stdlib(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
     slf.to_stdlib_datetime(cls.state().py_api()?)
 }
 
-fn py_datetime(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
-    let state = cls.state();
-    warn_with_class(
-        *state.warn_deprecation,
-        c"py_datetime() is deprecated and will be removed in a future release; use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
-}
-
-fn from_py_datetime(cls: PyClass<Instant>, obj: PyObj) -> PyReturn {
-    let state = cls.state();
-    warn_with_class(
-        *state.warn_deprecation,
-        c"from_py_datetime() is deprecated and will be removed in a future release; use Instant() instead.",
-        1,
-    )?;
-    if let Some(dt) = obj.cast_allow_subclass::<PyDateTime>() {
-        Instant::from_stdlib_datetime(dt)?
-            .ok_or_range_err()?
-            .to_obj(cls)
-    } else {
-        raise_type_err("expected a datetime object")
-    }
-}
-
 fn now(cls: PyClass<Instant>) -> PyReturn {
     cls.state().now()?.to_obj(cls)
 }
@@ -571,12 +545,6 @@ static mut METHODS: &[PyMethodDef] = &[
         ml_doc: doc::INSTANT_FROM_UTC.as_ptr(),
     },
     method0!(Instant, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
-    method0!(Instant, py_datetime, doc::BASICCONVERSIONS_PY_DATETIME),
-    classmethod1!(
-        Instant,
-        from_py_datetime,
-        doc::BASICCONVERSIONS_FROM_PY_DATETIME
-    ),
     classmethod0!(Instant, now, doc::INSTANT_NOW),
     method0!(Instant, format_rfc2822, doc::INSTANT_FORMAT_RFC2822),
     classmethod1!(Instant, parse_rfc2822, doc::INSTANT_PARSE_RFC2822),
