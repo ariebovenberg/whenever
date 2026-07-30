@@ -365,15 +365,6 @@ fn to_stdlib(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
         .map(Owned::into_obj)
 }
 
-fn py_datetime(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"py_datetime() is deprecated and will be removed in a future release; use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
-}
-
 fn date(cls: PyClass<OffsetDateTime>, OffsetDateTime { date, .. }: OffsetDateTime) -> PyReturn {
     date.to_obj(*cls.state().date_type)
 }
@@ -452,10 +443,7 @@ fn offset_stale_warning(state: &State, msg: &CStr) -> PyResult<()> {
     warn_with_class(*state.warn_potentially_stale_offset, msg, 1)
 }
 
-/// Check for deprecated `ignore_dst` and new `stale_offset_ok`
-/// kwargs in a kwargs iterator that only has these optional kwargs remaining,
-/// and emit stale offset warning.
-fn check_ignore_dst_and_stale_offset(
+fn check_stale_offset(
     fname: &str,
     kwargs: &mut IterKwargs,
     state: &State,
@@ -463,9 +451,7 @@ fn check_ignore_dst_and_stale_offset(
 ) -> PyResult<()> {
     let mut suppress = false;
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, *state.str_ignore_dst) {
-            warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-        } else if eq(key, *state.str_stale_offset_ok) {
+        if eq(key, *state.str_stale_offset_ok) {
             suppress = value.is_truthy()?;
         } else {
             return Ok(false);
@@ -485,12 +471,7 @@ fn replace_date(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    check_ignore_dst_and_stale_offset(
-        "replace_date",
-        kwargs,
-        state,
-        doc::OFFSET_REPLACE_STALE_MSG,
-    )?;
+    check_stale_offset("replace_date", kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
     let arg = handle_one_arg("replace_date", args)?;
     if let Some(date) = arg.extract(*state.date_type) {
         date.at(time)
@@ -509,12 +490,7 @@ fn replace_time(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    check_ignore_dst_and_stale_offset(
-        "replace_time",
-        kwargs,
-        state,
-        doc::OFFSET_REPLACE_STALE_MSG,
-    )?;
+    check_stale_offset("replace_time", kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
     let arg = handle_one_arg("replace_time", args)?;
     if let Some(time) = arg.extract(*state.time_type) {
         date.at(time)
@@ -564,13 +540,10 @@ fn replace(
     let state = cls.state();
     let mut components = slf.to_plain().components();
     let mut offset = slf.offset;
-    let mut got_ignore_dst = false;
     let mut suppress_stale = false;
 
     handle_kwargs("replace", kwargs, |k, v, eq| {
-        if eq(k, *state.str_ignore_dst) {
-            got_ignore_dst = true;
-        } else if eq(k, *state.str_stale_offset_ok) {
+        if eq(k, *state.str_stale_offset_ok) {
             suppress_stale = v.is_truthy()?;
         } else if eq(k, *state.str_offset) {
             offset = Offset::from_py(v, *state.time_delta_type)?;
@@ -580,9 +553,6 @@ fn replace(
         Ok(true)
     })?;
 
-    if got_ignore_dst {
-        warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-    }
     if !suppress_stale {
         offset_stale_warning(state, doc::OFFSET_REPLACE_STALE_MSG)?;
     }
@@ -597,27 +567,13 @@ fn replace(
 fn now(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let state = cls.state();
     let offset_obj = handle_one_arg("now", args)?;
-    check_ignore_dst_and_stale_offset("now", kwargs, state, doc::OFFSET_NOW_STALE_MSG)?;
+    check_stale_offset("now", kwargs, state, doc::OFFSET_NOW_STALE_MSG)?;
     let offset = Offset::from_py(offset_obj, *state.time_delta_type)?;
     state
         .now()?
         .to_offset(offset)
         .ok_or_raise(exc_os_error(), "Date is out of range")?
         .to_obj(cls)
-}
-
-fn from_py_datetime(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
-    let state = cls.state();
-    warn_with_class(
-        *state.warn_deprecation,
-        c"from_py_datetime() is deprecated and will be removed in a future release; use OffsetDateTime() instead.",
-        1,
-    )?;
-    if let Some(py_dt) = arg.cast_allow_subclass::<PyDateTime>() {
-        OffsetDateTime::from_stdlib_datetime(py_dt)?.to_obj(cls)
-    } else {
-        raise_type_err("argument must be a datetime.datetime instance")?
-    }
 }
 
 pub(crate) fn to_plain(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
@@ -664,15 +620,12 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let mut got_ignore_dst = false;
     let mut suppress_stale = false;
 
     let shift = match handle_opt_arg(fname, args)? {
         Some(arg) => {
             for (key, value) in kwargs.by_ref() {
-                if unicode_eq(key, *state.str_ignore_dst) {
-                    got_ignore_dst = true;
-                } else if unicode_eq(key, *state.str_stale_offset_ok) {
+                if unicode_eq(key, *state.str_stale_offset_ok) {
                     suppress_stale = value.is_truthy()?;
                 } else {
                     raise_mixed_args(fname)?;
@@ -681,10 +634,7 @@ fn shift_method(
             parse_datetime_shift_arg(fname, arg, state)?
         }
         None => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
-            if eq(k, *state.str_ignore_dst) {
-                got_ignore_dst = true;
-                Ok(true)
-            } else if eq(k, *state.str_stale_offset_ok) {
+            if eq(k, *state.str_stale_offset_ok) {
                 suppress_stale = v.is_truthy()?;
                 Ok(true)
             } else {
@@ -693,9 +643,6 @@ fn shift_method(
         })?,
     };
 
-    if got_ignore_dst {
-        warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-    }
     if !suppress_stale {
         offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
     }
@@ -722,14 +669,13 @@ fn __reduce__(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     .into_pytuple()
 }
 
-/// checks the args comply with (ts: ?, /, *, offset: ?, ignore_dst: ?, stale_offset_ok: ?)
+/// checks the args comply with (ts: ?, /, *, offset: ?, stale_offset_ok: ?)
 fn check_from_timestamp_args_return_offset(
     fname: &str,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
     state: &State,
 ) -> PyResult<Offset> {
-    let mut got_ignore_dst = false;
     let mut suppress_stale = false;
     let mut offset = None;
     if args.len() != 1 {
@@ -741,9 +687,7 @@ fn check_from_timestamp_args_return_offset(
     }
 
     handle_kwargs("from_timestamp", kwargs, |key, value, eq| {
-        if eq(key, *state.str_ignore_dst) {
-            got_ignore_dst = true;
-        } else if eq(key, *state.str_stale_offset_ok) {
+        if eq(key, *state.str_stale_offset_ok) {
             suppress_stale = value.is_truthy()?;
         } else if eq(key, *state.str_offset) {
             offset = Some(Offset::from_py(value, *state.time_delta_type)?);
@@ -753,9 +697,6 @@ fn check_from_timestamp_args_return_offset(
         Ok(true)
     })?;
 
-    if got_ignore_dst {
-        warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-    }
     if !suppress_stale {
         offset_stale_warning(state, doc::OFFSET_FROM_TIMESTAMP_STALE_MSG)?;
     }
@@ -805,35 +746,6 @@ fn from_timestamp_nanos(
         .to_obj(cls)
 }
 
-fn parse_strptime(
-    cls: PyClass<OffsetDateTime>,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    let state = cls.state();
-    warn_with_class(
-        *state.warn_deprecation,
-        c"parse_strptime() is deprecated and will be removed in a future release; use parse() with a pattern string instead.",
-        1,
-    )?;
-    let format_obj = match kwargs.next() {
-        Some((key, value)) if kwargs.original_len() == 1 && unicode_eq(key, *state.str_format) => {
-            value
-        }
-        _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
-    };
-    let arg_obj = handle_one_arg("parse_strptime", args)?;
-
-    let parsed = state
-        .strptime
-        .get()?
-        .call_args([arg_obj, format_obj])?
-        .cast_exact::<PyDateTime>()
-        .ok_or_type_err("strptime() returned non-datetime")?;
-
-    OffsetDateTime::from_stdlib_datetime(*parsed)?.to_obj(cls)
-}
-
 fn format_rfc2822(_: PyType, slf: OffsetDateTime) -> PyReturn {
     let fmt = rfc2822::format(slf);
     // SAFETY: we know the format is ASCII only
@@ -862,12 +774,8 @@ fn round(
     let round::Args {
         increment,
         mode,
-        got_ignore_dst,
         suppress_stale,
     } = round::Args::parse(args, kwargs, state, round::ArgsContext::Offset)?;
-    if got_ignore_dst {
-        warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-    }
     if !suppress_stale {
         offset_stale_warning(state, doc::OFFSET_ROUND_STALE_MSG)?;
     }
@@ -1065,16 +973,6 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(OffsetDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(
         OffsetDateTime,
-        py_datetime,
-        doc::BASICCONVERSIONS_PY_DATETIME
-    ),
-    classmethod1!(
-        OffsetDateTime,
-        from_py_datetime,
-        doc::BASICCONVERSIONS_FROM_PY_DATETIME
-    ),
-    method0!(
-        OffsetDateTime,
         to_instant,
         doc::EXACTANDLOCALTIME_TO_INSTANT
     ),
@@ -1143,11 +1041,6 @@ static mut METHODS: &[PyMethodDef] = &[
         OffsetDateTime,
         replace_time,
         doc::OFFSETDATETIME_REPLACE_TIME
-    ),
-    classmethod_kwargs!(
-        OffsetDateTime,
-        parse_strptime,
-        doc::OFFSETDATETIME_PARSE_STRPTIME
     ),
     method_kwargs!(OffsetDateTime, add, doc::OFFSETDATETIME_ADD),
     method_kwargs!(OffsetDateTime, subtract, doc::OFFSETDATETIME_SUBTRACT),
