@@ -2497,7 +2497,7 @@ wheels = [
 
 [[package]]
 name = "whenever"
-version = "0.10.4"
+version = "0.10.4b0"
 source = { editable = "." }
 dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
