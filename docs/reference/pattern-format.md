@@ -184,9 +184,7 @@ See [](faq-leap-seconds) for details.
 
 ## Comparison with strftime
 
-The {meth}`~OffsetDateTime.parse_strptime` methods on {class}`OffsetDateTime` and
-{class}`PlainDateTime` are deprecated in favor of
-{meth}`~OffsetDateTime.parse`. Here's a migration guide:
+The following table maps common `strftime` directives to Whenever patterns:
 
 | strftime | Pattern | Notes |
 |:---------|:--------|:------|

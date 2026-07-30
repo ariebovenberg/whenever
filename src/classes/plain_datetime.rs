@@ -1,7 +1,6 @@
 use crate::{
     classes::{
         date::{self, Date},
-        date_delta::DateDelta,
         instant::Instant,
         itemized_date_delta::ItemizedDateDelta,
         itemized_delta::ItemizedDelta,
@@ -212,40 +211,13 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
         };
         let state = cls.state();
 
-        let result = if let Some(DateDelta {
-            mut months,
-            mut days,
-        }) = other.extract(*state.date_delta_type)
-        {
-            months = months.negate_if(negate);
-            days = days.negate_if(negate);
-            slf.shift_date(months, days).ok_or_range_err()?
-        } else if let Some(tdelta) = other.extract(*state.time_delta_type) {
+        let result = if let Some(tdelta) = other.extract(*state.time_delta_type) {
             warn_with_class(
                 *state.warn_naive_arithmetic,
                 doc::PLAIN_SHIFT_UNAWARE_MSG,
                 1,
             )?;
             slf.shift(tdelta.negate_if(negate)).ok_or_range_err()?
-        } else if let Some(dt) = other.extract(*state.datetime_delta_type) {
-            let mut months = dt.date.months;
-            let mut days = dt.date.days;
-            let mut tdelta = dt.time;
-            if negate {
-                months = -months;
-                days = -days;
-                tdelta = -tdelta;
-            }
-            if !tdelta.is_zero() {
-                warn_with_class(
-                    *state.warn_naive_arithmetic,
-                    doc::PLAIN_SHIFT_UNAWARE_MSG,
-                    1,
-                )?;
-            }
-            slf.shift_date(months, days)
-                .and_then(|dt| dt.shift(tdelta))
-                .ok_or_range_err()?
         } else {
             return Ok(None);
         };
@@ -392,15 +364,12 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let mut got_ignore_dst = false;
     let mut suppress_unaware = false;
 
     let shift = match handle_opt_arg(fname, args)? {
         Some(arg) => {
             for (key, value) in kwargs.by_ref() {
-                if unicode_eq(key, *state.str_ignore_dst) {
-                    got_ignore_dst = true;
-                } else if unicode_eq(key, *state.str_naive_arithmetic_ok) {
+                if unicode_eq(key, *state.str_naive_arithmetic_ok) {
                     suppress_unaware = value.is_truthy()?;
                 } else {
                     raise_mixed_args(fname)?;
@@ -409,10 +378,7 @@ fn shift_method(
             parse_datetime_shift_arg(fname, arg, state)?
         }
         None => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
-            if eq(k, *state.str_ignore_dst) {
-                got_ignore_dst = true;
-                Ok(true)
-            } else if eq(k, *state.str_naive_arithmetic_ok) {
+            if eq(k, *state.str_naive_arithmetic_ok) {
                 suppress_unaware = v.is_truthy()?;
                 Ok(true)
             } else {
@@ -420,10 +386,6 @@ fn shift_method(
             }
         })?,
     };
-
-    if got_ignore_dst {
-        warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-    }
 
     let shift = shift.negate_if(negate);
 
@@ -445,11 +407,8 @@ fn difference(
 ) -> PyReturn {
     let state = cls.state();
     let mut suppress_unaware = false;
-    // Accept deprecated ignore_dst kwarg and new naive_arithmetic_ok kwarg
     for (key, value) in kwargs.by_ref() {
-        if unicode_eq(key, *state.str_ignore_dst) {
-            warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-        } else if unicode_eq(key, *state.str_naive_arithmetic_ok) {
+        if unicode_eq(key, *state.str_naive_arithmetic_ok) {
             suppress_unaware = value.is_truthy()?;
         } else {
             raise_unexpected_kwarg("difference", key)?;
@@ -483,30 +442,8 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
         .to_obj(*state.plain_datetime_type)
 }
 
-fn from_py_datetime(cls: PyClass<PlainDateTime>, arg: PyObj) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"from_py_datetime() is deprecated and will be removed in a future release; use PlainDateTime() instead.",
-        1,
-    )?;
-    let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() else {
-        raise_type_err("argument must be datetime.datetime")?
-    };
-    PlainDateTime::from_stdlib_datetime(dt)?.to_obj(cls)
-}
-
 fn to_stdlib(cls: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
     slf.to_stdlib_datetime(cls.state().py_api()?)
-}
-
-fn py_datetime(cls: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
-    let state = cls.state();
-    warn_with_class(
-        *state.warn_deprecation,
-        c"py_datetime() is deprecated and will be removed in a future release; use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
 }
 
 fn date(cls: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
@@ -543,35 +480,6 @@ fn end_of(cls: PyClass<PlainDateTime>, slf: PlainDateTime, unit_obj: PyObj) -> P
     slf.end_of_unit(DateTimeBoundaryUnit::from_py(unit_obj, cls.state())?)
         .ok_or_range_err()?
         .to_obj(cls)
-}
-
-fn parse_strptime(
-    cls: PyClass<PlainDateTime>,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    let state = cls.state();
-    warn_with_class(
-        *state.warn_deprecation,
-        c"parse_strptime() is deprecated and will be removed in a future release; use parse() with a pattern string instead.",
-        1,
-    )?;
-    let format_obj = match kwargs.next() {
-        Some((key, value)) if kwargs.original_len() == 1 && unicode_eq(key, *state.str_format) => {
-            value
-        }
-        _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
-    };
-    let arg_obj = handle_one_arg("parse_strptime", args)?;
-
-    let parsed = state
-        .strptime
-        .get()?
-        .call_args([arg_obj, format_obj])?
-        .cast_exact::<PyDateTime>()
-        .ok_or_type_err("strptime() returned non-datetime")?;
-
-    PlainDateTime::from_stdlib_datetime(*parsed)?.to_obj(cls)
 }
 
 fn assume_utc(cls: PyClass<PlainDateTime>, d: PlainDateTime) -> PyReturn {
@@ -665,22 +573,14 @@ fn plain_since(
         .ok_or_type_err("argument must be a whenever.PlainDateTime")?;
 
     let mut suppress_unaware = false;
-    let mut got_ignore_dst = false;
     let since_kwargs = DifferenceSpec::parse_with(fname, kwargs, state, |key, value, eq| {
         if eq(key, *state.str_naive_arithmetic_ok) {
             suppress_unaware = value.is_truthy()?;
-            Ok(true)
-        } else if eq(key, *state.str_ignore_dst) {
-            got_ignore_dst = true;
             Ok(true)
         } else {
             Ok(false)
         }
     })?;
-
-    if got_ignore_dst {
-        warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-    }
 
     // Warn only when the output contains exact time units (hours/min/sec/ns).
     // Calendar-only output (years/months/weeks/days) doesn't involve clock time,
@@ -933,17 +833,7 @@ static mut METHODS: &[PyMethodDef] = &[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(PlainDateTime, __reduce__, c""),
-    classmethod1!(
-        PlainDateTime,
-        from_py_datetime,
-        doc::BASICCONVERSIONS_FROM_PY_DATETIME
-    ),
     method0!(PlainDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
-    method0!(
-        PlainDateTime,
-        py_datetime,
-        doc::BASICCONVERSIONS_PY_DATETIME
-    ),
     method0!(PlainDateTime, date, doc::LOCALTIME_DATE),
     method0!(PlainDateTime, time, doc::LOCALTIME_TIME),
     method0!(PlainDateTime, day_of_year, doc::LOCALTIME_DAY_OF_YEAR),
@@ -954,11 +844,6 @@ static mut METHODS: &[PyMethodDef] = &[
     method1!(PlainDateTime, end_of, doc::PLAINDATETIME_END_OF),
     method_kwargs!(PlainDateTime, format_iso, doc::PLAINDATETIME_FORMAT_ISO),
     classmethod1!(PlainDateTime, parse_iso, doc::PLAINDATETIME_PARSE_ISO),
-    classmethod_kwargs!(
-        PlainDateTime,
-        parse_strptime,
-        doc::PLAINDATETIME_PARSE_STRPTIME
-    ),
     method_kwargs!(PlainDateTime, replace, doc::PLAINDATETIME_REPLACE),
     method0!(PlainDateTime, assume_utc, doc::PLAINDATETIME_ASSUME_UTC),
     method1!(

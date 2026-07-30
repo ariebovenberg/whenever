@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 (unreleased)
 
+**Breaking changes**
+
+- Removed APIs deprecated before 0.11: `DateDelta`, `DateTimeDelta`, the
+  `years()`, `months()`, `weeks()`, and `days()` helpers, legacy standard
+  library conversion methods, `TimeDelta.in_*()` convenience methods,
+  `Date.days_since()` and `Date.days_until()`, deprecated `Date` operators,
+  `parse_strptime()`, `ZonedDateTime.start_of_day()`, `ignore_dst`, and
+  `ImplicitlyIgnoringDST`.
 - Add LLM-friendly Markdown documentation, including `llms.txt` and
   `llms-full.txt`.
 - **Fixed**: rounding with an odd `increment` rounded away from zero one step

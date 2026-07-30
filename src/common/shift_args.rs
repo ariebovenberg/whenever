@@ -14,17 +14,10 @@ pub(crate) fn parse_calendar_shift_arg(
     obj: PyObj,
     state: &State,
 ) -> PyResult<CalendarShift> {
-    if let Some(delta) = obj.extract(*state.date_delta_type) {
-        Ok(CalendarShift {
-            months: delta.months,
-            days: delta.days,
-        })
-    } else if let Some(delta) = ItemizedDateDelta::extract(obj, state)? {
+    if let Some(delta) = ItemizedDateDelta::extract(obj, state)? {
         delta.to_calendar_shift().ok_or_range_err()
     } else {
-        raise_type_err(format!(
-            "{fname}() argument must be a DateDelta or ItemizedDateDelta"
-        ))
+        raise_type_err(format!("{fname}() argument must be an ItemizedDateDelta"))
     }
 }
 
@@ -35,20 +28,6 @@ pub(crate) fn parse_datetime_shift_arg(
 ) -> PyResult<DateTimeShift> {
     if let Some(time) = obj.extract(*state.time_delta_type) {
         Ok(time.to_shift())
-    } else if let Some(calendar) = obj.extract(*state.date_delta_type) {
-        Ok(CalendarShift {
-            months: calendar.months,
-            days: calendar.days,
-        }
-        .to_shift())
-    } else if let Some(delta) = obj.extract(*state.datetime_delta_type) {
-        Ok(DateTimeShift {
-            calendar: CalendarShift {
-                months: delta.date.months,
-                days: delta.date.days,
-            },
-            time: delta.time,
-        })
     } else if let Some(calendar) = ItemizedDateDelta::extract(obj, state)? {
         Ok(calendar.to_calendar_shift().ok_or_range_err()?.to_shift())
     } else if let Some(delta) = ItemizedDelta::extract(obj, state)? {

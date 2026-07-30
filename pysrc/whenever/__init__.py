@@ -17,19 +17,11 @@ def __getattr__(name: str) -> object:
 
         return _get_tzpath()
     elif name == "AnyDelta":
-        from ._core import (
-            DateDelta,
-            DateTimeDelta,
-            TimeDelta,
-        )
+        from ._core import TimeDelta
         from ._ideltas import ItemizedDateDelta, ItemizedDelta
 
         globals()["AnyDelta"] = val = (
-            DateDelta
-            | TimeDelta
-            | DateTimeDelta
-            | ItemizedDelta
-            | ItemizedDateDelta
+            TimeDelta | ItemizedDelta | ItemizedDateDelta
         )
         return val
     elif name == "__version__":
@@ -67,15 +59,9 @@ __all__ = (
     "ZonedDateTime",
     "PlainDateTime",
     # Deltas and time units
-    "DateDelta",
     "TimeDelta",
-    "DateTimeDelta",
     "ItemizedDelta",
     "ItemizedDateDelta",
-    "years",
-    "months",
-    "weeks",
-    "days",
     "hours",
     "minutes",
     "seconds",
@@ -93,7 +79,6 @@ __all__ = (
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
-    "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
     # Enums/constants
     "Weekday",
@@ -123,14 +108,8 @@ _LAZY_MODULES = {
         "OffsetDateTime",
         "ZonedDateTime",
         "PlainDateTime",
-        "DateDelta",
         "TimeDelta",
-        "DateTimeDelta",
         # Unit constructors
-        "years",
-        "months",
-        "weeks",
-        "days",
         "hours",
         "minutes",
         "seconds",
@@ -147,15 +126,12 @@ _LAZY_MODULES = {
         "SkippedTime",
         "RepeatedTime",
         "InvalidOffsetError",
-        "ImplicitlyIgnoringDST",
         "TimeZoneNotFoundError",
         # Other
         "reset_system_tz",
         "_EXTENSION_LOADED",
         # Unpickle functions
         "_unpkl_date",
-        "_unpkl_ddelta",
-        "_unpkl_dtdelta",
         "_unpkl_inst",
         "_unpkl_local",
         "_unpkl_offset",

@@ -24,7 +24,7 @@ use crate::{
         difference::{self, CalendarIncrement, DifferenceSpec},
         local::{LocalMapping, ResolveError, ResolvePolicy},
         scalar::*,
-        shift::{CalendarShift, DateTimeShift},
+        shift::DateTimeShift,
     },
     py::*,
     pymodule::State,
@@ -153,7 +153,7 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
             return parse_iso(cls, arg);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            return from_py_datetime_inner(cls, dt);
+            return from_stdlib_datetime_inner(cls, dt);
         }
         return raise_type_err("ZonedDateTime() requires an ISO 8601 string or datetime.datetime");
     };
@@ -314,20 +314,6 @@ fn shift_operator(
 ) -> PyResult<Option<Owned<PyObj>>> {
     let shift = if let Some(time) = arg.extract(*state.time_delta_type) {
         time.to_shift()
-    } else if let Some(d) = arg.extract(*state.date_delta_type) {
-        CalendarShift {
-            months: d.months,
-            days: d.days,
-        }
-        .to_shift()
-    } else if let Some(d) = arg.extract(*state.datetime_delta_type) {
-        DateTimeShift {
-            calendar: CalendarShift {
-                months: d.date.months,
-                days: d.date.days,
-            },
-            time: d.time,
-        }
     } else {
         return Ok(None);
     };
@@ -400,15 +386,6 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
 fn to_stdlib(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let state = cls.state();
     slf.to_stdlib_datetime(state)
-}
-
-fn py_datetime(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"py_datetime() is deprecated and will be removed in a future release; use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
 }
 
 fn to_instant(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -768,19 +745,7 @@ fn from_system_tz(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyD
         .into_zoned_obj_unchecked(tz, cls)
 }
 
-fn from_py_datetime(cls: PyClass<ZonedDateTime>, arg: PyObj) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"from_py_datetime() is deprecated and will be removed in a future release; use ZonedDateTime() instead.",
-        1,
-    )?;
-    let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() else {
-        raise_type_err("argument must be a datetime.datetime instance")?
-    };
-    from_py_datetime_inner(cls, dt)
-}
-
-fn from_py_datetime_inner(cls: PyClass<ZonedDateTime>, dt: PyDateTime) -> PyReturn {
+fn from_stdlib_datetime_inner(cls: PyClass<ZonedDateTime>, dt: PyDateTime) -> PyReturn {
     let state = cls.state();
     let tzinfo = dt.tzinfo();
     // NOTE: it has to be exactly a `ZoneInfo`, since
@@ -1023,23 +988,9 @@ fn difference(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> P
         .to_obj(*state.time_delta_type)
 }
 
-fn start_of_day(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"start_of_day() is deprecated and will be removed in a future release; use start_of(\"day\") instead.",
-        1,
-    )?;
-    slf.to_plain()
-        .start_of_unit(DateTimeBoundaryUnit::Day)
-        .ok_or_range_err()?
-        .resolve_compatible(&slf.tz)
-        .ok_or_range_err()?
-        .into_zoned_obj_unchecked(slf.tz.clone(), cls)
-}
-
 fn day_length(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let ZonedDateTime { date, ref tz, .. } = *slf;
-    let start_of_day = date
+    let day_start = date
         .at(Time::MIN)
         .resolve_compatible(tz)
         .ok_or_range_err()?
@@ -1052,7 +1003,7 @@ fn day_length(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
         .ok_or_range_err()?
         .to_instant();
     start_of_next_day
-        .diff(start_of_day)
+        .diff(day_start)
         .to_obj(*cls.state().time_delta_type)
 }
 
@@ -1320,11 +1271,6 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method1!(ZonedDateTime, exact_eq, doc::EXACTTIME_EXACT_EQ),
     method0!(ZonedDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
-    method0!(
-        ZonedDateTime,
-        py_datetime,
-        doc::BASICCONVERSIONS_PY_DATETIME
-    ),
     method0!(ZonedDateTime, to_instant, doc::EXACTANDLOCALTIME_TO_INSTANT),
     method0!(ZonedDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
     method0!(ZonedDateTime, date, doc::LOCALTIME_DATE),
@@ -1368,11 +1314,6 @@ static mut METHODS: &[PyMethodDef] = &[
         ml_flags: METH_CLASS | METH_VARARGS | METH_KEYWORDS,
         ml_doc: doc::ZONEDDATETIME_FROM_SYSTEM_TZ.as_ptr(),
     },
-    classmethod1!(
-        ZonedDateTime,
-        from_py_datetime,
-        doc::BASICCONVERSIONS_FROM_PY_DATETIME
-    ),
     method0!(ZonedDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
     method0!(
         ZonedDateTime,
@@ -1418,7 +1359,6 @@ static mut METHODS: &[PyMethodDef] = &[
     method_kwargs!(ZonedDateTime, add, doc::ZONEDDATETIME_ADD),
     method_kwargs!(ZonedDateTime, subtract, doc::ZONEDDATETIME_SUBTRACT),
     method1!(ZonedDateTime, difference, doc::EXACTTIME_DIFFERENCE),
-    method0!(ZonedDateTime, start_of_day, doc::ZONEDDATETIME_START_OF_DAY),
     method0!(ZonedDateTime, day_length, doc::ZONEDDATETIME_DAY_LENGTH),
     method_kwargs!(ZonedDateTime, round, doc::ZONEDDATETIME_ROUND),
     method_kwargs!(ZonedDateTime, since, doc::ZONEDDATETIME_SINCE),

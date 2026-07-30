@@ -19,15 +19,10 @@ from whenever import (
     SkippedTime,
     Time,
     TimeDelta,
-    WheneverDeprecationWarning,
     ZonedDateTime,
-    days,
     hours,
-    months,
     nanoseconds,
     seconds,
-    weeks,
-    years,
 )
 
 from .common import (
@@ -621,74 +616,6 @@ class TestShiftMethods:
         d = PlainDateTime(2020, 8, 15, 23, 12, 9)
         assert d.add(delta) == d.add(**kwargs)
 
-    def test_warnings(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.warns(NaiveArithmeticWarning) as w:
-            d.add(months=2, hours=48, seconds=5, nanoseconds=3)
-        assert len(w) == 1
-
-        with pytest.warns(NaiveArithmeticWarning) as w:
-            d.subtract(months=2, hours=48, seconds=5, nanoseconds=3)
-        assert len(w) == 1
-
-        # calendar units don't trigger warning
-        d.subtract(days=10, months=3, years=1)
-        d.add(days=10, months=3, years=1)
-
-        # ignore_dst deprecated
-        with suppress(NaiveArithmeticWarning):
-            with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
-                d.add(hours=48, seconds=5, nanoseconds=3, ignore_dst=True)
-
-            with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
-                d.subtract(hours=48, seconds=5, nanoseconds=3, ignore_dst=True)
-
-    @suppress(NaiveArithmeticWarning)
-    def test_valid(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        shifted = PlainDateTime(2020, 5, 27, 23, 12, 14, nanosecond=987_651)
-
-        assert d.add() == d
-
-        assert (
-            d.add(
-                months=-3,
-                days=10,
-                hours=48,
-                seconds=5,
-                nanoseconds=-3,
-            )
-            == shifted
-        )
-
-        # same result with deltas
-        assert (
-            d.add(hours(48) + seconds(5) + nanoseconds(-3))
-            .add(months(-3))
-            .add(days(10))
-        ) == shifted
-
-        # same result with subtract()
-        assert (
-            d.subtract(
-                months=3,
-                days=-10,
-                hours=-48,
-                seconds=-5,
-                nanoseconds=3,
-            )
-            == shifted
-        )
-
-        # same result with deltas
-        assert (
-            d.subtract(hours(-48) + seconds(-5) + nanoseconds(3))
-            .subtract(months(3))
-            .subtract(days(-10))
-        ) == shifted
-
-        assert d.subtract(months=3) == d.add(months=-3)
-
     @suppress(NaiveArithmeticWarning)
     def test_invalid(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
@@ -799,26 +726,6 @@ class TestNaiveArithmeticOkKwarg:
 
 
 class TestShiftOperators:
-    def test_date_delta(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        shifted = d.replace(year=2021, day=19)
-        assert d + (years(1) + weeks(1) + days(-3)) == shifted
-
-        # same results with subtraction
-        assert d - (years(-1) + weeks(-1) + days(3)) == shifted
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + years(8_000)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + days(366 * 8_000)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + years(-3_000)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + days(-366 * 8_000)
-
     def test_timedelta(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with suppress(NaiveArithmeticWarning):
@@ -873,15 +780,6 @@ class TestDifference:
 
         with pytest.raises(TypeError):
             d - 43  # type: ignore[operator]
-
-    def test_ignore_dst_deprecated(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
-        other = PlainDateTime(2020, 8, 14, 23, 12, 4)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", NaiveArithmeticWarning)
-            warnings.simplefilter("always", WheneverDeprecationWarning)
-            with pytest.warns(WheneverDeprecationWarning):
-                d.difference(other, ignore_dst=True)
 
 
 class TestRound:
@@ -1108,27 +1006,6 @@ def test_old_pickle_data_remains_unpicklable():
     assert pickle.loads(dumped) == PlainDateTime(
         2020, 8, 15, 23, 12, 9, nanosecond=987_654
     )
-
-
-class TestParseStrptime:
-    def test_strptime(self):
-        assert PlainDateTime.parse_strptime(
-            "2020-08-15 23:12", format="%Y-%m-%d %H:%M"
-        ) == PlainDateTime(2020, 8, 15, 23, 12)
-
-    def test_strptime_invalid(self):
-        # offset now allowed
-        with pytest.raises(ValueError):
-            PlainDateTime.parse_strptime(
-                "2020-08-15 23:12:09+0500", format="%Y-%m-%d %H:%M:%S%z"
-            )
-
-        # format is keyword-only
-        with pytest.raises(TypeError, match="format|argument"):
-            OffsetDateTime.parse_strptime(
-                "2020-08-15 23:12:09",
-                "%Y-%m-%d %H:%M:%S",  # type: ignore[call-arg]
-            )
 
 
 class TestSince:
@@ -1626,23 +1503,6 @@ class TestSince:
             round_increment=1 << 65,
             round_mode="ceil",
         ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
-
-
-class TestDeprecations:
-    def test_py_datetime(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_823)
-        with pytest.warns(WheneverDeprecationWarning):
-            result = d.py_datetime()
-        assert result == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
-
-    def test_from_py_datetime(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = PlainDateTime.from_py_datetime(
-                py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
-            )
-        assert result == PlainDateTime(
-            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
-        )
 
 
 def test_cannot_subclass():

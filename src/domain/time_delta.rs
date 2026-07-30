@@ -97,12 +97,6 @@ impl TimeDelta {
         if self.secs.get() >= 0 { self } else { -self }
     }
 
-    pub(crate) fn mul(self, factor: i128) -> Option<Self> {
-        self.total_nanos()
-            .checked_mul(factor)
-            .and_then(Self::from_nanos)
-    }
-
     pub(crate) fn add(self, other: Self) -> Option<Self> {
         Self::from_nanos(self.total_nanos() + other.total_nanos())
     }

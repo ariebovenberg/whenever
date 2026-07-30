@@ -12,7 +12,6 @@ from whenever import (
     PlainDateTime,
     Time,
     TimeDelta,
-    WheneverDeprecationWarning,
 )
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
@@ -314,19 +313,6 @@ class TestInitFromPy:
         assert Time(SubclassTime(1, 2, 3, 4)) == Time(
             1, 2, 3, nanosecond=4_000
         )
-
-
-class TestDeprecations:
-    def test_py_time(self):
-        t = Time(1, 2, 3, nanosecond=4_000_000)
-        with pytest.warns(WheneverDeprecationWarning):
-            result = t.py_time()
-        assert result == py_time(1, 2, 3, 4_000)
-
-    def test_from_py_time(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = Time.from_py_time(py_time(1, 2, 3, 4))
-        assert result == Time(1, 2, 3, nanosecond=4_000)
 
 
 def test_comparison():

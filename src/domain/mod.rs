@@ -1,8 +1,6 @@
 //! Pure date and time domain types and operations.
 
 pub mod date;
-pub mod date_delta;
-pub mod datetime_delta;
 pub mod difference;
 pub mod instant;
 pub mod itemized_date_delta;

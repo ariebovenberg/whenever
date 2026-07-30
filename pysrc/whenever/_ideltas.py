@@ -1593,8 +1593,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     Note
     ----
-    Unlike its predecessor ``DateDelta``, ``ItemizedDateDelta`` does not normalize
-    its fields. This means that ``ItemizedDateDelta(months=14)`` and
+    ``ItemizedDateDelta`` does not normalize its fields. This means that
+    ``ItemizedDateDelta(months=14)`` and
     ``ItemizedDateDelta(years=1, months=2)`` are considered different values.
     To convert to a normalized form, use :meth:`in_units`.
     See also the `delta documentation <https://whenever.rtfd.io/en/latest/guide/deltas.html>`_.
