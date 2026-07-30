@@ -18,7 +18,6 @@ from datetime import (
     timedelta as _timedelta,
     timezone as _timezone,
 )
-from math import fmod
 from struct import pack, unpack
 from time import time_ns
 from typing import (
@@ -130,15 +129,9 @@ __all__ = (
     "ZonedDateTime",
     "PlainDateTime",
     # Deltas and time units
-    "DateDelta",
     "TimeDelta",
-    "DateTimeDelta",
     "ItemizedDelta",
     "ItemizedDateDelta",
-    "years",
-    "months",
-    "weeks",
-    "days",
     "hours",
     "minutes",
     "seconds",
@@ -156,13 +149,10 @@ __all__ = (
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
-    "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
     # Other
     "reset_system_tz",
     "_unpkl_date",
-    "_unpkl_ddelta",
-    "_unpkl_dtdelta",
     "_unpkl_iddelta",
     "_unpkl_idelta",
     "_unpkl_inst",
@@ -177,9 +167,7 @@ __all__ = (
 # Helpers that pre-compute/lookup as much as possible
 _UTC = _timezone.utc
 _object_new = object.__new__
-_MAX_DELTA_MONTHS = 9999 * 12
-_MAX_DELTA_DAYS = 9999 * 366
-_MAX_DELTA_HOURS = _MAX_DELTA_DAYS * 24
+_MAX_DELTA_HOURS = 9999 * 366 * 24
 _MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
 _MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
 _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
@@ -660,42 +648,6 @@ class Date(_Base):
         """Convert to a standard library :class:`~datetime.date`"""
         return self._py_date
 
-    def py_date(self) -> _date:
-        """Convert to a standard library :class:`~datetime.date`
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`to_stdlib` instead.
-        """
-        warn(
-            "py_date() is deprecated and will be removed in a future release; "
-            "use to_stdlib() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_stdlib()
-
-    @classmethod
-    def from_py_date(cls, d: _date, /) -> Date:
-        """Create from a :class:`~datetime.date`
-
-        >>> Date.from_py_date(date(2021, 1, 2))
-        Date("2021-01-02")
-
-        .. deprecated:: 0.10.0
-
-            Use the constructor ``Date(d)`` instead.
-        """
-        warn(
-            "from_py_date() is deprecated and will be removed in a future release; "
-            "use Date() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_py(d)
-        return self
-
     def _init_from_py(self, d: _date) -> None:
         if type(d) is _date:
             pass
@@ -808,7 +760,7 @@ class Date(_Base):
         return Date._from_py_unchecked(self._py_date.replace(**kwargs))
 
     @overload
-    def add(self, delta: ItemizedDateDelta | DateDelta, /) -> Date: ...
+    def add(self, delta: ItemizedDateDelta, /) -> Date: ...
 
     @overload
     def add(
@@ -835,7 +787,7 @@ class Date(_Base):
         return self._shift(1, *args, **kwargs)
 
     @overload
-    def subtract(self, delta: ItemizedDateDelta | DateDelta, /) -> Date: ...
+    def subtract(self, delta: ItemizedDateDelta, /) -> Date: ...
 
     @overload
     def subtract(
@@ -865,7 +817,7 @@ class Date(_Base):
     def _shift(
         self,
         sign: int,
-        delta: ItemizedDateDelta | DateDelta = UNSET,
+        delta: ItemizedDateDelta = UNSET,
         /,
         **kwargs,
     ) -> Date:
@@ -875,11 +827,12 @@ class Date(_Base):
                     "Cannot combine positional and keyword arguments"
                 )
         elif delta is not UNSET:
-            if isinstance(delta, ItemizedDateDelta):
-                kwargs = delta
-            else:
-                assert isinstance(delta, DateDelta)
-                kwargs = {"months": delta._months, "days": delta._days}
+            if not isinstance(delta, ItemizedDateDelta):
+                raise TypeError(
+                    "argument must be an ItemizedDateDelta, "
+                    f"got {delta!r}"
+                )
+            kwargs = delta
         else:  # no arguments, just return self
             return self
         return self._shift_kwargs(sign, **kwargs)
@@ -896,37 +849,6 @@ class Date(_Base):
             self._add_months(sign * (years * 12 + months))._py_date
             + _timedelta(weeks * 7 + days) * sign
         )
-
-    def days_since(self, other: Date, /) -> int:
-        """Calculate the number of days this day is after another date.
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`since` with `unit="days"` instead.
-
-        """
-        warn(
-            "days_since() is deprecated and will be removed in a future release; "
-            "use since() with total='days' instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return (self._py_date - other._py_date).days
-
-    def days_until(self, other: Date, /) -> int:
-        """Calculate the number of days from this date to another date.
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`until` with `unit="days"` instead.
-        """
-        warn(
-            "days_until() is deprecated and will be removed in a future release; "
-            "use until() with total='days' instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return (other._py_date - self._py_date).days
 
     @overload
     def since(
@@ -1103,113 +1025,6 @@ class Date(_Base):
 
     def _add_days(self, days: int) -> Date:
         return Date._from_py_unchecked(self._py_date + _timedelta(days))
-
-    def __add__(self, p: DateDelta) -> Date:
-        """Add a delta to a date.
-        Behaves the same as :meth:`add`
-
-        .. deprecated:: 0.10.0
-
-            Using the ``+`` operator on :class:`Date` is deprecated;
-            use the :meth:`add` method instead.
-        """
-        if isinstance(p, DateDelta):
-            warn(
-                "Using the + operator on Date is deprecated and will be removed "
-                "in a future release; "
-                "use the .add() method instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            return self.add(months=p._months, days=p._days)
-        return NotImplemented
-
-    @overload
-    def __sub__(self, d: DateDelta) -> Date: ...
-
-    @overload
-    def __sub__(self, d: Date) -> DateDelta: ...
-
-    def __sub__(self, d: DateDelta | Date) -> Date | DateDelta:
-        """Subtract a delta from a date, or subtract two dates
-
-        Subtracting a delta works the same as :meth:`subtract`.
-
-        >>> Date(2021, 1, 2) - DateDelta(weeks=1, days=3)
-        Date("2020-12-26")
-
-        The difference between two dates is calculated in months and days,
-        such that:
-
-        >>> delta = d1 - d2
-        >>> d2 + delta == d1  # always
-
-        The following is not always true:
-
-        >>> d1 - (d1 - d2) == d2  # not always true!
-        >>> -(d2 - d1) == d1 - d2  # not always true!
-
-        >>> Date(2023, 4, 15) - Date(2011, 6, 24)
-        DateDelta("P12Y9M22D")
-        >>> # Truncation
-        >>> Date(2024, 4, 30) - Date(2023, 5, 31)
-        DateDelta("P11M")
-        >>> Date(2024, 3, 31) - Date(2023, 6, 30)
-        DateDelta("P9M1D")
-        >>> # the other way around, the result is different
-        >>> Date(2023, 6, 30) - Date(2024, 3, 31)
-        DateDelta(-P9M)
-
-        .. deprecated:: 0.10.0
-
-            Using the ``-`` operator on :class:`Date` is deprecated;
-            use the :meth:`subtract` method or the :meth:`since` method instead.
-        """
-        if isinstance(d, DateDelta):
-            warn(
-                "Using the `-` operator on Date is deprecated and will be removed "
-                "in a future release; "
-                "use the .subtract() method instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            return self.subtract(months=d._months, days=d._days)
-        elif isinstance(d, Date):
-            warn(
-                "Using the `-` operator on Date is deprecated and will be removed "
-                "in a future release; "
-                "use the .since() method with explicit units instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            mos = self.month - d.month + 12 * (self.year - d.year)
-            shifted = d._add_months(mos)
-
-            # yes, it's a bit duplicated, but preferable to being clever.
-            if d > self:
-                if shifted < self:  # i.e. we've overshot
-                    mos += 1
-                    shifted = d._add_months(mos)
-                    dys = (
-                        -shifted.day
-                        - days_in_month(self.year, self.month)
-                        + self.day
-                    )
-                else:
-                    dys = self.day - shifted.day
-            else:
-                if shifted > self:  # i.e. we've overshot
-                    mos -= 1
-                    shifted = d._add_months(mos)
-                    dys = (
-                        -shifted.day
-                        + days_in_month(shifted.year, shifted.month)
-                        + self.day
-                    )
-                else:
-                    dys = self.day - shifted.day
-            return DateDelta._from_months_days(mos, dys)
-        return NotImplemented
 
     __str__ = format_iso
 
@@ -1425,42 +1240,6 @@ class Time(_Base):
         If you need more control over rounding, use :meth:`round` first.
         """
         return self._py.replace(microsecond=self._nanos // 1_000)
-
-    def py_time(self) -> _time:
-        """Convert to a standard library :class:`~datetime.time`
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`to_stdlib` instead.
-        """
-        warn(
-            "py_time() is deprecated and will be removed in a future release; "
-            "use to_stdlib() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_stdlib()
-
-    @classmethod
-    def from_py_time(cls, t: _time, /) -> Time:
-        """Create from a :class:`~datetime.time`
-
-        >>> Time.from_py_time(time(12, 30, 0))
-        Time(12:30:00)
-
-        .. deprecated:: 0.10.0
-
-            Use the constructor ``Time(t)`` instead.
-        """
-        warn(
-            "from_py_time() is deprecated and will be removed in a future release; "
-            "use Time() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_py(t)
-        return self
 
     def _init_from_py(self, t: _time, /) -> None:
         if type(t) is _time:
@@ -1854,11 +1633,6 @@ class TimeDelta(_Base):
     """The maximum possible delta"""
     MIN: ClassVar[TimeDelta]
     """The minimum possible delta"""
-    _date_part: ClassVar[DateDelta]
-
-    @property
-    def _time_part(self) -> TimeDelta:
-        return self
 
     def total(
         self,
@@ -1964,151 +1738,7 @@ class TimeDelta(_Base):
         except KeyError:
             raise ValueError(f"Invalid unit: {unit!r}")
 
-    def in_days_of_24h(self) -> float:
-        """The total size in days (of exactly 24 hours each)
-
-        Note
-        ----
-        Note that this may not be the same as days on the calendar,
-        since some days have 23 or 25 hours due to daylight saving time.
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'days'`` instead.
-        """
-        warn(
-            "in_days_of_24h() is deprecated and will be removed in a future "
-            "release; use total('days') instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 86_400_000_000_000
-
-    def in_hours(self) -> float:
-        """The total size in hours
-
-        >>> d = TimeDelta(hours=1, minutes=30)
-        >>> d.in_hours()
-        1.5
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'hours'`` instead.
-        """
-        warn(
-            "in_hours() is deprecated and will be removed in a future release; "
-            "use total('hours') instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 3_600_000_000_000
-
-    def in_minutes(self) -> float:
-        """The total size in minutes
-
-        >>> d = TimeDelta(hours=1, minutes=30, seconds=30)
-        >>> d.in_minutes()
-        90.5
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'minutes'`` instead.
-        """
-        warn(
-            "in_minutes() is deprecated and will be removed in a future release; "
-            "use total('minutes') instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 60_000_000_000
-
-    def in_seconds(self) -> float:
-        """The total size in seconds
-
-        >>> d = TimeDelta(minutes=2, seconds=1, microseconds=500_000)
-        >>> d.in_seconds()
-        121.5
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'seconds'`` instead.
-        """
-        warn(
-            "in_seconds() is deprecated and will be removed in a future release; "
-            "use total('seconds') instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 1_000_000_000
-
-    def in_milliseconds(self) -> float:
-        """The total size in milliseconds
-
-        >>> d = TimeDelta(seconds=2, microseconds=50)
-        >>> d.in_milliseconds()
-        2_000.05
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'milliseconds'`` instead.
-        """
-        warn(
-            "in_milliseconds() is deprecated and will be removed in a future "
-            "release; use total('milliseconds') instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 1_000_000
-
-    def in_microseconds(self) -> float:
-        """The total size in microseconds
-
-        >>> d = TimeDelta(seconds=2, nanoseconds=50)
-        >>> d.in_microseconds()
-        2_000_000.05
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'microseconds'`` instead.
-        """
-        warn(
-            "in_microseconds() is deprecated and will be removed in a future "
-            "release; use total('microseconds') instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns / 1_000
-
-    def in_nanoseconds(self) -> int:
-        """The total size in nanoseconds
-
-        >>> d = TimeDelta(seconds=2, nanoseconds=50)
-        >>> d.in_nanoseconds()
-        2_000_000_050
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`total` with ``'nanoseconds'`` instead.
-        """
-        warn(
-            "in_nanoseconds() is deprecated and will be removed in a future "
-            "release; use total('nanoseconds') instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._total_ns
-
-    def in_hrs_mins_secs_nanos(self) -> tuple[int, int, int, int]:
-        """Convert to a tuple of (hours, minutes, seconds, nanoseconds)
-
-        >>> d = TimeDelta(hours=1, minutes=30, microseconds=5_000_090)
-        >>> d.in_hrs_mins_secs_nanos()
-        (1, 30, 5, 90_000)
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`in_units` with ``['hours', 'minutes', 'seconds', 'nanoseconds']`` instead.
-        """
+    def _in_hrs_mins_secs_nanos(self) -> tuple[int, int, int, int]:
         hours, rem = divmod(abs(self._total_ns), 3_600_000_000_000)
         mins, rem = divmod(rem, 60_000_000_000)
         secs, ns = divmod(rem, 1_000_000_000)
@@ -2251,21 +1881,6 @@ class TimeDelta(_Base):
         """
         return _timedelta(microseconds=self._total_ns // 1_000)
 
-    def py_timedelta(self) -> _timedelta:
-        """Convert to a :class:`~datetime.timedelta`
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`to_stdlib` instead.
-        """
-        warn(
-            "py_timedelta() is deprecated and will be removed in a future release; "
-            "use to_stdlib() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_stdlib()
-
     def _init_from_py(self, td: _timedelta, /) -> None:
         if type(td) is not _timedelta:
             raise TypeError("Expected datetime.timedelta exactly")
@@ -2277,27 +1892,6 @@ class TimeDelta(_Base):
         if abs(ns) > _MAX_DELTA_NANOS:
             raise ValueError("TimeDelta out of range")
 
-    @classmethod
-    def from_py_timedelta(cls, td: _timedelta, /) -> TimeDelta:
-        """Create from a :class:`~datetime.timedelta`
-
-        >>> TimeDelta.from_py_timedelta(timedelta(seconds=5400))
-        TimeDelta("PT1h30m")
-
-        .. deprecated:: 0.10.0
-
-            Use the constructor ``TimeDelta(td)`` instead.
-        """
-        warn(
-            "from_py_timedelta() is deprecated and will be removed in a future "
-            "release; use TimeDelta() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_py(td)
-        return self
-
     def format_iso(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
         May not strictly adhere to (all versions of) the standard.
@@ -2308,7 +1902,7 @@ class TimeDelta(_Base):
         >>> TimeDelta(hours=1, minutes=30).format_iso()
         'PT1H30M'
         """
-        hrs, mins, secs, ns = abs(self).in_hrs_mins_secs_nanos()
+        hrs, mins, secs, ns = abs(self)._in_hrs_mins_secs_nanos()
         seconds = (
             f"{secs + ns / 1_000_000_000:.9f}".rstrip("0") if ns else str(secs)
         )
@@ -2674,7 +2268,7 @@ class TimeDelta(_Base):
         """Floor division by another delta
 
         >>> d = TimeDelta(hours=1, minutes=39)
-        >>> d // time_delta(minutes=15)
+        >>> d // TimeDelta(minutes=15)
         6
         """
         if not isinstance(other, TimeDelta):
@@ -2754,897 +2348,6 @@ TimeDelta.MAX = TimeDelta(seconds=9999 * 366 * 24 * 3_600)
 TimeDelta.MIN = TimeDelta(seconds=-9999 * 366 * 24 * 3_600)
 
 
-@final
-class DateDelta(_Base):
-    """A duration of time consisting of calendar units
-    (years, months, weeks, and days).
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`ItemizedDateDelta` instead.
-        ``DateDelta`` normalizes its inputs (e.g. 14 months becomes
-        1 year and 2 months), losing the original fields.
-        ``ItemizedDateDelta`` preserves the exact fields it was created with.
-    """
-
-    __slots__ = ("_months", "_days")
-
-    # Overloads for a nice autodoc.
-    # Proper typing of the constructors is handled in the type stubs
-    if not TYPE_CHECKING:
-
-        @overload
-        def __init__(self, iso_string: str, /) -> None: ...
-
-        @overload
-        def __init__(
-            self,
-            *,
-            years: int = ...,
-            months: int = ...,
-            weeks: int = ...,
-            days: int = ...,
-        ) -> None: ...
-
-    def __init__(
-        self, *, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0
-    ) -> None:
-        warn(
-            "DateDelta is deprecated and will be removed in a future release; "
-            "use ItemizedDateDelta instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        months = self._months = months + 12 * years
-        days = self._days = days + 7 * weeks
-        if (months > 0 and days < 0) or (months < 0 and days > 0):
-            raise ValueError("mixed sign in DateDelta")
-        elif (
-            abs(self._months) > _MAX_DELTA_MONTHS
-            or abs(self._days) > _MAX_DELTA_DAYS
-        ):
-            raise ValueError("Date delta months out of range")
-
-    __init__ = add_alternate_constructors(
-        __init__,
-        deprecation_msg=(
-            "DateDelta is deprecated and will be removed in a future release; "
-            "use ItemizedDateDelta instead."
-        ),
-    )
-
-    @classmethod
-    def _from_months_days(cls, months: int, days: int) -> DateDelta:
-        """Internal: create without deprecation warning"""
-        self = _object_new(cls)
-        if (months > 0 and days < 0) or (months < 0 and days > 0):
-            raise ValueError("mixed sign in DateDelta")
-        elif abs(months) > _MAX_DELTA_MONTHS or abs(days) > _MAX_DELTA_DAYS:
-            raise ValueError("Date delta months out of range")
-        self._months = months
-        self._days = days
-        return self
-
-    ZERO: ClassVar[DateDelta]
-    """A delta of zero"""
-    _time_part = TimeDelta.ZERO
-
-    @property
-    def _date_part(self) -> DateDelta:
-        return self
-
-    def in_months_days(self) -> tuple[int, int]:
-        """Convert to a tuple of months and days.
-
-        >>> p = DateDelta(months=25, days=9)
-        >>> p.in_months_days()
-        (25, 9)
-        >>> DateDelta(months=-13, weeks=-5)
-        (-13, -35)
-        """
-        return self._months, self._days
-
-    def in_years_months_days(self) -> tuple[int, int, int]:
-        """Convert to a tuple of years, months, and days.
-
-        >>> p = DateDelta(years=1, months=2, days=11)
-        >>> p.in_years_months_days()
-        (1, 2, 11)
-        """
-        years = int(self._months / 12)
-        months = int(fmod(self._months, 12))
-        return years, months, self._days
-
-    def format_iso(self) -> str:
-        """Format as the *popular interpretation* of the ISO 8601 duration format.
-        May not strictly adhere to (all versions of) the standard.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Inverse of :meth:`parse_iso`.
-
-        >>> p = DateDelta(years=1, months=2, weeks=3, days=11)
-        >>> p.format_iso()
-        'P1Y2M3W11D'
-        >>> DateDelta().format_iso()
-        'P0D'
-
-        The format looks like this:
-
-        .. code-block:: text
-
-            P(nY)(nM)(nD)
-
-        For example:
-
-        .. code-block:: text
-
-            P1D
-            P2M
-            P1Y2M3W4D
-
-        """
-        if self._months < 0 or self._days < 0:
-            sign = "-"
-            months, days = -self._months, -self._days
-        else:
-            sign = ""
-            months, days = self._months, self._days
-
-        years = months // 12
-        months %= 12
-
-        date = (
-            f"{years}Y" * bool(years),
-            f"{months}M" * bool(months),
-            f"{days}D" * bool(days),
-        )
-        return sign + "P" + ("".join(date) or "0D")
-
-    __str__ = format_iso
-
-    def _init_from_iso(self, s: str) -> None:
-        exc = ValueError(f"Invalid format: {s!r}")
-        prev_unit = ""
-        months = 0
-        days = 0
-
-        if len(s) < 3 or not s.isascii():
-            raise exc
-
-        s = s.upper()
-        if s[0] == "P":
-            sign = 1
-            rest = s[1:]
-        elif s.startswith("-P"):
-            sign = -1
-            rest = s[2:]
-        elif s.startswith("+P"):
-            sign = 1
-            rest = s[2:]
-        else:
-            raise exc
-
-        while rest:
-            rest, value, unit = _parse_datedelta_component(rest, exc)
-
-            if unit == "Y" and prev_unit == "":
-                months += value * 12
-            elif unit == "M" and prev_unit in "Y":
-                months += value
-            elif unit == "W" and prev_unit in "YM":
-                days += value * 7
-            elif unit == "D" and prev_unit in "YMW":
-                days += value
-                if rest:
-                    raise exc  # leftover characters
-                break
-            else:
-                raise exc  # components out of order
-
-            prev_unit = unit
-
-        if months > _MAX_DELTA_MONTHS or days > _MAX_DELTA_DAYS:
-            raise ValueError("DateDelta out of range")
-
-        self._months = sign * months
-        self._days = sign * days
-
-    @classmethod
-    def parse_iso(cls, s: str, /) -> DateDelta:
-        """Parse the *popular interpretation* of the ISO 8601 duration format.
-        Does not parse all possible ISO 8601 durations.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Inverse of :meth:`format_iso`
-
-        >>> DateDelta.parse_iso("P1W11D")
-        DateDelta("P1w11d")
-        >>> DateDelta.parse_iso("-P3m")
-        DateDelta(-P3m)
-
-        Note
-        ----
-        Only durations without time component are accepted.
-        ``P0D`` is valid, but ``PT0S`` is not.
-
-        Note
-        ----
-        The number of digits in each component is limited to 8.
-        """
-        warn(
-            "DateDelta is deprecated and will be removed in a future release; "
-            "use ItemizedDateDelta instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_iso(s)
-        return self
-
-    @overload
-    def __add__(self, other: DateDelta) -> DateDelta: ...
-
-    @overload
-    def __add__(self, other: TimeDelta) -> DateTimeDelta: ...
-
-    def __add__(
-        self, other: DateDelta | TimeDelta
-    ) -> DateDelta | DateTimeDelta:
-        """Add the fields of another delta to this one
-
-        >>> p = DateDelta(weeks=2, months=1)
-        >>> p + DateDelta(weeks=1, days=4)
-        DateDelta("P1m25d")
-        """
-        if isinstance(other, DateDelta):
-            return DateDelta._from_months_days(
-                self._months + other._months,
-                self._days + other._days,
-            )
-        elif isinstance(other, TimeDelta):
-            warn(
-                "DateTimeDelta is deprecated and will be removed in a future "
-                "release; use ItemizedDelta instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            new = _object_new(DateTimeDelta)
-            new._date_part = self
-            new._time_part = other
-            return new
-        else:
-            return NotImplemented
-
-    def __radd__(self, other: TimeDelta) -> DateTimeDelta:
-        if isinstance(other, TimeDelta):
-            warn(
-                "DateTimeDelta is deprecated and will be removed in a future "
-                "release; use ItemizedDelta instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            new = _object_new(DateTimeDelta)
-            new._date_part = self
-            new._time_part = other
-            return new
-        return NotImplemented
-
-    @overload
-    def __sub__(self, other: DateDelta) -> DateDelta: ...
-
-    @overload
-    def __sub__(self, other: TimeDelta) -> DateTimeDelta: ...
-
-    def __sub__(
-        self, other: DateDelta | TimeDelta
-    ) -> DateDelta | DateTimeDelta:
-        """Subtract the fields of another delta from this one
-
-        >>> p = DateDelta(weeks=2, days=3)
-        >>> p - DateDelta(days=2)
-        DateDelta("P15d")
-        """
-        if isinstance(other, DateDelta):
-            return DateDelta._from_months_days(
-                self._months - other._months,
-                self._days - other._days,
-            )
-        elif isinstance(other, TimeDelta):
-            warn(
-                "DateTimeDelta is deprecated and will be removed in a future "
-                "release; use ItemizedDelta instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            return self + (-other)
-        else:
-            return NotImplemented
-
-    def __rsub__(self, other: TimeDelta) -> DateTimeDelta:
-        if isinstance(other, TimeDelta):
-            warn(
-                "DateTimeDelta is deprecated and will be removed in a future "
-                "release; use ItemizedDelta instead.",
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
-            return -self + other
-        return NotImplemented
-
-    def __eq__(self, other: object) -> bool:
-        """Compare for equality, normalized to months and days.
-
-        `a == b` is equivalent to `a.in_months_days() == b.in_months_days()`
-
-        >>> p = DateDelta(weeks=4, days=2)
-        DateDelta("P30d")
-        >>> p == DateDelta(weeks=3, days=9)
-        True
-        >>> p == DateDelta(weeks=2, days=4)
-        True  # same number of days
-        >>> p == DateDelta(months=1)
-        False  # months and days cannot be compared directly
-        """
-        if not isinstance(other, DateDelta):
-            return NotImplemented
-        return self._months == other._months and self._days == other._days
-
-    def __hash__(self) -> int:
-        return hash((self._months, self._days))
-
-    def __bool__(self) -> bool:
-        """True if any contains any non-zero data
-
-        >>> bool(DateDelta())
-        False
-        >>> bool(DateDelta(days=-1))
-        True
-        """
-        return bool(self._months or self._days)
-
-    def __repr__(self) -> str:
-        iso = self.format_iso()
-        # lowercase everything besides the prefix (don't forget the sign!)
-        cased = iso[:2] + iso[2:].lower()
-        return f'DateDelta("{cased}")'
-
-    def __neg__(self) -> DateDelta:
-        """Negate the contents
-
-        >>> p = DateDelta(weeks=2, days=3)
-        >>> -p
-        DateDelta(-P17d)
-        """
-        return DateDelta._from_months_days(-self._months, -self._days)
-
-    def __pos__(self) -> DateDelta:
-        """Return the value unchanged
-
-        >>> p = DateDelta(weeks=2, days=-3)
-        DateDelta("P11d")
-        >>> +p
-        DateDelta("P11d")
-        """
-        return self
-
-    def __mul__(self, other: int) -> DateDelta:
-        """Multiply the contents by a round number
-
-        >>> p = DateDelta(years=1, weeks=2)
-        >>> p * 2
-        DateDelta("P2y28d")
-        """
-        if not isinstance(other, int):
-            return NotImplemented
-        return DateDelta._from_months_days(
-            self._months * other,
-            self._days * other,
-        )
-
-    def __rmul__(self, other: int) -> DateDelta:
-        if isinstance(other, int):
-            return self * other
-        return NotImplemented
-
-    def __abs__(self) -> DateDelta:
-        """If the contents are negative, return the positive version
-
-        >>> p = DateDelta(months=-2, days=-3)
-        >>> abs(p)
-        DateDelta("P2m3d")
-        """
-        return DateDelta._from_months_days(abs(self._months), abs(self._days))
-
-    @no_type_check
-    def __reduce__(self):
-        return (_unpkl_ddelta, (self._months, self._days))
-
-
-# A separate unpickling function allows us to make backwards-compatible changes
-# to the pickling format in the future
-def _unpkl_ddelta(months: int, days: int) -> DateDelta:
-    return DateDelta._from_months_days(months, days)
-
-
-_MAX_DDELTA_DIGITS = 8  # consistent with Rust extension
-
-
-# Returns (rest_of_string, value, unit), e.g. ("3D", 2, "Y")
-def _parse_datedelta_component(s: str, exc: Exception) -> tuple[str, int, str]:
-    try:
-        split_index, unit = next(
-            (i, c) for i, c in enumerate(s) if c in "YMWD"
-        )
-    except StopIteration:
-        raise exc
-
-    raw, rest = s[:split_index], s[split_index + 1 :]
-
-    if not raw.isdigit() or len(raw) > _MAX_DDELTA_DIGITS:
-        raise exc
-
-    return rest, int(raw), unit
-
-
-DateDelta.ZERO = DateDelta._from_months_days(0, 0)
-TimeDelta._date_part = DateDelta.ZERO
-
-
-@final
-class DateTimeDelta(_Base):
-    """A duration with both a date and time component.
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`ItemizedDelta` instead.
-        ``DateTimeDelta`` normalizes its inputs separately for the date
-        and time parts, losing the original fields.
-        ``ItemizedDelta`` preserves the exact fields it was created with.
-    """
-
-    __slots__ = ("_date_part", "_time_part")
-
-    # Overloads for a nice autodoc.
-    # Proper typing of the constructors is handled in the type stubs
-    if not TYPE_CHECKING:
-
-        @overload
-        def __init__(self, iso_string: str, /) -> None: ...
-
-        @overload
-        def __init__(
-            self,
-            *,
-            years: int = ...,
-            months: int = ...,
-            weeks: int = ...,
-            days: int = ...,
-            hours: float = ...,
-            minutes: float = ...,
-            seconds: float = ...,
-            milliseconds: float = ...,
-            microseconds: float = ...,
-            nanoseconds: int = ...,
-        ) -> None: ...
-
-    def __init__(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-    ) -> None:
-        warn(
-            "DateTimeDelta is deprecated and will be removed in a future release; "
-            "use ItemizedDelta instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self._date_part = DateDelta._from_months_days(
-            months + 12 * years, days + 7 * weeks
-        )
-        self._time_part = TimeDelta(
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            milliseconds=milliseconds,
-            microseconds=microseconds,
-            nanoseconds=nanoseconds,
-        )
-        if (
-            (self._date_part._months < 0 or self._date_part._days < 0)
-            and self._time_part._total_ns > 0
-        ) or (
-            (self._date_part._months > 0 or self._date_part._days > 0)
-            and self._time_part._total_ns < 0
-        ):
-            raise ValueError("mixed sign in DateTimeDelta")
-
-    __init__ = add_alternate_constructors(
-        __init__,
-        deprecation_msg=(
-            "DateTimeDelta is deprecated and will be removed in a future release; "
-            "use ItemizedDelta instead."
-        ),
-    )
-
-    ZERO: ClassVar[DateTimeDelta]
-    """A delta of zero"""
-
-    def date_part(self) -> DateDelta:
-        """The date part of the delta
-
-        .. deprecated:: 0.10.0
-        """
-        warn(
-            "DateTimeDelta.date_part() is deprecated and will be removed in a "
-            "future release. Migrate to ItemizedDelta and use "
-            ".date_and_time_parts() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self._date_part
-
-    def time_part(self) -> TimeDelta:
-        """The time part of the delta"""
-        return self._time_part
-
-    def in_months_days_secs_nanos(self) -> tuple[int, int, int, int]:
-        """Convert to a tuple of (months, days, seconds, nanoseconds)
-
-        >>> d = DateTimeDelta(weeks=1, days=11, hours=4, microseconds=2)
-        >>> d.in_months_days_secs_nanos()
-        (0, 18, 14_400, 2000)
-        """
-        subsec_nanos = int(fmod(self._time_part._total_ns, 1_000_000_000))
-        whole_seconds = int(self._time_part._total_ns / 1_000_000_000)
-        return self._date_part.in_months_days() + (whole_seconds, subsec_nanos)
-
-    def format_iso(self) -> str:
-        """Format as the *popular interpretation* of the ISO 8601 duration format.
-        May not strictly adhere to (all versions of) the standard.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        Inverse of :meth:`parse_iso`.
-
-        The format is:
-
-        .. code-block:: text
-
-            P(nY)(nM)(nD)T(nH)(nM)(nS)
-
-        >>> d = DateTimeDelta(
-        ...     weeks=1,
-        ...     days=11,
-        ...     hours=4,
-        ...     milliseconds=12,
-        ... )
-        >>> d.format_iso()
-        'P1W11DT4H0.012S'
-        """
-        sign = (
-            self._date_part._months < 0
-            or self._date_part._days < 0
-            or self._time_part._total_ns < 0
-        ) * "-"
-        date = abs(self._date_part).format_iso()[1:] * bool(self._date_part)
-        time = abs(self._time_part).format_iso()[1:] * bool(self._time_part)
-        return sign + "P" + ((date + time) or "0D")
-
-    def _init_from_iso(self, s: str) -> None:
-        exc = ValueError(f"Invalid format: {s!r}")
-        prev_unit = ""
-        months = 0
-        days = 0
-        nanos = 0
-
-        if len(s) < 3 or not s.isascii() or s.endswith("T"):
-            raise exc
-
-        s = s.upper()
-        if s[0] == "P":
-            sign = 1
-            rest = s[1:]
-        elif s.startswith("-P"):
-            sign = -1
-            rest = s[2:]
-        elif s.startswith("+P"):
-            sign = 1
-            rest = s[2:]
-        else:
-            raise exc
-
-        while rest and not rest.startswith("T"):
-            rest, value, unit = _parse_datedelta_component(rest, exc)
-
-            if unit == "Y" and prev_unit == "":
-                months += value * 12
-            elif unit == "M" and prev_unit in "Y":
-                months += value
-            elif unit == "W" and prev_unit in "YM":
-                days += value * 7
-            elif unit == "D" and prev_unit in "YMW":
-                days += value
-                break
-            else:
-                raise exc  # components out of order
-
-            prev_unit = unit
-
-        prev_unit = ""
-        if rest and not rest.startswith("T"):
-            raise exc
-
-        # skip the "T" separator
-        rest = rest[1:]
-
-        while rest:
-            rest, value, unit = parse_timedelta_component(rest, exc)
-
-            if unit == "H" and prev_unit == "":
-                nanos += value * 3_600_000_000_000
-            elif unit == "M" and prev_unit in "H":
-                nanos += value * 60_000_000_000
-            elif unit == "S":
-                nanos += value
-                if rest:
-                    raise exc
-                break
-            else:
-                raise exc
-
-            prev_unit = unit
-
-        if nanos > _MAX_DELTA_NANOS:
-            raise exc
-
-        try:
-            ddelta = DateDelta._from_months_days(sign * months, sign * days)
-        except ValueError:
-            raise exc
-
-        tdelta = TimeDelta._from_nanos_unchecked(sign * nanos)
-        return self._init_from_parts(ddelta, tdelta)
-
-    @classmethod
-    def parse_iso(cls, s: str, /) -> DateTimeDelta:
-        """Parse the *popular interpretation* of the ISO 8601 duration format.
-        Does not parse all possible ISO 8601 durations.
-        See :ref:`here <iso8601-durations>` for more information.
-
-        .. code-block:: text
-
-           P4D        # 4 days
-           PT4H       # 4 hours
-           PT3M40.5S  # 3 minutes and 40.5 seconds
-           P1W11DT4H  # 1 week, 11 days, and 4 hours
-           -PT7H4M    # -7 hours and -4 minutes (-7:04:00)
-           +PT7H4M    # 7 hours and 4 minutes (7:04:00)
-
-        Inverse of :meth:`format_iso`
-
-        >>> DateTimeDelta.parse_iso("-P1W11DT4H")
-        DateTimeDelta(-P1w11dT4h)
-        """
-        warn(
-            "DateTimeDelta is deprecated and will be removed in a future release; "
-            "use ItemizedDelta instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_iso(s)
-        return self
-
-    def __add__(
-        self, other: DateTimeDelta | DateDelta | TimeDelta
-    ) -> DateTimeDelta:
-        """Add two deltas together
-
-        >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
-        >>> d + DateTimeDelta(months=2, days=3, minutes=90)
-        DateTimeDelta("P1m1w14dT5h30m")
-        """
-        new = _object_new(DateTimeDelta)
-        if isinstance(other, DateTimeDelta):
-            new._date_part = self._date_part + other._date_part
-            new._time_part = self._time_part + other._time_part
-        elif isinstance(other, TimeDelta):
-            new._date_part = self._date_part
-            new._time_part = self._time_part + other
-        elif isinstance(other, DateDelta):
-            new._date_part = self._date_part + other
-            new._time_part = self._time_part
-        else:
-            return NotImplemented
-        return new
-
-    def __radd__(self, other: TimeDelta | DateDelta) -> DateTimeDelta:
-        if isinstance(other, (TimeDelta, DateDelta)):
-            return self + other
-        return NotImplemented
-
-    def __sub__(
-        self, other: DateTimeDelta | TimeDelta | DateDelta
-    ) -> DateTimeDelta:
-        """Subtract two deltas
-
-        >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
-        >>> d - DateTimeDelta(months=2, days=3, minutes=90)
-        DateTimeDelta(-P2m1w8dT2h30m)
-        """
-        if isinstance(other, DateTimeDelta):
-            d = self._date_part - other._date_part
-            t = self._time_part - other._time_part
-        elif isinstance(other, TimeDelta):
-            d = self._date_part
-            t = self._time_part - other
-        elif isinstance(other, DateDelta):
-            d = self._date_part - other
-            t = self._time_part
-        else:
-            return NotImplemented
-        return self._from_parts(d, t)
-
-    def __rsub__(self, other: TimeDelta | DateDelta) -> DateTimeDelta:
-        new = _object_new(DateTimeDelta)
-        if isinstance(other, TimeDelta):
-            new._date_part = -self._date_part
-            new._time_part = other - self._time_part
-        elif isinstance(other, DateDelta):
-            new._date_part = other - self._date_part
-            new._time_part = -self._time_part
-        else:
-            return NotImplemented
-        return new
-
-    def __eq__(self, other: object) -> bool:
-        """Compare for equality
-
-        >>> d = DateTimeDelta(
-        ...     weeks=1,
-        ...     days=23,
-        ...     hours=4,
-        ... )
-        >>> d == DateTimeDelta(
-        ...     weeks=1,
-        ...     days=23,
-        ...     minutes=4 * 60,  # normalized
-        ... )
-        True
-        >>> d == DateTimeDelta(
-        ...     weeks=4,
-        ...     days=2,  # days/weeks are normalized
-        ...     hours=4,
-        ... )
-        True
-        >>> d == DateTimeDelta(
-        ...     months=1,  # months/days cannot be compared directly
-        ...     hours=4,
-        ... )
-        False
-        """
-        if not isinstance(other, DateTimeDelta):
-            return NotImplemented
-        return (
-            self._date_part == other._date_part
-            and self._time_part == other._time_part
-        )
-
-    def __hash__(self) -> int:
-        return hash((self._date_part, self._time_part))
-
-    def __bool__(self) -> bool:
-        """True if any field is non-zero
-
-        >>> bool(DateTimeDelta())
-        False
-        >>> bool(DateTimeDelta(minutes=1))
-        True
-        """
-        return bool(self._date_part or self._time_part)
-
-    def __mul__(self, other: int) -> DateTimeDelta:
-        """Multiply by a number
-
-        >>> d = DateTimeDelta(weeks=1, days=11, hours=4)
-        >>> d * 2
-        DateTimeDelta("P2w22dT8h")
-        """
-        # OPTIMIZE: use unchecked constructor
-        return self._from_parts(
-            self._date_part * other, self._time_part * other
-        )
-
-    def __rmul__(self, other: int) -> DateTimeDelta:
-        return self * other
-
-    def __neg__(self) -> DateTimeDelta:
-        """Negate the delta
-
-        >>> d = DateTimeDelta(days=11, hours=4)
-        >>> -d
-        DateTimeDelta(-P11dT4h)
-        """
-        # OPTIMIZE: use unchecked constructor
-        return self._from_parts(-self._date_part, -self._time_part)
-
-    def __pos__(self) -> DateTimeDelta:
-        """Return the delta unchanged
-
-        >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
-        >>> +d
-        DateTimeDelta("P1W11DT4H")
-        """
-        return self
-
-    def __abs__(self) -> DateTimeDelta:
-        """The absolute value of the delta
-
-        >>> d = DateTimeDelta(weeks=1, days=-11, hours=4)
-        >>> abs(d)
-        DateTimeDelta("P1w11dT4h")
-        """
-        new = _object_new(DateTimeDelta)
-        new._date_part = abs(self._date_part)
-        new._time_part = abs(self._time_part)
-        return new
-
-    __str__ = format_iso
-
-    def __repr__(self) -> str:
-        iso = self.format_iso()
-        # lowercase everything besides the prefix and separator
-        cased = "".join(c if c in "PT" else c.lower() for c in iso)
-        return f'DateTimeDelta("{cased}")'
-
-    def _init_from_parts(self, d: DateDelta, t: TimeDelta) -> None:
-        self._date_part = d
-        self._time_part = t
-        if ((d._months < 0 or d._days < 0) and t._total_ns > 0) or (
-            (d._months > 0 or d._days > 0) and t._total_ns < 0
-        ):
-            raise ValueError("mixed sign in DateTimeDelta")
-
-    @classmethod
-    def _from_parts(cls, d: DateDelta, t: TimeDelta) -> DateTimeDelta:
-        new = _object_new(cls)
-        new._init_from_parts(d, t)
-        return new
-
-    @no_type_check
-    def __reduce__(self):
-        secs, nanos = divmod(self._time_part._total_ns, 1_000_000_000)
-        return (
-            _unpkl_dtdelta,
-            (self._date_part._months, self._date_part._days, secs, nanos),
-        )
-
-
-# A separate unpickling function allows us to make backwards-compatible changes
-# to the pickling format in the future
-@no_type_check
-def _unpkl_dtdelta(
-    months: int, days: int, secs: int, nanos: int
-) -> DateTimeDelta:
-    return DateTimeDelta._from_parts(
-        DateDelta._from_months_days(months, days),
-        TimeDelta(seconds=secs, nanoseconds=nanos),
-    )
-
-
-DateTimeDelta.ZERO = DateTimeDelta._from_parts(
-    DateDelta._from_months_days(0, 0), TimeDelta.ZERO
-)
-
-
 # Methods for types converting to/from the standard library and ISO8601:
 #
 # - Instant
@@ -3657,38 +2360,6 @@ class _BasicConversions(_Base):
     __slots__ = ("_py_dt", "_nanos")
     _py_dt: _datetime
     _nanos: int
-
-    @classmethod
-    def from_py_datetime(cls: type[_T], d: _datetime, /) -> _T:
-        """Create an instance from a :class:`~datetime.datetime` object.
-
-        .. deprecated:: 0.10.0
-
-            Use the constructor instead (e.g. ``Instant(d)``,
-            ``ZonedDateTime(d)``, etc.)
-
-        Note
-        ----
-        The datetime is checked for validity, raising similar exceptions
-        to the constructor.
-        ``ValueError`` is raised if the datetime doesn't have the correct
-        tzinfo matching the class. For example, :class:`ZonedDateTime`
-        requires a :class:`~zoneinfo.ZoneInfo` tzinfo.
-
-        Warning
-        -------
-        No exceptions are raised if the datetime is ambiguous.
-        Its ``fold`` attribute is used to disambiguate.
-        """
-        warn(
-            "from_py_datetime() is deprecated and will be removed in a future "
-            "release; use the constructor instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        self = _object_new(cls)
-        self._init_from_py(d)  # type: ignore[attr-defined]
-        return self
 
     def to_stdlib(self) -> _datetime:
         """Convert to a standard library :class:`~datetime.datetime`
@@ -3703,21 +2374,6 @@ class _BasicConversions(_Base):
           a fixed offset (:class:`~datetime.timezone` tzinfo)
         """
         return self._py_dt.replace(microsecond=self._nanos // 1_000)
-
-    def py_datetime(self) -> _datetime:
-        """Convert to a standard library :class:`~datetime.datetime`
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`to_stdlib` instead.
-        """
-        warn(
-            "py_datetime() is deprecated and will be removed in a future release; "
-            "use to_stdlib() instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.to_stdlib()
 
     def format_iso(self) -> str:
         raise NotImplementedError  # pragma: no cover
@@ -4582,7 +3238,7 @@ class Instant(_ExactTime):
         """
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
-                self._nanos + delta._time_part._total_ns,
+                self._nanos + delta._total_ns,
                 1_000_000_000,
             )
             return self._from_py_unchecked(
@@ -4745,7 +3401,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         offset: int | TimeDelta,
         /,
         *,
-        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Create an instance from the current time.
@@ -4759,12 +3414,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         ``Instant.now()`` for timezone-agnostic exact time.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_NOW_STALE_MSG,
@@ -4837,7 +3486,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         offset: int | TimeDelta,
-        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
@@ -4854,12 +3502,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         or ``Instant.from_timestamp()`` for timezone-agnostic exact time.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
@@ -4879,7 +3521,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         offset: int | TimeDelta,
-        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in milliseconds).
@@ -4888,12 +3529,6 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         See :meth:`from_timestamp` for more information.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
@@ -4914,7 +3549,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         /,
         *,
         offset: int | TimeDelta,
-        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in nanoseconds).
@@ -4923,12 +3557,6 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         See :meth:`from_timestamp` for more information.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
@@ -4971,14 +3599,12 @@ class OffsetDateTime(_ExactAndLocalTime):
             *,
             nanosecond: int = ...,
             offset: int | TimeDelta = ...,
-            ignore_dst: bool = ...,
             stale_offset_ok: bool = ...,
         ) -> OffsetDateTime: ...
 
     def replace(
         self,
         /,
-        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = UNSET,
         **kwargs: Any,
     ) -> OffsetDateTime:
@@ -4993,12 +3619,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         using :meth:`assume_tz`.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
@@ -5020,19 +3640,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         date: Date,
         /,
         *,
-        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Construct a new instance with the date replaced.
 
         See :meth:`replace` for more information.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
@@ -5051,19 +3664,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         time: Time,
         /,
         *,
-        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Construct a new instance with the time replaced.
 
         See :meth:`replace` for more information.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
@@ -5208,36 +3814,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             )
         return super()._subtract_operator(other)
 
-    @classmethod
-    def parse_strptime(cls, s: str, /, *, format: str) -> OffsetDateTime:
-        """Parse a datetime with offset using the standard library ``strptime()`` method.
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`parse` with a pattern string instead, or use
-            ``OffsetDateTime(datetime.strptime(...))``.
-
-        """
-        warn(
-            "parse_strptime() is deprecated and will be removed in a future "
-            "release; "
-            "use parse() with a pattern string instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        parsed = _datetime.strptime(s, format)
-        if (offset := parsed.utcoffset()) is None:
-            raise ValueError(
-                "Parsed datetime must have an offset. "
-                "Use %z, %Z, or %:z in the format string"
-            )
-        if offset.microseconds:
-            raise ValueError("sub-second offset precision not supported")
-        return cls._from_py_unchecked(
-            check_utc_bounds(parsed.replace(microsecond=0)),
-            parsed.microsecond * 1_000,
-        )
-
     def format_rfc2822(self) -> str:
         """Format as an RFC 2822 string.
 
@@ -5379,7 +3955,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
-            ignore_dst: bool = ...,
             stale_offset_ok: bool = ...,
         ) -> OffsetDateTime: ...
 
@@ -5417,7 +3992,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             milliseconds: float = 0,
             microseconds: float = 0,
             nanoseconds: int = 0,
-            ignore_dst: bool = ...,
             stale_offset_ok: bool = ...,
         ) -> OffsetDateTime: ...
 
@@ -5436,16 +4010,9 @@ class OffsetDateTime(_ExactAndLocalTime):
         arg: AnyDelta | UNSET = UNSET,
         /,
         *,
-        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = UNSET,
         **kwargs,
     ) -> OffsetDateTime:
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=3,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_SHIFT_STALE_MSG,
@@ -5459,13 +4026,13 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
             return self._shift_kwargs(sign, **arg)
-        elif arg is not UNSET:
+        elif isinstance(arg, TimeDelta):
             return self._shift_kwargs(
                 sign,
-                months=arg._date_part._months,
-                days=arg._date_part._days,
-                nanoseconds=arg._time_part._total_ns,
+                nanoseconds=arg._total_ns,
             )
+        elif arg is not UNSET:
+            raise TypeError(f"argument must be a delta, got {arg!r}")
         else:
             return self
 
@@ -5528,7 +4095,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         *,
         increment: int = 1,
         mode: RoundModeStr = "half_even",
-        ignore_dst: bool = UNSET,
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Round the datetime to the specified unit and increment,
@@ -5549,12 +4115,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         using :meth:`assume_tz`.
         Pass ``stale_offset_ok=True`` to suppress.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not stale_offset_ok:
             warn(
                 OFFSET_ROUND_STALE_MSG,
@@ -6276,7 +4836,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     def __add__(
         self,
-        delta: TimeDelta | DateDelta | DateTimeDelta,
+        delta: TimeDelta,
     ) -> ZonedDateTime:
         """Add an amount of time, accounting for timezone changes (e.g. DST).
 
@@ -6285,20 +4845,13 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         if isinstance(delta, TimeDelta):
             delta_secs, nanos = divmod(
-                delta._time_part._total_ns + self._nanos, 1_000_000_000
+                delta._total_ns + self._nanos, 1_000_000_000
             )
             new_epoch = int(self._py_dt.timestamp()) + delta_secs
             return self._from_py_unchecked(
                 _from_epoch(new_epoch, self._tz),
                 nanos,
                 self._tz,
-            )
-        elif isinstance(delta, DateDelta):
-            return self.replace_date(self.date() + delta)
-        elif isinstance(delta, DateTimeDelta):
-            return (
-                self.replace_date(self.date() + delta._date_part)
-                + delta._time_part
             )
         return NotImplemented
 
@@ -6318,14 +4871,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         if isinstance(other, _EXACT_TIME_TYPES):
             return self._subtract_operator(other)
-        elif isinstance(
-            other,
-            (
-                TimeDelta,
-                DateDelta,
-                DateTimeDelta,
-            ),
-        ):
+        elif isinstance(other, TimeDelta):
             return self + -other
         return NotImplemented
 
@@ -6422,12 +4968,10 @@ class ZonedDateTime(_ExactAndLocalTime):
             return self
         elif isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
             return self._shift_kwargs(sign, **delta, disambiguate=disambiguate)
-        elif isinstance(delta, (TimeDelta, DateDelta, DateTimeDelta)):
+        elif isinstance(delta, TimeDelta):
             return self._shift_kwargs(
                 sign,
-                months=delta._date_part._months,
-                days=delta._date_part._days,
-                nanoseconds=delta._time_part._total_ns,
+                nanoseconds=delta._total_ns,
                 disambiguate=disambiguate,
             )
         else:
@@ -6677,24 +5221,9 @@ class ZonedDateTime(_ExactAndLocalTime):
             self._tz,
             "compatible",
         )
-        return TimeDelta.from_py_timedelta(next_midnight - midnight)
-
-    def start_of_day(self) -> ZonedDateTime:
-        """The start of the current calendar day.
-
-        This is almost always at midnight the same day, but may be different
-        for timezones which transition at—and thus skip over—midnight.
-
-        .. deprecated:: 0.10.0
-            Use ``start_of("day")`` instead.
-        """
-        warn(
-            "start_of_day() is deprecated and will be removed in a future release; "
-            'use start_of("day") instead.',
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        return self.start_of("day")
+        result = _object_new(TimeDelta)
+        result._init_from_py(next_midnight - midnight)
+        return result
 
     def _resolve_for_unit(self, naive: _datetime, unit: str) -> _datetime:
         tz = self._tz
@@ -7303,7 +5832,7 @@ class PlainDateTime(_LocalTime):
             return NotImplemented
         return (self._py_dt, self._nanos) >= (other._py_dt, other._nanos)
 
-    def __add__(self, delta: DateDelta | TimeDelta) -> PlainDateTime:
+    def __add__(self, delta: TimeDelta) -> PlainDateTime:
         """Add a delta to this datetime.
 
         Warning
@@ -7314,15 +5843,7 @@ class PlainDateTime(_LocalTime):
         Use ``.add(..., naive_arithmetic_ok=True)`` or Python's
         standard warning filters to suppress.
         """
-        if isinstance(delta, DateDelta):
-            return self._from_py_unchecked(
-                _datetime.combine(
-                    (self.date() + delta._date_part)._py_date,
-                    self._py_dt.time(),
-                ),
-                self._nanos,
-            )
-        elif isinstance(delta, TimeDelta):
+        if isinstance(delta, TimeDelta):
             warn(
                 PLAIN_SHIFT_UNAWARE_MSG,
                 NaiveArithmeticWarning,
@@ -7340,11 +5861,11 @@ class PlainDateTime(_LocalTime):
     def __sub__(self, other: PlainDateTime) -> TimeDelta: ...
 
     @overload
-    def __sub__(self, other: TimeDelta | DateDelta) -> PlainDateTime: ...
+    def __sub__(self, other: TimeDelta) -> PlainDateTime: ...
 
     def __sub__(
         self,
-        other: PlainDateTime | TimeDelta | DateDelta,
+        other: PlainDateTime | TimeDelta,
     ) -> TimeDelta | PlainDateTime:
         """Subtract a delta or calculate the duration to another plain datetime.
 
@@ -7376,10 +5897,7 @@ class PlainDateTime(_LocalTime):
                 stacklevel=2,
             )
             return self._sub(other)
-        elif isinstance(other, (DateDelta, DateTimeDelta)):
-            return self + -other
-        else:
-            return NotImplemented
+        return NotImplemented
 
     def _sub(self, other: PlainDateTime) -> TimeDelta:
         py_delta = self._py_dt - other._py_dt
@@ -7393,7 +5911,6 @@ class PlainDateTime(_LocalTime):
         other: PlainDateTime,
         /,
         *,
-        ignore_dst: bool = UNSET,
         naive_arithmetic_ok: bool = UNSET,
     ) -> TimeDelta:
         """Calculate the exact time difference between two plain datetimes.
@@ -7412,12 +5929,6 @@ class PlainDateTime(_LocalTime):
         not account for timezone transitions. Use :meth:`assume_tz` to convert
         to a ``ZonedDateTime`` first for accurate results.
         """
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=2,
-            )
         if not naive_arithmetic_ok:
             warn(
                 PLAIN_DIFF_UNAWARE_MSG,
@@ -7529,7 +6040,6 @@ class PlainDateTime(_LocalTime):
         d: AnyDelta,
         /,
         *,
-        ignore_dst: bool = ...,
         naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
@@ -7547,7 +6057,6 @@ class PlainDateTime(_LocalTime):
         milliseconds: float = ...,
         microseconds: float = ...,
         nanoseconds: int = ...,
-        ignore_dst: bool = ...,
         naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
@@ -7571,7 +6080,6 @@ class PlainDateTime(_LocalTime):
         d: AnyDelta,
         /,
         *,
-        ignore_dst: bool = ...,
         naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
@@ -7589,7 +6097,6 @@ class PlainDateTime(_LocalTime):
         milliseconds: float = ...,
         microseconds: float = ...,
         nanoseconds: int = ...,
-        ignore_dst: bool = ...,
         naive_arithmetic_ok: bool = ...,
     ) -> PlainDateTime: ...
 
@@ -7608,17 +6115,9 @@ class PlainDateTime(_LocalTime):
         arg: AnyDelta | UNSET = UNSET,
         /,
         *,
-        ignore_dst: bool = UNSET,
         naive_arithmetic_ok: bool = UNSET,
         **kwargs,
     ) -> PlainDateTime:
-        if ignore_dst is not UNSET:
-            warn(
-                IGNORE_DST_DEPRECATED_MSG,
-                WheneverDeprecationWarning,
-                stacklevel=3,
-            )
-
         if kwargs:
             if arg is UNSET:
                 return self._shift_kwargs(
@@ -7634,14 +6133,14 @@ class PlainDateTime(_LocalTime):
                 naive_arithmetic_ok=naive_arithmetic_ok,
                 **arg,
             )
-        elif arg is not UNSET:
+        elif isinstance(arg, TimeDelta):
             return self._shift_kwargs(
                 sign,
-                months=arg._date_part._months,
-                days=arg._date_part._days,
-                nanoseconds=arg._time_part._total_ns,
+                nanoseconds=arg._total_ns,
                 naive_arithmetic_ok=naive_arithmetic_ok,
             )
+        elif arg is not UNSET:
+            raise TypeError(f"argument must be a delta, got {arg!r}")
         else:
             return self
 
@@ -7687,33 +6186,6 @@ class PlainDateTime(_LocalTime):
         return self._from_py_unchecked(
             (py_dt_with_new_date + _timedelta(seconds=delta_secs)),
             nanos,
-        )
-
-    @classmethod
-    def parse_strptime(cls, s: str, /, *, format: str) -> PlainDateTime:
-        """Parse a plain datetime using the standard library ``strptime()`` method.
-
-        .. deprecated:: 0.10.0
-
-            Use :meth:`parse` with a pattern string instead, or use
-            ``PlainDateTime(datetime.strptime(...))``.
-
-        """
-        warn(
-            "parse_strptime() is deprecated and will be removed in a future "
-            "release; "
-            "use parse() with a pattern string instead.",
-            WheneverDeprecationWarning,
-            stacklevel=2,
-        )
-        parsed = _datetime.strptime(s, format)
-        if parsed.tzinfo is not None:
-            raise ValueError(
-                "Parsed datetime can't have an offset. "
-                "Do not use %z, %Z, or %:z in the format string"
-            )
-        return cls._from_py_unchecked(
-            parsed.replace(microsecond=0), parsed.microsecond * 1_000
         )
 
     def assume_utc(self) -> Instant:
@@ -8011,15 +6483,6 @@ class NaiveArithmeticWarning(PotentialDstBugWarning):
     """
 
 
-class ImplicitlyIgnoringDST(TypeError):
-    """Raised when an operation would silently ignore DST transitions.
-
-    .. deprecated:: 0.10.0
-
-       This exception is deprecated and will be removed in a future version.
-    """
-
-
 OFFSET_NOW_STALE_MSG = (
     "You are getting the current time using a fixed UTC offset. A fixed offset "
     "has no timezone rules, so it may be stale for the region you intend—no "
@@ -8109,7 +6572,8 @@ ZONEINFO_NO_KEY_MSG = (
     "Can't determine the IANA timezone ID of the given datetime: "
     "The 'key' attribute of the datetime's ZoneInfo object is None. \n"
     "This typically means the ZoneInfo object represents the system timezone with "
-    "an unknown ID. As an alternative, you can use OffsetDateTime.from_py_datetime(), "
+    "an unknown ID. As an alternative, you can construct an OffsetDateTime "
+    "from the standard-library datetime, "
     "but be aware this is a lossy conversion that only preserves "
     "the current UTC offset and discards future daylight saving rules. "
     "Please note that a timezone abbreviation like 'CEST' from datetime.tzname() "
@@ -8132,12 +6596,6 @@ DAYS_NOT_ALWAYS_24H_MSG = (
     "`relative_to=...` where supported. If fixed 24-hour periods are "
     "intentional, pass `days_assumed_24h_ok=True`. "
     + WARNING_HANDLING_DOCS_MSG
-)
-
-IGNORE_DST_DEPRECATED_MSG = (
-    "`ignore_dst` is deprecated and will be removed in a future release. For "
-    "OffsetDateTime operations, use `stale_offset_ok`; for PlainDateTime "
-    "operations, use `naive_arithmetic_ok`."
 )
 
 
@@ -8639,74 +7097,6 @@ PlainDateTime.MAX = PlainDateTime._from_py_unchecked(
 )
 
 
-def years(i: int, /) -> DateDelta:
-    """Create a :class:`~DateDelta` with the given number of years.
-    ``years(1) == DateDelta(years=1)``
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`~whenever.ItemizedDateDelta` instead
-    """
-    warn(
-        "years() is deprecated and will be removed in a future release; "
-        "use ItemizedDateDelta instead.",
-        WheneverDeprecationWarning,
-        stacklevel=2,
-    )
-    return DateDelta._from_months_days(12 * i, 0)
-
-
-def months(i: int, /) -> DateDelta:
-    """Create a :class:`~DateDelta` with the given number of months.
-    ``months(1) == DateDelta(months=1)``
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`~whenever.ItemizedDateDelta` instead
-    """
-    warn(
-        "months() is deprecated and will be removed in a future release; "
-        "use ItemizedDateDelta instead.",
-        WheneverDeprecationWarning,
-        stacklevel=2,
-    )
-    return DateDelta._from_months_days(i, 0)
-
-
-def weeks(i: int, /) -> DateDelta:
-    """Create a :class:`~DateDelta` with the given number of weeks.
-    ``weeks(1) == DateDelta(weeks=1)``
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`~whenever.ItemizedDateDelta` instead
-    """
-    warn(
-        "weeks() is deprecated and will be removed in a future release; "
-        "use ItemizedDateDelta instead.",
-        WheneverDeprecationWarning,
-        stacklevel=2,
-    )
-    return DateDelta._from_months_days(0, 7 * i)
-
-
-def days(i: int, /) -> DateDelta:
-    """Create a :class:`~DateDelta` with the given number of days.
-    ``days(1) == DateDelta(days=1)``
-
-    .. deprecated:: 0.10.0
-
-        Use :class:`~whenever.ItemizedDateDelta` instead
-    """
-    warn(
-        "days() is deprecated and will be removed in a future release; "
-        "use ItemizedDateDelta instead.",
-        WheneverDeprecationWarning,
-        stacklevel=2,
-    )
-    return DateDelta._from_months_days(0, i)
-
-
 def hours(i: float, /) -> TimeDelta:
     """Create a :class:`~TimeDelta` with the given number of hours.
     ``hours(1) == TimeDelta(hours=1)``
@@ -8781,9 +7171,7 @@ ItemizedDateDelta = _ideltas.ItemizedDateDelta
 ItemizedDelta = _ideltas.ItemizedDelta
 _unpkl_iddelta = _ideltas._unpkl_iddelta
 _unpkl_idelta = _ideltas._unpkl_idelta
-AnyDelta: Any = (
-    DateTimeDelta | TimeDelta | DateDelta | ItemizedDelta | ItemizedDateDelta
-)
+AnyDelta: Any = TimeDelta | ItemizedDelta | ItemizedDateDelta
 
 # We expose the public members in the root of the module.
 # For clarity, we remove the "_pywhenever" part from the names,
