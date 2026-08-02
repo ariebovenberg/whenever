@@ -15,9 +15,18 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, TypeVar, no_type_check
 from warnings import warn
 
+from ._typing import TimestampUnitStr
+
 UTC = _timezone.utc
 DUMMY_LEAP_YEAR = 4
 Nanos = int  # 0-999_999_999
+
+_NANOSECONDS_PER_TIMESTAMP_UNIT: dict[TimestampUnitStr, int] = {
+    "second": 1_000_000_000,
+    "millisecond": 1_000_000,
+    "microsecond": 1_000,
+    "nanosecond": 1,
+}
 
 WARNING_HANDLING_DOCS_MSG = (
     "For project-wide warning configuration, see "
@@ -100,6 +109,77 @@ class WheneverDeprecationWarning(WheneverWarning):
     library are visible by default—unlike standard ``DeprecationWarning``,
     which Python silences in production code.
     """
+
+
+def warn_deprecated(message: str, /, *, stacklevel: int) -> None:
+    warn(
+        message,
+        WheneverDeprecationWarning,
+        stacklevel=stacklevel + 1,
+    )
+
+
+def normalize_renamed_keyword(
+    new_value: Any,
+    kwargs: dict[str, Any],
+    /,
+    *,
+    function_name: str,
+    new_name: str,
+    old_name: str,
+    warning_message: str,
+    warning_stacklevel: int,
+) -> Any:
+    old_value = kwargs.pop(old_name, UNSET)
+    if old_value is UNSET:
+        return new_value
+    if new_value is not UNSET:
+        raise TypeError(
+            f"{function_name}() received both '{new_name}' "
+            f"and deprecated '{old_name}'"
+        )
+    warn_deprecated(
+        warning_message,
+        stacklevel=warning_stacklevel + 1,
+    )
+    return old_value
+
+
+def split_timestamp(
+    value: int | float,
+    unit: Any,
+    /,
+) -> tuple[int, int]:
+    try:
+        nanoseconds_per_unit = _NANOSECONDS_PER_TIMESTAMP_UNIT[unit]
+    except (KeyError, TypeError):
+        raise ValueError(f"invalid timestamp unit: {unit!r}") from None
+
+    if unit == "second":
+        if not isinstance(value, (int, float)):
+            raise TypeError("timestamp must be an integer or float")
+        seconds, fraction = divmod(value, 1)
+        return int(seconds), int(fraction * 1_000_000_000)
+
+    if not isinstance(value, int):
+        raise TypeError(f"timestamp in {unit}s must be an integer")
+    units_per_second = 1_000_000_000 // nanoseconds_per_unit
+    seconds, remainder = divmod(value, units_per_second)
+    return seconds, remainder * nanoseconds_per_unit
+
+
+def timestamp_from_parts(
+    seconds: int,
+    nanosecond: int,
+    unit: Any,
+    /,
+) -> int:
+    try:
+        nanoseconds_per_unit = _NANOSECONDS_PER_TIMESTAMP_UNIT[unit]
+    except (KeyError, TypeError):
+        raise ValueError(f"invalid timestamp unit: {unit!r}") from None
+    units_per_second = 1_000_000_000 // nanoseconds_per_unit
+    return seconds * units_per_second + nanosecond // nanoseconds_per_unit
 
 
 _T = TypeVar("_T")

@@ -30,3 +30,9 @@ type ExactDeltaUnitStr = Literal[
 ]
 type DisambiguateStr = Literal["compatible", "earlier", "later", "raise"]
 type OffsetMismatchStr = Literal["raise", "keep_instant", "keep_local"]
+type TimestampUnitStr = Literal[
+    "second",
+    "millisecond",
+    "microsecond",
+    "nanosecond",
+]
