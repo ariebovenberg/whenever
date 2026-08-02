@@ -9,6 +9,7 @@ __all__ = [
     "ExactDeltaUnitStr",
     "DisambiguateStr",
     "OffsetMismatchStr",
+    "TimestampUnitStr",
 ]
 
 RoundModeStr: TypeAlias = Literal[
@@ -38,6 +39,12 @@ ExactDeltaUnitStr: TypeAlias = Literal[
 ]
 DisambiguateStr: TypeAlias = Literal["compatible", "earlier", "later", "raise"]
 OffsetMismatchStr: TypeAlias = Literal["raise", "keep_instant", "keep_local"]
+TimestampUnitStr: TypeAlias = Literal[
+    "second",
+    "millisecond",
+    "microsecond",
+    "nanosecond",
+]
 
 # we override the above type aliases with proper type aliases in Python 3.12
 try:
