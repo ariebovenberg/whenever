@@ -131,7 +131,7 @@ class TestCompilePattern:
 
     def test_yy_parse_disabled(self):
         with pytest.raises(ValueError, match="YY.*only.*formatting"):
-            Date.parse("24-03-15", format="YY-MM-DD")
+            Date.parse("24-03-15", pattern="YY-MM-DD")
 
     def test_invalid_specifier_count(self):
         """E.g. YYY (3 Y's) is not valid — only 2 or 4."""
@@ -196,7 +196,7 @@ class TestFracTrimErrorRendering:
     @pytest.mark.parametrize("pattern", ["fF", "ffF", "Fff"])
     def test_parse_duplicate_nanos_with_frac_trim(self, pattern):
         with pytest.raises(ValueError, match="Duplicate.*nanos"):
-            Time.parse("01:02:03", format=pattern)
+            Time.parse("01:02:03", pattern=pattern)
 
     def test_frac_trim_unsupported_for_date_format(self):
         with pytest.raises(ValueError, match="does not support.*F"):
@@ -206,7 +206,7 @@ class TestFracTrimErrorRendering:
 
     def test_frac_trim_unsupported_for_date_parse(self):
         with pytest.raises(ValueError, match="does not support.*F"):
-            Date.parse("2024-03-15", format="F")
+            Date.parse("2024-03-15", pattern="F")
 
 
 class TestDateFormat:
@@ -255,72 +255,72 @@ class TestDateParse:
         assert d == Date(2024, 3, 15)
 
     def test_unpadded_month_day(self):
-        assert Date.parse("2024-3-5", format="YYYY-M-D") == Date(2024, 3, 5)
-        assert Date.parse("2024-12-25", format="YYYY-M-D") == Date(
+        assert Date.parse("2024-3-5", pattern="YYYY-M-D") == Date(2024, 3, 5)
+        assert Date.parse("2024-12-25", pattern="YYYY-M-D") == Date(
             2024, 12, 25
         )
         # MM requires exactly 2 digits — single digit fails
         with pytest.raises(ValueError):
-            Date.parse("2024-3-05", format="YYYY-MM-DD")
+            Date.parse("2024-3-05", pattern="YYYY-MM-DD")
         # DD requires exactly 2 digits
         with pytest.raises(ValueError):
-            Date.parse("2024-03-5", format="YYYY-MM-DD")
+            Date.parse("2024-03-5", pattern="YYYY-MM-DD")
 
     def test_roundtrip_unpadded_month_day(self):
         for month, day in [(1, 1), (12, 31), (3, 5)]:
             d = Date(2024, month, day)
             pattern = "YYYY-M-D"
-            assert Date.parse(d.format(pattern), format=pattern) == d
+            assert Date.parse(d.format(pattern), pattern=pattern) == d
 
     def test_slash_separator(self):
-        d = Date.parse("2024/03/15", format="YYYY/MM/DD")
+        d = Date.parse("2024/03/15", pattern="YYYY/MM/DD")
         assert d == Date(2024, 3, 15)
 
     def test_month_name(self):
-        d = Date.parse("15 Mar 2024", format="DD MMM YYYY")
+        d = Date.parse("15 Mar 2024", pattern="DD MMM YYYY")
         assert d == Date(2024, 3, 15)
 
     def test_full_month_name(self):
-        d = Date.parse("15 December 2024", format="DD MMMM YYYY")
+        d = Date.parse("15 December 2024", pattern="DD MMMM YYYY")
         assert d == Date(2024, 12, 15)
 
     def test_case_insensitive_month(self):
-        d = Date.parse("15 MARCH 2024", format="DD MMMM YYYY")
+        d = Date.parse("15 MARCH 2024", pattern="DD MMMM YYYY")
         assert d == Date(2024, 3, 15)
 
     def test_weekday_valid(self):
-        d = Date.parse("Fri 2024-03-15", format="EEE YYYY-MM-DD")
+        d = Date.parse("Fri 2024-03-15", pattern="EEE YYYY-MM-DD")
         assert d == Date(2024, 3, 15)
 
     def test_weekday_mismatch(self):
         with pytest.raises(ValueError, match="weekday"):
-            Date.parse("Mon 2024-03-15", format="EEE YYYY-MM-DD")
+            Date.parse("Mon 2024-03-15", pattern="EEE YYYY-MM-DD")
 
     def test_missing_year(self):
         with pytest.raises(ValueError, match="year"):
-            Date.parse("03-15", format="MM-DD")
+            Date.parse("03-15", pattern="MM-DD")
 
     def test_missing_month(self):
         with pytest.raises(ValueError, match="month"):
-            Date.parse("2024-15", format="YYYY-DD")
+            Date.parse("2024-15", pattern="YYYY-DD")
 
     def test_missing_day(self):
         with pytest.raises(ValueError, match="day"):
-            Date.parse("2024-03", format="YYYY-MM")
+            Date.parse("2024-03", pattern="YYYY-MM")
 
     def test_trailing_text(self):
         with pytest.raises(ValueError, match="trailing"):
-            Date.parse("2024-03-15extra", format="YYYY-MM-DD")
+            Date.parse("2024-03-15extra", pattern="YYYY-MM-DD")
 
     def test_roundtrip(self):
         d = Date(2024, 3, 15)
         pattern = "YYYY-MM-DD"
-        assert Date.parse(d.format(pattern), format=pattern) == d
+        assert Date.parse(d.format(pattern), pattern=pattern) == d
 
     def test_roundtrip_complex(self):
         d = Date(2024, 12, 25)
         pattern = "EEEE, DD MMMM YYYY"
-        assert Date.parse(d.format(pattern), format=pattern) == d
+        assert Date.parse(d.format(pattern), pattern=pattern) == d
 
 
 class TestMonthWeekdayCoverage:
@@ -344,10 +344,10 @@ class TestMonthWeekdayCoverage:
         ],
     )
     def test_all_months(self, month, abbr, full):
-        assert Date.parse(f"01 {abbr} 2024", format="DD MMM YYYY") == Date(
+        assert Date.parse(f"01 {abbr} 2024", pattern="DD MMM YYYY") == Date(
             2024, month, 1
         )
-        assert Date.parse(f"01 {full} 2024", format="DD MMMM YYYY") == Date(
+        assert Date.parse(f"01 {full} 2024", pattern="DD MMMM YYYY") == Date(
             2024, month, 1
         )
 
@@ -364,8 +364,8 @@ class TestMonthWeekdayCoverage:
         ],
     )
     def test_all_weekdays(self, day, abbr, full):
-        assert Date.parse(f"{abbr} {day}", format="EEE YYYY-MM-DD") == day
-        assert Date.parse(f"{full} {day}", format="EEEE YYYY-MM-DD") == day
+        assert Date.parse(f"{abbr} {day}", pattern="EEE YYYY-MM-DD") == day
+        assert Date.parse(f"{full} {day}", pattern="EEEE YYYY-MM-DD") == day
 
 
 class TestTimeFormat:
@@ -464,57 +464,59 @@ class TestTimeParse:
 
     def test_unpadded_hour(self):
         # Single-digit
-        assert Time.parse("4:30", format="h:mm") == Time(4, 30)
+        assert Time.parse("4:30", pattern="h:mm") == Time(4, 30)
         # Two-digit (also accepted by h)
-        assert Time.parse("14:30", format="h:mm") == Time(14, 30)
+        assert Time.parse("14:30", pattern="h:mm") == Time(14, 30)
         # hh requires exactly 2 digits
         with pytest.raises(ValueError):
-            Time.parse("4:30", format="hh:mm")
+            Time.parse("4:30", pattern="hh:mm")
         # Non-digit input
         with pytest.raises(ValueError, match="1-2 digits"):
-            Time.parse("x:30", format="h:mm")
+            Time.parse("x:30", pattern="h:mm")
 
     def test_unpadded_minute(self):
-        assert Time.parse("14:5", format="hh:m") == Time(14, 5)
-        assert Time.parse("14:30", format="hh:m") == Time(14, 30)
+        assert Time.parse("14:5", pattern="hh:m") == Time(14, 5)
+        assert Time.parse("14:30", pattern="hh:m") == Time(14, 30)
         with pytest.raises(ValueError):
-            Time.parse("14:5", format="hh:mm")
+            Time.parse("14:5", pattern="hh:mm")
 
     def test_unpadded_second(self):
-        assert Time.parse("14:30:5", format="hh:mm:s") == Time(14, 30, 5)
-        assert Time.parse("14:30:45", format="hh:mm:s") == Time(14, 30, 45)
+        assert Time.parse("14:30:5", pattern="hh:mm:s") == Time(14, 30, 5)
+        assert Time.parse("14:30:45", pattern="hh:mm:s") == Time(14, 30, 45)
         with pytest.raises(ValueError):
-            Time.parse("14:30:5", format="hh:mm:ss")
+            Time.parse("14:30:5", pattern="hh:mm:ss")
 
     def test_optional_seconds(self):
         # :SS - seconds absent
-        assert Time.parse("14:30", format="hh:mm:SS") == Time(14, 30, 0)
+        assert Time.parse("14:30", pattern="hh:mm:SS") == Time(14, 30, 0)
         # :SS - seconds present
-        assert Time.parse("14:30:05", format="hh:mm:SS") == Time(14, 30, 5)
-        assert Time.parse("14:30:45", format="hh:mm:SS") == Time(14, 30, 45)
+        assert Time.parse("14:30:05", pattern="hh:mm:SS") == Time(14, 30, 5)
+        assert Time.parse("14:30:45", pattern="hh:mm:SS") == Time(14, 30, 45)
         # standalone SS - seconds absent (no digit follows mm)
-        assert Time.parse("14:30", format="hh:mmSS") == Time(14, 30, 0)
+        assert Time.parse("14:30", pattern="hh:mmSS") == Time(14, 30, 0)
         # standalone SS - seconds present
-        assert Time.parse("14:3005", format="hh:mmSS") == Time(14, 30, 5)
+        assert Time.parse("14:3005", pattern="hh:mmSS") == Time(14, 30, 5)
         # :SS.FFF roundtrip
-        assert Time.parse("14:30", format="hh:mm:SS.FFF") == Time(14, 30, 0)
-        assert Time.parse("14:30:05", format="hh:mm:SS.FFF") == Time(14, 30, 5)
-        assert Time.parse("14:30:00.5", format="hh:mm:SS.FFF") == Time(
+        assert Time.parse("14:30", pattern="hh:mm:SS.FFF") == Time(14, 30, 0)
+        assert Time.parse("14:30:05", pattern="hh:mm:SS.FFF") == Time(
+            14, 30, 5
+        )
+        assert Time.parse("14:30:00.5", pattern="hh:mm:SS.FFF") == Time(
             14, 30, 0, nanosecond=500_000_000
         )
-        assert Time.parse("14:30:05.12", format="hh:mm:SS.FFF") == Time(
+        assert Time.parse("14:30:05.12", pattern="hh:mm:SS.FFF") == Time(
             14, 30, 5, nanosecond=120_000_000
         )
         # fractional part must be absent when seconds are absent
         with pytest.raises(ValueError, match="trailing"):
-            Time.parse("14:30.5", format="hh:mm:SS.FFF")
+            Time.parse("14:30.5", pattern="hh:mm:SS.FFF")
         with pytest.raises(ValueError, match="trailing"):
-            Time.parse("14:30.5", format="hh:mmSS.FFF")
+            Time.parse("14:30.5", pattern="hh:mmSS.FFF")
         # standalone FFF (no dot separator) also skipped when SS is absent
-        assert Time.parse("14:30", format="hh:mmSSFFF") == Time(14, 30, 0)
+        assert Time.parse("14:30", pattern="hh:mmSSFFF") == Time(14, 30, 0)
         # SS absent + space literal + FFF digits → FracTrim skipped, trailing error
         with pytest.raises(ValueError, match="trailing"):
-            Time.parse("14:30 123", format="hh:mmSS FFF")
+            Time.parse("14:30 123", pattern="hh:mmSS FFF")
 
     def test_roundtrip_optional_seconds(self):
         cases = [
@@ -526,100 +528,100 @@ class TestTimeParse:
         ]
         for t in cases:
             assert (
-                Time.parse(t.format("hh:mm:SS.FFF"), format="hh:mm:SS.FFF")
+                Time.parse(t.format("hh:mm:SS.FFF"), pattern="hh:mm:SS.FFF")
                 == t
             )
 
     def test_12h_pm(self):
-        assert Time.parse("02:30 PM", format="ii:mm aa") == Time(14, 30)
+        assert Time.parse("02:30 PM", pattern="ii:mm aa") == Time(14, 30)
 
     def test_12h_am(self):
-        assert Time.parse("02:30 AM", format="ii:mm aa") == Time(2, 30)
+        assert Time.parse("02:30 AM", pattern="ii:mm aa") == Time(2, 30)
 
     def test_12h_noon(self):
-        assert Time.parse("12:00 PM", format="ii:mm aa") == Time(12, 0)
+        assert Time.parse("12:00 PM", pattern="ii:mm aa") == Time(12, 0)
 
     def test_12h_midnight(self):
-        assert Time.parse("12:00 AM", format="ii:mm aa") == Time(0, 0)
+        assert Time.parse("12:00 AM", pattern="ii:mm aa") == Time(0, 0)
 
     def test_12h_unpadded(self):
-        assert Time.parse("2:30 PM", format="i:mm aa") == Time(14, 30)
-        assert Time.parse("12:00 AM", format="i:mm aa") == Time(0, 0)
-        assert Time.parse("1:00 AM", format="i:mm aa") == Time(1, 0)
+        assert Time.parse("2:30 PM", pattern="i:mm aa") == Time(14, 30)
+        assert Time.parse("12:00 AM", pattern="i:mm aa") == Time(0, 0)
+        assert Time.parse("1:00 AM", pattern="i:mm aa") == Time(1, 0)
         # ii requires exactly 2 digits
         with pytest.raises(ValueError):
-            Time.parse("2:30 PM", format="ii:mm aa")
+            Time.parse("2:30 PM", pattern="ii:mm aa")
         # Out-of-range hour with single i
         with pytest.raises(ValueError, match="1..12"):
-            Time.parse("0:30 AM", format="i:mm aa")
+            Time.parse("0:30 AM", pattern="i:mm aa")
 
     def test_invalid_ampm_text(self):
         with pytest.raises(ValueError, match="AM/PM"):
-            Time.parse("02:30 AA", format="ii:mm aa")
+            Time.parse("02:30 AA", pattern="ii:mm aa")
 
     def test_hour_out_of_range_24h(self):
         with pytest.raises(ValueError):
-            Time.parse("24:30", format="hh:mm")
+            Time.parse("24:30", pattern="hh:mm")
 
     def test_trailing_text(self):
         with pytest.raises(ValueError, match="trailing"):
-            Time.parse("14:30:05extra", format="hh:mm:ss")
+            Time.parse("14:30:05extra", pattern="hh:mm:ss")
 
     def test_trailing_period_fractional(self):
         """Trailing period after seconds with exact fractional field fails."""
         with pytest.raises(ValueError, match="digits"):
-            Time.parse("14:30:05.", format="hh:mm:ss.fff")
+            Time.parse("14:30:05.", pattern="hh:mm:ss.fff")
 
     def test_fractional(self):
-        t = Time.parse("14:30:05.123", format="hh:mm:ss.fff")
+        t = Time.parse("14:30:05.123", pattern="hh:mm:ss.fff")
         assert t == Time(14, 30, 5, nanosecond=123_000_000)
 
     def test_fractional_trimmed(self):
         """FFF parses variable-width digits and trims the preceding dot
         if there are no fractions."""
-        t = Time.parse("14:30:05.12", format="hh:mm:ss.FFF")
+        t = Time.parse("14:30:05.12", pattern="hh:mm:ss.FFF")
         assert t == Time(14, 30, 5, nanosecond=120_000_000)
         # No fractional digits: the dot is consumed as literal,
         # then FFF parses zero digits
         assert Time(14, 30, 5).format("hh:mm:ss.FFF") == "14:30:05"
 
     def test_fractional_nanos(self):
-        t = Time.parse("14:30:05.123456789", format="hh:mm:ss.fffffffff")
+        t = Time.parse("14:30:05.123456789", pattern="hh:mm:ss.fffffffff")
         assert t == Time(14, 30, 5, nanosecond=123_456_789)
 
     def test_optional_fields(self):
         # Hour only
-        assert Time.parse("14", format="hh") == Time(14)
+        assert Time.parse("14", pattern="hh") == Time(14)
 
     def test_roundtrip(self):
         t = Time(14, 30, 5, nanosecond=123_456_789)
         pattern = "hh:mm:ss.fffffffff"
-        assert Time.parse(t.format(pattern), format=pattern) == t
+        assert Time.parse(t.format(pattern), pattern=pattern) == t
 
     def test_roundtrip_unpadded(self):
         for h, m, s in [(4, 5, 9), (14, 30, 45), (0, 0, 0)]:
             t = Time(h, m, s)
             pattern = "h:m:s"
-            assert Time.parse(t.format(pattern), format=pattern) == t
+            assert Time.parse(t.format(pattern), pattern=pattern) == t
 
     def test_roundtrip_ampm(self):
         for h in (0, 1, 11, 12, 13, 23):
             t = Time(h, 30)
             pattern = "ii:mm aa"
-            assert Time.parse(t.format(pattern), format=pattern) == t
+            assert Time.parse(t.format(pattern), pattern=pattern) == t
 
     def test_leap_second(self):
         # ss (_Second): accepts 60, normalizes to 59
-        assert Time.parse("14:30:60", format="hh:mm:ss") == Time(14, 30, 59)
+        assert Time.parse("14:30:60", pattern="hh:mm:ss") == Time(14, 30, 59)
         # s (_SecondUnpadded): same
-        assert Time.parse("14:30:60", format="hh:mm:s") == Time(14, 30, 59)
+        assert Time.parse("14:30:60", pattern="hh:mm:s") == Time(14, 30, 59)
         # :SS (_ColonSec, compiled from ":SS"): same
-        assert Time.parse("14:30:60", format="hh:mm:SS") == Time(14, 30, 59)
+        assert Time.parse("14:30:60", pattern="hh:mm:SS") == Time(14, 30, 59)
         # SS (_SecondOpt, no colon prefix): same with adjacent digits
-        assert Time.parse("143060", format="hhmmSS") == Time(14, 30, 59)
+        assert Time.parse("143060", pattern="hhmmSS") == Time(14, 30, 59)
         # Values > 60 are invalid
         with pytest.raises(ValueError):
-            Time.parse("14:30:61", format="hh:mm:ss")
+            Time.parse("14:30:61", pattern="hh:mm:ss")
 
 
 class TestPlainDateTimeFormat:
@@ -647,18 +649,18 @@ class TestPlainDateTimeParse:
 
     def test_missing_year(self):
         with pytest.raises(ValueError, match="year"):
-            PlainDateTime.parse("03-15 14:30", format="MM-DD hh:mm")
+            PlainDateTime.parse("03-15 14:30", pattern="MM-DD hh:mm")
 
     def test_roundtrip(self):
         pdt = PlainDateTime(2024, 3, 15, 14, 30, 5, nanosecond=100_000_000)
         pattern = "YYYY-MM-DD hh:mm:ss.fff"
-        assert PlainDateTime.parse(pdt.format(pattern), format=pattern) == pdt
+        assert PlainDateTime.parse(pdt.format(pattern), pattern=pattern) == pdt
 
     def test_weekday_mismatch(self):
         # March 15, 2024 is a Friday, not Monday
         with pytest.raises(ValueError, match="weekday"):
             PlainDateTime.parse(
-                "Mon 2024-03-15 14:30", format="EEE YYYY-MM-DD hh:mm"
+                "Mon 2024-03-15 14:30", pattern="EEE YYYY-MM-DD hh:mm"
             )
 
 
@@ -723,31 +725,35 @@ class TestOffsetDateTimeParse:
     def test_utc_z(self):
         """Parsing accepts Z as +00:00 with uppercase X."""
         odt = OffsetDateTime.parse(
-            "2024-03-15 14:30Z", format="YYYY-MM-DD hh:mmXXX"
+            "2024-03-15 14:30Z", pattern="YYYY-MM-DD hh:mmXXX"
         )
         assert odt == OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(0))
 
     def test_missing_offset(self):
         with pytest.raises(ValueError, match="offset.*x/X"):
-            OffsetDateTime.parse("2024-03-15 14:30", format="YYYY-MM-DD hh:mm")
+            OffsetDateTime.parse(
+                "2024-03-15 14:30", pattern="YYYY-MM-DD hh:mm"
+            )
 
     def test_missing_date_fields(self):
         with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
-            OffsetDateTime.parse("14:30+02:00", format="hh:mmxxx")
+            OffsetDateTime.parse("14:30+02:00", pattern="hh:mmxxx")
 
     def test_roundtrip(self):
         odt = OffsetDateTime(
             2024, 3, 15, 14, 30, 5, nanosecond=123_000_000, offset=hours(-5)
         )
         pattern = "YYYY-MM-DD hh:mm:ss.fffxxx"
-        assert OffsetDateTime.parse(odt.format(pattern), format=pattern) == odt
+        assert (
+            OffsetDateTime.parse(odt.format(pattern), pattern=pattern) == odt
+        )
 
     def test_weekday_mismatch(self):
         # March 15, 2024 is a Friday, not Monday
         with pytest.raises(ValueError, match="weekday"):
             OffsetDateTime.parse(
                 "Mon 2024-03-15 14:30+02:00",
-                format="EEE YYYY-MM-DD hh:mmxxx",
+                pattern="EEE YYYY-MM-DD hh:mmxxx",
             )
 
 
@@ -785,7 +791,7 @@ class TestZonedDateTimeParse:
         with pytest.raises(ValueError, match="timezone ID.*VV"):
             ZonedDateTime.parse(
                 "2024-03-15 14:30+01:00",
-                format="YYYY-MM-DD hh:mmxxx",
+                pattern="YYYY-MM-DD hh:mmxxx",
             )
 
     @pytest.mark.parametrize("char", ["Ĕ", "é", "界", "𝟙", "Ⅷ", "①"])
@@ -801,21 +807,21 @@ class TestZonedDateTimeParse:
         with pytest.raises(ValueError, match=match):
             ZonedDateTime.parse(
                 f"2024-03-15 14:30+01:00[{prefix}{char}{suffix}]",
-                format="YYYY-MM-DD hh:mmxxx'['VV']'",
+                pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
             )
 
     def test_missing_date_fields(self):
         with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
             ZonedDateTime.parse(
                 "14:30+01:00[Europe/Paris]",
-                format="hh:mmxxx'['VV']'",
+                pattern="hh:mmxxx'['VV']'",
             )
 
     def test_tz_only_no_offset(self):
         """Parse with tz ID but no offset — uses disambiguate kwarg."""
         zdt = ZonedDateTime.parse(
             "2024-03-15 14:30[Europe/Paris]",
-            format="YYYY-MM-DD hh:mm'['VV']'",
+            pattern="YYYY-MM-DD hh:mm'['VV']'",
         )
         assert zdt == ZonedDateTime(2024, 3, 15, 14, 30, tz="Europe/Paris")
 
@@ -824,7 +830,7 @@ class TestZonedDateTimeParse:
         with pytest.raises(ValueError, match="does not match"):
             ZonedDateTime.parse(
                 "2024-03-15 14:30+05:00[Europe/Paris]",
-                format="YYYY-MM-DD hh:mmxxx'['VV']'",
+                pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
             )
 
     def test_offset_disambiguation(self):
@@ -832,11 +838,11 @@ class TestZonedDateTimeParse:
         # 1:30 AM exists twice: EDT (-04:00) and EST (-05:00)
         zdt_edt = ZonedDateTime.parse(
             "2024-11-03 01:30-04:00[America/New_York]",
-            format="YYYY-MM-DD hh:mmxxx'['VV']'",
+            pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
         )
         zdt_est = ZonedDateTime.parse(
             "2024-11-03 01:30-05:00[America/New_York]",
-            format="YYYY-MM-DD hh:mmxxx'['VV']'",
+            pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
         )
         assert zdt_edt != zdt_est  # different instants
         assert zdt_edt.hour == zdt_est.hour == 1
@@ -871,20 +877,20 @@ class TestZonedDateTimeParse:
         with pytest.raises(ValueError, match="does not match"):
             ZonedDateTime.parse(
                 "2024-03-10 02:30-05:00[America/New_York]",
-                format="YYYY-MM-DD hh:mmxxx'['VV']'",
+                pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
             )
 
     def test_roundtrip(self):
         zdt = ZonedDateTime(2024, 7, 15, 14, 30, tz="Europe/Paris")
         pattern = "YYYY-MM-DD hh:mm:ssxxx'['VV']'"
-        assert ZonedDateTime.parse(zdt.format(pattern), format=pattern) == zdt
+        assert ZonedDateTime.parse(zdt.format(pattern), pattern=pattern) == zdt
 
     def test_weekday_mismatch(self):
         # March 15, 2024 is a Friday, not Monday
         with pytest.raises(ValueError, match="weekday"):
             ZonedDateTime.parse(
                 "Mon 2024-03-15 14:30+01:00[Europe/Paris]",
-                format="EEE YYYY-MM-DD hh:mmxxx'['VV']'",
+                pattern="EEE YYYY-MM-DD hh:mmxxx'['VV']'",
             )
 
 
@@ -910,7 +916,7 @@ class TestInstantParse:
     def test_with_offset(self):
         # Offset is converted to UTC
         i = Instant.parse(
-            "2024-03-15 14:30+05:30", format="YYYY-MM-DD hh:mmxxx"
+            "2024-03-15 14:30+05:30", pattern="YYYY-MM-DD hh:mmxxx"
         )
         assert i == Instant.from_utc(2024, 3, 15, 9, 0)
 
@@ -918,22 +924,22 @@ class TestInstantParse:
         """Applying a negative offset to the latest valid date pushes it out of range."""
         with pytest.raises(ValueError, match="out of range"):
             Instant.parse(
-                "9999-12-31 23:00-02:00", format="YYYY-MM-DD hh:mmxxx"
+                "9999-12-31 23:00-02:00", pattern="YYYY-MM-DD hh:mmxxx"
             )
 
     def test_without_offset_raises(self):
         """Instant.parse requires an offset field in the pattern."""
         with pytest.raises(ValueError, match="offset.*x/X"):
-            Instant.parse("2024-03-15 14:30", format="YYYY-MM-DD hh:mm")
+            Instant.parse("2024-03-15 14:30", pattern="YYYY-MM-DD hh:mm")
 
     def test_missing_date_fields(self):
         with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
-            Instant.parse("14:30Z", format="hh:mmXXX")
+            Instant.parse("14:30Z", pattern="hh:mmXXX")
 
     def test_roundtrip(self):
         i = Instant.from_utc(2024, 3, 15, 14, 30, 5, nanosecond=123_456_789)
         pattern = "YYYY-MM-DD hh:mm:ss.fffffffffXXX"
-        assert Instant.parse(i.format(pattern), format=pattern) == i
+        assert Instant.parse(i.format(pattern), pattern=pattern) == i
 
 
 class TestStrftimeParity:
@@ -978,22 +984,22 @@ class TestSecurityEdgeCases:
 
     def test_pattern_too_long_raises(self):
         with pytest.raises(ValueError, match="too long"):
-            Date.parse("2024-01-01", format="Y" * 1001)
+            Date.parse("2024-01-01", pattern="Y" * 1001)
 
     def test_input_too_long_raises(self):
         with pytest.raises(ValueError, match="too long"):
-            Date.parse("2024" + "-" * 1001, format="YYYY-MM-DD")
+            Date.parse("2024" + "-" * 1001, pattern="YYYY-MM-DD")
 
     def test_pattern_at_max_length_ok(self):
         # 1000 chars: 250 repetitions of "YYYY" is a valid (if odd) pattern
         # Use quoted literals so it doesn't raise for duplicate fields
         pattern = "'x'" * 333 + "YYYY"  # 333*3 + 4 = 1003 chars — too long
         with pytest.raises(ValueError, match="too long"):
-            Date.parse("2024", format=pattern)
+            Date.parse("2024", pattern=pattern)
 
     def test_empty_input(self):
         with pytest.raises(ValueError):
-            Date.parse("", format="YYYY-MM-DD")
+            Date.parse("", pattern="YYYY-MM-DD")
 
     def test_empty_pattern_on_empty_input(self):
         """Empty pattern on empty input is technically valid (all fields missing)."""
@@ -1012,36 +1018,36 @@ class TestParseEdgeCases:
 
     def test_input_too_short(self):
         with pytest.raises(ValueError, match="too short"):
-            Date.parse("202", format="YYYY-MM-DD")
+            Date.parse("202", pattern="YYYY-MM-DD")
 
     def test_non_digit(self):
         with pytest.raises(ValueError, match="digits"):
-            Date.parse("abcd-03-15", format="YYYY-MM-DD")
+            Date.parse("abcd-03-15", pattern="YYYY-MM-DD")
 
     def test_literal_mismatch(self):
         with pytest.raises(ValueError, match="Expected"):
-            Date.parse("2024/03/15", format="YYYY-MM-DD")
+            Date.parse("2024/03/15", pattern="YYYY-MM-DD")
 
     def test_invalid_month_name(self):
         with pytest.raises(ValueError, match="month"):
-            Date.parse("15 Xyz 2024", format="DD MMM YYYY")
+            Date.parse("15 Xyz 2024", pattern="DD MMM YYYY")
 
     def test_ampm_short_parse(self):
-        assert Time.parse("02 P", format="ii a") == Time(14, 0)
-        assert Time.parse("02 A", format="ii a") == Time(2, 0)
+        assert Time.parse("02 P", pattern="ii a") == Time(14, 0)
+        assert Time.parse("02 A", pattern="ii a") == Time(2, 0)
 
     def test_ampm_short_invalid(self):
         with pytest.raises(ValueError, match="AM/PM"):
-            Time.parse("02 X", format="ii a")
+            Time.parse("02 X", pattern="ii a")
 
     def test_ampm_full_invalid(self):
         with pytest.raises(ValueError, match="AM/PM"):
-            Time.parse("02:00 XY", format="ii:mm aa")
+            Time.parse("02:00 XY", pattern="ii:mm aa")
 
     def test_offset_with_seconds(self):
         odt = OffsetDateTime.parse(
             "2024-03-15 14:30+05:30:15",
-            format="YYYY-MM-DD hh:mmxxxxx",
+            pattern="YYYY-MM-DD hh:mmxxxxx",
         )
         # 5*3600 + 30*60 + 15 = 19815 seconds offset
         assert odt.offset.total("seconds") == 19815
@@ -1050,7 +1056,7 @@ class TestParseEdgeCases:
         with pytest.raises(ValueError, match="offset"):
             OffsetDateTime.parse(
                 "2024-03-15 14:30Q02:00",
-                format="YYYY-MM-DD hh:mmxxx",
+                pattern="YYYY-MM-DD hh:mmxxx",
             )
 
     def test_offset_not_available_for_format(self):
@@ -1063,7 +1069,7 @@ class TestParseEdgeCases:
         with pytest.raises(ValueError, match="timezone ID"):
             ZonedDateTime.parse(
                 "2024-03-15 14:30+01:00[]",
-                format="YYYY-MM-DD hh:mmxxx'['VV']'",
+                pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
             )
 
     def test_tz_abbrev_parse_rejected(self):
@@ -1071,30 +1077,30 @@ class TestParseEdgeCases:
         with pytest.raises(ValueError, match="only.*formatting"):
             ZonedDateTime.parse(
                 "2024-07-15 14:30 CEST+02:00[Europe/Paris]",
-                format="YYYY-MM-DD hh:mm zzxxx'['VV']'",
+                pattern="YYYY-MM-DD hh:mm zzxxx'['VV']'",
             )
 
     def test_frac_trim_parse_no_digits(self):
         """FFF with no fractional digits should set nanos to 0."""
         # The literal '.' is consumed, then FFF sees no digits
-        t = Time.parse("14:30:05", format="hh:mm:ss")
+        t = Time.parse("14:30:05", pattern="hh:mm:ss")
         assert t == Time(14, 30, 5)
 
     def test_frac_trim_parse_partial(self):
         """FFF parses fewer digits than max width."""
-        t = Time.parse("14:30:05.1", format="hh:mm:ss.FFF")
+        t = Time.parse("14:30:05.1", pattern="hh:mm:ss.FFF")
         assert t == Time(14, 30, 5, nanosecond=100_000_000)
 
     def test_frac_trim_parse_empty(self):
         """FFF with trailing dot but no digits sets nanos to 0."""
-        t = Time.parse("14:30:05.", format="hh:mm:ss.FFF")
+        t = Time.parse("14:30:05.", pattern="hh:mm:ss.FFF")
         assert t == Time(14, 30, 5)
 
     def test_offset_parse_without_colon(self):
         """Offset parsing accepts compact format like +0530 with xx."""
         odt = OffsetDateTime.parse(
             "2024-03-15 14:30+0530",
-            format="YYYY-MM-DD hh:mmxx",
+            pattern="YYYY-MM-DD hh:mmxx",
         )
         assert odt.offset.total("seconds") == 19800  # 5*3600 + 30*60
 
@@ -1102,7 +1108,7 @@ class TestParseEdgeCases:
         """Offset parsing with width 1 (hours only)."""
         odt = OffsetDateTime.parse(
             "2024-03-15 14:30+05",
-            format="YYYY-MM-DD hh:mmx",
+            pattern="YYYY-MM-DD hh:mmx",
         )
         assert odt.offset.total("seconds") == 18000  # 5*3600
 
@@ -1110,7 +1116,7 @@ class TestParseEdgeCases:
         """Offset parsing with width 4 (compact, optional seconds present)."""
         odt = OffsetDateTime.parse(
             "2024-03-15 14:30+053015",
-            format="YYYY-MM-DD hh:mmxxxx",
+            pattern="YYYY-MM-DD hh:mmxxxx",
         )
         assert odt.offset.total("seconds") == 19815  # 5*3600 + 30*60 + 15
 
@@ -1118,7 +1124,7 @@ class TestParseEdgeCases:
         """Offset parsing with width 4 (compact, no seconds)."""
         odt = OffsetDateTime.parse(
             "2024-03-15 14:30+0530",
-            format="YYYY-MM-DD hh:mmxxxx",
+            pattern="YYYY-MM-DD hh:mmxxxx",
         )
         assert odt.offset.total("seconds") == 19800  # 5*3600 + 30*60
 
@@ -1127,13 +1133,13 @@ class TestParseEdgeCases:
         with pytest.raises(ValueError, match="':'"):
             OffsetDateTime.parse(
                 "2024-03-15 14:30+0530",
-                format="YYYY-MM-DD hh:mmxxx",
+                pattern="YYYY-MM-DD hh:mmxxx",
             )
 
     def test_ampm_short_parse_values(self):
         """Verify short AM/PM specifier (a) parses A and P correctly."""
-        assert Time.parse("09 A", format="ii a") == Time(9, 0)
-        assert Time.parse("09 P", format="ii a") == Time(21, 0)
+        assert Time.parse("09 A", pattern="ii a") == Time(9, 0)
+        assert Time.parse("09 P", pattern="ii a") == Time(21, 0)
 
 
 class TestFormatFieldsInternal:
@@ -1180,39 +1186,39 @@ class TestFormatFieldsInternal:
         with pytest.raises(
             ValueError, match="12-hour format requires hour in 1..12"
         ):
-            Time.parse("13:30 AM", format="ii:mm aa")
+            Time.parse("13:30 AM", pattern="ii:mm aa")
         with pytest.raises(
             ValueError, match="12-hour format requires hour in 1..12"
         ):
-            Time.parse("99:30 PM", format="ii:mm aa")
+            Time.parse("99:30 PM", pattern="ii:mm aa")
 
     def test_parse_12hour_hour_zero(self):
         """12-hour format rejects hour = 0."""
         with pytest.raises(
             ValueError, match="12-hour format requires hour in 1..12"
         ):
-            Time.parse("00:30 AM", format="ii:mm aa")
+            Time.parse("00:30 AM", pattern="ii:mm aa")
 
     def test_parse_offset_seconds_overflow(self):
         """Offset parsing rejects seconds >= 60."""
         with pytest.raises(ValueError, match="offset seconds must be 0..59"):
             OffsetDateTime.parse(
-                "2024-01-01 12:00 +05:30:60", format="YYYY-MM-DD hh:mm xxxxx"
+                "2024-01-01 12:00 +05:30:60", pattern="YYYY-MM-DD hh:mm xxxxx"
             )
         with pytest.raises(ValueError, match="offset seconds must be 0..59"):
             OffsetDateTime.parse(
-                "2024-01-01 12:00 +05:30:99", format="YYYY-MM-DD hh:mm xxxxx"
+                "2024-01-01 12:00 +05:30:99", pattern="YYYY-MM-DD hh:mm xxxxx"
             )
 
     def test_parse_offset_minutes_overflow(self):
         """Offset parsing rejects minutes >= 60 (not silently treated as more hours)."""
         with pytest.raises(ValueError, match="offset minutes must be 0..59"):
             OffsetDateTime.parse(
-                "2024-01-01 12:00+00:60", format="YYYY-MM-DD hh:mmxxx"
+                "2024-01-01 12:00+00:60", pattern="YYYY-MM-DD hh:mmxxx"
             )
         with pytest.raises(ValueError, match="offset minutes must be 0..59"):
             OffsetDateTime.parse(
-                "2024-01-01 12:00+01:99", format="YYYY-MM-DD hh:mmxxx"
+                "2024-01-01 12:00+01:99", pattern="YYYY-MM-DD hh:mmxxx"
             )
 
     def test_frac_trim_roundtrip_no_nanos(self):
@@ -1221,7 +1227,7 @@ class TestFormatFieldsInternal:
         formatted = t.format("hh:mm:ss.FFF")
         assert formatted == "14:30:05"  # sanity: dot was trimmed by format
         # Parsing the trimmed output with the same pattern must succeed
-        assert Time.parse(formatted, format="hh:mm:ss.FFF") == t
+        assert Time.parse(formatted, pattern="hh:mm:ss.FFF") == t
 
     def test_frac_trim_no_preceding_dot(self):
         """FFF with no preceding dot: nanos=0 produces empty, nothing is trimmed."""
@@ -1239,7 +1245,7 @@ class TestFormatFieldsInternal:
 
     def test_frac_trim_no_preceding_dot_parse(self):
         """FFF standalone (no dot) correctly parses non-zero fractional digits."""
-        t = Time.parse("14:30:051", format="hh:mm:ssFFF")
+        t = Time.parse("14:30:051", pattern="hh:mm:ssFFF")
         assert t == Time(14, 30, 5, nanosecond=100_000_000)
 
     def test_frac_trim_at_start_of_pattern(self):
@@ -1266,7 +1272,7 @@ class TestFormatFieldsInternal:
         t = Time(14, 30, 5)  # nanos=0
         formatted = t.format("hh:mm:ssFFF")
         assert formatted == "14:30:05"
-        assert Time.parse(formatted, format="hh:mm:ssFFF") == t
+        assert Time.parse(formatted, pattern="hh:mm:ssFFF") == t
 
 
 class TestDunderFormat:
