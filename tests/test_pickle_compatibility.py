@@ -1,4 +1,5 @@
 import struct
+import warnings
 from collections.abc import Callable, Iterator
 from typing import cast
 
@@ -203,13 +204,44 @@ def test_rust_unpicklers_require_exact_bytes(
         getattr(w, name)(*args)
 
 
-def test_zoned_pickle_preserves_stored_offset():
-    value = getattr(w, "_unpkl_zoned")(
-        struct.pack("<HBBBBBil", 2023, 7, 1, 12, 0, 0, 0, 3_600),
-        "Europe/Amsterdam",
-    )
+def test_zoned_pickle_reconciles_changed_offset_rules():
+    with pytest.warns(w.PickleOffsetMismatchWarning) as caught:
+        value = getattr(w, "_unpkl_zoned")(
+            struct.pack("<HBBBBBil", 2023, 7, 1, 12, 0, 0, 0, 3_600),
+            "Europe/Amsterdam",
+        )
 
-    assert value.offset == w.TimeDelta(hours=1)
+    assert caught[0].filename == __file__
+    assert value.to_instant() == w.Instant.from_utc(2023, 7, 1, 11)
+    assert value.to_plain() == w.PlainDateTime(2023, 7, 1, 13)
+    assert value.offset == w.TimeDelta(hours=2)
+    message = str(caught[0].message)
+    assert "Europe/Amsterdam" in message
+    assert "pickle stored 2023-07-01 12:00:00 with offset +01:00" in message
+    assert "current timezone rules" in message
+    assert "instant to 2023-07-01 13:00:00 with offset +02:00" in message
+    assert "instant was preserved" in message
+    assert "local datetime and offset were updated" in message
+
+
+def test_zoned_pickle_unchanged_rules_do_not_warn():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        value = getattr(w, "_unpkl_zoned")(
+            struct.pack("<HBBBBBil", 2023, 7, 1, 12, 0, 0, 123, 7_200),
+            "Europe/Amsterdam",
+        )
+
+    assert value.strict_eq(
+        w.ZonedDateTime(
+            2023,
+            7,
+            1,
+            12,
+            nanosecond=123,
+            tz="Europe/Amsterdam",
+        )
+    )
 
 
 @pytest.mark.skipif(
