@@ -1,4 +1,4 @@
-class Unambiguous:
+class Unique:
     __match_args__ = ("offset",)
     offset: int
 
@@ -6,12 +6,12 @@ class Unambiguous:
         self.offset = offset
 
     def __eq__(self, other: object) -> bool:
-        if isinstance(other, Unambiguous):
+        if isinstance(other, Unique):
             return self.offset == other.offset
         return False  # pragma: no cover
 
     def __repr__(self) -> str:
-        return f"Unambiguous({self.offset})"
+        return f"Unique({self.offset})"
 
 
 class Gap:
@@ -72,4 +72,4 @@ class Fold:
         )
 
 
-Ambiguity = Unambiguous | Gap | Fold
+LocalMapping = Unique | Gap | Fold

@@ -394,17 +394,19 @@ class TestEq:
         assert d != ItemizedDateDelta(days=5)
 
 
-def test_exact_eq():
+def test_strict_eq():
     d1 = ItemizedDelta(years=2, months=0, minutes=5, seconds=0)
     d2 = ItemizedDelta(years=2, minutes=5)
     d3 = ItemizedDelta(years=2, months=1, minutes=5)
     d4 = ItemizedDelta(years=2, months=1, minutes=5, seconds=0)
     d5 = ItemizedDelta(years=2, months=0, minutes=5, seconds=0)
-    assert d1.exact_eq(d1)
-    assert d1.exact_eq(d5)
-    assert not d1.exact_eq(d2)
-    assert not d1.exact_eq(d3)
-    assert not d1.exact_eq(d4)
+    assert d1.strict_eq(d1)
+    assert d1.strict_eq(d5)
+    assert not d1.strict_eq(d2)
+    assert not d1.strict_eq(d3)
+    assert not d1.strict_eq(d4)
+    with pytest.raises(TypeError):
+        d1.strict_eq(ItemizedDateDelta(years=2))  # type: ignore[arg-type]
 
 
 class TestFormatIso:
@@ -622,7 +624,9 @@ class TestParseIso:
     [
         (
             ItemizedDelta(years=2, months=3, weeks=4, days=5, hours=6),
-            ZonedDateTime("2021-12-31T00:34+01:00[Europe/Berlin]"),
+            ZonedDateTime(
+                "2021-12-31T00:34+01:00[Europe/Berlin]",
+            ),
             ["weeks", "minutes"],
             {},
             True,
@@ -630,7 +634,9 @@ class TestParseIso:
         ),
         (
             -ItemizedDelta(years=2, months=3, weeks=4, days=5),
-            ZonedDateTime("2021-02-28T23:00+09:00[Asia/Tokyo]"),
+            ZonedDateTime(
+                "2021-02-28T23:00+09:00[Asia/Tokyo]",
+            ),
             ["years", "days"],
             {"round_increment": 5, "round_mode": "ceil"},
             False,
@@ -638,7 +644,9 @@ class TestParseIso:
         ),
         (
             ItemizedDelta(days=0),
-            ZonedDateTime("0023-02-28T14:15Z[Europe/London]"),
+            ZonedDateTime(
+                "0023-02-28T14:15Z[Europe/London]",
+            ),
             ["years", "months", "weeks", "seconds"],
             {},
             True,
@@ -802,7 +810,9 @@ class TestAddSub:
             (
                 ItemizedDelta(years=2, months=3, minutes=5),
                 ItemizedDelta(years=1, months=2, seconds=500),
-                ZonedDateTime("2021-12-31T15:16Z[America/Sao_Paulo]"),
+                ZonedDateTime(
+                    "2021-12-31T15:16Z[America/Sao_Paulo]",
+                ),
                 ItemizedDelta(years=3, months=5, minutes=13, seconds=20),
                 {"in_units": ["years", "months", "minutes", "seconds"]},
             ),
@@ -815,7 +825,7 @@ class TestAddSub:
                     years=1, months=8, weeks=3, days=30, hours=0, seconds=1042
                 ),
                 ZonedDateTime(
-                    "2024-02-29T05:16:00.00004Z[America/Los_Angeles]"
+                    "2024-02-29T05:16:00.00004Z[America/Los_Angeles]",
                 ),
                 ItemizedDelta(
                     years=4, months=1, weeks=3, days=3, hours=1, seconds=2442
@@ -835,7 +845,9 @@ class TestAddSub:
             (
                 ItemizedDelta(years=2, days=5, minutes=3_000),
                 ItemizedDelta(years=1, months=8, days=30, seconds=3603),
-                ZonedDateTime("0021-01-01T00:16Z[Europe/Dublin]"),
+                ZonedDateTime(
+                    "0021-01-01T00:16Z[Europe/Dublin]",
+                ),
                 ItemizedDelta(
                     years=3, months=9, days=7, minutes=180, seconds=3
                 ),
@@ -853,7 +865,9 @@ class TestAddSub:
             (
                 ItemizedDelta(years=2, days=5, minutes=3_000),
                 ItemizedDelta(years=1, months=8, days=30, seconds=3603),
-                ZonedDateTime("9921-01-01T00:16Z[Africa/Johannesburg]"),
+                ZonedDateTime(
+                    "9921-01-01T00:16Z[Africa/Johannesburg]",
+                ),
                 ItemizedDelta(months=45, weeks=1, hours=3, minutes=2),
                 {
                     "in_units": ["months", "weeks", "hours", "minutes"],
@@ -866,7 +880,7 @@ class TestAddSub:
                 ItemizedDelta(years=2, months=3, hours=2),
                 ItemizedDelta(years=-2, months=-3, minutes=-120),
                 ZonedDateTime(
-                    "2024-02-29T05:16:00.00004Z[America/Los_Angeles]"
+                    "2024-02-29T05:16:00.00004Z[America/Los_Angeles]",
                 ),
                 ItemizedDelta(years=0, months=0, hours=0, minutes=0),
                 {"in_units": ["years", "months", "hours", "minutes"]},
@@ -875,7 +889,9 @@ class TestAddSub:
             (
                 ItemizedDelta(years=2, months=3, hours=2),
                 ItemizedDelta(years=-1, months=-4, hours=-4_000),
-                ZonedDateTime("1995-03-30T23:16Z[Australia/Sydney]"),
+                ZonedDateTime(
+                    "1995-03-30T23:16Z[Australia/Sydney]",
+                ),
                 ItemizedDelta(years=0, months=5, hours=369),
                 {"in_units": ["years", "months", "hours"]},
             ),
@@ -883,7 +899,9 @@ class TestAddSub:
             (
                 ItemizedDelta(years=2, months=3, hours=2),
                 ItemizedDelta(years=-1, months=-20, hours=-4_000),
-                ZonedDateTime("1995-03-01T23:16Z[Australia/Sydney]"),
+                ZonedDateTime(
+                    "1995-03-01T23:16Z[Australia/Sydney]",
+                ),
                 ItemizedDelta(years=-0, months=-10, hours=-326),
                 {"in_units": ["years", "months", "hours"]},
             ),
@@ -926,7 +944,9 @@ class TestAddSub:
             .add(
                 days=-1,
                 minutes=3,
-                relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                relative_to=ZonedDateTime(
+                    "2021-12-31T00:00Z[Africa/Cairo]",
+                ),
                 in_units=["days", "minutes"],
             )
             .exact_eq(ItemizedDelta(days=1, minutes=3))
@@ -937,7 +957,9 @@ class TestAddSub:
             ItemizedDelta(years=2).add(  # type: ignore[call-overload]
                 ItemizedDelta(years=1),
                 years=3,
-                relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                relative_to=ZonedDateTime(
+                    "2021-12-31T00:00Z[Africa/Cairo]",
+                ),
                 in_units=["years"],
             )
 
@@ -954,7 +976,9 @@ class TestAddSub:
         with pytest.raises(TypeError, match="foo"):
             ItemizedDelta(years=2).add(  # type: ignore[call-overload]
                 foo=5,
-                relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                relative_to=ZonedDateTime(
+                    "2021-12-31T00:00Z[Africa/Cairo]",
+                ),
                 in_units=["years", "months"],
             )
 
@@ -962,7 +986,9 @@ class TestAddSub:
         with pytest.raises((ValueError, OverflowError)):
             ItemizedDelta(years=5_000).add(
                 years=5_000,
-                relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                relative_to=ZonedDateTime(
+                    "2021-12-31T00:00Z[Africa/Cairo]",
+                ),
                 in_units=["years"],
             )
 
@@ -970,7 +996,9 @@ class TestAddSub:
         with pytest.raises((ValueError, OverflowError)):
             ItemizedDelta(years=5).add(
                 months=29,
-                relative_to=ZonedDateTime("9994-12-31T00:00Z[Asia/Tokyo]"),
+                relative_to=ZonedDateTime(
+                    "9994-12-31T00:00Z[Asia/Tokyo]",
+                ),
                 in_units=["years"],
             )
 
@@ -980,7 +1008,9 @@ class TestAddSub:
 
         assert d1.add(
             d2,
-            relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+            relative_to=ZonedDateTime(
+                "2021-12-31T00:00Z[Africa/Cairo]",
+            ),
             round_mode="floor",
             round_increment=2,
             in_units=["years", "seconds"],
@@ -1161,37 +1191,65 @@ class TestTotal:
         [
             (
                 ItemizedDelta(years=2, months=3, weeks=4, days=5),
-                ZonedDateTime("2021-12-31T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-12-31T03Z[America/New_York]",
+                ),
                 "months",
                 28.06666666666666,
             ),
             (
                 ItemizedDelta(weeks=-4),
-                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
                 "months",
                 -0.9032258064516129,
             ),
             (
                 ItemizedDelta(weeks=-4, minutes=-9123),
-                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
                 "days",
                 -34.33541666666667,
             ),
             (
                 ItemizedDelta(months=6, seconds=3),
-                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
                 "hours",
                 4343.0008333333335,
             ),
             (
                 ItemizedDelta(months=6, seconds=3),
-                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
                 "hours",
                 4343.0008333333335,
             ),
             (
                 ItemizedDelta(months=6, seconds=3),
-                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
+                "milliseconds",
+                15634803000,
+            ),
+            (
+                ItemizedDelta(months=6, seconds=3),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
+                "microseconds",
+                15634803000000,
+            ),
+            (
+                ItemizedDelta(months=6, seconds=3),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
                 "nanoseconds",
                 15634803000000000,
             ),
@@ -1209,6 +1267,8 @@ class TestTotal:
             "hours",
             "minutes",
             "seconds",
+            "milliseconds",
+            "microseconds",
             "nanoseconds",
         ],
         expected: float,
@@ -1221,7 +1281,9 @@ class TestTotal:
         with pytest.raises(ValueError, match="foo"):
             ItemizedDelta(years=2, seconds=4_000_000).total(
                 "foo",  # type: ignore[arg-type]
-                relative_to=ZonedDateTime("2021-12-31T22Z[Europe/Athens]"),
+                relative_to=ZonedDateTime(
+                    "2021-12-31T22Z[Europe/Athens]",
+                ),
             )
 
     def test_no_relative_to(self):
@@ -1239,7 +1301,9 @@ class TestTotal:
         assert isinstance(
             ItemizedDelta(years=200, nanoseconds=1).total(
                 "nanoseconds",
-                relative_to=ZonedDateTime("2021-12-31T22Z[Europe/Athens]"),
+                relative_to=ZonedDateTime(
+                    "2021-12-31T22Z[Europe/Athens]",
+                ),
             ),
             int,
         )
@@ -1248,14 +1312,16 @@ class TestTotal:
         with pytest.raises((ValueError, OverflowError)):
             ItemizedDelta(years=2, nanoseconds=1).total(
                 "months",
-                relative_to=ZonedDateTime("9998-04-30T00:00Z[Asia/Tokyo]"),
+                relative_to=ZonedDateTime(
+                    "9998-04-30T00:00Z[Asia/Tokyo]",
+                ),
             )
 
         with pytest.raises((ValueError, OverflowError)):
             ItemizedDelta(years=-2, minutes=0).total(
                 "months",
                 relative_to=ZonedDateTime(
-                    "0001-12-31T00:00Z[America/New_York]"
+                    "0001-12-31T00:00Z[America/New_York]",
                 ),
             )
 

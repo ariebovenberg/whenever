@@ -189,6 +189,20 @@ class YearMonth(_Base):
             )
         return YearMonth._from_py_unchecked(self._py.replace(**kwargs))
 
+    def add(self, *, years: int = 0, months: int = 0) -> YearMonth:
+        """Shift this year-month by a number of years and months."""
+        year, month = divmod(
+            self.year * 12 + self.month - 1 + years * 12 + months,
+            12,
+        )
+        return YearMonth._from_py_unchecked(
+            self._py.replace(year=year, month=month + 1)
+        )
+
+    def subtract(self, *, years: int = 0, months: int = 0) -> YearMonth:
+        """Shift this year-month backwards by a number of years and months."""
+        return self.add(years=-years, months=-months)
+
     def on_day(self, day: int, /) -> Date:
         """Create a date from this year-month with a given day
 
@@ -419,15 +433,19 @@ class MonthDay(_Base):
 
         return Date(self._py.replace(year=year))
 
-    def is_leap(self) -> bool:
+    def is_leap_day(self) -> bool:
         """Check if the month-day is February 29th
 
-        >>> MonthDay(2, 29).is_leap()
+        >>> MonthDay(2, 29).is_leap_day()
         True
-        >>> MonthDay(3, 1).is_leap()
+        >>> MonthDay(3, 1).is_leap_day()
         False
         """
         return self._py.month == 2 and self._py.day == 29
+
+    def is_leap(self) -> bool:
+        """Check if the month-day is February 29th."""
+        return self.is_leap_day()
 
     __str__ = format_iso
 

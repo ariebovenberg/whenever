@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from whenever._tz.common import Fold, Gap, Unambiguous
+from whenever._tz.common import Fold, Gap, Unique
 from whenever._tz.posix import TzStr
 from whenever._tz.tzif import (
     EPOCH_SECS_MAX,
@@ -114,7 +114,7 @@ class TestTZifFiles:
         assert tzif._end == TzStr.parse("UTC0")
 
         assert tzif.offset_for_instant(2216250001) == 0
-        assert ambiguity(tzif, 2216250000) == Unambiguous(0)
+        assert ambiguity(tzif, 2216250000) == Unique(0)
 
     def test_fixed(self):
         """Test fixed offset timezone file"""
@@ -125,7 +125,7 @@ class TestTZifFiles:
         assert tzif._end == TzStr.parse("<+13>-13")
 
         assert tzif.offset_for_instant(2216250001) == 13 * 3600
-        assert ambiguity(tzif, 2216250000) == Unambiguous(13 * 3600)
+        assert ambiguity(tzif, 2216250000) == Unique(13 * 3600)
 
     def test_v1(self):
         """Test version 1 TZif file"""
@@ -137,7 +137,7 @@ class TestTZifFiles:
 
         # a timestamp out of the range of the file should return the last offset (best guess)
         assert tzif.offset_for_instant(3_155_760_000) == 3600
-        assert ambiguity(tzif, 4_000_000_000) == Unambiguous(3600)
+        assert ambiguity(tzif, 4_000_000_000) == Unique(3600)
         # meta_for_instant after last transition with no POSIX string: falls back to last entry
         assert tzif.meta_for_instant(4_000_000_000) == (0, "CET")
 
@@ -168,7 +168,7 @@ class TestTZifFiles:
         assert tzif.offset_for_instant(-712150200) == -36000
 
         # Just before the last gap
-        assert ambiguity(tzif, -712150201 - 37800) == Unambiguous(-37800)
+        assert ambiguity(tzif, -712150201 - 37800) == Unique(-37800)
 
         # Start of the gap
         assert ambiguity(tzif, -712150200 - 37800) == Gap(
@@ -181,12 +181,10 @@ class TestTZifFiles:
         )
 
         # End of gap
-        assert ambiguity(tzif, -712150200 - 37800 + 1800) == Unambiguous(
-            -36000
-        )
+        assert ambiguity(tzif, -712150200 - 37800 + 1800) == Unique(-36000)
 
         # After the gap
-        assert ambiguity(tzif, -712150200) == Unambiguous(-36000)
+        assert ambiguity(tzif, -712150200) == Unique(-36000)
 
     @pytest.mark.parametrize(
         "t, expected",
@@ -228,28 +226,28 @@ class TestTZifFiles:
             # before the entire range
             (
                 ymdhms(1879, 9, 8, 21, 37, 30),
-                Unambiguous(hms(0, 17, 30)),
+                Unique(hms(0, 17, 30)),
             ),
             # At the start of the range
             (
                 ymdhms(1879, 12, 31, 23, 59, 59),
-                Unambiguous(hms(0, 17, 30)),
+                Unique(hms(0, 17, 30)),
             ),
-            (ymdhms(1880, 1, 1), Unambiguous(hms(0, 17, 30))),
+            (ymdhms(1880, 1, 1), Unique(hms(0, 17, 30))),
             (
                 ymdhms(1880, 1, 1, 0, 0, 1),
-                Unambiguous(hms(0, 17, 30)),
+                Unique(hms(0, 17, 30)),
             ),
             # --- The first transition (a fold) ---
             # well before the fold (no ambiguity)
             (
                 ymdhms(1882, 10, 28, 17, 49, 11),
-                Unambiguous(hms(0, 17, 30)),
+                Unique(hms(0, 17, 30)),
             ),
             # Just before times become ambiguous
             (
                 ymdhms(1892, 4, 30, 23, 59, 59),
-                Unambiguous(hms(0, 17, 30)),
+                Unique(hms(0, 17, 30)),
             ),
             # At the moment times becomes ambiguous
             (
@@ -279,14 +277,14 @@ class TestTZifFiles:
                 ),
             ),
             # At the exact clock change (no ambiguity)
-            (ymdhms(1892, 5, 1, 0, 17, 30), Unambiguous(hhmm(0))),
+            (ymdhms(1892, 5, 1, 0, 17, 30), Unique(hhmm(0))),
             # Directly after the clock change (no ambiguity)
-            (ymdhms(1892, 5, 1, 0, 17, 31), Unambiguous(hhmm(0))),
+            (ymdhms(1892, 5, 1, 0, 17, 31), Unique(hhmm(0))),
             # --- A "gap" transition ---
             # Well before the transition
-            (ymdhms(1916, 3, 3, 1, 6, 40), Unambiguous(hhmm(1))),
+            (ymdhms(1916, 3, 3, 1, 6, 40), Unique(hhmm(1))),
             # Just before the clock change
-            (ymdhms(1916, 4, 30, 23, 59, 59), Unambiguous(hhmm(1))),
+            (ymdhms(1916, 4, 30, 23, 59, 59), Unique(hhmm(1))),
             # At the exact clock change (ambiguity!)
             (
                 ymdhms(1916, 5, 1),
@@ -303,26 +301,26 @@ class TestTZifFiles:
                 Gap(ymdhms(1916, 5, 1, 1), hhmm(2), hhmm(1)),
             ),
             # The gap ends (no ambiguity)
-            (ymdhms(1916, 5, 1, 1), Unambiguous(hhmm(2))),
+            (ymdhms(1916, 5, 1, 1), Unique(hhmm(2))),
             # A sample of other times
-            (ymdhms(1992, 3, 12, 8, 5), Unambiguous(hhmm(1))),
+            (ymdhms(1992, 3, 12, 8, 5), Unique(hhmm(1))),
             (
                 ymdhms(1992, 3, 29, 2, 5),
                 Gap(ymdhms(1992, 3, 29, 3), hhmm(2), hhmm(1)),
             ),
-            (ymdhms(1992, 8, 31, 23, 5), Unambiguous(hhmm(2))),
+            (ymdhms(1992, 8, 31, 23, 5), Unique(hhmm(2))),
             # ---- Transitions after the last explicit one need to use the POSIX TZ string
             # before gap
-            (ymdhms(2040, 3, 25, 1, 59, 59), Unambiguous(hhmm(1))),
+            (ymdhms(2040, 3, 25, 1, 59, 59), Unique(hhmm(1))),
             # gap starts
             (
                 ymdhms(2040, 3, 25, 2),
                 Gap(ymdhms(2040, 3, 25, 3), hhmm(2), hhmm(1)),
             ),
             # gap ends
-            (ymdhms(2040, 3, 25, 3), Unambiguous(hhmm(2))),
+            (ymdhms(2040, 3, 25, 3), Unique(hhmm(2))),
             # somewhere in summer
-            (ymdhms(2040, 3, 25, 12, 6, 40), Unambiguous(hhmm(2))),
+            (ymdhms(2040, 3, 25, 12, 6, 40), Unique(hhmm(2))),
             # Fold starts
             (
                 ymdhms(2053, 10, 26, 2),
@@ -334,7 +332,7 @@ class TestTZifFiles:
                 Fold(ymdhms(2053, 10, 26, 3), hhmm(2), hhmm(1)),
             ),
             # end of the fold
-            (ymdhms(2053, 10, 26, 3), Unambiguous(hhmm(1))),
+            (ymdhms(2053, 10, 26, 3), Unique(hhmm(1))),
         ],
     )
     def test_ambiguity_for_local(self, t, expected):

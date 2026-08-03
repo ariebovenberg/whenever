@@ -9,7 +9,7 @@ from __future__ import annotations
 import calendar
 from datetime import date, datetime, time, timedelta, timezone
 
-from .common import Ambiguity, Fold, Gap, Unambiguous
+from .common import Fold, Gap, LocalMapping, Unique
 
 DEFAULT_DST = 3600
 DEFAULT_RULE_TIME = 2 * 3600
@@ -195,16 +195,16 @@ class TzStr:
             return self.dst.offset
         return self.std
 
-    def ambiguity_for_local(self, dt: datetime) -> Ambiguity:
+    def ambiguity_for_local(self, dt: datetime) -> LocalMapping:
         assert dt.tzinfo is None
         return self._ambiguity_for_local_epoch(
             int(dt.replace(tzinfo=UTC).timestamp())
         )
 
     # NOTE: `epoch` is the datetime in seconds since the LOCAL epoch.
-    def _ambiguity_for_local_epoch(self, epoch: int) -> Ambiguity:
+    def _ambiguity_for_local_epoch(self, epoch: int) -> LocalMapping:
         if not self.dst:
-            return Unambiguous(self.std)
+            return Unique(self.std)
         year = year_for_epoch(epoch)
 
         start_rule, start_time = self.dst.start
@@ -225,26 +225,26 @@ class TzStr:
 
         if shift >= 0:
             if epoch < t1:
-                return Unambiguous(off1)
+                return Unique(off1)
             elif epoch < t1 + shift:
                 return Gap(t1 + shift, off2, off1)
             elif epoch < t2 - shift:
-                return Unambiguous(off2)
+                return Unique(off2)
             elif epoch < t2:
                 return Fold(t2, off2, off1)
             else:
-                return Unambiguous(off1)
+                return Unique(off1)
         else:
             if epoch < t1 + shift:
-                return Unambiguous(off1)
+                return Unique(off1)
             elif epoch < t1:
                 return Fold(t1, off1, off2)
             elif epoch < t2:
-                return Unambiguous(off2)
+                return Unique(off2)
             elif epoch < t2 - shift:
                 return Gap(t2 - shift, off1, off2)
             else:
-                return Unambiguous(off1)
+                return Unique(off1)
 
     def _utc_transitions_for_year(
         self, year: int

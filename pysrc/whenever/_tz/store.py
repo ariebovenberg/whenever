@@ -17,7 +17,7 @@ __all__ = [
     "get_system_tz",
     "_clear_tz_cache",
     "_clear_tz_cache_by_keys",
-    "_get_tzpath",
+    "get_tzpath",
     "_set_tzpath",
     "reset_system_tz",
 ]
@@ -61,7 +61,8 @@ def _set_tzpath(to: tuple[str, ...]) -> None:
     _TZPATH = to
 
 
-def _get_tzpath() -> tuple[str, ...]:
+def get_tzpath() -> tuple[str, ...]:
+    """Return a snapshot of the current timezone search path."""
     return _TZPATH
 
 

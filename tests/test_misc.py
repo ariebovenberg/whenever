@@ -1,15 +1,18 @@
 import json
 import os
+import pickle
 import subprocess
 import sys
 import warnings
 from contextlib import nullcontext
+from copy import copy, deepcopy
 from time import sleep
 from unittest.mock import patch
 
 import pytest
 from whenever import (
     _EXTENSION_LOADED,
+    SYSTEM_TZ,
     Date,
     Instant,
     ItemizedDateDelta,
@@ -17,9 +20,12 @@ from whenever import (
     OffsetDateTime,
     PlainDateTime,
     TimeDelta,
+    TimePatch,
     ZonedDateTime,
+    get_tzpath,
     patch_current_time,
     reset_system_tz,
+    reset_tzpath,
 )
 from whenever._tz.system import _tzid_from_path, get_tz
 
@@ -303,11 +309,25 @@ def test_patch_time():
 
     # simplest case: freeze time at fixed UTC
     with patch_current_time(i, keep_ticking=False) as p:
+        assert isinstance(p, TimePatch)
         assert Instant.now() == i
         assert Date.today_in_system_tz() == i.to_system_tz().date()
+        assert Date.today(SYSTEM_TZ) == i.to_tz(SYSTEM_TZ).date()
+        assert (
+            Date.today("Europe/Amsterdam")
+            == i.to_tz("Europe/Amsterdam").date()
+        )
+        with pytest.raises(TypeError):
+            Date.today(tz="Europe/Amsterdam")  # type: ignore[call-arg]
+        assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
+        assert PlainDateTime(2020, 8, 15).assume_tz(SYSTEM_TZ).tz_id == (
+            "Europe/Amsterdam"
+        )
         p.shift(hours=3)
-        p.shift(hours=1)
+        p.shift(TimeDelta(hours=1))
         assert Instant.now() == i.add(hours=4)
+        p.move_to(i.to_fixed_offset(TimeDelta(hours=2)))
+        assert Instant.now() == i
 
     # patch has ended
     assert Instant.now() > Instant.from_utc(2024, 1, 1)
@@ -318,14 +338,69 @@ def test_patch_time():
         i.to_tz("Europe/Amsterdam"), keep_ticking=True
     ) as p:
         assert (Instant.now() - i).total("seconds") < 1
-        p.shift(hours=2)
+        p.shift(TimeDelta(hours=2))
         sleep(0.000001)
         assert 2 < (Instant.now() - i).total("hours") < 2.1
-        p.shift(days=2, disambiguate="raise")
+        p.move_to(Instant.now().to_tz("Europe/Amsterdam").add(days=2))
         sleep(0.000001)
         assert 50 < (Instant.now() - i).total("hours") < 50.1
 
     assert Instant.now() - i > TimeDelta(hours=40_000)
+
+
+def test_time_patch_lifetime_and_overlap():
+    i = Instant.from_utc(1980, 3, 2, hour=2)
+    with patch_current_time(i, keep_ticking=False) as handle:
+        with pytest.raises(RuntimeError, match="already active"):
+            with patch_current_time(i, keep_ticking=False):
+                pass
+
+    with pytest.raises(RuntimeError, match="no longer active"):
+        handle.shift(TimeDelta(hours=1))
+    with pytest.raises(RuntimeError, match="no longer active"):
+        handle.move_to(i)
+
+
+def test_time_patch_rejects_invalid_shift_arguments():
+    i = Instant.from_utc(1980, 3, 2, hour=2)
+    with patch_current_time(i, keep_ticking=False) as handle:
+        with pytest.raises(TypeError, match="must be a TimeDelta"):
+            handle.shift(ItemizedDelta(days=1))  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="unexpected keyword"):
+            handle.shift(years=1)
+        with pytest.raises(TypeError, match="[Cc]annot mix"):
+            handle.shift(TimeDelta(hours=1), minutes=1)
+
+
+def test_patch_current_time_decorator_does_not_inject_handle():
+    i = Instant.from_utc(1980, 3, 2, hour=2)
+
+    @patch_current_time(i, keep_ticking=False)
+    def decorated() -> Instant:
+        return Instant.now()
+
+    assert decorated() == i
+
+
+def test_system_tz_sentinel():
+    assert repr(SYSTEM_TZ) == "SYSTEM_TZ"
+    assert copy(SYSTEM_TZ) is SYSTEM_TZ
+    assert deepcopy(SYSTEM_TZ) is SYSTEM_TZ
+    payload = pickle.dumps(SYSTEM_TZ)
+    assert b"whenever._" not in payload
+    assert b"whenever" in payload
+    assert b"SYSTEM_TZ" in payload
+    assert pickle.loads(payload) is SYSTEM_TZ
+
+
+def test_get_tzpath_returns_snapshot(tmp_path):
+    previous = get_tzpath()
+    try:
+        reset_tzpath([tmp_path])
+        assert get_tzpath() == (str(tmp_path),)
+        assert previous != get_tzpath()
+    finally:
+        reset_tzpath(previous)
 
 
 def test_get_system_tz():

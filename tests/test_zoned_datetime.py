@@ -1,5 +1,6 @@
 import pickle
 import re
+import warnings
 from copy import copy, deepcopy
 from datetime import (
     datetime as py_datetime,
@@ -19,6 +20,7 @@ from hypothesis.strategies import text
 from whenever import (
     _EXTENSION_LOADED,
     Date,
+    ImplicitDisambiguationWarning,
     Instant,
     InvalidOffsetError,
     ItemizedDelta,
@@ -62,9 +64,12 @@ else:
 
 TEST_DIR = Path(__file__).parent
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
+pytestmark = [
+    pytest.mark.filterwarnings("ignore::whenever.WheneverDeprecationWarning"),
+    pytest.mark.filterwarnings(
+        "ignore::whenever.ImplicitDisambiguationWarning"
+    ),
+]
 
 
 class TestInit:
@@ -80,6 +85,46 @@ class TestInit:
         assert d.second == 30
         assert d.nanosecond == 450
         assert d.tz == zone
+
+    def test_implicit_disambiguation_warning(self):
+        with pytest.warns(ImplicitDisambiguationWarning) as caught:
+            result = ZonedDateTime(2023, 10, 29, 2, 15, tz="Europe/Amsterdam")
+
+        assert result == ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            tz="Europe/Amsterdam",
+            disambiguation="compatible",
+        )
+        assert caught[0].filename == __file__
+
+    def test_explicit_compatible_does_not_warn(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ImplicitDisambiguationWarning)
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                tz="Europe/Amsterdam",
+                disambiguation="compatible",
+            )
+
+    def test_none_disambiguation_is_invalid(self):
+        with pytest.raises(ValueError, match="disambiguation"):
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                tz="Europe/Amsterdam",
+                disambiguation=None,  # type: ignore[arg-type]
+            )
 
     def test_repeated_time(self):
         kwargs: dict[str, Any] = dict(
@@ -618,7 +663,7 @@ class TestReplaceDate:
         with pytest.raises((TypeError, AttributeError)):
             d.replace_date(object(), disambiguate="compatible")  # type: ignore[arg-type]
 
-        with pytest.raises(ValueError, match="disambiguate"):
+        with pytest.raises(ValueError, match="disambig"):
             d.replace_date(Date(2020, 8, 15), disambiguate="foo")  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="got 2|foo"):
@@ -725,7 +770,7 @@ class TestReplaceTime:
         with pytest.raises((TypeError, AttributeError)):
             d.replace_time(object(), disambiguate="later")  # type: ignore[arg-type]
 
-        with pytest.raises(ValueError, match="disambiguate"):
+        with pytest.raises(ValueError, match="disambig"):
             d.replace_time(Time(1, 2, 3), disambiguate="foo")  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="got 2|foo"):
@@ -745,6 +790,22 @@ class TestReplaceTime:
 
 
 class TestFormatIso:
+    @pytest.mark.parametrize(
+        ("tz_display", "suffix"),
+        [
+            ("required", "[Europe/Amsterdam]"),
+            ("auto", "[Europe/Amsterdam]"),
+            ("never", ""),
+        ],
+    )
+    def test_tz_display(self, tz_display, suffix):
+        value = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
+        formatted = value.format_iso(tz_display=tz_display)
+        if suffix:
+            assert formatted.endswith(suffix)
+        else:
+            assert "[" not in formatted
+
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -936,6 +997,7 @@ class TestEquality:
         assert d == d2
         assert not d != d2
         assert hash(d) == hash(d2)
+        assert d.strict_eq(d2)
 
     @pytest.mark.parametrize(
         "d",
@@ -958,6 +1020,10 @@ class TestEquality:
         d3 = d.to_tz("America/New_York")
         assert d == d3
         assert hash(d) == hash(d3)
+        assert d.strict_eq(d3) is (d3 is d)
+
+        with pytest.raises(TypeError):
+            d.strict_eq(d.to_instant())  # type: ignore[arg-type]
 
     @pytest.mark.parametrize(
         "d",
@@ -2209,7 +2275,16 @@ class TestDayLength:
             # DST starts at midnight
             (ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"), hours(25)),
             (ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"), hours(24)),
-            (ZonedDateTime(2016, 10, 16, tz="America/Sao_Paulo"), hours(23)),
+            (
+                ZonedDateTime(
+                    2016,
+                    10,
+                    16,
+                    tz="America/Sao_Paulo",
+                    disambiguation="compatible",
+                ),
+                hours(23),
+            ),
             (ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"), hours(24)),
             # Samoa skipped a day
             (ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"), hours(24)),
@@ -2553,11 +2628,6 @@ class TestParseIso:
                 "2020-08-15T12:08:30+02[Europe/Amsterdam]",
                 ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
             ),
-            # Z is also valid for non-0 offset timezones!
-            (
-                "2020-02-15t120830z[America/New_York]",
-                ZonedDateTime(2020, 2, 15, 7, 8, 30, tz="America/New_York"),
-            ),
             (
                 "19000101 00-002521[Europe/Dublin]",
                 ZDT2,
@@ -2600,10 +2670,26 @@ class TestParseIso:
                     2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, tz="UTC"
                 ),
             ),
+            # Z is also valid for non-UTC timezones
+            (
+                "2020-02-15t120830z[America/New_York]",
+                ZonedDateTime(2020, 2, 15, 7, 8, 30, tz="America/New_York"),
+            ),
         ],
     )
     def test_valid(self, s, expect):
         assert ZonedDateTime.parse_iso(s).exact_eq(expect)
+
+    def test_minute_precision_offset_matching(self):
+        result = ZonedDateTime.parse_iso(
+            "1900-01-01T00:00:00-00:25[Europe/Dublin]"
+        )
+        assert result.offset == TimeDelta(seconds=-(25 * 60 + 21))
+
+        with pytest.raises(InvalidOffsetError):
+            ZonedDateTime.parse_iso(
+                "1900-01-01T00:00:00-00:25:00[Europe/Dublin]"
+            )
 
     @pytest.mark.parametrize(
         "s",
@@ -2733,6 +2819,29 @@ class TestParseIso:
 
 
 class TestTimestamp:
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("second", 1_597_493_310),
+            ("millisecond", 1_597_493_310_045),
+            ("microsecond", 1_597_493_310_045_123),
+            ("nanosecond", 1_597_493_310_045_123_987),
+        ],
+    )
+    def test_unit(self, unit, expected):
+        value = ZonedDateTime(
+            2020,
+            8,
+            15,
+            8,
+            8,
+            30,
+            nanosecond=45_123_987,
+            tz="America/New_York",
+        )
+
+        assert value.timestamp(unit=unit) == expected
+
     def test_default_seconds(self):
         assert ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp() == 0
         assert (
@@ -4075,6 +4184,18 @@ class TestDifference:
 
 
 class TestSince:
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("milliseconds", 86_400_000.0),
+            ("microseconds", 86_400_000_000.0),
+        ],
+    )
+    def test_total_subsecond_units(self, unit, expected):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2023, 2, 14, tz="Asia/Tokyo")
+        assert a.since(b, total=unit) == expected
+
     @pytest.mark.parametrize(
         "a, b, units, kwargs, expect",
         [
