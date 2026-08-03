@@ -6,6 +6,7 @@ from typing import Literal
 from unittest.mock import patch
 
 from whenever import (
+    SYSTEM_TZ,
     PlainDateTime,
     ZonedDateTime,
     reset_system_tz,
@@ -146,10 +147,14 @@ def system_tz_nyc():
 
 
 with system_tz(AMS_TZ_POSIX):
-    _AMS_POSIX_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_system_tz()
+    _AMS_POSIX_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_tz(
+        SYSTEM_TZ, disambiguation="compatible"
+    )
 
 with system_tz(AMS_TZ_RAWFILE):
-    _AMS_RAWFILE_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_system_tz()
+    _AMS_RAWFILE_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_tz(
+        SYSTEM_TZ, disambiguation="compatible"
+    )
 
 
 def create_zdt(
@@ -162,7 +167,7 @@ def create_zdt(
     nanosecond: int = 0,
     *,
     tz: str = "",
-    disambiguate: Literal[
+    disambiguation: Literal[
         "compatible", "earlier", "later", "raise"
     ] = "compatible",
 ) -> ZonedDateTime:
@@ -178,7 +183,7 @@ def create_zdt(
             minute=minute,
             second=second,
             nanosecond=nanosecond,
-            disambiguate=disambiguate,
+            disambiguation=disambiguation,
         )
     elif tz == AMS_TZ_RAWFILE:
         return _AMS_RAWFILE_DT.replace(
@@ -189,7 +194,7 @@ def create_zdt(
             minute=minute,
             second=second,
             nanosecond=nanosecond,
-            disambiguate=disambiguate,
+            disambiguation=disambiguation,
         )
     else:
         return ZonedDateTime(
@@ -201,5 +206,5 @@ def create_zdt(
             second,
             nanosecond=nanosecond,
             tz=tz,
-            disambiguate=disambiguate,
+            disambiguation=disambiguation,
         )
