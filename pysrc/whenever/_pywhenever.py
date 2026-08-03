@@ -52,6 +52,7 @@ from ._common import (
     normalize_renamed_keyword,
     split_timestamp,
     timestamp_from_parts,
+    warn_deprecated,
 )
 from ._format import (
     compile_pattern,
@@ -116,9 +117,9 @@ from ._tz import (  # noqa: F401
     _clear_tz_cache as _clear_tz_cache,
     _clear_tz_cache_by_keys as _clear_tz_cache_by_keys,
     _set_tzpath as _set_tzpath,
-    get_tzpath as get_tzpath,
     get_system_tz,
     get_tz,
+    get_tzpath as get_tzpath,
     reset_system_tz,
     resolve_ambiguity,
     resolve_ambiguity_using_prev_offset,
@@ -201,6 +202,7 @@ def _normalize_disambiguation(
     /,
     *,
     function_name: str,
+    warning_stacklevel: int,
 ) -> Any:
     return normalize_renamed_keyword(
         value,
@@ -208,6 +210,7 @@ def _normalize_disambiguation(
         function_name=function_name,
         new_name="disambiguation",
         old_name="disambiguate",
+        warning_stacklevel=warning_stacklevel,
     )
 
 
@@ -222,6 +225,7 @@ def _normalize_pattern(
         function_name="parse",
         new_name="pattern",
         old_name="format",
+        warning_stacklevel=4,
     )
     check_no_kwargs(kwargs, "parse")
     if value is UNSET:
@@ -478,8 +482,11 @@ class Date(_Base):
         >>> Date.today_in_system_tz()
         Date("2021-01-02")
         """
-        # Use now() so this function gets patched like the other now functions
-        return Instant.now().to_system_tz().date()
+        warn_deprecated(
+            "today_in_system_tz() is deprecated; use today(SYSTEM_TZ) instead",
+            stacklevel=2,
+        )
+        return cls.today(SYSTEM_TZ)
 
     @classmethod
     def today(cls, tz: Any, /) -> Date:
@@ -825,9 +832,7 @@ class Date(_Base):
         return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(
-        cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any
-    ) -> Date:
+    def parse(cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any) -> Date:
         """Parse a date from a custom pattern string.
 
         See :ref:`pattern-format` for details.
@@ -940,8 +945,7 @@ class Date(_Base):
         elif delta is not UNSET:
             if not isinstance(delta, ItemizedDateDelta):
                 raise TypeError(
-                    "argument must be an ItemizedDateDelta, "
-                    f"got {delta!r}"
+                    f"argument must be an ItemizedDateDelta, got {delta!r}"
                 )
             kwargs = delta
         else:  # no arguments, just return self
@@ -1429,9 +1433,7 @@ class Time(_Base):
         return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(
-        cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any
-    ) -> Time:
+    def parse(cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any) -> Time:
         """Parse a time from a custom pattern string.
 
         See :ref:`pattern-format` for details.
@@ -2669,11 +2671,19 @@ class _ExactTime(_BasicConversions):
 
     def timestamp_millis(self) -> int:
         """Like :meth:`timestamp`, but with millisecond precision."""
-        return int(self._py_dt.timestamp()) * 1_000 + self._nanos // 1_000_000
+        warn_deprecated(
+            "timestamp_millis() is deprecated; use timestamp(unit='millisecond') instead",
+            stacklevel=2,
+        )
+        return self.timestamp(unit="millisecond")
 
     def timestamp_nanos(self) -> int:
         """Like :meth:`timestamp`, but with nanosecond precision."""
-        return int(self._py_dt.timestamp()) * 1_000_000_000 + self._nanos
+        warn_deprecated(
+            "timestamp_nanos() is deprecated; use timestamp(unit='nanosecond') instead",
+            stacklevel=2,
+        )
+        return self.timestamp(unit="nanosecond")
 
     @overload
     def to_fixed_offset(self, /) -> OffsetDateTime: ...
@@ -2695,7 +2705,7 @@ class _ExactTime(_BasicConversions):
                 # mypy doesn't know that offset is never None
                 _timezone(self._py_dt.utcoffset())  # type: ignore[arg-type]
                 if offset is UNSET
-                else _load_offset(offset)
+                else _load_offset(offset, warning_stacklevel=3)
             ),
             self._nanos,
         )
@@ -2715,10 +2725,11 @@ class _ExactTime(_BasicConversions):
 
     def to_system_tz(self) -> ZonedDateTime:
         """Convert to a ZonedDateTime of the system's timezone."""
-        tz = get_system_tz()
-        return ZonedDateTime._from_py_unchecked(
-            _to_tz(self._py_dt, tz), self._nanos, tz
+        warn_deprecated(
+            "to_system_tz() is deprecated; use to_tz(SYSTEM_TZ) instead",
+            stacklevel=2,
         )
+        return self.to_tz(SYSTEM_TZ)
 
     def strict_eq(self, other: Any, /) -> bool:
         """Compare objects by their values
@@ -2752,6 +2763,10 @@ class _ExactTime(_BasicConversions):
         )
 
     def exact_eq(self, other: Any, /) -> bool:
+        warn_deprecated(
+            "exact_eq() is deprecated; use strict_eq() instead",
+            stacklevel=2,
+        )
         return self.strict_eq(other)
 
     def difference(
@@ -3025,12 +3040,13 @@ class Instant(_ExactTime):
 
         The inverse of the ``timestamp_millis()`` method.
         """
+        warn_deprecated(
+            "from_timestamp_millis() is deprecated; use from_timestamp(..., unit='millisecond') instead",
+            stacklevel=2,
+        )
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
-        secs, millis = divmod(i, 1_000)
-        return cls._from_py_unchecked(
-            _fromtimestamp(secs, _UTC), millis * 1_000_000
-        )
+        return cls.from_timestamp(i, unit="millisecond")
 
     @classmethod
     def from_timestamp_nanos(cls, i: int, /) -> Instant:
@@ -3038,10 +3054,13 @@ class Instant(_ExactTime):
 
         The inverse of the ``timestamp_nanos()`` method.
         """
+        warn_deprecated(
+            "from_timestamp_nanos() is deprecated; use from_timestamp(..., unit='nanosecond') instead",
+            stacklevel=2,
+        )
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
-        secs, nanos = divmod(i, 1_000_000_000)
-        return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
+        return cls.from_timestamp(i, unit="nanosecond")
 
     def _init_from_py(self, d: _datetime) -> None:
         if d.tzinfo is None or d.utcoffset() is None:
@@ -3533,7 +3552,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 minute,
                 second,
                 0,
-                _load_offset(offset),
+                _load_offset(offset, warning_stacklevel=4),
             )
         )
         if nanosecond < 0 or nanosecond >= 1_000_000_000:
@@ -3569,7 +3588,8 @@ class OffsetDateTime(_ExactAndLocalTime):
             )
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _load_offset(offset)), nanos
+            _fromtimestamp(secs, _load_offset(offset, warning_stacklevel=3)),
+            nanos,
         )
 
     def format_iso(
@@ -3649,6 +3669,10 @@ class OffsetDateTime(_ExactAndLocalTime):
         or ``Instant.from_timestamp()`` for timezone-agnostic exact time.
         Pass ``stale_offset_ok=True`` to suppress.
         """
+        warn_deprecated(
+            "OffsetDateTime.from_timestamp() is deprecated; use Instant.from_timestamp(...).to_fixed_offset(...) instead",
+            stacklevel=2,
+        )
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
@@ -3657,7 +3681,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             )
         secs, fract = divmod(i, 1)
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _load_offset(offset)),
+            _fromtimestamp(secs, _load_offset(offset, warning_stacklevel=3)),
             int(fract * 1_000_000_000),
         )
 
@@ -3676,6 +3700,10 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         See :meth:`from_timestamp` for more information.
         """
+        warn_deprecated(
+            "OffsetDateTime.from_timestamp_millis() is deprecated; use Instant.from_timestamp(..., unit='millisecond').to_fixed_offset(...) instead",
+            stacklevel=2,
+        )
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
@@ -3686,7 +3714,8 @@ class OffsetDateTime(_ExactAndLocalTime):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _load_offset(offset)), millis * 1_000_000
+            _fromtimestamp(secs, _load_offset(offset, warning_stacklevel=3)),
+            millis * 1_000_000,
         )
 
     @classmethod
@@ -3704,6 +3733,10 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         See :meth:`from_timestamp` for more information.
         """
+        warn_deprecated(
+            "OffsetDateTime.from_timestamp_nanos() is deprecated; use Instant.from_timestamp(..., unit='nanosecond').to_fixed_offset(...) instead",
+            stacklevel=2,
+        )
         if not stale_offset_ok:
             warn(
                 OFFSET_FROM_TIMESTAMP_STALE_MSG,
@@ -3714,7 +3747,8 @@ class OffsetDateTime(_ExactAndLocalTime):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _load_offset(offset)), nanos
+            _fromtimestamp(secs, _load_offset(offset, warning_stacklevel=3)),
+            nanos,
         )
 
     def _init_from_py(self, d: _datetime) -> None:
@@ -3774,7 +3808,9 @@ class OffsetDateTime(_ExactAndLocalTime):
             )
         _check_invalid_replace_kwargs(kwargs)
         try:
-            kwargs["tzinfo"] = _load_offset(kwargs.pop("offset"))
+            kwargs["tzinfo"] = _load_offset(
+                kwargs.pop("offset"), warning_stacklevel=3
+            )
         except KeyError:
             pass
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
@@ -4533,6 +4569,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             disambiguation,
             kwargs,
             function_name="ZonedDateTime",
+            warning_stacklevel=5,
         )
         check_no_kwargs(kwargs, "ZonedDateTime")
         self._py_dt = _resolve_disambiguation(
@@ -4578,23 +4615,21 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime.from_system_tz(2020, 8, 15, hour=23, minute=12)
         ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Berlin]")
         """
-        tz = get_system_tz()
-        dt = resolve_ambiguity(
-            _datetime(
-                year,
-                month,
-                day,
-                hour,
-                minute,
-                second,
-                0,
-            ),
-            tz,
-            disambiguate,
+        warn_deprecated(
+            "from_system_tz() is deprecated; use ZonedDateTime(..., tz=SYSTEM_TZ) instead",
+            stacklevel=2,
         )
-        if nanosecond < 0 or nanosecond >= 1_000_000_000:
-            raise ValueError(f"nanosecond out of range: {nanosecond}")
-        return cls._from_py_unchecked(dt, nanosecond, tz)
+        return cls(
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            nanosecond=nanosecond,
+            tz=SYSTEM_TZ,
+            disambiguation=disambiguate,
+        )
 
     @classmethod
     def now(cls, tz: str, /) -> ZonedDateTime:
@@ -4609,9 +4644,11 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         Equivalent to ``Instant.now().to_system_tz()``.
         """
-        tz = get_system_tz()
-        secs, nanos = divmod(time_ns(), 1_000_000_000)
-        return cls._from_py_unchecked(_from_epoch(secs, tz), nanos, tz)
+        warn_deprecated(
+            "now_in_system_tz() is deprecated; use now(SYSTEM_TZ) instead",
+            stacklevel=2,
+        )
+        return cls.now(SYSTEM_TZ)
 
     def format_iso(
         self,
@@ -4667,11 +4704,16 @@ class ZonedDateTime(_ExactAndLocalTime):
             function_name="format_iso",
             new_name="tz_display",
             old_name="tz",
+            warning_stacklevel=3,
         )
         check_no_kwargs(kwargs, "format_iso")
         if tz_display is UNSET:
             tz_display = "required"
         elif tz_display == "always":
+            warn_deprecated(
+                "tz_display='always' is deprecated; use 'required' instead",
+                stacklevel=2,
+            )
             tz_display = "required"
 
         if tz_display == "required":
@@ -4706,6 +4748,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         *,
         disambiguation: DisambiguationStr = UNSET,
         offset_mismatch: OffsetMismatchStr = "raise",
+        **kwargs: Any,
     ) -> ZonedDateTime:
         """Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
@@ -4724,6 +4767,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             s,
             disambiguation=disambiguation,
             offset_mismatch=offset_mismatch,
+            **kwargs,
         )
         return self
 
@@ -4739,6 +4783,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             disambiguation,
             kwargs,
             function_name="ZonedDateTime",
+            warning_stacklevel=5,
         )
         check_no_kwargs(kwargs, "ZonedDateTime")
         self._py_dt, self._nanos, self._tz = zdt_from_iso(
@@ -4822,6 +4867,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             disambiguation,
             kwargs,
             function_name="parse",
+            warning_stacklevel=4,
         )
         pattern = _normalize_pattern(pattern, kwargs)
         if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
@@ -4854,9 +4900,7 @@ class ZonedDateTime(_ExactAndLocalTime):
                 expected_offset = tz.offset_for_instant(
                     int(parsed.timestamp())
                 )
-                resolved = parsed.astimezone(
-                    mk_fixed_tzinfo(expected_offset)
-                )
+                resolved = parsed.astimezone(mk_fixed_tzinfo(expected_offset))
             elif (
                 matching := matching_local_offset(
                     dt,
@@ -4904,6 +4948,10 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         The inverse of the ``timestamp()`` method.
         """
+        warn_deprecated(
+            "ZonedDateTime.from_timestamp() is deprecated; use Instant.from_timestamp(...).to_tz(...) instead",
+            stacklevel=2,
+        )
         secs, fract = divmod(i, 1)
         _tz = _load_tz(tz)
         return cls._from_py_unchecked(
@@ -4916,6 +4964,10 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         The inverse of the ``timestamp_millis()`` method.
         """
+        warn_deprecated(
+            "ZonedDateTime.from_timestamp_millis() is deprecated; use Instant.from_timestamp(..., unit='millisecond').to_tz(...) instead",
+            stacklevel=2,
+        )
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
@@ -4930,6 +4982,10 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         The inverse of the ``timestamp_nanos()`` method.
         """
+        warn_deprecated(
+            "ZonedDateTime.from_timestamp_nanos() is deprecated; use Instant.from_timestamp(..., unit='nanosecond').to_tz(...) instead",
+            stacklevel=2,
+        )
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
@@ -4975,6 +5031,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             disambiguation,
             kwargs,
             function_name="replace_date",
+            warning_stacklevel=4,
         )
         check_no_kwargs(kwargs, "replace_date")
         return self._replace_date(date, disambiguation, warn_level=3)
@@ -5018,6 +5075,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             disambiguation,
             kwargs,
             function_name="replace_time",
+            warning_stacklevel=4,
         )
         check_no_kwargs(kwargs, "replace_time")
         naive = _datetime.combine(self._py_dt, time._py)
@@ -5084,6 +5142,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             disambiguation,
             kwargs,
             function_name="replace",
+            warning_stacklevel=4,
         )
         _check_invalid_replace_kwargs(kwargs)
         preserve_offset = True
@@ -5125,6 +5184,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         if the ``ZonedDateTime`` was created from a system timezone
         without a known IANA key.
         """
+        warn_deprecated(
+            "tz is deprecated; use tz_id instead",
+            stacklevel=2,
+        )
         return self.tz_id
 
     @property
@@ -5263,6 +5326,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             disambiguation,
             kwargs,
             function_name="add" if sign == 1 else "subtract",
+            warning_stacklevel=5,
         )
         if kwargs:
             if delta is UNSET:
@@ -5760,6 +5824,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     def exact_eq(self, other: ZonedDateTime, /) -> bool:
+        warn_deprecated(
+            "exact_eq() is deprecated; use strict_eq() instead",
+            stacklevel=2,
+        )
         return self.strict_eq(other)
 
     # An override with shortcut for efficiency if the timezone stays the same
@@ -6521,7 +6589,10 @@ class PlainDateTime(_LocalTime):
         OffsetDateTime("2020-08-15 23:12:00+02:00")
         """
         return OffsetDateTime._from_py_unchecked(
-            self._py_dt.replace(tzinfo=_load_offset(offset)), self._nanos
+            self._py_dt.replace(
+                tzinfo=_load_offset(offset, warning_stacklevel=3)
+            ),
+            self._nanos,
         )
 
     def assume_tz(
@@ -6550,6 +6621,7 @@ class PlainDateTime(_LocalTime):
             disambiguation,
             kwargs,
             function_name="assume_tz",
+            warning_stacklevel=4,
         )
         check_no_kwargs(kwargs, "assume_tz")
         return ZonedDateTime._from_py_unchecked(
@@ -6582,13 +6654,11 @@ class PlainDateTime(_LocalTime):
         >>> d.assume_system_tz(disambiguate="raise")
         ZonedDateTime("2020-08-15 23:12:00-04:00[America/New_York]")
         """
-        return ZonedDateTime._from_py_unchecked(
-            resolve_ambiguity(
-                self._py_dt, tz := get_system_tz(), disambiguate
-            ),
-            self._nanos,
-            tz,
+        warn_deprecated(
+            "assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
+            stacklevel=2,
         )
+        return self.assume_tz(SYSTEM_TZ, disambiguation=disambiguate)
 
     def round(
         self,
@@ -6967,8 +7037,17 @@ def _from_epoch_offset(ts: int, offset: int) -> _datetime:
         )
 
 
-def _load_offset(offset: int | TimeDelta, /) -> _timezone:
+def _load_offset(
+    offset: int | TimeDelta,
+    /,
+    *,
+    warning_stacklevel: int,
+) -> _timezone:
     if isinstance(offset, int):
+        warn_deprecated(
+            "integer offsets are deprecated; use TimeDelta instead",
+            stacklevel=warning_stacklevel,
+        )
         return _timezone(_timedelta(hours=offset))
     elif isinstance(offset, TimeDelta):
         if offset._total_ns % 1_000_000_000:
@@ -7289,7 +7368,7 @@ def _zoned_since(
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
             )
-        if total in DATE_DELTA_UNITS and a.tz != b.tz:
+        if total in DATE_DELTA_UNITS and a.tz_id != b.tz_id:
             raise ValueError(
                 "Calendar units can only be used to compare ZonedDateTimes "
                 "with the same timezone"
@@ -7302,7 +7381,7 @@ def _zoned_since(
     effective_round_mode = "trunc" if round_mode is UNSET else round_mode
     units = _normalize_units(in_units, valid_units=DELTA_UNITS)
     cal_units, exact_units = _split_calendar_and_exact_units(units)
-    if cal_units and a.tz != b.tz:
+    if cal_units and a.tz_id != b.tz_id:
         raise ValueError(
             "Calendar units can only be used to compare ZonedDateTimes "
             "with the same timezone"
@@ -7476,7 +7555,7 @@ def _patch_time_frozen(inst: Instant) -> None:
     global time_ns
 
     def time_ns() -> int:
-        return inst.timestamp_nanos()
+        return inst.timestamp(unit="nanosecond")
 
 
 def _patch_time_keep_ticking(inst: Instant) -> None:
@@ -7486,7 +7565,7 @@ def _patch_time_keep_ticking(inst: Instant) -> None:
     _time_ns = time_ns
 
     def time_ns() -> int:
-        return inst.timestamp_nanos() + _time_ns() - _patched_at
+        return inst.timestamp(unit="nanosecond") + _time_ns() - _patched_at
 
 
 def _unpatch_time() -> None:

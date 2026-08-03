@@ -36,6 +36,7 @@ from ._common import (
     _Base,
     add_alternate_constructors,
     final,
+    warn_deprecated,
 )
 from ._math import (
     DATE_DELTA_UNITS,
@@ -927,6 +928,10 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         )
 
     def exact_eq(self, other: ItemizedDelta, /) -> bool:
+        warn_deprecated(
+            "exact_eq() is deprecated; use strict_eq() instead",
+            stacklevel=2,
+        )
         return self.strict_eq(other)
 
     def __abs__(self) -> ItemizedDelta:
@@ -2022,6 +2027,10 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         )
 
     def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
+        warn_deprecated(
+            "exact_eq() is deprecated; use strict_eq() instead",
+            stacklevel=2,
+        )
         return self.strict_eq(other)
 
     def __abs__(self) -> ItemizedDateDelta:

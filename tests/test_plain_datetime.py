@@ -104,22 +104,22 @@ def test_assume_fixed_offset():
     assert (
         PlainDateTime(2020, 8, 15, 23)
         .assume_fixed_offset(hours(5))
-        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=5))
+        .strict_eq(OffsetDateTime(2020, 8, 15, 23, offset=hours(5)))
     )
     assert (
         PlainDateTime(2020, 8, 15, 23)
         .assume_fixed_offset(-2)
-        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=-2))
+        .strict_eq(OffsetDateTime(2020, 8, 15, 23, offset=hours(-2)))
     )
 
 
 class TestAssumeTz:
     def test_typical(self):
         d = PlainDateTime(2020, 8, 15, 23)
-        assert d.assume_tz("Asia/Tokyo", disambiguate="raise").exact_eq(
+        assert d.assume_tz("Asia/Tokyo", disambiguation="raise").strict_eq(
             ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
         )
-        assert d.assume_tz("Asia/Tokyo").exact_eq(
+        assert d.assume_tz("Asia/Tokyo").strict_eq(
             ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
         )
 
@@ -127,11 +127,11 @@ class TestAssumeTz:
         d = PlainDateTime(2023, 10, 29, 2, 15)
 
         with pytest.raises(RepeatedTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_tz("Europe/Amsterdam", disambiguate="raise")
+            d.assume_tz("Europe/Amsterdam", disambiguation="raise")
 
         assert d.assume_tz(
-            "Europe/Amsterdam", disambiguate="earlier"
-        ).exact_eq(
+            "Europe/Amsterdam", disambiguation="earlier"
+        ).strict_eq(
             ZonedDateTime(
                 2023,
                 10,
@@ -139,10 +139,12 @@ class TestAssumeTz:
                 2,
                 15,
                 tz="Europe/Amsterdam",
-                disambiguate="earlier",
+                disambiguation="earlier",
             )
         )
-        assert d.assume_tz("Europe/Amsterdam", disambiguate="later").exact_eq(
+        assert d.assume_tz(
+            "Europe/Amsterdam", disambiguation="later"
+        ).strict_eq(
             ZonedDateTime(
                 2023,
                 10,
@@ -150,7 +152,7 @@ class TestAssumeTz:
                 2,
                 15,
                 tz="Europe/Amsterdam",
-                disambiguate="later",
+                disambiguation="later",
             )
         )
 
@@ -158,11 +160,11 @@ class TestAssumeTz:
         d = PlainDateTime(2023, 3, 26, 2, 15)
 
         with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_tz("Europe/Amsterdam", disambiguate="raise")
+            d.assume_tz("Europe/Amsterdam", disambiguation="raise")
 
         assert d.assume_tz(
-            "Europe/Amsterdam", disambiguate="earlier"
-        ).exact_eq(
+            "Europe/Amsterdam", disambiguation="earlier"
+        ).strict_eq(
             ZonedDateTime(
                 2023,
                 3,
@@ -170,7 +172,7 @@ class TestAssumeTz:
                 2,
                 15,
                 tz="Europe/Amsterdam",
-                disambiguate="earlier",
+                disambiguation="earlier",
             )
         )
 
@@ -194,7 +196,7 @@ class TestAssumeSystemTz:
                 assert zdt.offset == hours(2)
 
                 if tz == "Europe/Amsterdam":
-                    assert zdt.tz == "Europe/Amsterdam"
+                    assert zdt.tz_id == "Europe/Amsterdam"
 
     @pytest.mark.parametrize(
         "tz",
@@ -217,9 +219,11 @@ class TestAssumeSystemTz:
 
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt1.tz == "Europe/Amsterdam"
+                assert zdt1.tz_id == "Europe/Amsterdam"
 
-            assert d.assume_system_tz(disambiguate="compatible").exact_eq(zdt1)
+            assert d.assume_system_tz(disambiguate="compatible").strict_eq(
+                zdt1
+            )
 
             zdt2 = d.assume_system_tz(disambiguate="later")
             assert isinstance(zdt2, ZonedDateTime)
@@ -228,7 +232,7 @@ class TestAssumeSystemTz:
 
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt2.tz == "Europe/Amsterdam"
+                assert zdt2.tz_id == "Europe/Amsterdam"
 
     @pytest.mark.parametrize(
         "tz",
@@ -251,7 +255,7 @@ class TestAssumeSystemTz:
             assert zdt1.offset == hours(1)
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt1.tz == "Europe/Amsterdam"
+                assert zdt1.tz_id == "Europe/Amsterdam"
 
             zdt2 = d.assume_system_tz(disambiguate="later")
             assert isinstance(zdt2, ZonedDateTime)
@@ -259,9 +263,11 @@ class TestAssumeSystemTz:
             assert zdt2.offset == hours(2)
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt2.tz == "Europe/Amsterdam"
+                assert zdt2.tz_id == "Europe/Amsterdam"
 
-            assert d.assume_system_tz(disambiguate="compatible").exact_eq(zdt2)
+            assert d.assume_system_tz(disambiguate="compatible").strict_eq(
+                zdt2
+            )
 
 
 def test_immutable():
@@ -952,29 +958,29 @@ class TestRound:
         assert d.round(TimeDelta(minutes=15)) == PlainDateTime(
             2020, 8, 15, 23, 30
         )
-        assert d.round(TimeDelta(hours=1)) == PlainDateTime(2020, 8, 15, 23)
+        assert d.round(hours(1)) == PlainDateTime(2020, 8, 15, 23)
         assert d.round(TimeDelta(minutes=15), mode="floor") == PlainDateTime(
             2020, 8, 15, 23, 15
         )
 
     def test_round_by_timedelta_wraps_to_next_day(self):
         d = PlainDateTime(2020, 8, 15, 23, 50)
-        assert d.round(TimeDelta(hours=1)) == PlainDateTime(2020, 8, 16)
+        assert d.round(hours(1)) == PlainDateTime(2020, 8, 16)
 
     def test_round_by_timedelta_invalid_not_divides_day(self):
         d = PlainDateTime(2020, 8, 15, 12)
         with pytest.raises(ValueError, match="24.hour"):
-            d.round(TimeDelta(hours=7))
+            d.round(hours(7))
 
     def test_round_by_timedelta_negative(self):
         d = PlainDateTime(2020, 8, 15, 12)
         with pytest.raises(ValueError, match="positive"):
-            d.round(TimeDelta(hours=-1))
+            d.round(hours(-1))
 
     def test_round_by_timedelta_with_increment(self):
         d = PlainDateTime(2020, 8, 15, 12)
         with pytest.raises(TypeError):
-            d.round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
+            d.round(hours(1), increment=2)  # type: ignore[call-overload]
 
 
 def test_replace_date():
@@ -1287,7 +1293,7 @@ class TestSince:
         expect: ItemizedDelta,
     ):
         with suppress(NaiveArithmeticWarning):
-            assert a.since(b, in_units=units, **kwargs).exact_eq(expect)
+            assert a.since(b, in_units=units, **kwargs).strict_eq(expect)
 
     def test_warnings(self):
         a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
@@ -1414,14 +1420,14 @@ class TestSince:
         b = PlainDateTime(2021, 7, 3)
         assert a.since(
             b, in_units=["years", "months", "days", "hours"]
-        ).exact_eq(b.until(a, in_units=["years", "months", "days", "hours"]))
+        ).strict_eq(b.until(a, in_units=["years", "months", "days", "hours"]))
         # floor rounding works correctly
         assert a.since(
             b,
             in_units=["years", "months", "days", "hours"],
             round_increment=2,
             round_mode="floor",
-        ).exact_eq(
+        ).strict_eq(
             b.until(
                 a,
                 in_units=["years", "months", "days", "hours"],

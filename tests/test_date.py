@@ -7,6 +7,7 @@ from typing import Literal
 
 import pytest
 from whenever import (
+    SYSTEM_TZ,
     Date,
     IsoWeekDate,
     ItemizedDateDelta,
@@ -14,6 +15,7 @@ from whenever import (
     PlainDateTime,
     Time,
     Weekday,
+    WheneverDeprecationWarning,
     YearMonth,
 )
 
@@ -154,10 +156,13 @@ def test_to_stdlib():
 
 
 def test_today_in_system_tz():
-    d = Date.today_in_system_tz()
+    with pytest.warns(WheneverDeprecationWarning) as caught:
+        d = Date.today_in_system_tz()
+    assert caught[0].filename == __file__
     # NOTE: this may fail if the test is run *exactly* at midnight.
     # Mocking this out would make things more complicated than it's worth.
     assert d == Date(py_date.today())
+    assert d == Date.today(SYSTEM_TZ)
 
 
 def test_init_from_py_date():

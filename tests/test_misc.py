@@ -23,6 +23,7 @@ from whenever import (
     TimePatch,
     ZonedDateTime,
     get_tzpath,
+    hours,
     patch_current_time,
     reset_system_tz,
     reset_tzpath,
@@ -50,9 +51,9 @@ pytestmark = pytest.mark.filterwarnings(
             PlainDateTime(2021, 2, 28, 2),
         ),
         (
-            OffsetDateTime(2021, 1, 31, offset=0),
+            OffsetDateTime(2021, 1, 31, offset=hours(0)),
             ItemizedDelta(months=1, hours=2),
-            OffsetDateTime(2021, 2, 28, 2, offset=0),
+            OffsetDateTime(2021, 2, 28, 2, offset=hours(0)),
         ),
         (
             ZonedDateTime(2021, 1, 31, tz="UTC"),
@@ -82,7 +83,7 @@ def test_itemized_delta_datetime_operators(dt, delta, expected):
         lambda dt, delta: dt - delta,
     ],
 )
-@pytest.mark.parametrize("delta", [ItemizedDelta(hours=1), TimeDelta(hours=1)])
+@pytest.mark.parametrize("delta", [ItemizedDelta(hours=1), hours(1)])
 def test_datetime_operator_warning_location(operation, delta):
     dt = PlainDateTime(2021, 1, 31)
     with pytest.warns(Warning) as caught:
@@ -124,13 +125,13 @@ def test_itemized_delta_reflected_operator_not_implemented(delta, method):
     "dt",
     [
         PlainDateTime(2021, 1, 31),
-        OffsetDateTime(2021, 1, 31, offset=0),
+        OffsetDateTime(2021, 1, 31, offset=hours(0)),
         ZonedDateTime(2021, 1, 31, tz="UTC"),
         Instant.from_utc(2021, 1, 31),
     ],
 )
 def test_time_delta_reflected_datetime_addition(dt):
-    delta = TimeDelta(hours=2)
+    delta = hours(2)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         expected = dt + delta
@@ -324,9 +325,9 @@ def test_patch_time():
             "Europe/Amsterdam"
         )
         p.shift(hours=3)
-        p.shift(TimeDelta(hours=1))
+        p.shift(hours(1))
         assert Instant.now() == i.add(hours=4)
-        p.move_to(i.to_fixed_offset(TimeDelta(hours=2)))
+        p.move_to(i.to_fixed_offset(hours(2)))
         assert Instant.now() == i
 
     # patch has ended
@@ -338,7 +339,7 @@ def test_patch_time():
         i.to_tz("Europe/Amsterdam"), keep_ticking=True
     ) as p:
         assert (Instant.now() - i).total("seconds") < 1
-        p.shift(TimeDelta(hours=2))
+        p.shift(hours(2))
         sleep(0.000001)
         assert 2 < (Instant.now() - i).total("hours") < 2.1
         p.move_to(Instant.now().to_tz("Europe/Amsterdam").add(days=2))
@@ -356,7 +357,7 @@ def test_time_patch_lifetime_and_overlap():
                 pass
 
     with pytest.raises(RuntimeError, match="no longer active"):
-        handle.shift(TimeDelta(hours=1))
+        handle.shift(hours(1))
     with pytest.raises(RuntimeError, match="no longer active"):
         handle.move_to(i)
 
@@ -369,7 +370,7 @@ def test_time_patch_rejects_invalid_shift_arguments():
         with pytest.raises(TypeError, match="unexpected keyword"):
             handle.shift(years=1)
         with pytest.raises(TypeError, match="[Cc]annot mix"):
-            handle.shift(TimeDelta(hours=1), minutes=1)
+            handle.shift(hours(1), minutes=1)
 
 
 def test_patch_current_time_decorator_does_not_inject_handle():
@@ -414,25 +415,25 @@ def test_get_system_tz():
 def test_reset_system_tz():
     plain = PlainDateTime(2020, 1, 1)
     d1 = plain.assume_system_tz()
-    assert d1.tz == "Europe/Amsterdam"
+    assert d1.tz_id == "Europe/Amsterdam"
 
     with patch.dict(os.environ, {"TZ": "America/New_York"}):
         # The system timezone is now set to America/New_York
         # ...but the cache isn't updated until we call reset_system_tz()
-        assert plain.assume_system_tz().tz == "Europe/Amsterdam"
+        assert plain.assume_system_tz().tz_id == "Europe/Amsterdam"
 
         reset_system_tz()
         d2 = plain.assume_system_tz()
-        assert d2.tz == "America/New_York"
+        assert d2.tz_id == "America/New_York"
 
         # old instances should not change
-        assert d1.tz == "Europe/Amsterdam"
+        assert d1.tz_id == "Europe/Amsterdam"
 
     # Cache not yet updated again...
-    assert plain.assume_system_tz().tz == "America/New_York"
+    assert plain.assume_system_tz().tz_id == "America/New_York"
 
     reset_system_tz()
-    assert plain.assume_system_tz().tz == "Europe/Amsterdam"
+    assert plain.assume_system_tz().tz_id == "Europe/Amsterdam"
 
 
 @pytest.mark.parametrize(

@@ -20,6 +20,7 @@ from ._common import (
     _Base,
     add_alternate_constructors,
     final,
+    warn_deprecated,
 )
 from ._math import days_in_month, is_leap
 from ._parse import _strict_int, monthday_from_iso, yearmonth_from_iso
@@ -445,6 +446,10 @@ class MonthDay(_Base):
 
     def is_leap(self) -> bool:
         """Check if the month-day is February 29th."""
+        warn_deprecated(
+            "is_leap() is deprecated; use is_leap_day() instead",
+            stacklevel=2,
+        )
         return self.is_leap_day()
 
     __str__ = format_iso
