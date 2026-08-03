@@ -176,6 +176,8 @@ class _ParseState:
         "nanos",
         "ampm",
         "offset_secs",
+        "offset_exact",
+        "offset_is_z",
         "tz_id",
         "weekday",
         "second_absent",
@@ -191,6 +193,8 @@ class _ParseState:
         self.nanos: int = 0
         self.ampm: str | None = None
         self.offset_secs: int | None = None
+        self.offset_exact: bool = False
+        self.offset_is_z: bool = False
         self.tz_id: str | None = None
         self.weekday: int | None = None
         self.second_absent: bool = False
@@ -727,17 +731,21 @@ def _format_offset_value(offset_secs: int, width: int, use_z: bool) -> str:
 
 def _parse_offset_value(
     s: str, pos: int, width: int, accept_z: bool
-) -> tuple[int, int]:
-    """Parse an offset value. Returns (offset_secs, new_pos)."""
+) -> tuple[int, int, bool, bool]:
+    """Parse an offset value.
+
+    The final two return values indicate whether the input included offset
+    seconds and whether it used ``Z``, respectively.
+    """
     if accept_z and pos < len(s) and s[pos] == "Z":
-        return 0, pos + 1
+        return 0, pos + 1, True, True
     if pos >= len(s) or s[pos] not in "+-":
         raise ValueError(f"Expected offset sign at position {pos}")
     sign = 1 if s[pos] == "+" else -1
     pos += 1
     oh, pos = _parse_digits(s, pos, 2)
     if width == 1:
-        return sign * oh * 3600, pos
+        return sign * oh * 3600, pos, False, False
     if width in (2, 4):
         om, pos = _parse_digits(s, pos, 2)
     else:  # width 3 or 5
@@ -748,16 +756,24 @@ def _parse_offset_value(
     if om >= 60:
         raise ValueError("offset minutes must be 0..59")
     os = 0
+    has_seconds = False
     if width >= 4:
         has_colon = width == 5
         if has_colon and pos < len(s) and s[pos] == ":":
             pos += 1
             os, pos = _parse_digits(s, pos, 2)
+            has_seconds = True
         elif not has_colon and pos < len(s) and s[pos].isdigit():
             os, pos = _parse_digits(s, pos, 2)
+            has_seconds = True
         if os >= 60:
             raise ValueError("offset seconds must be 0..59")
-    return sign * (oh * 3600 + om * 60 + os), pos
+    return (
+        sign * (oh * 3600 + om * 60 + os),
+        pos,
+        has_seconds,
+        False,
+    )
 
 
 class _OffsetLower(_Field):
@@ -777,7 +793,12 @@ class _OffsetLower(_Field):
         return _format_offset_value(v.offset_secs, self.width, use_z=False)
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.offset_secs, pos = _parse_offset_value(
+        (
+            state.offset_secs,
+            pos,
+            state.offset_exact,
+            state.offset_is_z,
+        ) = _parse_offset_value(
             s, pos, self.width, accept_z=False
         )
         return pos
@@ -803,7 +824,12 @@ class _OffsetUpper(_Field):
         return _format_offset_value(v.offset_secs, self.width, use_z=True)
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.offset_secs, pos = _parse_offset_value(
+        (
+            state.offset_secs,
+            pos,
+            state.offset_exact,
+            state.offset_is_z,
+        ) = _parse_offset_value(
             s, pos, self.width, accept_z=True
         )
         return pos

@@ -153,6 +153,7 @@ class TestEquality:
         assert not d != same
         assert hash(d) == hash(same)
         assert d.exact_eq(same)
+        assert d.strict_eq(same)
 
     def test_different(self):
         d = Instant.from_utc(2020, 8, 15)
@@ -194,6 +195,8 @@ class TestEquality:
         # FUTURE: this *should* be flagged by mypy, but it isn't as of 1.20
         with pytest.raises(TypeError):
             d.exact_eq(zoned_same)
+        with pytest.raises(TypeError):
+            d.strict_eq(zoned_same)
 
         # important: check typing errors in case of strict-comparison mode
         d2 = Instant.from_utc(2020, 8, 15)
@@ -228,6 +231,35 @@ class TestTimestamp:
         assert Instant.MAX.timestamp() == 253_402_300_799
         assert Instant.MIN.timestamp() == -62_135_596_800
 
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("second", 1_597_493_310),
+            ("millisecond", 1_597_493_310_045),
+            ("microsecond", 1_597_493_310_045_123),
+            ("nanosecond", 1_597_493_310_045_123_987),
+        ],
+    )
+    def test_unit(self, unit, expected):
+        value = Instant.from_utc(2020, 8, 15, 12, 8, 30, nanosecond=45_123_987)
+
+        assert value.timestamp(unit=unit) == expected
+
+    @pytest.mark.parametrize(
+        "unit",
+        ["second", "millisecond", "microsecond", "nanosecond"],
+    )
+    def test_unit_floors_before_epoch(self, unit):
+        value = Instant.from_utc(
+            1969, 12, 31, 23, 59, 59, nanosecond=999_999_999
+        )
+
+        assert value.timestamp(unit=unit) == -1
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="invalid timestamp unit"):
+            Instant.from_utc(1970, 1, 1).timestamp(unit="seconds")
+
     def test_millis(self):
         assert Instant.from_utc(1970, 1, 1).timestamp_millis() == 0
         assert (
@@ -252,6 +284,43 @@ class TestTimestamp:
 
 
 class TestFromTimestamp:
+    @pytest.mark.parametrize(
+        ("value", "unit", "expected"),
+        [
+            (1_597_493_310, "second", (2020, 8, 15, 12, 8, 30, 0)),
+            (
+                1_597_493_310_123,
+                "millisecond",
+                (2020, 8, 15, 12, 8, 30, 123_000_000),
+            ),
+            (
+                1_597_493_310_123_456,
+                "microsecond",
+                (2020, 8, 15, 12, 8, 30, 123_456_000),
+            ),
+            (
+                1_597_493_310_123_456_789,
+                "nanosecond",
+                (2020, 8, 15, 12, 8, 30, 123_456_789),
+            ),
+        ],
+    )
+    def test_unit(self, value, unit, expected):
+        assert Instant.from_timestamp(value, unit=unit) == Instant.from_utc(
+            *expected[:6], nanosecond=expected[6]
+        )
+
+    @pytest.mark.parametrize(
+        "unit", ["millisecond", "microsecond", "nanosecond"]
+    )
+    def test_subsecond_unit_rejects_float(self, unit):
+        with pytest.raises(TypeError, match="must be an integer"):
+            Instant.from_timestamp(1.0, unit=unit)
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="invalid timestamp unit"):
+            Instant.from_timestamp(0, unit="seconds")
+
     @pytest.mark.parametrize(
         "method, factor",
         [

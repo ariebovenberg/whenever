@@ -53,6 +53,45 @@ def test_properties():
     assert ym.month == 12
 
 
+class TestShift:
+    @pytest.mark.parametrize(
+        ("start", "kwargs", "expected"),
+        [
+            (YearMonth(2021, 1), {"years": 2}, YearMonth(2023, 1)),
+            (YearMonth(2021, 1), {"months": 13}, YearMonth(2022, 2)),
+            (YearMonth(2021, 1), {"months": -1}, YearMonth(2020, 12)),
+            (
+                YearMonth(2021, 6),
+                {"years": -1, "months": 7},
+                YearMonth(2021, 1),
+            ),
+        ],
+    )
+    def test_add(self, start, kwargs, expected):
+        assert start.add(**kwargs) == expected
+
+    def test_subtract(self):
+        assert YearMonth(2021, 1).subtract(years=1, months=2) == YearMonth(
+            2019, 11
+        )
+
+    def test_noop(self):
+        value = YearMonth(2021, 1)
+        assert value.add() == value
+        assert value.subtract() == value
+
+    @pytest.mark.parametrize(
+        "operation",
+        [
+            lambda: YearMonth.MAX.add(months=1),
+            lambda: YearMonth.MIN.subtract(months=1),
+        ],
+    )
+    def test_out_of_range(self, operation):
+        with pytest.raises(ValueError):
+            operation()
+
+
 def test_eq():
     ym = YearMonth(2021, 12)
     same = YearMonth(2021, 12)
