@@ -159,6 +159,7 @@ __all__ = (
     "CalendarUnitCompositionWarning",
     "WheneverWarning",
     "PotentialDstBugWarning",
+    "PickleOffsetMismatchWarning",
     "ImplicitDisambiguationWarning",
     "WheneverDeprecationWarning",
     "SkippedTime",
@@ -5874,14 +5875,34 @@ def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
     *args, nanos, offset_secs = unpack("<HBBBBBil", data)
     if nanos >= 1_000_000_000:
         raise ValueError(f"nanosecond out of range: {nanos}")
-    return ZonedDateTime._from_py_unchecked(
-        # mypy thinks tzinfo is passed twice. We know it's not.
-        check_utc_bounds(
-            _datetime(*args, tzinfo=mk_fixed_tzinfo(offset_secs))  # type: ignore[misc]
-        ),
-        nanos,
-        get_tz(tzid),
+    stored = check_utc_bounds(
+        _datetime(*args, tzinfo=mk_fixed_tzinfo(offset_secs))  # type: ignore[misc]
     )
+    tz = get_tz(tzid)
+    resolved = _to_tz(stored, tz)
+    result = ZonedDateTime._from_py_unchecked(resolved, nanos, tz)
+    current_offset = resolved.utcoffset()
+    assert current_offset is not None
+    if int(current_offset.total_seconds()) != offset_secs:
+        stored_local = (
+            f"{_format_date(stored, False)} "
+            f"{_format_time(stored, nanos, 'auto', False)}"
+        )
+        resulting_local = (
+            f"{_format_date(resolved, False)} "
+            f"{_format_time(resolved, nanos, 'auto', False)}"
+        )
+        warn(
+            f"the ZonedDateTime pickle stored {stored_local} with offset "
+            f"{_format_offset(_timedelta(seconds=offset_secs), False)} for "
+            f"timezone {tzid!r}, but the current timezone rules map that "
+            f"instant to {resulting_local} with offset "
+            f"{_format_offset(current_offset, False)}; the instant was "
+            f"preserved and the local datetime and offset were updated",
+            PickleOffsetMismatchWarning,
+            stacklevel=2,
+        )
+    return result
 
 
 # Concrete types that implement _ExactTime. Defined here (after all three
@@ -6741,6 +6762,12 @@ class PotentialDstBugWarning(WheneverWarning):
 
         import warnings, whenever
         warnings.filterwarnings("error", category=whenever.PotentialDstBugWarning)
+    """
+
+
+class PickleOffsetMismatchWarning(WheneverWarning):
+    """The offset stored in a ZonedDateTime pickle no longer matches the
+    timezone's current rules.
     """
 
 
