@@ -41,12 +41,18 @@ from ._math import (
     DATE_DELTA_UNITS,
     DELTA_UNITS,
     DIFF_FUNCS,
+    EXACT_TOTAL_UNITS,
     EXACT_UNITS_STRICT,
     Sign,
     resolve_leap_day,
 )
 from ._parse import parse_timedelta_component
-from ._typing import DateDeltaUnitStr, DeltaUnitStr, RoundModeStr
+from ._typing import (
+    DateDeltaUnitStr,
+    DeltaTotalUnitStr,
+    DeltaUnitStr,
+    RoundModeStr,
+)
 
 if TYPE_CHECKING:
     from . import _pywhenever as _whenever
@@ -905,8 +911,10 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             and (self._nanoseconds or 0) == (other._nanoseconds or 0)
         )
 
-    def exact_eq(self, other: ItemizedDelta, /) -> bool:
+    def strict_eq(self, other: ItemizedDelta, /) -> bool:
         """Check for strict equality. All fields *and their presence* must match."""
+        if type(other) is not type(self):
+            raise TypeError("strict_eq() requires same-type arguments")
         return (
             self._years == other._years
             and self._months == other._months
@@ -917,6 +925,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             and self._seconds == other._seconds
             and self._nanoseconds == other._nanoseconds
         )
+
+    def exact_eq(self, other: ItemizedDelta, /) -> bool:
+        return self.strict_eq(other)
 
     def __abs__(self) -> ItemizedDelta:
         """If the contents are negative, return the positive version
@@ -1364,7 +1375,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     def total(
         self,
-        unit: DeltaUnitStr,
+        unit: DeltaTotalUnitStr,
         /,
         *,
         relative_to: _whenever.ZonedDateTime
@@ -1400,7 +1411,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             STALE_OFFSET_CALENDAR_MSG,
         )
 
-        is_exact_unit = unit in EXACT_UNITS_STRICT
+        is_exact_unit = unit in EXACT_TOTAL_UNITS
         if isinstance(relative_to, PlainDateTime):
             if (self._has_exact_time() or is_exact_unit) and (
                 self._has_cal() or not is_exact_unit
@@ -1990,7 +2001,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             and (self._days or 0) == (other._days or 0)
         )
 
-    def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
+    def strict_eq(self, other: ItemizedDateDelta, /) -> bool:
         """Check for strict equality. All fields *and their presence* must match.
 
         >>> d = ItemizedDateDelta(weeks=2, days=3)
@@ -2001,12 +2012,17 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> d.exact_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
         False
         """
+        if type(other) is not type(self):
+            raise TypeError("strict_eq() requires same-type arguments")
         return (
             self._years == other._years
             and self._months == other._months
             and self._weeks == other._weeks
             and self._days == other._days
         )
+
+    def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
+        return self.strict_eq(other)
 
     def __abs__(self) -> ItemizedDateDelta:
         """If the contents are negative, return the positive version

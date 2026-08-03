@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 from functools import partial
 
 import pytest
-from whenever._tz.common import Fold, Gap, Unambiguous
+from whenever._tz.common import Fold, Gap, Unique
 from whenever._tz.posix import (
     DEFAULT_RULE_TIME,
     DayOfYear,
@@ -439,68 +439,68 @@ class TestCalculateOffsets:
         "tz, ymd, hms, expected",
         [
             # fixed always the same
-            (TZ_FIXED, (2020, 3, 19), (12, 34, 56), Unambiguous(1234)),
+            (TZ_FIXED, (2020, 3, 19), (12, 34, 56), Unique(1234)),
             # First second of the year
-            (TZ, (1990, 1, 1), (0, 0, 0), Unambiguous(4800)),
+            (TZ, (1990, 1, 1), (0, 0, 0), Unique(4800)),
             # Last second of the year
-            (TZ, (1990, 12, 31), (23, 59, 59), Unambiguous(4800)),
+            (TZ, (1990, 12, 31), (23, 59, 59), Unique(4800)),
             # Well before the transition
-            (TZ, (1990, 3, 13), (12, 34, 56), Unambiguous(4800)),
+            (TZ, (1990, 3, 13), (12, 34, 56), Unique(4800)),
             # Gap: Before, start, mid, end, after
-            (TZ, (1990, 3, 25), (3, 59, 59), Unambiguous(4800)),
+            (TZ, (1990, 3, 25), (3, 59, 59), Unique(4800)),
             (TZ, (1990, 3, 25), (4, 0, 0), TZ_GAP),
             (TZ, (1990, 3, 25), (5, 10, 0), TZ_GAP),
             (TZ, (1990, 3, 25), (5, 14, 59), TZ_GAP),
-            (TZ, (1990, 3, 25), (5, 15, 0), Unambiguous(9300)),
+            (TZ, (1990, 3, 25), (5, 15, 0), Unique(9300)),
             # Well after the transition
-            (TZ, (1990, 6, 26), (8, 0, 0), Unambiguous(9300)),
+            (TZ, (1990, 6, 26), (8, 0, 0), Unique(9300)),
             # Fold: Before, start, mid, end, after
-            (TZ, (1990, 10, 8), (0, 44, 59), Unambiguous(9300)),
+            (TZ, (1990, 10, 8), (0, 44, 59), Unique(9300)),
             (TZ, (1990, 10, 8), (0, 45, 0), TZ_FOLD),
             (TZ, (1990, 10, 8), (1, 33, 59), TZ_FOLD),
             (TZ, (1990, 10, 8), (1, 59, 59), TZ_FOLD),
-            (TZ, (1990, 10, 8), (2, 0, 0), Unambiguous(4800)),
+            (TZ, (1990, 10, 8), (2, 0, 0), Unique(4800)),
             # Well after the end of DST
-            (TZ, (1990, 11, 30), (23, 34, 56), Unambiguous(4800)),
+            (TZ, (1990, 11, 30), (23, 34, 56), Unique(4800)),
             # time outside 0-24h range is also valid for a rule
-            (TZ_WEIRDTIME, (1990, 3, 26), (1, 59, 59), Unambiguous(4800)),
+            (TZ_WEIRDTIME, (1990, 3, 26), (1, 59, 59), Unique(4800)),
             (TZ_WEIRDTIME, (1990, 3, 27), (2, 0, 0), WEIRD_GAP),
             (TZ_WEIRDTIME, (1990, 3, 27), (3, 0, 0), WEIRD_GAP),
             (TZ_WEIRDTIME, (1990, 3, 27), (3, 14, 59), WEIRD_GAP),
-            (TZ_WEIRDTIME, (1990, 3, 27), (3, 15, 0), Unambiguous(9300)),
-            (TZ_WEIRDTIME, (1990, 10, 7), (20, 44, 59), Unambiguous(9300)),
+            (TZ_WEIRDTIME, (1990, 3, 27), (3, 15, 0), Unique(9300)),
+            (TZ_WEIRDTIME, (1990, 10, 7), (20, 44, 59), Unique(9300)),
             (TZ_WEIRDTIME, (1990, 10, 7), (20, 45, 0), WEIRD_FOLD),
             (TZ_WEIRDTIME, (1990, 10, 7), (21, 33, 59), WEIRD_FOLD),
             (TZ_WEIRDTIME, (1990, 10, 7), (21, 59, 59), WEIRD_FOLD),
-            (TZ_WEIRDTIME, (1990, 10, 7), (22, 0, 0), Unambiguous(4800)),
-            (TZ_WEIRDTIME, (1990, 10, 7), (22, 0, 1), Unambiguous(4800)),
+            (TZ_WEIRDTIME, (1990, 10, 7), (22, 0, 0), Unique(4800)),
+            (TZ_WEIRDTIME, (1990, 10, 7), (22, 0, 1), Unique(4800)),
             # 00:00:00 is a valid time for a rule
-            (TZ00, (1990, 3, 24), (23, 59, 59), Unambiguous(4800)),
+            (TZ00, (1990, 3, 24), (23, 59, 59), Unique(4800)),
             (TZ00, (1990, 3, 25), (0, 0, 0), MIDNIGHT_GAP),
             (TZ00, (1990, 3, 25), (1, 0, 0), MIDNIGHT_GAP),
             (TZ00, (1990, 3, 25), (1, 14, 59), MIDNIGHT_GAP),
-            (TZ00, (1990, 3, 25), (1, 15, 0), Unambiguous(9300)),
-            (TZ00, (1990, 10, 7), (22, 44, 59), Unambiguous(9300)),
+            (TZ00, (1990, 3, 25), (1, 15, 0), Unique(9300)),
+            (TZ00, (1990, 10, 7), (22, 44, 59), Unique(9300)),
             (TZ00, (1990, 10, 7), (22, 45, 0), MIDNIGHT_FOLD),
             (TZ00, (1990, 10, 7), (23, 33, 59), MIDNIGHT_FOLD),
             (TZ00, (1990, 10, 7), (23, 59, 59), MIDNIGHT_FOLD),
-            (TZ00, (1990, 10, 8), (0, 0, 0), Unambiguous(4800)),
-            (TZ00, (1990, 10, 8), (0, 0, 1), Unambiguous(4800)),
+            (TZ00, (1990, 10, 8), (0, 0, 0), Unique(4800)),
+            (TZ00, (1990, 10, 8), (0, 0, 1), Unique(4800)),
             # Negative DST should be handled gracefully. Gap and fold reversed
             # Fold instead of gap
-            (TZ_NEG, (1990, 3, 25), (0, 59, 59), Unambiguous(4800)),
+            (TZ_NEG, (1990, 3, 25), (0, 59, 59), Unique(4800)),
             (TZ_NEG, (1990, 3, 25), (1, 0, 0), NEGATIVE_FOLD),
             (TZ_NEG, (1990, 3, 25), (1, 33, 59), NEGATIVE_FOLD),
             (TZ_NEG, (1990, 3, 25), (1, 59, 59), NEGATIVE_FOLD),
-            (TZ_NEG, (1990, 3, 25), (2, 0, 0), Unambiguous(1200)),
+            (TZ_NEG, (1990, 3, 25), (2, 0, 0), Unique(1200)),
             # Gap instead of fold
-            (TZ_NEG, (1990, 10, 8), (3, 59, 59), Unambiguous(1200)),
+            (TZ_NEG, (1990, 10, 8), (3, 59, 59), Unique(1200)),
             (TZ_NEG, (1990, 10, 8), (4, 0, 0), NEGATIVE_GAP),
             (TZ_NEG, (1990, 10, 8), (4, 42, 12), NEGATIVE_GAP),
             (TZ_NEG, (1990, 10, 8), (4, 59, 59), NEGATIVE_GAP),
-            (TZ_NEG, (1990, 10, 8), (5, 0, 0), Unambiguous(4800)),
+            (TZ_NEG, (1990, 10, 8), (5, 0, 0), Unique(4800)),
             # Always DST
-            (TZ_ALWAYS_DST, (1990, 1, 1), (0, 0, 0), Unambiguous(3600)),
+            (TZ_ALWAYS_DST, (1990, 1, 1), (0, 0, 0), Unique(3600)),
             # This is actually incorrect, but ZoneInfo does the same...
             (TZ_ALWAYS_DST, (1992, 12, 31), (23, 0, 0), ALWAYS_DST_GAP),
             # Inverted DST
@@ -508,13 +508,13 @@ class TestCalculateOffsets:
                 TZ_INVERTED,
                 (1990, 2, 9),
                 (15, 0, 0),
-                Unambiguous(7200),
+                Unique(7200),
             ),  # DST in effect
             (
                 TZ_INVERTED,
                 (1990, 3, 25),
                 (1, 19, 0),
-                Unambiguous(7200),
+                Unique(7200),
             ),  # Before fold
             (
                 TZ_INVERTED,
@@ -532,19 +532,19 @@ class TestCalculateOffsets:
                 TZ_INVERTED,
                 (1990, 3, 25),
                 (2, 0, 0),
-                Unambiguous(4800),
+                Unique(4800),
             ),  # Fold over
             (
                 TZ_INVERTED,
                 (1990, 9, 8),
                 (8, 0, 0),
-                Unambiguous(4800),
+                Unique(4800),
             ),  # DST not in effect
             (
                 TZ_INVERTED,
                 (1990, 10, 8),
                 (3, 59, 0),
-                Unambiguous(4800),
+                Unique(4800),
             ),  # Before gap
             (
                 TZ_INVERTED,
@@ -562,13 +562,13 @@ class TestCalculateOffsets:
                 TZ_INVERTED,
                 (1990, 10, 8),
                 (4, 40, 0),
-                Unambiguous(7200),
+                Unique(7200),
             ),  # Gap over
             (
                 TZ_INVERTED,
                 (1990, 12, 31),
                 (23, 40, 0),
-                Unambiguous(7200),
+                Unique(7200),
             ),  # DST not in effect
         ],
     )
@@ -594,7 +594,7 @@ class TestCalculateOffsets:
         assert actual == expected
 
         # Test that the inverse operation (epoch->local) works
-        if isinstance(expected, Unambiguous):
+        if isinstance(expected, Unique):
             assert (
                 tz.offset_for_instant(
                     to_epoch_s(y, m, d, hour, minute, second, expected.offset)

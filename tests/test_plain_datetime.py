@@ -36,9 +36,12 @@ from .common import (
     system_tz_ams,
 )
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
+pytestmark = [
+    pytest.mark.filterwarnings("ignore::whenever.WheneverDeprecationWarning"),
+    pytest.mark.filterwarnings(
+        "ignore::whenever.ImplicitDisambiguationWarning"
+    ),
+]
 
 
 class TestInit:
@@ -1009,6 +1012,19 @@ def test_old_pickle_data_remains_unpicklable():
 
 
 class TestSince:
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("milliseconds", 86_400_000.0),
+            ("microseconds", 86_400_000_000.0),
+        ],
+    )
+    def test_total_subsecond_units(self, unit, expected):
+        a = PlainDateTime(2023, 2, 15)
+        b = PlainDateTime(2023, 2, 14)
+        with suppress(NaiveArithmeticWarning):
+            assert a.since(b, total=unit) == expected
+
     @pytest.mark.parametrize(
         "a, b, units, kwargs, expect",
         [

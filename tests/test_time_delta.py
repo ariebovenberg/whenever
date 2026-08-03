@@ -275,7 +275,14 @@ class TestTotal:
         # relative_to parameter has no effect. Exact units aren't affected by DST.
         assert d.total(
             "seconds",
-            relative_to=ZonedDateTime(2023, 3, 26, hour=2, tz="Europe/Paris"),
+            relative_to=ZonedDateTime(
+                2023,
+                3,
+                26,
+                hour=2,
+                tz="Europe/Paris",
+                disambiguation="compatible",
+            ),
         ) == d.total("seconds")
 
     def test_days_and_weeks(self):

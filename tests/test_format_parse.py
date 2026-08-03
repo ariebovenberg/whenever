@@ -9,6 +9,7 @@ from whenever import (
     OffsetDateTime,
     PlainDateTime,
     Time,
+    TimeDelta,
     WheneverWarning,
     ZonedDateTime,
     hours,
@@ -250,7 +251,7 @@ class TestDateFormat:
 
 class TestDateParse:
     def test_basic(self):
-        d = Date.parse("2024-03-15", format="YYYY-MM-DD")
+        d = Date.parse("2024-03-15", pattern="YYYY-MM-DD")
         assert d == Date(2024, 3, 15)
 
     def test_unpadded_month_day(self):
@@ -459,7 +460,7 @@ class TestTimeFormat:
 
 class TestTimeParse:
     def test_basic(self):
-        assert Time.parse("14:30:05", format="hh:mm:ss") == Time(14, 30, 5)
+        assert Time.parse("14:30:05", pattern="hh:mm:ss") == Time(14, 30, 5)
 
     def test_unpadded_hour(self):
         # Single-digit
@@ -641,7 +642,7 @@ class TestPlainDateTimeFormat:
 class TestPlainDateTimeParse:
     def test_basic(self):
         assert PlainDateTime.parse(
-            "2024-03-15 14:30:05", format="YYYY-MM-DD hh:mm:ss"
+            "2024-03-15 14:30:05", pattern="YYYY-MM-DD hh:mm:ss"
         ) == PlainDateTime(2024, 3, 15, 14, 30, 5)
 
     def test_missing_year(self):
@@ -715,7 +716,7 @@ class TestOffsetDateTimeFormat:
 class TestOffsetDateTimeParse:
     def test_basic(self):
         odt = OffsetDateTime.parse(
-            "2024-03-15 14:30+02:00", format="YYYY-MM-DD hh:mmxxx"
+            "2024-03-15 14:30+02:00", pattern="YYYY-MM-DD hh:mmxxx"
         )
         assert odt == OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(2))
 
@@ -776,7 +777,7 @@ class TestZonedDateTimeParse:
     def test_basic(self):
         zdt = ZonedDateTime.parse(
             "2024-03-15 14:30+01:00[Europe/Paris]",
-            format="YYYY-MM-DD hh:mmxxx'['VV']'",
+            pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
         )
         assert zdt == ZonedDateTime(2024, 3, 15, 14, 30, tz="Europe/Paris")
 
@@ -841,11 +842,33 @@ class TestZonedDateTimeParse:
         assert zdt_edt.hour == zdt_est.hour == 1
         assert zdt_edt.minute == zdt_est.minute == 30
 
+    def test_offset_precision_matching(self):
+        result = ZonedDateTime.parse(
+            "1900-01-01 00:00-00:25[Europe/Dublin]",
+            pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
+        )
+        assert result.offset == TimeDelta(seconds=-(25 * 60 + 21))
+
+        with pytest.raises(ValueError, match="does not match"):
+            ZonedDateTime.parse(
+                "1900-01-01 00:00-00:25:00[Europe/Dublin]",
+                pattern="YYYY-MM-DD hh:mmxxxxx'['VV']'",
+            )
+
+    def test_z_is_an_instant(self):
+        result = ZonedDateTime.parse(
+            "2020-02-15 12:08Z[America/New_York]",
+            pattern="YYYY-MM-DD hh:mmX'['VV']'",
+        )
+        assert result == ZonedDateTime(
+            2020, 2, 15, 7, 8, tz="America/New_York"
+        )
+
     def test_skipped_time_with_offset(self):
         """Parsing a skipped local time should be rejected,
         consistent with parse_iso()."""
         # 2024-03-10 02:30 doesn't exist in New York (spring forward)
-        with pytest.raises(ValueError, match="does not exist"):
+        with pytest.raises(ValueError, match="does not match"):
             ZonedDateTime.parse(
                 "2024-03-10 02:30-05:00[America/New_York]",
                 format="YYYY-MM-DD hh:mmxxx'['VV']'",
@@ -881,7 +904,7 @@ class TestInstantFormat:
 
 class TestInstantParse:
     def test_utc(self):
-        i = Instant.parse("2024-03-15 14:30Z", format="YYYY-MM-DD hh:mmXXX")
+        i = Instant.parse("2024-03-15 14:30Z", pattern="YYYY-MM-DD hh:mmXXX")
         assert i == Instant.from_utc(2024, 3, 15, 14, 30)
 
     def test_with_offset(self):

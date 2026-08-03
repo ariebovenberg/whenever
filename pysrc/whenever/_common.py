@@ -71,6 +71,26 @@ UNSET: Any = type(
 )()
 
 
+class _SystemTZ:
+    __slots__ = ()
+    __module__ = "whenever"
+
+    def __repr__(self) -> str:
+        return "SYSTEM_TZ"
+
+    def __copy__(self) -> _SystemTZ:
+        return self
+
+    def __deepcopy__(self, memo: object, /) -> _SystemTZ:
+        return self
+
+    def __reduce__(self) -> str:
+        return "SYSTEM_TZ"
+
+
+SYSTEM_TZ = _SystemTZ()
+
+
 # We cache fixed-offset tzinfo objects to avoid creating multiple identical ones.
 # It's very common to only have whole-hour offsets, so this helps a lot.
 @lru_cache
@@ -127,8 +147,6 @@ def normalize_renamed_keyword(
     function_name: str,
     new_name: str,
     old_name: str,
-    warning_message: str,
-    warning_stacklevel: int,
 ) -> Any:
     old_value = kwargs.pop(old_name, UNSET)
     if old_value is UNSET:
@@ -138,11 +156,19 @@ def normalize_renamed_keyword(
             f"{function_name}() received both '{new_name}' "
             f"and deprecated '{old_name}'"
         )
-    warn_deprecated(
-        warning_message,
-        stacklevel=warning_stacklevel + 1,
-    )
     return old_value
+
+
+def check_no_kwargs(
+    kwargs: dict[str, Any],
+    function_name: str,
+    /,
+) -> None:
+    if kwargs:
+        raise TypeError(
+            f"{function_name}() got an unexpected keyword argument "
+            f"{next(iter(kwargs))!r}"
+        )
 
 
 def split_timestamp(
@@ -237,14 +263,14 @@ def add_alternate_constructors(
 
     def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
         match args:
-            case [str() as iso_string] if not kwargs:
+            case [str() as iso_string]:
                 if deprecation_msg:
                     warn(
                         deprecation_msg,
                         WheneverDeprecationWarning,
                         stacklevel=2,
                     )
-                self._init_from_iso(iso_string)
+                self._init_from_iso(iso_string, **kwargs)
             case [obj] if (
                 py_type is not None and not kwargs and isinstance(obj, py_type)
             ):

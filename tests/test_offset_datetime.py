@@ -480,6 +480,19 @@ def test_exact_equality():
         d.exact_eq(d.to_instant())  # type: ignore[arg-type]
 
 
+@suppress(StaleOffsetWarning)
+def test_strict_equality():
+    d = OffsetDateTime(2020, 8, 15, 12, offset=5)
+    same = d.replace()
+    utc_same = d.replace(hour=13, offset=hours(6))
+    assert d.strict_eq(same)
+    assert not d.strict_eq(utc_same)
+    assert not d.strict_eq(d.replace(nanosecond=1))
+
+    with pytest.raises(TypeError):
+        d.strict_eq(d.to_instant())  # type: ignore[arg-type]
+
+
 class TestEquality:
     @suppress(StaleOffsetWarning)
     def test_same_exact(self):
@@ -560,6 +573,29 @@ class TestTimestamp:
             ).timestamp()
             == 1_597_493_310
         )
+
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("second", 1_597_493_310),
+            ("millisecond", 1_597_493_310_045),
+            ("microsecond", 1_597_493_310_045_123),
+            ("nanosecond", 1_597_493_310_045_123_987),
+        ],
+    )
+    def test_unit(self, unit, expected):
+        value = OffsetDateTime(
+            2020,
+            8,
+            15,
+            8,
+            8,
+            30,
+            nanosecond=45_123_987,
+            offset=-4,
+        )
+
+        assert value.timestamp(unit=unit) == expected
 
     def test_millis(self):
         assert OffsetDateTime(1970, 1, 1, 3, offset=3).timestamp_millis() == 0
@@ -1029,13 +1065,19 @@ class TestAssumeTz:
             (
                 "2023-10-29 02:30:00-09:00",
                 "Europe/Paris",
-                {"offset_mismatch": "keep_local"},
+                {
+                    "offset_mismatch": "keep_local",
+                    "disambiguation": "compatible",
+                },
                 ZonedDateTime("2023-10-29 02:30:00+02:00[Europe/Paris]"),
             ),
             (
                 "2023-03-26 02:30:00-09:00",
                 "Europe/Paris",
-                {"offset_mismatch": "keep_local"},
+                {
+                    "offset_mismatch": "keep_local",
+                    "disambiguation": "compatible",
+                },
                 ZonedDateTime("2023-03-26 03:30:00+02:00[Europe/Paris]"),
             ),
         ],
@@ -1936,6 +1978,18 @@ class TestSince:
         result = a.since(b, total="nanoseconds")
         assert isinstance(result, int)
         assert result == 86_400_000_000_000
+
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("milliseconds", 86_400_000.0),
+            ("microseconds", 86_400_000_000.0),
+        ],
+    )
+    def test_total_subsecond_units(self, unit, expected):
+        a = OffsetDateTime(2023, 2, 15, offset=9)
+        b = OffsetDateTime(2023, 2, 14, offset=9)
+        assert a.since(b, total=unit) == expected
 
     def test_no_units_raises(self):
         a = OffsetDateTime(2023, 2, 15, offset=2)

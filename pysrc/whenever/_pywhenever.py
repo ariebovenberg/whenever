@@ -38,15 +38,20 @@ from ._common import (
     OFFSET_SHIFT_STALE_MSG,
     PLAIN_SHIFT_UNAWARE_MSG,
     SPHINX_RUNNING,
+    SYSTEM_TZ,
     UNSET,
     WARNING_HANDLING_DOCS_MSG,
     WheneverDeprecationWarning,
     WheneverWarning,
     _Base,
     add_alternate_constructors,
+    check_no_kwargs,
     check_utc_bounds,
     final,
     mk_fixed_tzinfo,
+    normalize_renamed_keyword,
+    split_timestamp,
+    timestamp_from_parts,
 )
 from ._format import (
     compile_pattern,
@@ -75,6 +80,7 @@ from ._parse import (
     InvalidOffsetError,
     date_from_iso,
     datetime_from_iso,
+    matching_local_offset,
     offset_dt_from_iso,
     parse_rfc2822,
     parse_timedelta_component,
@@ -90,11 +96,14 @@ from ._shared import (
 )
 from ._typing import (
     DateDeltaUnitStr,
+    DeltaTotalUnitStr,
     DeltaUnitStr,
     DisambiguateStr,
+    DisambiguationStr,
     ExactDeltaUnitStr,
     OffsetMismatchStr,
     RoundModeStr,
+    TimestampUnitStr,
 )
 from ._tz import (  # noqa: F401
     Fold,
@@ -103,16 +112,20 @@ from ._tz import (  # noqa: F401
     SkippedTime,
     TimeZone,
     TimeZoneNotFoundError,
-    Unambiguous,
+    Unique,
     _clear_tz_cache as _clear_tz_cache,
     _clear_tz_cache_by_keys as _clear_tz_cache_by_keys,
-    _get_tzpath as _get_tzpath,
     _set_tzpath as _set_tzpath,
+    get_tzpath as get_tzpath,
     get_system_tz,
     get_tz,
     reset_system_tz,
     resolve_ambiguity,
     resolve_ambiguity_using_prev_offset,
+)
+from ._tz.ambiguity import (
+    _resolve_ambiguity_from_mapping,
+    _resolve_ambiguity_using_prev_offset_from_mapping,
 )
 
 CalendarUnitCompositionWarning = _ideltas.CalendarUnitCompositionWarning
@@ -145,12 +158,14 @@ __all__ = (
     "CalendarUnitCompositionWarning",
     "WheneverWarning",
     "PotentialDstBugWarning",
+    "ImplicitDisambiguationWarning",
     "WheneverDeprecationWarning",
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
     "TimeZoneNotFoundError",
     # Other
+    "SYSTEM_TZ",
     "reset_system_tz",
     "_unpkl_date",
     "_unpkl_iddelta",
@@ -174,6 +189,94 @@ _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
+
+
+def _load_tz(tz: Any, /) -> TimeZone:
+    return get_system_tz() if tz is SYSTEM_TZ else get_tz(tz)
+
+
+def _normalize_disambiguation(
+    value: Any,
+    kwargs: dict[str, Any],
+    /,
+    *,
+    function_name: str,
+) -> Any:
+    return normalize_renamed_keyword(
+        value,
+        kwargs,
+        function_name=function_name,
+        new_name="disambiguation",
+        old_name="disambiguate",
+    )
+
+
+def _normalize_pattern(
+    value: Any,
+    kwargs: dict[str, Any],
+    /,
+) -> str:
+    value = normalize_renamed_keyword(
+        value,
+        kwargs,
+        function_name="parse",
+        new_name="pattern",
+        old_name="format",
+    )
+    check_no_kwargs(kwargs, "parse")
+    if value is UNSET:
+        raise TypeError("parse() missing required keyword argument 'pattern'")
+    return cast(str, value)
+
+
+def _resolve_disambiguation(
+    dt: _datetime,
+    tz: TimeZone,
+    disambiguation: Any,
+    /,
+    *,
+    warning_stacklevel: int,
+) -> _datetime:
+    ambiguity = tz.ambiguity_for_local(dt)
+    if disambiguation is UNSET:
+        if not isinstance(ambiguity, Unique):
+            warn(
+                "implicitly resolving an ambiguous local time using "
+                "disambiguation='compatible'",
+                ImplicitDisambiguationWarning,
+                stacklevel=warning_stacklevel,
+            )
+        disambiguation = "compatible"
+    return _resolve_ambiguity_from_mapping(dt, tz, disambiguation, ambiguity)
+
+
+def _resolve_with_previous_offset(
+    dt: _datetime,
+    tz: TimeZone,
+    previous_offset: _timedelta,
+    /,
+    *,
+    warning_stacklevel: int,
+) -> _datetime:
+    ambiguity = tz.ambiguity_for_local(dt)
+    previous_offset_secs = int(previous_offset.total_seconds())
+    if warning_stacklevel and (
+        isinstance(ambiguity, Gap)
+        or (
+            isinstance(ambiguity, Fold)
+            and previous_offset_secs
+            not in (ambiguity.earlier_offset, ambiguity.later_offset)
+        )
+    ):
+        warn(
+            "implicitly resolving an ambiguous local time using "
+            "disambiguation='compatible'",
+            ImplicitDisambiguationWarning,
+            stacklevel=warning_stacklevel,
+        )
+    return _resolve_ambiguity_using_prev_offset_from_mapping(
+        dt, previous_offset, ambiguity
+    )
 
 
 def _time_units_to_nanos(
@@ -377,6 +480,11 @@ class Date(_Base):
         """
         # Use now() so this function gets patched like the other now functions
         return Instant.now().to_system_tz().date()
+
+    @classmethod
+    def today(cls, tz: Any, /) -> Date:
+        """Get the current date in the given named timezone."""
+        return Instant.now().to_tz(tz).date()
 
     @property
     def year(self) -> int:
@@ -717,7 +825,9 @@ class Date(_Base):
         return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(cls, s: str, /, *, format: str) -> Date:
+    def parse(
+        cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any
+    ) -> Date:
         """Parse a date from a custom pattern string.
 
         See :ref:`pattern-format` for details.
@@ -727,7 +837,8 @@ class Date(_Base):
         >>> Date.parse("15 Mar 2024", format="DD MMM YYYY")
         Date("2024-03-15")
         """
-        elements = compile_pattern(format)
+        pattern = _normalize_pattern(pattern, kwargs)
+        elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "Date")
         state = parse_fields(elements, s)
         if state.year is None or state.month is None or state.day is None:
@@ -1318,7 +1429,9 @@ class Time(_Base):
         return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(cls, s: str, /, *, format: str) -> Time:
+    def parse(
+        cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any
+    ) -> Time:
         """Parse a time from a custom pattern string.
 
         See :ref:`pattern-format` for details.
@@ -1328,7 +1441,8 @@ class Time(_Base):
         >>> Time.parse("02:30 PM", format="ii:mm aa")
         Time(14:30:00)
         """
-        elements = compile_pattern(format)
+        pattern = _normalize_pattern(pattern, kwargs)
+        elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "Time")
         state = parse_fields(elements, s)
         return cls(
@@ -1692,10 +1806,20 @@ class TimeDelta(_Base):
                 # The while loop handles the rare case of a 24h+ gap (e.g. Samoa 2011),
                 # where two consecutive dates map to the same instant.
                 if sign == 1:
-                    while relative_to.replace_date(target_date) > shifted:
+                    while (
+                        relative_to._replace_date(
+                            target_date, UNSET, warn_level=0
+                        )
+                        > shifted
+                    ):
                         target_date = target_date.subtract(days=1)
                 else:
-                    while relative_to.replace_date(target_date) < shifted:
+                    while (
+                        relative_to._replace_date(
+                            target_date, UNSET, warn_level=0
+                        )
+                        < shifted
+                    ):
                         target_date = target_date.add(days=1)
 
                 trunc_amount, trunc_date, expanded_date = DIFF_FUNCS[unit](
@@ -1704,18 +1828,22 @@ class TimeDelta(_Base):
                     1,
                     sign,
                 )
-                trunc_zdt = relative_to.replace_date(
-                    Date._from_py_unchecked(resolve_leap_day(trunc_date))
+                trunc_zdt = relative_to._replace_date(
+                    Date._from_py_unchecked(resolve_leap_day(trunc_date)),
+                    UNSET,
+                    warn_level=0,
                 )
 
                 return (
                     trunc_amount
                     + (shifted - trunc_zdt)
                     / (
-                        relative_to.replace_date(
+                        relative_to._replace_date(
                             Date._from_py_unchecked(
                                 resolve_leap_day(expanded_date)
-                            )
+                            ),
+                            UNSET,
+                            warn_level=0,
                         )
                         - trunc_zdt
                     )
@@ -2514,8 +2642,10 @@ class _LocalTime(_BasicConversions):
 # (This base class class itself is not for public use.)
 class _ExactTime(_BasicConversions):
     __slots__ = ()
+    _py_dt: _datetime
+    _nanos: int
 
-    def timestamp(self) -> int:
+    def timestamp(self, *, unit: TimestampUnitStr = "second") -> int:
         """The UNIX timestamp for this datetime. Inverse of :meth:`from_timestamp`.
 
         >>> Instant.from_utc(1970, 1, 1).timestamp()
@@ -2531,7 +2661,11 @@ class _ExactTime(_BasicConversions):
         enough to represent all instants to nanosecond precision.
         This decision is consistent with other modern date-time libraries.
         """
-        return int(self._py_dt.timestamp())
+        return timestamp_from_parts(
+            int(self._py_dt.timestamp()),
+            self._nanos,
+            unit,
+        )
 
     def timestamp_millis(self) -> int:
         """Like :meth:`timestamp`, but with millisecond precision."""
@@ -2574,7 +2708,7 @@ class _ExactTime(_BasicConversions):
         ~whenever.TimeZoneNotFoundError
             If the timezone ID is not found in the timezone database.
         """
-        _tz = get_tz(tz)
+        _tz = _load_tz(tz)
         return ZonedDateTime._from_py_unchecked(
             _to_tz(self._py_dt, _tz), self._nanos, _tz
         )
@@ -2586,7 +2720,7 @@ class _ExactTime(_BasicConversions):
             _to_tz(self._py_dt, tz), self._nanos, tz
         )
 
-    def exact_eq(self: _T, other: _T, /) -> bool:
+    def strict_eq(self, other: Any, /) -> bool:
         """Compare objects by their values
         (instead of whether they represent the same instant).
         Different types are never equal.
@@ -2608,14 +2742,17 @@ class _ExactTime(_BasicConversions):
         if type(self) is not type(other):
             raise TypeError("Cannot compare different types")
         return (
-            self._py_dt,  # type: ignore[attr-defined]
-            self._py_dt.utcoffset(),  # type: ignore[attr-defined]
-            self._nanos,  # type: ignore[attr-defined]
+            self._py_dt,
+            self._py_dt.utcoffset(),
+            self._nanos,
         ) == (
-            other._py_dt,  # type: ignore[attr-defined]
-            other._py_dt.utcoffset(),  # type: ignore[attr-defined]
-            other._nanos,  # type: ignore[attr-defined]
+            other._py_dt,
+            other._py_dt.utcoffset(),
+            other._nanos,
         )
+
+    def exact_eq(self, other: Any, /) -> bool:
+        return self.strict_eq(other)
 
     def difference(
         self,
@@ -2865,14 +3002,21 @@ class Instant(_ExactTime):
         return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
 
     @classmethod
-    def from_timestamp(cls, i: int | float, /) -> Instant:
+    def from_timestamp(
+        cls,
+        value: int | float,
+        /,
+        *,
+        unit: TimestampUnitStr = "second",
+    ) -> Instant:
         """Create an Instant from a UNIX timestamp (in seconds).
 
         The inverse of the ``timestamp()`` method.
         """
-        secs, fract = divmod(i, 1)
+        secs, nanos = split_timestamp(value, unit)
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _UTC), int(fract * 1_000_000_000)
+            _fromtimestamp(secs, _UTC),
+            nanos,
         )
 
     @classmethod
@@ -3020,7 +3164,9 @@ class Instant(_ExactTime):
         return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(cls, s: str, /, *, format: str) -> Instant:
+    def parse(
+        cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any
+    ) -> Instant:
         """Parse an instant from a custom pattern string.
 
         The pattern **must** include an offset field (``x``/``X``)
@@ -3039,7 +3185,8 @@ class Instant(_ExactTime):
         >>> Instant.parse("2024-03-15 14:30+05:30", format="YYYY-MM-DD hh:mmxxx")
         Instant("2024-03-15 09:00:00Z")
         """
-        elements = compile_pattern(format)
+        pattern = _normalize_pattern(pattern, kwargs)
+        elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "Instant")
         state = parse_fields(elements, s)
         if state.offset_secs is None:
@@ -3891,7 +4038,9 @@ class OffsetDateTime(_ExactAndLocalTime):
         return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(cls, s: str, /, *, format: str) -> OffsetDateTime:
+    def parse(
+        cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any
+    ) -> OffsetDateTime:
         """Parse an offset datetime from a custom pattern string.
 
         The pattern **must** include an offset field (``x``/``X``).
@@ -3907,7 +4056,8 @@ class OffsetDateTime(_ExactAndLocalTime):
         >>> OffsetDateTime.parse("2024-03-15 14:30+02:00", format="YYYY-MM-DD hh:mmxxx")
         OffsetDateTime("2024-03-15 14:30:00+02:00")
         """
-        elements = compile_pattern(format)
+        pattern = _normalize_pattern(pattern, kwargs)
+        elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "OffsetDateTime")
         state = parse_fields(elements, s)
         if state.offset_secs is None:
@@ -4140,7 +4290,11 @@ class OffsetDateTime(_ExactAndLocalTime):
         )
 
     def assume_tz(
-        self, tz: str, *, offset_mismatch: OffsetMismatchStr = "raise"
+        self,
+        tz: str,
+        *,
+        offset_mismatch: OffsetMismatchStr = "raise",
+        disambiguation: DisambiguationStr = UNSET,
     ) -> ZonedDateTime:
         """Associate this offset datetime with a timezone, returning a ZonedDateTime.
 
@@ -4175,7 +4329,10 @@ class OffsetDateTime(_ExactAndLocalTime):
                 f"but offset {offset_expected} was expected"
             )
         else:  # offset_mismatch == "keep_local":
-            return self.to_plain().assume_tz(tz)
+            return self.to_plain().assume_tz(
+                tz,
+                disambiguation=disambiguation,
+            )
 
     @overload
     def since(
@@ -4183,7 +4340,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         b: OffsetDateTime,
         /,
         *,
-        total: DeltaUnitStr,
+        total: DeltaTotalUnitStr,
     ) -> float: ...
 
     @overload
@@ -4202,7 +4359,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         b: OffsetDateTime,
         /,
         *,
-        total: DeltaUnitStr = UNSET,
+        total: DeltaTotalUnitStr = UNSET,
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
@@ -4235,7 +4392,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         b: OffsetDateTime,
         /,
         *,
-        total: DeltaUnitStr,
+        total: DeltaTotalUnitStr,
     ) -> float: ...
 
     @overload
@@ -4254,7 +4411,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         b: OffsetDateTime,
         /,
         *,
-        total: DeltaUnitStr = UNSET,
+        total: DeltaTotalUnitStr = UNSET,
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
@@ -4355,7 +4512,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             *,
             nanosecond: int = 0,
             tz: str,
-            disambiguate: DisambiguateStr = "compatible",
+            disambiguation: DisambiguationStr = ...,
         ) -> None: ...
 
     def __init__(
@@ -4369,9 +4526,16 @@ class ZonedDateTime(_ExactAndLocalTime):
         *,
         nanosecond: int = 0,
         tz: str,
-        disambiguate: DisambiguateStr = "compatible",
+        disambiguation: DisambiguationStr = UNSET,
+        **kwargs: Any,
     ) -> None:
-        self._py_dt = resolve_ambiguity(
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="ZonedDateTime",
+        )
+        check_no_kwargs(kwargs, "ZonedDateTime")
+        self._py_dt = _resolve_disambiguation(
             _datetime(
                 year,
                 month,
@@ -4381,8 +4545,9 @@ class ZonedDateTime(_ExactAndLocalTime):
                 second,
                 0,
             ),
-            (_tz := get_tz(tz)),
-            disambiguate,
+            (_tz := _load_tz(tz)),
+            disambiguation,
+            warning_stacklevel=4,
         )
         if nanosecond < 0 or nanosecond >= 1_000_000_000:
             raise ValueError(f"nanosecond out of range: {nanosecond}")
@@ -4435,7 +4600,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     def now(cls, tz: str, /) -> ZonedDateTime:
         """Create an instance from the current time in the given timezone."""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
-        _tz = get_tz(tz)
+        _tz = _load_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
     @classmethod
@@ -4462,7 +4627,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         ] = "auto",
         basic: bool = False,
         sep: Literal["T", " "] = "T",
-        tz: Literal["always", "never", "auto"] = "always",
+        tz_display: Literal["required", "never", "auto", "always"] = UNSET,
+        **kwargs: Any,
     ) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
 
@@ -4495,14 +4661,29 @@ class ZonedDateTime(_ExactAndLocalTime):
         Although it is gaining popularity, it is not yet widely supported
         by ISO 8601 parsers.
         """
-        if tz == "always":
+        tz_display = normalize_renamed_keyword(
+            tz_display,
+            kwargs,
+            function_name="format_iso",
+            new_name="tz_display",
+            old_name="tz",
+        )
+        check_no_kwargs(kwargs, "format_iso")
+        if tz_display is UNSET:
+            tz_display = "required"
+        elif tz_display == "always":
+            tz_display = "required"
+
+        if tz_display == "required":
             if self._tz.key is None:
                 raise ValueError(FORMAT_ISO_NO_TZ_MSG)
             suffix = f"[{self._tz.key}]"
-        elif tz == "auto" and self._tz.key is not None:
-            suffix = f"[{self._tz.key}]"
-        else:  # never
+        elif tz_display == "auto":
+            suffix = f"[{self._tz.key}]" if self._tz.key is not None else ""
+        elif tz_display == "never":
             suffix = ""
+        else:
+            raise ValueError(f"invalid tz_display: {tz_display!r}")
 
         return (
             _format_dt(
@@ -4518,7 +4699,14 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     # FUTURE: allow handling offset mismatches
     @classmethod
-    def parse_iso(cls, s: str, /) -> ZonedDateTime:
+    def parse_iso(
+        cls,
+        s: str,
+        /,
+        *,
+        disambiguation: DisambiguationStr = UNSET,
+        offset_mismatch: OffsetMismatchStr = "raise",
+    ) -> ZonedDateTime:
         """Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
         The inverse of the ``format_iso()`` method.
@@ -4532,11 +4720,38 @@ class ZonedDateTime(_ExactAndLocalTime):
         Although it is gaining popularity, it is not yet widely supported.
         """
         self = _object_new(cls)
-        self._init_from_iso(s)
+        self._init_from_iso(
+            s,
+            disambiguation=disambiguation,
+            offset_mismatch=offset_mismatch,
+        )
         return self
 
-    def _init_from_iso(self, s: str) -> None:
-        self._py_dt, self._nanos, self._tz = zdt_from_iso(s)
+    def _init_from_iso(
+        self,
+        s: str,
+        *,
+        disambiguation: DisambiguationStr = UNSET,
+        offset_mismatch: OffsetMismatchStr = "raise",
+        **kwargs: Any,
+    ) -> None:
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="ZonedDateTime",
+        )
+        check_no_kwargs(kwargs, "ZonedDateTime")
+        self._py_dt, self._nanos, self._tz = zdt_from_iso(
+            s,
+            disambiguation,
+            offset_mismatch,
+            lambda dt, tz, policy: _resolve_disambiguation(
+                dt,
+                tz,
+                policy,
+                warning_stacklevel=6,
+            ),
+        )
 
     _PATTERN_CATS = frozenset({"date", "time", "offset", "tz"})
 
@@ -4579,8 +4794,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         s: str,
         /,
         *,
-        format: str,
-        disambiguate: DisambiguateStr = "compatible",
+        pattern: str = UNSET,
+        disambiguation: DisambiguationStr = UNSET,
+        offset_mismatch: OffsetMismatchStr = "raise",
+        **kwargs: Any,
     ) -> ZonedDateTime:
         """Parse a zoned datetime from a custom pattern string.
 
@@ -4601,7 +4818,15 @@ class ZonedDateTime(_ExactAndLocalTime):
         ... )
         ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
         """
-        elements = compile_pattern(format)
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="parse",
+        )
+        pattern = _normalize_pattern(pattern, kwargs)
+        if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
+            raise ValueError(f"invalid offset_mismatch: {offset_mismatch!r}")
+        elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "ZonedDateTime")
         state = parse_fields(elements, s)
         if state.tz_id is None:
@@ -4623,39 +4848,48 @@ class ZonedDateTime(_ExactAndLocalTime):
             state.second or 0,
         )
         if state.offset_secs is not None:
-            # Use offset to disambiguate during DST transitions.
-            # Try both "earlier" and "later" to find the matching offset.
-            earlier = resolve_ambiguity(dt, tz, "earlier")
-            earlier_offset = int(
-                earlier.utcoffset().total_seconds()  # type: ignore[union-attr]
-            )
-            if earlier_offset == state.offset_secs:
-                resolved = earlier
-            else:
-                later = resolve_ambiguity(dt, tz, "later")
-                later_offset = int(
-                    later.utcoffset().total_seconds()  # type: ignore[union-attr]
+            parsed = dt.replace(tzinfo=mk_fixed_tzinfo(state.offset_secs))
+            parsed.astimezone(_UTC)
+            if state.offset_is_z:
+                expected_offset = tz.offset_for_instant(
+                    int(parsed.timestamp())
                 )
-                if later_offset == state.offset_secs:
-                    resolved = later
-                else:
-                    raise ValueError(
-                        f"Offset {state.offset_secs}s does not match "
-                        f"timezone {state.tz_id!r}"
-                    )
-            # Reject skipped times: if the resolved local time doesn't
-            # match the input, the time was shifted out of a DST gap.
-            if (
-                resolved.hour != (state.hour or 0)
-                or resolved.minute != (state.minute or 0)
-                or resolved.second != (state.second or 0)
-            ):
+                resolved = parsed.astimezone(
+                    mk_fixed_tzinfo(expected_offset)
+                )
+            elif (
+                matching := matching_local_offset(
+                    dt,
+                    tz,
+                    state.offset_secs,
+                    state.offset_exact,
+                )
+            ) is not None:
+                resolved = matching
+            elif offset_mismatch == "raise":
                 raise ValueError(
-                    f"The local time does not exist in "
+                    f"Offset {state.offset_secs}s does not match "
                     f"timezone {state.tz_id!r}"
                 )
+            elif offset_mismatch == "keep_instant":
+                expected_offset = tz.offset_for_instant(
+                    int(parsed.timestamp())
+                )
+                resolved = parsed.astimezone(mk_fixed_tzinfo(expected_offset))
+            else:
+                resolved = _resolve_disambiguation(
+                    dt,
+                    tz,
+                    disambiguation,
+                    warning_stacklevel=3,
+                )
         else:
-            resolved = resolve_ambiguity(dt, tz, disambiguate)
+            resolved = _resolve_disambiguation(
+                dt,
+                tz,
+                disambiguation,
+                warning_stacklevel=3,
+            )
         self = _object_new(cls)
         self._py_dt = resolved
         self._nanos = state.nanos
@@ -4671,7 +4905,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         The inverse of the ``timestamp()`` method.
         """
         secs, fract = divmod(i, 1)
-        _tz = get_tz(tz)
+        _tz = _load_tz(tz)
         return cls._from_py_unchecked(
             _from_epoch(int(secs), _tz), int(fract * 1_000_000_000), _tz
         )
@@ -4685,7 +4919,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, millis = divmod(i, 1_000)
-        _tz = get_tz(tz)
+        _tz = _load_tz(tz)
         return cls._from_py_unchecked(
             _from_epoch(secs, _tz), millis * 1_000_000, _tz
         )
@@ -4699,7 +4933,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         if not isinstance(i, int):
             raise TypeError("method requires an integer")
         secs, nanos = divmod(i, 1_000_000_000)
-        _tz = get_tz(tz)
+        _tz = _load_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
     def _init_from_py(self, d: _datetime) -> None:
@@ -4727,35 +4961,77 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._tz = _tz
 
     def replace_date(
-        self, date: Date, /, disambiguate: DisambiguateStr = UNSET
+        self,
+        date: Date,
+        /,
+        disambiguation: DisambiguationStr = UNSET,
+        **kwargs: Any,
     ) -> ZonedDateTime:
         """Construct a new instance with the date replaced.
 
         See the ``replace()`` method for more information.
         """
-        return self._from_py_unchecked(
-            resolve_ambiguity(
-                _datetime.combine(date._py_date, self._py_dt.time()),
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="replace_date",
+        )
+        check_no_kwargs(kwargs, "replace_date")
+        return self._replace_date(date, disambiguation, warn_level=3)
+
+    def _replace_date(
+        self,
+        date: Date,
+        disambiguation: Any,
+        /,
+        *,
+        warn_level: int,
+    ) -> ZonedDateTime:
+        naive = _datetime.combine(date._py_date, self._py_dt.time())
+        if disambiguation is UNSET:
+            resolved = _resolve_with_previous_offset(
+                naive,
                 self._tz,
-                disambiguate or self._py_dt.utcoffset(),
-            ),
+                self._py_dt.utcoffset(),  # type: ignore[arg-type]
+                warning_stacklevel=warn_level,
+            )
+        else:
+            resolved = resolve_ambiguity(naive, self._tz, disambiguation)
+        return self._from_py_unchecked(
+            resolved,
             self._nanos,
             self._tz,
         )
 
     def replace_time(
-        self, time: Time, /, disambiguate: DisambiguateStr = UNSET
+        self,
+        time: Time,
+        /,
+        disambiguation: DisambiguationStr = UNSET,
+        **kwargs: Any,
     ) -> ZonedDateTime:
         """Construct a new instance with the time replaced.
 
         See the ``replace()`` method for more information.
         """
-        return self._from_py_unchecked(
-            resolve_ambiguity(
-                _datetime.combine(self._py_dt, time._py),
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="replace_time",
+        )
+        check_no_kwargs(kwargs, "replace_time")
+        naive = _datetime.combine(self._py_dt, time._py)
+        if disambiguation is UNSET:
+            resolved = _resolve_with_previous_offset(
+                naive,
                 self._tz,
-                disambiguate or self._py_dt.utcoffset(),
-            ),
+                self._py_dt.utcoffset(),  # type: ignore[arg-type]
+                warning_stacklevel=3,
+            )
+        else:
+            resolved = resolve_ambiguity(naive, self._tz, disambiguation)
+        return self._from_py_unchecked(
+            resolved,
             time._nanos,
             self._tz,
         )
@@ -4778,7 +5054,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         ) -> ZonedDateTime: ...
 
     def replace(
-        self, /, disambiguate: DisambiguateStr = UNSET, **kwargs: Any
+        self,
+        /,
+        disambiguation: DisambiguationStr = UNSET,
+        **kwargs: Any,
     ) -> ZonedDateTime:
         """Construct a new instance with the given fields replaced.
 
@@ -4801,24 +5080,41 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         """
 
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="replace",
+        )
         _check_invalid_replace_kwargs(kwargs)
+        preserve_offset = True
         try:
             tzid = kwargs.pop("tz")
         except KeyError:
             tz = self._tz
         else:
-            tz = get_tz(tzid)
+            tz = _load_tz(tzid)
             # Don't attempt to preserve offset when changing tz
-            if tz is not self._tz:
-                disambiguate = disambiguate or "compatible"
+            preserve_offset = tz is self._tz
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
 
-        return self._from_py_unchecked(
-            resolve_ambiguity(
-                self._py_dt.replace(**kwargs, tzinfo=None),
+        naive = self._py_dt.replace(**kwargs, tzinfo=None)
+        if disambiguation is UNSET and preserve_offset:
+            resolved = _resolve_with_previous_offset(
+                naive,
                 tz,
-                disambiguate or self._py_dt.utcoffset(),
-            ),
+                self._py_dt.utcoffset(),  # type: ignore[arg-type]
+                warning_stacklevel=3,
+            )
+        else:
+            resolved = _resolve_disambiguation(
+                naive,
+                tz,
+                disambiguation,
+                warning_stacklevel=3,
+            )
+
+        return self._from_py_unchecked(
+            resolved,
             nanos,
             tz,
         )
@@ -4829,6 +5125,11 @@ class ZonedDateTime(_ExactAndLocalTime):
         if the ``ZonedDateTime`` was created from a system timezone
         without a known IANA key.
         """
+        return self.tz_id
+
+    @property
+    def tz_id(self) -> str | None:
+        """The timezone ID, if the timezone has one."""
         return self._tz.key
 
     def __hash__(self) -> int:
@@ -4955,24 +5256,31 @@ class ZonedDateTime(_ExactAndLocalTime):
         delta: AnyDelta | UNSET = UNSET,
         /,
         *,
-        disambiguate: DisambiguateStr = UNSET,
+        disambiguation: DisambiguationStr = UNSET,
         **kwargs,
     ) -> ZonedDateTime:
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="add" if sign == 1 else "subtract",
+        )
         if kwargs:
             if delta is UNSET:
                 return self._shift_kwargs(
-                    sign, disambiguate=disambiguate, **kwargs
+                    sign, disambiguation=disambiguation, **kwargs
                 )
             raise TypeError("Cannot mix positional and keyword arguments")
         elif delta is UNSET:
             return self
         elif isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
-            return self._shift_kwargs(sign, **delta, disambiguate=disambiguate)
+            return self._shift_kwargs(
+                sign, **delta, disambiguation=disambiguation
+            )
         elif isinstance(delta, TimeDelta):
             return self._shift_kwargs(
                 sign,
                 nanoseconds=delta._total_ns,
-                disambiguate=disambiguate,
+                disambiguation=disambiguation,
             )
         else:
             raise TypeError("argument must be a delta, got {delta!r}")
@@ -4991,14 +5299,14 @@ class ZonedDateTime(_ExactAndLocalTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        disambiguate: DisambiguateStr = UNSET,
+        disambiguation: DisambiguationStr = UNSET,
     ) -> ZonedDateTime:
         months_total = sign * (years * 12 + months)
         days_total = sign * (weeks * 7 + days)
         if months_total or days_total:
             self = self.replace_date(
                 self.date()._add_months(months_total)._add_days(days_total),
-                disambiguate=disambiguate,
+                disambiguation=disambiguation,
             )
         delta_ns = _time_units_to_nanos(
             sign,
@@ -5023,7 +5331,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        total: DeltaUnitStr,
+        total: DeltaTotalUnitStr,
     ) -> float: ...
 
     @overload
@@ -5044,7 +5352,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        total: DeltaUnitStr = UNSET,
+        total: DeltaTotalUnitStr = UNSET,
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
@@ -5077,7 +5385,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        total: DeltaUnitStr,
+        total: DeltaTotalUnitStr,
     ) -> float: ...
 
     @overload
@@ -5096,7 +5404,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         b: ZonedDateTime,
         /,
         *,
-        total: DeltaUnitStr = UNSET,
+        total: DeltaTotalUnitStr = UNSET,
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
@@ -5123,7 +5431,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             type(
                 self._tz.ambiguity_for_local(self._py_dt.replace(tzinfo=None))
             )
-            is not Unambiguous
+            is not Unique
         )
 
     def next_transition(self) -> ZonedDateTime | None:
@@ -5230,7 +5538,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         if unit in ("year", "month", "week_mon", "week_sun", "day"):
             return resolve_ambiguity(naive, tz, "compatible")
         match tz.ambiguity_for_local(naive):
-            case Unambiguous(offset):
+            case Unique(offset):
                 pass
             case Fold(_, earlier_offset, later_offset):
                 current_offset = int(
@@ -5251,7 +5559,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     ) -> _datetime:
         local_epoch = int(naive.replace(tzinfo=_UTC).timestamp())
         match self._tz._ambiguity_for_local_epoch(local_epoch):
-            case Unambiguous(offset):
+            case Unique(offset):
                 pass
             case Fold(end, earlier_offset, later_offset):
                 current_offset = int(
@@ -5441,9 +5749,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._tz = tz
         return self
 
-    def exact_eq(self, other: ZonedDateTime, /) -> bool:
+    def strict_eq(self, other: ZonedDateTime, /) -> bool:
         if type(other) is not type(self):
-            raise TypeError("exact_eq() requires same-type arguments")
+            raise TypeError("strict_eq() requires same-type arguments")
         return (
             self._py_dt == other._py_dt  # same moment in time
             and self._nanos == other._nanos
@@ -5451,9 +5759,12 @@ class ZonedDateTime(_ExactAndLocalTime):
             # don't need to check the offset, it's implied by the above
         )
 
+    def exact_eq(self, other: ZonedDateTime, /) -> bool:
+        return self.strict_eq(other)
+
     # An override with shortcut for efficiency if the timezone stays the same
     def to_tz(self, tz: str, /) -> ZonedDateTime:
-        if (_tz := get_tz(tz)) == self._tz:
+        if (_tz := _load_tz(tz)) == self._tz:
             return self
         return self._from_py_unchecked(
             _to_tz(self._py_dt, _tz), self._nanos, _tz
@@ -5655,7 +5966,9 @@ class PlainDateTime(_LocalTime):
         return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(cls, s: str, /, *, format: str) -> PlainDateTime:
+    def parse(
+        cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any
+    ) -> PlainDateTime:
         """Parse a plain datetime from a custom pattern string.
 
         See :ref:`pattern-format` for details.
@@ -5663,7 +5976,8 @@ class PlainDateTime(_LocalTime):
         >>> PlainDateTime.parse("2024-03-15 14:30", format="YYYY-MM-DD hh:mm")
         PlainDateTime("2024-03-15 14:30:00")
         """
-        elements = compile_pattern(format)
+        pattern = _normalize_pattern(pattern, kwargs)
+        elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "PlainDateTime")
         state = parse_fields(elements, s)
         if state.year is None or state.month is None or state.day is None:
@@ -5943,7 +6257,7 @@ class PlainDateTime(_LocalTime):
         b: PlainDateTime,
         /,
         *,
-        total: DeltaUnitStr,
+        total: DeltaTotalUnitStr,
         naive_arithmetic_ok: bool = ...,
     ) -> float: ...
 
@@ -5964,7 +6278,7 @@ class PlainDateTime(_LocalTime):
         b: PlainDateTime,
         /,
         *,
-        total: DeltaUnitStr = UNSET,
+        total: DeltaTotalUnitStr = UNSET,
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
@@ -5996,7 +6310,7 @@ class PlainDateTime(_LocalTime):
         b: PlainDateTime,
         /,
         *,
-        total: DeltaUnitStr,
+        total: DeltaTotalUnitStr,
         naive_arithmetic_ok: bool = ...,
     ) -> float: ...
 
@@ -6017,7 +6331,7 @@ class PlainDateTime(_LocalTime):
         b: PlainDateTime,
         /,
         *,
-        total: DeltaUnitStr = UNSET,
+        total: DeltaTotalUnitStr = UNSET,
         in_units: Sequence[DeltaUnitStr] = UNSET,
         round_mode: RoundModeStr = UNSET,
         round_increment: int = UNSET,
@@ -6211,7 +6525,11 @@ class PlainDateTime(_LocalTime):
         )
 
     def assume_tz(
-        self, tz: str, /, disambiguate: DisambiguateStr = "compatible"
+        self,
+        tz: str,
+        /,
+        disambiguation: DisambiguationStr = UNSET,
+        **kwargs: Any,
     ) -> ZonedDateTime:
         """Assume the datetime is in the given timezone,
         creating a ``ZonedDateTime``.
@@ -6228,8 +6546,19 @@ class PlainDateTime(_LocalTime):
         >>> d.assume_tz("Europe/Amsterdam", disambiguate="raise")
         ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Amsterdam]")
         """
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="assume_tz",
+        )
+        check_no_kwargs(kwargs, "assume_tz")
         return ZonedDateTime._from_py_unchecked(
-            resolve_ambiguity(self._py_dt, _tz := get_tz(tz), disambiguate),
+            _resolve_disambiguation(
+                self._py_dt,
+                _tz := _load_tz(tz),
+                disambiguation,
+                warning_stacklevel=3,
+            ),
             self._nanos,
             _tz,
         )
@@ -6343,6 +6672,10 @@ class PotentialDstBugWarning(WheneverWarning):
         import warnings, whenever
         warnings.filterwarnings("error", category=whenever.PotentialDstBugWarning)
     """
+
+
+class ImplicitDisambiguationWarning(PotentialDstBugWarning):
+    """A fold or gap was resolved without an explicit disambiguation policy."""
 
 
 class DaysAssumed24HoursWarning(PotentialDstBugWarning):
@@ -6755,7 +7088,7 @@ def _unit_index(u: str, units: Sequence[str]) -> int:
 def _plain_since(
     self: PlainDateTime,
     b: PlainDateTime,
-    total: DeltaUnitStr | None,
+    total: DeltaTotalUnitStr | None,
     in_units: Sequence[DeltaUnitStr] | None,
     round_mode: RoundModeStr = UNSET,
     round_increment: int = UNSET,
@@ -6872,7 +7205,7 @@ def _plain_since(
 def _offset_since(
     self: OffsetDateTime,
     b: OffsetDateTime,
-    total: DeltaUnitStr | None,
+    total: DeltaTotalUnitStr | None,
     in_units: Sequence[DeltaUnitStr] | None,
     round_mode: RoundModeStr = UNSET,
     round_increment: int = UNSET,
@@ -6941,7 +7274,7 @@ def _offset_since(
 def _zoned_since(
     a: ZonedDateTime,
     b: ZonedDateTime,
-    total: DeltaUnitStr | None,
+    total: DeltaTotalUnitStr | None,
     in_units: Sequence[DeltaUnitStr] | None,
     round_mode: RoundModeStr = UNSET,
     round_increment: int = UNSET,
