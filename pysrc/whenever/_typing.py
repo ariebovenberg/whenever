@@ -5,9 +5,11 @@ from typing import Literal, TypeAlias
 __all__ = [
     "RoundModeStr",
     "DeltaUnitStr",
+    "DeltaTotalUnitStr",
     "DateDeltaUnitStr",
     "ExactDeltaUnitStr",
     "DisambiguateStr",
+    "DisambiguationStr",
     "OffsetMismatchStr",
     "TimestampUnitStr",
 ]
@@ -33,11 +35,26 @@ DeltaUnitStr: TypeAlias = Literal[
     "seconds",
     "nanoseconds",
 ]
+DeltaTotalUnitStr: TypeAlias = Literal[
+    "years",
+    "months",
+    "weeks",
+    "days",
+    "hours",
+    "minutes",
+    "seconds",
+    "milliseconds",
+    "microseconds",
+    "nanoseconds",
+]
 DateDeltaUnitStr: TypeAlias = Literal["years", "months", "weeks", "days"]
 ExactDeltaUnitStr: TypeAlias = Literal[
     "weeks", "days", "hours", "minutes", "seconds", "nanoseconds"
 ]
 DisambiguateStr: TypeAlias = Literal["compatible", "earlier", "later", "raise"]
+DisambiguationStr: TypeAlias = Literal[
+    "compatible", "earlier", "later", "raise"
+]
 OffsetMismatchStr: TypeAlias = Literal["raise", "keep_instant", "keep_local"]
 TimestampUnitStr: TypeAlias = Literal[
     "second",

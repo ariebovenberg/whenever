@@ -6,7 +6,11 @@ from collections.abc import Sequence
 from datetime import date as _date, timedelta as _timedelta
 from typing import Literal, cast
 
-from ._typing import DateDeltaUnitStr, DeltaUnitStr, ExactDeltaUnitStr
+from ._typing import (
+    DateDeltaUnitStr,
+    DeltaUnitStr,
+    ExactDeltaUnitStr,
+)
 
 DATE_DELTA_UNITS = cast(
     Sequence[DateDeltaUnitStr], ["years", "months", "weeks", "days"]
@@ -14,6 +18,11 @@ DATE_DELTA_UNITS = cast(
 EXACT_UNITS_STRICT = cast(
     Sequence[ExactDeltaUnitStr],
     ["hours", "minutes", "seconds", "nanoseconds"],
+)
+EXACT_TOTAL_UNITS = (
+    *EXACT_UNITS_STRICT,
+    "milliseconds",
+    "microseconds",
 )
 EXACT_UNITS = ["weeks", "days", *EXACT_UNITS_STRICT]
 DELTA_UNITS = cast(

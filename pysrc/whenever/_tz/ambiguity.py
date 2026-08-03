@@ -6,8 +6,8 @@ from datetime import (
 )
 
 from .._common import UTC, mk_fixed_tzinfo
-from .._typing import DisambiguateStr
-from .common import Fold, Gap, Unambiguous
+from .._typing import DisambiguationStr
+from .common import Fold, Gap, LocalMapping, Unique
 from .tzif import TimeZone
 
 
@@ -35,35 +35,48 @@ def _tzid_display(tzid: str | None) -> str:
 
 
 def resolve_ambiguity(
-    dt: _datetime, tz: TimeZone, disambiguate: DisambiguateStr | _timedelta
+    dt: _datetime,
+    tz: TimeZone,
+    disambiguation: DisambiguationStr | _timedelta,
 ) -> _datetime:
     assert dt.tzinfo is None, "dt must be naive"
-    if isinstance(disambiguate, _timedelta):
-        return resolve_ambiguity_using_prev_offset(dt, disambiguate, tz)
-    elif disambiguate not in ("compatible", "earlier", "later", "raise"):
-        raise ValueError(
-            "disambiguate must be 'compatible', 'earlier', 'later', or 'raise'"
-        )
+    if isinstance(disambiguation, _timedelta):
+        return resolve_ambiguity_using_prev_offset(dt, disambiguation, tz)
 
-    ambiguity = tz.ambiguity_for_local(dt)
+    return _resolve_ambiguity_from_mapping(
+        dt, tz, disambiguation, tz.ambiguity_for_local(dt)
+    )
+
+
+def _resolve_ambiguity_from_mapping(
+    dt: _datetime,
+    tz: TimeZone,
+    disambiguation: DisambiguationStr,
+    ambiguity: LocalMapping,
+    /,
+) -> _datetime:
+    if disambiguation not in ("compatible", "earlier", "later", "raise"):
+        raise ValueError(
+            "disambiguation must be 'compatible', 'earlier', 'later', or 'raise'"
+        )
     match ambiguity:
-        case Unambiguous(offset):
+        case Unique(offset):
             pass
         case Fold(_, earlier_offset, later_offset):
-            if disambiguate in ("compatible", "earlier"):
+            if disambiguation in ("compatible", "earlier"):
                 offset = earlier_offset
-            elif disambiguate == "later":
+            elif disambiguation == "later":
                 offset = later_offset
-            else:  # disambiguate == "raise"
+            else:  # disambiguation == "raise"
                 raise RepeatedTime._for_tz(dt, tz.key)
         case Gap(_, later_offset, earlier_offset):  # pragma: no branch
-            if disambiguate in ("compatible", "later"):
+            if disambiguation in ("compatible", "later"):
                 offset = later_offset
                 shift = later_offset - earlier_offset
-            elif disambiguate == "earlier":
+            elif disambiguation == "earlier":
                 offset = earlier_offset
                 shift = earlier_offset - later_offset
-            else:  # disambiguate == "raise"
+            else:  # disambiguation == "raise"
                 raise SkippedTime._for_tz(dt, tz.key)
             # shift the datetime out of the gap
             dt += _timedelta(seconds=shift)
@@ -78,9 +91,19 @@ def resolve_ambiguity(
 def resolve_ambiguity_using_prev_offset(
     dt: _datetime, prev_offset: _timedelta, tz: TimeZone
 ) -> _datetime:
-    ambiguity = tz.ambiguity_for_local(dt)
+    return _resolve_ambiguity_using_prev_offset_from_mapping(
+        dt, prev_offset, tz.ambiguity_for_local(dt)
+    )
+
+
+def _resolve_ambiguity_using_prev_offset_from_mapping(
+    dt: _datetime,
+    prev_offset: _timedelta,
+    ambiguity: LocalMapping,
+    /,
+) -> _datetime:
     offset = int(prev_offset.total_seconds())
-    if isinstance(ambiguity, Unambiguous):
+    if isinstance(ambiguity, Unique):
         offset = ambiguity.offset
     elif isinstance(ambiguity, Fold):
         # If the offset is already valid, there's nothing to do

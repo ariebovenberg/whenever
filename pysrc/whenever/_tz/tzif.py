@@ -12,7 +12,7 @@ from datetime import datetime as _datetime, timezone as _timezone
 from io import BytesIO
 from typing import IO, MutableSequence, Sequence, final
 
-from .common import Ambiguity, Fold, Gap, Unambiguous
+from .common import Fold, Gap, LocalMapping, Unique
 from .posix import TzStr, epoch_for_date, year_for_epoch
 
 EpochSecs = int
@@ -103,13 +103,13 @@ class TimeZone:
             assert self._utc_offsets  # ensured during parsing
             return self._utc_offsets[-1]
 
-    def ambiguity_for_local(self, dt: _datetime) -> Ambiguity:
+    def ambiguity_for_local(self, dt: _datetime) -> LocalMapping:
         assert dt.tzinfo is None
         return self._ambiguity_for_local_epoch(
             int(dt.replace(tzinfo=_timezone.utc).timestamp())
         )
 
-    def _ambiguity_for_local_epoch(self, t: EpochSecs) -> Ambiguity:
+    def _ambiguity_for_local_epoch(self, t: EpochSecs) -> LocalMapping:
         """Get the UTC offset at the given local time (expressed in epoch seconds)"""
         idx = _bisect_right(self._local_epochs, t)
         if idx < len(self._local_epochs):
@@ -119,7 +119,7 @@ class TimeZone:
             ambiguity = 0 if t < (next_transition - abs(change)) else change
 
             if ambiguity == 0:
-                return Unambiguous(offset)
+                return Unique(offset)
             elif ambiguity < 0:
                 return Fold(next_transition, offset, offset + ambiguity)
             else:  # ambiguity > 0
@@ -134,7 +134,7 @@ class TimeZone:
         else:
             assert self._local_values  # ensured during parsing
             prev_offset, last_shift = self._local_values[-1]
-            return Unambiguous(prev_offset + last_shift)
+            return Unique(prev_offset + last_shift)
 
     def meta_for_instant(self, t: EpochSecs) -> tuple[int, str]:
         """Get timezone metadata (dst_saving_secs, abbreviation)
