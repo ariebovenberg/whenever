@@ -147,6 +147,7 @@ def normalize_renamed_keyword(
     function_name: str,
     new_name: str,
     old_name: str,
+    warning_stacklevel: int,
 ) -> Any:
     old_value = kwargs.pop(old_name, UNSET)
     if old_value is UNSET:
@@ -156,6 +157,10 @@ def normalize_renamed_keyword(
             f"{function_name}() received both '{new_name}' "
             f"and deprecated '{old_name}'"
         )
+    warn_deprecated(
+        f"'{old_name}' is deprecated; use '{new_name}' instead",
+        stacklevel=warning_stacklevel,
+    )
     return old_value
 
 

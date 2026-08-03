@@ -13,8 +13,13 @@ def __getattr__(name: str) -> object:
         return g[name]
     # TZPATH is a live view, not a cached value.
     elif name == "TZPATH":
+        from ._common import warn_deprecated
         from ._core import _get_tzpath
 
+        warn_deprecated(
+            "TZPATH is deprecated; use get_tzpath() instead",
+            stacklevel=2,
+        )
         return _get_tzpath()
     elif name == "AnyDelta":
         from ._core import TimeDelta
