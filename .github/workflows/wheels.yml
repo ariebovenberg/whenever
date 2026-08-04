@@ -96,7 +96,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --strip --out dist --interpreter '3.10 3.11 3.12 3.13 3.14 3.14t'
+          args: --release --strip --out dist --interpreter '3.10 3.11 3.12 3.13 3.14 3.14t 3.15 3.15t'
           manylinux: ${{ matrix.manylinux || 'auto' }}
           rust-toolchain: "1.93"
       - run: uv run twine check --strict dist/*

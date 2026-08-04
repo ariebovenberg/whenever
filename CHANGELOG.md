@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.5 (2026-08-04)
+
+- Add binary wheels for Python 3.15.
+
 ## 0.10.4 (2026-08-02)
 
 **Added**
