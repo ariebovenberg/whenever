@@ -258,7 +258,9 @@ class TestTimestamp:
 
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="invalid timestamp unit"):
-            Instant.from_utc(1970, 1, 1).timestamp(unit="seconds")
+            Instant.from_utc(1970, 1, 1).timestamp(
+                unit="seconds"  # type: ignore[arg-type]
+            )
 
     def test_millis(self):
         assert Instant.from_utc(1970, 1, 1).timestamp_millis() == 0
@@ -319,7 +321,10 @@ class TestFromTimestamp:
 
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="invalid timestamp unit"):
-            Instant.from_timestamp(0, unit="seconds")
+            Instant.from_timestamp(
+                0,
+                unit="seconds",  # type: ignore[arg-type]
+            )
 
     @pytest.mark.parametrize(
         "method, factor",

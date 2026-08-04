@@ -19,7 +19,7 @@ impl TimestampUnit {
                 (*state.str_nanosecond, Self::Nanosecond),
             ],
         )
-        .ok_or_else(|| raise_value_err::<(), _>("invalid timestamp unit").unwrap_err())
+        .ok_or_value_err("invalid timestamp unit")
     }
 
     pub(crate) fn timestamp(self, instant: Instant) -> i128 {

@@ -170,10 +170,13 @@ _LAZY_MODULES = {
     f"{__package__}._typing": (
         "RoundModeStr",
         "DeltaUnitStr",
+        "DeltaTotalUnitStr",
         "DateDeltaUnitStr",
         "ExactDeltaUnitStr",
         "DisambiguateStr",
+        "DisambiguationStr",
         "OffsetMismatchStr",
+        "TimestampUnitStr",
     ),
     f"{__package__}._common": ("SYSTEM_TZ",),
     f"{__package__}._shared": (

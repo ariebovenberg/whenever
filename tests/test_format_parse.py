@@ -818,12 +818,22 @@ class TestZonedDateTimeParse:
             )
 
     def test_tz_only_no_offset(self):
-        """Parse with tz ID but no offset — uses disambiguate kwarg."""
+        """Parse with tz ID but no offset — uses disambiguation."""
         zdt = ZonedDateTime.parse(
             "2024-03-15 14:30[Europe/Paris]",
             pattern="YYYY-MM-DD hh:mm'['VV']'",
         )
         assert zdt == ZonedDateTime(2024, 3, 15, 14, 30, tz="Europe/Paris")
+
+    def test_disambiguate_is_not_a_legacy_keyword(self):
+        with pytest.raises(
+            TypeError, match="unexpected keyword.*disambiguate"
+        ):
+            ZonedDateTime.parse(
+                "2024-03-15 14:30[Europe/Paris]",
+                pattern="YYYY-MM-DD hh:mm'['VV']'",
+                disambiguate="raise",  # type: ignore[call-overload]
+            )
 
     def test_offset_mismatch(self):
         """Offset doesn't match timezone: should raise."""

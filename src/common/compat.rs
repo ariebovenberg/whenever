@@ -46,11 +46,11 @@ impl RenamedKeyword {
 
 pub(crate) fn parse_pattern_keyword(kwargs: &mut IterKwargs, state: &State) -> PyResult<PyObj> {
     let mut value = RenamedKeyword::default();
-    handle_kwargs("parse", kwargs, |key, arg, eq| {
-        if eq(key, *state.str_pattern) {
-            value.set_new(arg);
-        } else if eq(key, *state.str_format) {
-            value.set_old(arg);
+    handle_kwargs("parse", kwargs, |k, v, eq| {
+        if eq(k, *state.str_pattern) {
+            value.set_new(v);
+        } else if eq(k, *state.str_format) {
+            value.set_old(v);
         } else {
             return Ok(false);
         }
@@ -65,8 +65,5 @@ pub(crate) fn parse_pattern_keyword(kwargs: &mut IterKwargs, state: &State) -> P
             c"'format' is deprecated; use 'pattern' instead",
             1,
         )?
-        .ok_or_else(|| {
-            raise_type_err::<(), _>("parse() missing required keyword argument 'pattern'")
-                .unwrap_err()
-        })
+        .ok_or_type_err("parse() missing required keyword argument 'pattern'")
 }
