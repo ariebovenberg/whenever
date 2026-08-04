@@ -99,6 +99,14 @@ To suppress when exact 24-hour arithmetic is genuinely intended, pass
 
     TimeDelta(days=1, days_assumed_24h_ok=True)
 ";
+pub(crate) const IMPLICITDISAMBIGUATIONWARNING: &CStr = c"\
+Raised when a repeated or skipped local datetime is resolved without an
+explicit disambiguation policy.
+
+Such local datetimes occur around timezone transitions and do not identify
+one unambiguous instant. Pass ``disambiguation=`` explicitly to document
+whether the compatible, earlier, later, or rejecting behavior is intended.
+";
 pub(crate) const INSTANT: &CStr = c"\
 A moment in time, independent of any timezone or calendar.
 
@@ -339,6 +347,10 @@ original offset, which may become stale if DST rules have changed.
 Use :meth:`assume_tz` to convert to a ``ZonedDateTime`` first if you
 need DST-aware arithmetic.
 ";
+pub(crate) const PICKLEOFFSETMISMATCHWARNING: &CStr = c"\
+The offset stored in a ZonedDateTime pickle no longer matches the
+timezone's current rules.
+";
 pub(crate) const PLAINDATETIME: &CStr = c"\
 A date and time-of-day without any timezone information.
 
@@ -375,13 +387,14 @@ When to use this type:
 pub(crate) const POTENTIALDSTBUGWARNING: &CStr = c"\
 Base class for warnings about potential DST-related bugs in user code.
 
-Not raised directly. Subclasses cover three distinct scenarios:
+Not raised directly. Subclasses cover four distinct scenarios:
 
 - :class:`~whenever.DaysAssumed24HoursWarning` — days treated as exact 24-hour units
 - :class:`~whenever.StaleOffsetWarning` — fixed offset may be wrong after a DST shift
 - :class:`~whenever.NaiveArithmeticWarning` — exact-time arithmetic without timezone context
+- :class:`~whenever.ImplicitDisambiguationWarning` — resolving a repeated or skipped local time without an explicit policy
 
-Catching or filtering this base class handles all three at once:
+Catching or filtering this base class handles all four at once:
 
 .. code-block:: python
 
@@ -743,7 +756,7 @@ Date(\"2024-08-09\")
 Date(\"2024-08-30\")
 ";
 pub(crate) const DATE_PARSE: &CStr = c"\
-parse(s, /, *, format)
+parse(s, /, *, pattern=..., **kwargs)
 --
 
 Parse a date from a custom pattern string.
@@ -854,6 +867,8 @@ Date(\"2020-03-01\")
 ";
 pub(crate) const DATE_TO_STDLIB: &CStr = c"\
 Convert to a standard library :class:`~datetime.date`";
+pub(crate) const DATE_TODAY: &CStr = c"\
+Get the current date in the given named timezone.";
 pub(crate) const DATE_TODAY_IN_SYSTEM_TZ: &CStr = c"\
 Get the current date in the system's local timezone.
 
@@ -918,6 +933,9 @@ The output is also compatible with the (stricter) RFC 9110 standard.
 
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP: &CStr = c"\
+from_timestamp(value, /, *, unit='second')
+--
+
 Create an Instant from a UNIX timestamp (in seconds).
 
 The inverse of the ``timestamp()`` method.
@@ -944,7 +962,7 @@ Create an Instant from the current time.
 Instant(\"2024-06-15 12:34:56.789123456Z\")
 ";
 pub(crate) const INSTANT_PARSE: &CStr = c"\
-parse(s, /, *, format)
+parse(s, /, *, pattern=..., **kwargs)
 --
 
 Parse an instant from a custom pattern string.
@@ -1021,17 +1039,6 @@ add($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_i
 --
 
 Add time to this delta, returning a new delta.";
-pub(crate) const ITEMIZEDDATEDELTA_EXACT_EQ: &CStr = c"\
-Check for strict equality. All fields *and their presence* must match.
-
->>> d = ItemizedDateDelta(weeks=2, days=3)
->>> d == ItemizedDateDelta(weeks=2, days=3)
-True
->>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
-True
->>> d.exact_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
-False
-";
 pub(crate) const ITEMIZEDDATEDELTA_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, lowercase_units=False)
 --
@@ -1106,6 +1113,17 @@ The sign of the delta, whether it's positive, negative, or zero.
 >>> ItemizedDateDelta(weeks=0).sign()
 0
 ";
+pub(crate) const ITEMIZEDDATEDELTA_STRICT_EQ: &CStr = c"\
+Check for strict equality. All fields *and their presence* must match.
+
+>>> d = ItemizedDateDelta(weeks=2, days=3)
+>>> d == ItemizedDateDelta(weeks=2, days=3)
+True
+>>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
+True
+>>> d.exact_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
+False
+";
 pub(crate) const ITEMIZEDDATEDELTA_SUBTRACT: &CStr = c"\
 subtract($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
 --
@@ -1157,8 +1175,6 @@ TimeDelta(\"P5h6m7.000000008s\")
 (ItemizedDateDelta(\"P2w\"), None)
 
 ";
-pub(crate) const ITEMIZEDDELTA_EXACT_EQ: &CStr = c"\
-Check for strict equality. All fields *and their presence* must match.";
 pub(crate) const ITEMIZEDDELTA_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, lowercase_units=False)
 --
@@ -1246,6 +1262,8 @@ ItemizedDelta(\"P1yT2h\")
 ";
 pub(crate) const ITEMIZEDDELTA_SIGN: &CStr = c"\
 The sign of the delta, 1, 0, or -1";
+pub(crate) const ITEMIZEDDELTA_STRICT_EQ: &CStr = c"\
+Check for strict equality. All fields *and their presence* must match.";
 pub(crate) const ITEMIZEDDELTA_SUBTRACT: &CStr = c"\
 subtract($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
 --
@@ -1288,7 +1306,7 @@ Pass ``stale_offset_ok=True`` to suppress;
 Python's standard warning filters also apply.
 ";
 pub(crate) const OFFSETDATETIME_ASSUME_TZ: &CStr = c"\
-assume_tz($self, tz, *, offset_mismatch='raise')
+assume_tz($self, tz, *, offset_mismatch='raise', disambiguation=...)
 --
 
 Associate this offset datetime with a timezone, returning a ZonedDateTime.
@@ -1391,7 +1409,7 @@ Use ``ZonedDateTime.now('<tz>')`` if you know the timezone, or
 Pass ``stale_offset_ok=True`` to suppress.
 ";
 pub(crate) const OFFSETDATETIME_PARSE: &CStr = c"\
-parse(s, /, *, format)
+parse(s, /, *, pattern=..., **kwargs)
 --
 
 Parse an offset datetime from a custom pattern string.
@@ -1585,7 +1603,7 @@ for more information.
 ZonedDateTime(\"2020-08-15 23:12:00-04:00[America/New_York]\")
 ";
 pub(crate) const PLAINDATETIME_ASSUME_TZ: &CStr = c"\
-assume_tz($self, tz, /, disambiguate='compatible')
+assume_tz($self, tz, /, disambiguation=..., **kwargs)
 --
 
 Assume the datetime is in the given timezone,
@@ -1659,7 +1677,7 @@ Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 The inverse of the ``parse_iso()`` method.
 ";
 pub(crate) const PLAINDATETIME_PARSE: &CStr = c"\
-parse(s, /, *, format)
+parse(s, /, *, pattern=..., **kwargs)
 --
 
 Parse a plain datetime from a custom pattern string.
@@ -1791,7 +1809,7 @@ to find the corresponding exact time:
 ExactDateTime(\"2021-01-02 12:30:00-05:00[America/New_York]\")
 ";
 pub(crate) const TIME_PARSE: &CStr = c"\
-parse(s, /, *, format)
+parse(s, /, *, pattern=..., **kwargs)
 --
 
 Parse a time from a custom pattern string.
@@ -2039,7 +2057,7 @@ See :ref:`pattern-format` for details.
 '2024-03-15 14:30+01:00[Europe/Paris]'
 ";
 pub(crate) const ZONEDDATETIME_FORMAT_ISO: &CStr = c"\
-format_iso($self, *, unit='auto', basic=False, sep='T', tz='always')
+format_iso($self, *, unit='auto', basic=False, sep='T', tz_display=..., **kwargs)
 --
 
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
@@ -2136,7 +2154,7 @@ Create an instance from the current time in the system timezone.
 Equivalent to ``Instant.now().to_system_tz()``.
 ";
 pub(crate) const ZONEDDATETIME_PARSE: &CStr = c"\
-parse(s, /, *, format, disambiguate='compatible')
+parse(s, /, *, pattern=..., disambiguation=..., offset_mismatch='raise', **kwargs)
 --
 
 Parse a zoned datetime from a custom pattern string.
@@ -2159,6 +2177,9 @@ See :ref:`pattern-format` for details.
 ZonedDateTime(\"2024-03-15 14:30:00+01:00[Europe/Paris]\")
 ";
 pub(crate) const ZONEDDATETIME_PARSE_ISO: &CStr = c"\
+parse_iso(s, /, *, disambiguation=..., offset_mismatch='raise', **kwargs)
+--
+
 Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
 The inverse of the ``format_iso()`` method.
@@ -2206,7 +2227,7 @@ for more information.
 
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_DATE: &CStr = c"\
-replace_date($self, date, /, disambiguate=...)
+replace_date($self, date, /, disambiguation=..., **kwargs)
 --
 
 Construct a new instance with the date replaced.
@@ -2214,7 +2235,7 @@ Construct a new instance with the date replaced.
 See the ``replace()`` method for more information.
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_TIME: &CStr = c"\
-replace_time($self, time, /, disambiguate=...)
+replace_time($self, time, /, disambiguation=..., **kwargs)
 --
 
 Construct a new instance with the time replaced.
@@ -2301,6 +2322,8 @@ The abbreviation is often ambiguous and may not be unique,
 but it is commonly used in human-readable formats.
 Use the timezone ID (e.g. ``\"Europe/London\"``) for unambiguous identification of timezones.
 ";
+pub(crate) const ZONEDDATETIME_TZ_ID: &CStr = c"\
+The timezone ID, if the timezone has one.";
 pub(crate) const ZONEDDATETIME_UNTIL: &CStr = c"\
 until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
@@ -2344,7 +2367,7 @@ Use :meth:`~whenever.ZonedDateTime.since` or
 :meth:`~whenever.ZonedDateTime.until` for more advanced
 options such as calendar units, unit decomposition, and rounding.
 ";
-pub(crate) const EXACTTIME_EXACT_EQ: &CStr = c"\
+pub(crate) const EXACTTIME_STRICT_EQ: &CStr = c"\
 Compare objects by their values
 (instead of whether they represent the same instant).
 Different types are never equal.
@@ -2364,6 +2387,9 @@ If ``a.exact_eq(b)`` is true, then
 ``a == b`` is also true, but the converse is not necessarily true.
 ";
 pub(crate) const EXACTTIME_TIMESTAMP: &CStr = c"\
+timestamp($self, *, unit='second')
+--
+
 The UNIX timestamp for this datetime. Inverse of :meth:`from_timestamp`.
 
 >>> Instant.from_utc(1970, 1, 1).timestamp()
@@ -2470,6 +2496,7 @@ The year component of the datetime";
 pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours. If you wish to round to exactly 24 hours, use `round('hour', increment=24)`.";
 pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"You are using days or weeks as exact time, so Whenever will treat each day as exactly 24 hours. A calendar day can be 23 or 25 hours during a DST transition, so this may differ from calendar arithmetic. If you mean calendar days, perform the operation on a ZonedDateTime or pass `relative_to=...` where supported. If fixed 24-hour periods are intentional, pass `days_assumed_24h_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz=` argument to 'never' or 'auto'.";
+pub(crate) const IMPLICIT_DISAMBIGUATION_MSG: &CStr = c"resolving a local datetime that is repeated or skipped by a timezone transition without an explicit disambiguation policy can silently select the wrong instant; pass disambiguation='compatible', 'earlier', 'later', or 'raise'. See https://whenever.readthedocs.io/en/latest/guide/ambiguity.html";
 pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"You are converting a timestamp using a fixed UTC offset. The result is correct for that offset, but the offset may be stale at this timestamp—no longer matching the actual offset used by the region you intend. If you mean a named timezone, use ZonedDateTime.from_timestamp(ts, tz='<tz>'); if you only need the instant, use Instant.from_timestamp(ts). If the fixed offset is intentional, pass `stale_offset_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_NOW_STALE_MSG: &CStr = c"You are getting the current time using a fixed UTC offset. A fixed offset has no timezone rules, so it may be stale for the region you intend—no longer matching that region's actual offset after a DST or other rule change. If you mean a named timezone, use ZonedDateTime.now('<tz>'); if you only need the current instant, use Instant.now(). If the fixed offset is intentional, pass `stale_offset_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an OffsetDateTime keeps its fixed UTC offset. The offset may become stale—no longer matching the region's actual offset—if the result is in a different DST or timezone-rule period (e.g. after replacing the month on a European-timezone datetime). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware field replacement. If the fixed offset is intentional, pass `stale_offset_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";

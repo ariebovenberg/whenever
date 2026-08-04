@@ -103,16 +103,22 @@ impl PlainDateTime {
         state: &State,
     ) -> PyResult<OffsetDateTime> {
         let mapping = tz.mapping_for_local(self.local_seconds());
-        if disambiguation.is_none() && !matches!(mapping, LocalMapping::Unique { .. }) {
-            warn_with_class(
-                *state.warn_implicit_disambiguation,
-                c"implicitly resolving an ambiguous local time using disambiguation='compatible'",
-                1,
-            )?;
-        }
+        let disambiguation = match disambiguation {
+            Some(d) => d,
+            None => {
+                if !matches!(mapping, LocalMapping::Unique { .. }) {
+                    warn_with_class(
+                        *state.warn_implicit_disambiguation,
+                        doc::IMPLICIT_DISAMBIGUATION_MSG,
+                        1,
+                    )?;
+                }
+                Disambiguation::Compatible
+            }
+        };
         self.resolve_mapping_or_raise(
             mapping,
-            ResolvePolicy::Disambiguate(disambiguation.unwrap_or(Disambiguation::Compatible)),
+            ResolvePolicy::Disambiguate(disambiguation),
             tz,
             state,
         )
@@ -189,10 +195,11 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
         let arg = args.iter().next().unwrap();
         if PyStr::isinstance(arg) {
             let (dis, mismatch) = match kwargs {
-                Some(d) => parse_iso_kwargs(d.iteritems(), "ZonedDateTime", cls.state())?,
+                Some(d) => parse_iso_kwargs(d.iteritems(), "ZonedDateTime", false, cls.state())?,
                 None => parse_iso_kwargs(
                     std::iter::empty::<(PyObj, PyObj)>(),
                     "ZonedDateTime",
+                    false,
                     cls.state(),
                 )?,
             };
@@ -248,24 +255,14 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
     let date = Date::from_i64_components(year, month, day).ok_or_value_err("invalid date")?;
     let time = Time::from_i64_components(hour, minute, second, nanosecond)
         .ok_or_value_err("invalid time")?;
-    let mut renamed = RenamedKeyword::default();
+    let mut dis_arg = DisambiguationArg::default();
     if let Some(value) = disambiguation.borrow_opt() {
-        renamed.set_new(value);
+        dis_arg.set_new(value);
     }
     if let Some(value) = disambiguate.borrow_opt() {
-        renamed.set_old(value);
+        dis_arg.set_old(value);
     }
-    let dis = renamed
-        .finish(
-            state,
-            "ZonedDateTime",
-            "disambiguation",
-            "disambiguate",
-            c"'disambiguate' is deprecated; use 'disambiguation' instead",
-            1,
-        )?
-        .map(|value| Disambiguation::from_py(value, state))
-        .transpose()?;
+    let dis = dis_arg.finish("ZonedDateTime", state)?;
     date.at(time)
         .resolve_with_disambiguation(&tz, dis, state)?
         .into_zoned_obj_unchecked(tz, cls)
@@ -445,7 +442,8 @@ fn exact_eq(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> P
 
 fn to_tz(cls: PyClass<ZonedDateTime>, slf: PyRef<'_, ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     let tz = cls.state().load_tz(tz_obj)?;
-    if *tz == *slf.tz {
+    // Cached timezones normally share an Arc. Avoid comparing every transition in that common case.
+    if Arc::ptr_eq(&tz, &slf.tz) || *tz == *slf.tz {
         Ok(slf.newref())
     } else {
         slf.to_instant().into_zoned_obj(tz, cls)
@@ -707,57 +705,49 @@ fn format_iso(
 
 fn parse_iso(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let arg = handle_one_arg("parse_iso", args)?;
-    let (dis, mismatch) = parse_iso_kwargs(kwargs, "parse_iso", cls.state())?;
+    let (dis, mismatch) = parse_iso_kwargs(kwargs, "parse_iso", true, cls.state())?;
     parse_iso_inner(cls, arg, dis, mismatch)
 }
 
 fn parse_iso_kwargs<K>(
     kwargs: K,
     fname: &str,
+    allow_deprecated: bool,
     state: &State,
 ) -> PyResult<(Option<Disambiguation>, OffsetMismatch)>
 where
     K: IntoIterator<Item = (PyObj, PyObj)>,
 {
-    let mut dis_arg = RenamedKeyword::default();
+    let mut dis_arg = DisambiguationArg::default();
     let mut mismatch = OffsetMismatch::Raise;
-    handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, *state.str_disambiguation) {
-            dis_arg.set_new(value);
-        } else if eq(key, *state.str_disambiguate) {
-            dis_arg.set_old(value);
-        } else if eq(key, *state.str_offset_mismatch) {
-            mismatch = OffsetMismatch::from_py(value, state)?;
+    handle_kwargs(fname, kwargs, |k, v, eq| {
+        if eq(k, *state.str_offset_mismatch) {
+            mismatch = OffsetMismatch::from_py(v, state)?;
+        } else if allow_deprecated {
+            if !dis_arg.handle_kwarg(k, v, eq, state) {
+                return Ok(false);
+            }
+        } else if eq(k, *state.str_disambiguation) {
+            dis_arg.set_new(v);
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
-    let dis = dis_arg
-        .finish(
-            state,
-            fname,
-            "disambiguation",
-            "disambiguate",
-            c"'disambiguate' is deprecated; use 'disambiguation' instead",
-            1,
-        )?
-        .map(|value| Disambiguation::from_py(value, state))
-        .transpose()?;
-    Ok((dis, mismatch))
+    Ok((dis_arg.finish(fname, state)?, mismatch))
 }
 
-fn matching_local_offset(mapping: &LocalMapping, parsed: Offset, exact: bool) -> Option<Offset> {
-    let matches = |candidate: Offset| {
-        let seconds = candidate.get();
+fn matching_local_offset(mapping: LocalMapping, parsed: Offset, exact: bool) -> Option<Offset> {
+    let matches = |offset: Offset| {
+        let seconds = offset.get();
         let comparable = if exact {
             seconds
         } else {
             seconds.signum() * ((seconds.abs() + 30) / 60 * 60)
         };
-        (comparable == parsed.get()).then_some(candidate)
+        (comparable == parsed.get()).then_some(offset)
     };
-    match *mapping {
+    match mapping {
         LocalMapping::Unique { offset } => matches(offset),
         LocalMapping::Fold { before, after, .. } => matches(before).or_else(|| matches(after)),
         LocalMapping::Gap { .. } => None,
@@ -781,32 +771,34 @@ fn parse_iso_inner(
         .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
     let state = cls.state();
     let tz = state.tz_store.get(tzstr)?;
-    match offset {
-        OffsetInIsoString::Some { offset, exact } => {
-            let mapping = tz.mapping_for_local(dt.local_seconds());
-            if let Some(actual) = matching_local_offset(&mapping, offset, exact) {
-                return dt
-                    .assume_offset(actual)
-                    .ok_or_range_err()?
-                    .into_zoned_obj_unchecked(tz, cls);
-            }
-            match mismatch {
-                OffsetMismatch::Raise => raise(
-                    *state.exc_invalid_offset,
-                    format!("invalid offset for {tzstr}"),
-                ),
-                OffsetMismatch::KeepInstant => dt
-                    .assume_offset(offset)
-                    .ok_or_range_err()?
-                    .to_instant()
-                    .into_zoned_obj(tz, cls),
-                OffsetMismatch::KeepLocal => dt
-                    .resolve_with_disambiguation(&tz, dis, state)?
-                    .into_zoned_obj_unchecked(tz, cls),
-            }
+    let (offset, exact) = match offset {
+        OffsetInIsoString::MinutePrecision(offset) => (offset, false),
+        OffsetInIsoString::SecondPrecision(offset) => (offset, true),
+        OffsetInIsoString::Z => return dt.assume_utc().into_zoned_obj(tz, cls),
+        OffsetInIsoString::Missing => {
+            return dt
+                .resolve_with_disambiguation(&tz, dis, state)?
+                .into_zoned_obj_unchecked(tz, cls);
         }
-        OffsetInIsoString::Z => dt.assume_utc().into_zoned_obj(tz, cls),
-        OffsetInIsoString::Missing => dt
+    };
+    let mapping = tz.mapping_for_local(dt.local_seconds());
+    if let Some(actual) = matching_local_offset(mapping, offset, exact) {
+        return dt
+            .assume_offset(actual)
+            .ok_or_range_err()?
+            .into_zoned_obj_unchecked(tz, cls);
+    }
+    match mismatch {
+        OffsetMismatch::Raise => raise(
+            *state.exc_invalid_offset,
+            format!("invalid offset for {tzstr}"),
+        ),
+        OffsetMismatch::KeepInstant => dt
+            .assume_offset(offset)
+            .ok_or_range_err()?
+            .to_instant()
+            .into_zoned_obj(tz, cls),
+        OffsetMismatch::KeepLocal => dt
             .resolve_with_disambiguation(&tz, dis, state)?
             .into_zoned_obj_unchecked(tz, cls),
     }
@@ -823,7 +815,7 @@ fn replace(
     let mut components = slf.to_plain().components();
     let offset = slf.offset;
     let tz = &slf.tz;
-    let mut dis_arg = RenamedKeyword::default();
+    let mut dis_arg = DisambiguationArg::default();
     let mut tz_new = None;
     let mut tz_changed = false;
 
@@ -836,11 +828,7 @@ fn replace(
                 tz_changed = true;
             }
             tz_new = Some(tz_arg);
-        } else if eq(k, *state.str_disambiguation) {
-            dis_arg.set_new(v);
-        } else if eq(k, *state.str_disambiguate) {
-            dis_arg.set_old(v);
-        } else {
+        } else if !dis_arg.handle_kwarg(k, v, eq, state) {
             return components.set_from_kwarg(k, v, state, eq);
         }
         Ok(true)
@@ -848,16 +836,7 @@ fn replace(
 
     let tz = tz_new.unwrap_or_else(|| tz.clone());
     let dis = dis_arg
-        .finish(
-            state,
-            "replace",
-            "disambiguation",
-            "disambiguate",
-            c"'disambiguate' is deprecated; use 'disambiguation' instead",
-            1,
-        )?
-        .map(|value| Disambiguation::from_py(value, state))
-        .transpose()?
+        .finish("replace", state)?
         .or(tz_changed.then_some(Disambiguation::Compatible));
     components
         .into_plain()?
@@ -995,7 +974,7 @@ fn timestamp(
 ) -> PyReturn {
     handle_no_args("timestamp", args)?;
     let unit = handle_one_kwarg("timestamp", *cls.state().str_unit, kwargs)?
-        .map(|value| TimestampUnit::from_py(value, cls.state()))
+        .map(|v| TimestampUnit::from_py(v, cls.state()))
         .transpose()?
         .unwrap_or(TimestampUnit::Second);
     unit.timestamp(slf.to_instant()).to_py()
@@ -1181,46 +1160,21 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let mut dis_arg = RenamedKeyword::default();
+    let mut dis_arg = DisambiguationArg::default();
 
     let shift = match handle_opt_arg(fname, args)? {
         Some(arg) => {
-            handle_kwargs(fname, kwargs, |key, value, eq| {
-                if eq(key, *state.str_disambiguation) {
-                    dis_arg.set_new(value);
-                } else if eq(key, *state.str_disambiguate) {
-                    dis_arg.set_old(value);
-                } else {
-                    return Ok(false);
-                }
-                Ok(true)
+            handle_kwargs(fname, kwargs, |k, v, eq| {
+                Ok(dis_arg.handle_kwarg(k, v, eq, state))
             })?;
             parse_datetime_shift_arg(fname, arg, state)?
         }
         None => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
-            if eq(k, *state.str_disambiguation) {
-                dis_arg.set_new(v);
-                Ok(true)
-            } else if eq(k, *state.str_disambiguate) {
-                dis_arg.set_old(v);
-                Ok(true)
-            } else {
-                Ok(false)
-            }
+            Ok(dis_arg.handle_kwarg(k, v, eq, state))
         })?,
     };
 
-    let dis = dis_arg
-        .finish(
-            state,
-            fname,
-            "disambiguation",
-            "disambiguate",
-            c"'disambiguate' is deprecated; use 'disambiguation' instead",
-            1,
-        )?
-        .map(|value| Disambiguation::from_py(value, state))
-        .transpose()?;
+    let dis = dis_arg.finish(fname, state)?;
 
     slf.shift(shift.negate_if(negate), dis, state, cls)
 }
@@ -1441,19 +1395,17 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
 
     let state = cls.state();
     let mut pattern_arg = RenamedKeyword::default();
-    let mut dis_arg = RenamedKeyword::default();
+    let mut dis = None;
     let mut mismatch = OffsetMismatch::Raise;
-    handle_kwargs("parse", kwargs, |key, value, eq| {
-        if eq(key, *state.str_pattern) {
-            pattern_arg.set_new(value);
-        } else if eq(key, *state.str_format) {
-            pattern_arg.set_old(value);
-        } else if eq(key, *state.str_disambiguation) {
-            dis_arg.set_new(value);
-        } else if eq(key, *state.str_disambiguate) {
-            dis_arg.set_old(value);
-        } else if eq(key, *state.str_offset_mismatch) {
-            mismatch = OffsetMismatch::from_py(value, state)?;
+    handle_kwargs("parse", kwargs, |k, v, eq| {
+        if eq(k, *state.str_pattern) {
+            pattern_arg.set_new(v);
+        } else if eq(k, *state.str_format) {
+            pattern_arg.set_old(v);
+        } else if eq(k, *state.str_disambiguation) {
+            dis = Some(Disambiguation::from_py(v, state)?);
+        } else if eq(k, *state.str_offset_mismatch) {
+            mismatch = OffsetMismatch::from_py(v, state)?;
         } else {
             return Ok(false);
         }
@@ -1469,21 +1421,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
             c"'format' is deprecated; use 'pattern' instead",
             1,
         )?
-        .ok_or_else(|| {
-            raise_type_err::<(), _>("parse() missing required keyword argument 'pattern'")
-                .unwrap_err()
-        })?;
-    let dis = dis_arg
-        .finish(
-            state,
-            "parse",
-            "disambiguation",
-            "disambiguate",
-            c"'disambiguate' is deprecated; use 'disambiguation' instead",
-            1,
-        )?
-        .map(|value| Disambiguation::from_py(value, state))
-        .transpose()?;
+        .ok_or_type_err("parse() missing required keyword argument 'pattern'")?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("pattern must be str")?;
@@ -1506,7 +1444,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         if parsed.offset_is_z {
             dt.assume_utc().into_zoned_obj(tz, cls)
         } else if let Some(actual) = matching_local_offset(
-            &tz.mapping_for_local(dt.local_seconds()),
+            tz.mapping_for_local(dt.local_seconds()),
             offset,
             parsed.offset_exact,
         ) {
@@ -1546,8 +1484,8 @@ static mut METHODS: &[PyMethodDef] = &[
         to_fixed_offset,
         doc::EXACTTIME_TO_FIXED_OFFSET
     ),
-    method1!(ZonedDateTime, exact_eq, doc::EXACTTIME_EXACT_EQ),
-    method1!(ZonedDateTime, strict_eq, doc::EXACTTIME_EXACT_EQ),
+    method1!(ZonedDateTime, exact_eq, doc::EXACTTIME_STRICT_EQ),
+    method1!(ZonedDateTime, strict_eq, doc::EXACTTIME_STRICT_EQ),
     method0!(ZonedDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(ZonedDateTime, to_instant, doc::EXACTANDLOCALTIME_TO_INSTANT),
     method0!(ZonedDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),

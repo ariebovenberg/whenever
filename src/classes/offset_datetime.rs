@@ -331,7 +331,7 @@ fn assume_tz(
         .map(|value| Disambiguation::from_py(value, state))
         .transpose()?;
 
-    let tz = state.tz_store.obj_get(tz_obj)?;
+    let tz = state.load_tz(tz_obj)?;
 
     // Compute what offset the timezone has at this instant
     let instant = slf.to_instant();
@@ -1028,8 +1028,8 @@ static mut METHODS: &[PyMethodDef] = &[
     DEEPCOPY_METHOD,
     method0!(OffsetDateTime, __reduce__, c""),
     classmethod_kwargs!(OffsetDateTime, now, doc::OFFSETDATETIME_NOW),
-    method1!(OffsetDateTime, exact_eq, doc::EXACTTIME_EXACT_EQ),
-    method1!(OffsetDateTime, strict_eq, doc::EXACTTIME_EXACT_EQ),
+    method1!(OffsetDateTime, exact_eq, doc::EXACTTIME_STRICT_EQ),
+    method1!(OffsetDateTime, strict_eq, doc::EXACTTIME_STRICT_EQ),
     method0!(OffsetDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(
         OffsetDateTime,

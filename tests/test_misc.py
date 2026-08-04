@@ -324,6 +324,9 @@ def test_patch_time():
         assert PlainDateTime(2020, 8, 15).assume_tz(SYSTEM_TZ).tz_id == (
             "Europe/Amsterdam"
         )
+        assert i.to_fixed_offset(hours(1)).assume_tz(SYSTEM_TZ).tz_id == (
+            "Europe/Amsterdam"
+        )
         p.shift(hours=3)
         p.shift(hours(1))
         assert Instant.now() == i.add(hours=4)
@@ -366,11 +369,11 @@ def test_time_patch_rejects_invalid_shift_arguments():
     i = Instant.from_utc(1980, 3, 2, hour=2)
     with patch_current_time(i, keep_ticking=False) as handle:
         with pytest.raises(TypeError, match="must be a TimeDelta"):
-            handle.shift(ItemizedDelta(days=1))  # type: ignore[arg-type]
+            handle.shift(ItemizedDelta(days=1))  # type: ignore[call-overload]
         with pytest.raises(TypeError, match="unexpected keyword"):
-            handle.shift(years=1)
+            handle.shift(years=1)  # type: ignore[call-overload]
         with pytest.raises(TypeError, match="[Cc]annot mix"):
-            handle.shift(hours(1), minutes=1)
+            handle.shift(hours(1), minutes=1)  # type: ignore[call-overload]
 
 
 def test_patch_current_time_decorator_does_not_inject_handle():
