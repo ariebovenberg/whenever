@@ -180,7 +180,7 @@ pub(crate) fn raise_unexpected_kwarg<T>(fname: &str, key: PyObj) -> PyResult<T> 
 #[cold]
 pub(crate) fn raise_mixed_args<T>(fname: &str) -> PyResult<T> {
     raise_type_err(format!(
-        "{fname}() can't mix positional and keyword arguments"
+        "{fname}() cannot mix positional and keyword arguments"
     ))
 }
 

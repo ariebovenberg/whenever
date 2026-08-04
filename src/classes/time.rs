@@ -1,7 +1,9 @@
 #[cfg(test)]
 use crate::common::{fmt::Sink, parse::Scan};
 use crate::{
-    common::{fmt, format_args, pattern, pickle, round_args as round},
+    common::{
+        compat::parse_pattern_keyword, fmt, format_args, pattern, pickle, round_args as round,
+    },
     docstrings as doc,
     domain::scalar::*,
     py::*,
@@ -317,12 +319,10 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         .ok_or_type_err("parse() argument must be str")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = handle_one_kwarg("parse", *cls.state().str_format, kwargs)?.ok_or_else(|| {
-        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
-    })?;
+    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format must be str")?;
+        .ok_or_type_err("pattern must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;

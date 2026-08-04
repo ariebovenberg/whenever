@@ -1,7 +1,10 @@
 //! Python argument parsing for ISO formatting.
 
 use crate::{
-    common::fmt::{Chunk, Precision, Sink},
+    common::{
+        compat::{RenamedKeyword, warn_deprecated},
+        fmt::{Chunk, Precision, Sink},
+    },
     docstrings::FORMAT_ISO_NO_TZ_MSG,
     domain::{
         date::Date,
@@ -54,7 +57,7 @@ impl Chunk for SuffixFormat<'_> {
 
 #[derive(Clone, Copy)]
 enum TzDisplay {
-    Always,
+    Required,
     Never,
     Auto,
 }
@@ -130,7 +133,7 @@ pub(crate) fn format_datetime_iso(
     let mut sep = b'T';
     let mut unit = Precision::Auto;
     let mut basic = false;
-    let mut tz_display = TzDisplay::Always;
+    let mut display_arg = RenamedKeyword::default();
     handle_kwargs("format_iso", kwargs, |key, value, eq| {
         if eq(key, *state.str_sep) {
             sep = match_interned_str(
@@ -142,34 +145,56 @@ pub(crate) fn format_datetime_iso(
             unit = parse_precision(value, state)?;
         } else if eq(key, *state.str_basic) {
             basic = value.expect_bool("basic")?;
+        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(key, *state.str_tz_display) {
+            display_arg.set_new(value);
         } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(key, *state.str_tz) {
-            tz_display = match_interned_str(
-                "tz",
-                value,
-                &[
-                    (*state.str_auto, TzDisplay::Auto),
-                    (*state.str_never, TzDisplay::Never),
-                    (*state.str_always, TzDisplay::Always),
-                ],
-            )?;
+            display_arg.set_old(value);
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
 
+    let tz_display = match display_arg.finish(
+        state,
+        "format_iso",
+        "tz_display",
+        "tz",
+        c"'tz' is deprecated; use 'tz_display' instead",
+        1,
+    )? {
+        None => TzDisplay::Required,
+        Some(value) if value.is(*state.str_always) => {
+            warn_deprecated(
+                state,
+                c"tz_display='always' is deprecated; use 'required' instead",
+                1,
+            )?;
+            TzDisplay::Required
+        }
+        Some(value) => match_interned_str(
+            "tz_display",
+            value,
+            &[
+                (*state.str_auto, TzDisplay::Auto),
+                (*state.str_never, TzDisplay::Never),
+                (*state.str_required, TzDisplay::Required),
+            ],
+        )?,
+    };
+
     let suffix = match suffix {
         Suffix::Absent => SuffixFormat::Absent,
         Suffix::Zulu => SuffixFormat::Zulu,
         Suffix::Offset(offset) => SuffixFormat::Offset(offset.iso_format(basic)),
         Suffix::OffsetTz(offset, tz_key) => match (tz_key, tz_display) {
-            (Some(key), TzDisplay::Auto | TzDisplay::Always) => {
+            (Some(key), TzDisplay::Auto | TzDisplay::Required) => {
                 SuffixFormat::OffsetTz(offset.iso_format(basic), key)
             }
             (_, TzDisplay::Never | TzDisplay::Auto) => {
                 SuffixFormat::Offset(offset.iso_format(basic))
             }
-            (None, TzDisplay::Always) => raise_value_err(FORMAT_ISO_NO_TZ_MSG)?,
+            (None, TzDisplay::Required) => raise_value_err(FORMAT_ISO_NO_TZ_MSG)?,
         },
     };
 

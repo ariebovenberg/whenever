@@ -342,7 +342,7 @@ def test_cross_backend_payloads_and_unpicklers(
 @pytest.fixture
 def initialized_pure_tz_store() -> Iterator[None]:
     previous = py.get_tzpath()
-    py._set_tzpath(w.TZPATH)
+    py._set_tzpath(w.get_tzpath())
     try:
         yield
     finally:

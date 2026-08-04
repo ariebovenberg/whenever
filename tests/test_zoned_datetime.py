@@ -35,6 +35,7 @@ from whenever import (
     ZonedDateTime,
     available_timezones,
     clear_tzcache,
+    get_tzpath,
     hours,
     milliseconds,
     minutes,
@@ -225,15 +226,11 @@ class TestInit:
             == zoneinfo_available_timezones().difference(["localtime"])
         )
 
-        from whenever import TZPATH
-
-        prev_tzpath = TZPATH
+        prev_tzpath = get_tzpath()
         # We now set the TZ path to our test directory
         # (which contains some tzif files)
         reset_tzpath([TEST_DIR / "tzif"])
-        from whenever import TZPATH
-
-        assert TZPATH == (str(TEST_DIR / "tzif"),)
+        assert get_tzpath() == (str(TEST_DIR / "tzif"),)
         try:
             # Available timezones should now be different
             assert (
@@ -269,9 +266,7 @@ class TestInit:
             # We need to reset the tzpath to the original one
             reset_tzpath()
 
-        from whenever import TZPATH
-
-        assert TZPATH == prev_tzpath
+        assert get_tzpath() == prev_tzpath
 
         # Available timezones should now be the same again
         assert (

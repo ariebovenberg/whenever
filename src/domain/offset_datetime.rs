@@ -85,18 +85,24 @@ impl Instant {
 
 impl Offset {
     pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
+        Self::read_iso_with_precision(s).map(|(offset, _)| offset)
+    }
+
+    pub(crate) fn read_iso_with_precision(s: &mut Scan) -> Option<(Self, bool)> {
         let sign = match s.next() {
             Some(b'+') => Sign::Plus,
             Some(b'-') => Sign::Minus,
-            Some(b'Z' | b'z') => return Some(Self::ZERO),
+            Some(b'Z' | b'z') => return Some((Self::ZERO, true)),
             _ => return None,
         };
         let mut total = s.digits00_23()? as i32 * 3600;
+        let mut exact = false;
         match s.advance_on(b':') {
             Some(true) => {
                 total += s.digits00_59()? as i32 * 60;
                 if let Some(true) = s.advance_on(b':') {
                     total += s.digits00_59()? as i32;
+                    exact = true;
                 }
             }
             Some(false) => {
@@ -104,12 +110,13 @@ impl Offset {
                     total += minutes as i32 * 60;
                     if let Some(seconds) = s.digits00_59() {
                         total += seconds as i32;
+                        exact = true;
                     }
                 }
             }
             None => {}
         }
-        Some(Self::new_unchecked(total).with_sign(sign))
+        Some((Self::new_unchecked(total).with_sign(sign), exact))
     }
 }
 

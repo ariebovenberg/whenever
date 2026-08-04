@@ -163,7 +163,7 @@ impl Instant {
 }
 
 pub(crate) enum OffsetInIsoString {
-    Some(Offset),
+    Some { offset: Offset, exact: bool },
     Z,
     Missing,
 }
@@ -175,7 +175,10 @@ pub(crate) fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(OffsetInIso
             s.take_unchecked(1);
             OffsetInIsoString::Z
         }
-        _ => OffsetInIsoString::Some(Offset::read_iso(s)?),
+        _ => {
+            let (offset, exact) = Offset::read_iso_with_precision(s)?;
+            OffsetInIsoString::Some { offset, exact }
+        }
     };
     let tz = s.rest();
     (tz.len() > 2
