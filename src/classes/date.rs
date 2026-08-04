@@ -10,6 +10,7 @@ pub(crate) use crate::domain::date::DateBoundaryUnit;
 use crate::{
     classes::itemized_date_delta::ItemizedDateDelta,
     common::{
+        compat::{parse_pattern_keyword, warn_deprecated},
         format_args, pattern, pickle, round_args as round,
         shift_args::{parse_calendar_shift_arg, parse_calendar_shift_kwargs},
     },
@@ -534,7 +535,23 @@ fn at(cls: PyClass<Date>, date: Date, time_obj: PyObj) -> PyReturn {
 
 fn today_in_system_tz(cls: PyClass<Date>) -> PyReturn {
     let state = cls.state();
+    warn_deprecated(
+        state,
+        c"today_in_system_tz() is deprecated; use today(SYSTEM_TZ) instead",
+        1,
+    )?;
     let tz = state.tz_store.get_system_tz()?;
+    state
+        .now()?
+        .to_offset_in(&tz)
+        .ok_or_range_err()?
+        .date
+        .to_obj(cls)
+}
+
+fn today(cls: PyClass<Date>, tz_obj: PyObj) -> PyReturn {
+    let state = cls.state();
+    let tz = state.load_tz(tz_obj)?;
     state
         .now()?
         .to_offset_in(&tz)
@@ -569,12 +586,10 @@ fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         .ok_or_type_err("parse() argument must be str")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = handle_one_kwarg("parse", *cls.state().str_format, kwargs)?.ok_or_else(|| {
-        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
-    })?;
+    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format must be str")?;
+        .ok_or_type_err("pattern must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
@@ -590,6 +605,7 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, to_stdlib, doc::DATE_TO_STDLIB),
     method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
+    classmethod1!(Date, today, doc::DATE_TODAY_IN_SYSTEM_TZ),
     classmethod1!(Date, parse_iso, doc::DATE_PARSE_ISO),
     COPY_METHOD,
     DEEPCOPY_METHOD,

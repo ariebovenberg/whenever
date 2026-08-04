@@ -160,6 +160,8 @@ pub(crate) struct ParseState {
     nanos: SubSecNanos,
     ampm: Option<AmPm>,
     pub(crate) offset_secs: Option<Offset>,
+    pub(crate) offset_exact: bool,
+    pub(crate) offset_is_z: bool,
     pub(crate) tz_id: Option<String>,
     weekday: Option<Weekday>,
     second_absent: bool,
@@ -1203,9 +1205,11 @@ fn parse_offset_value(
     pos: usize,
     width: u8,
     accept_z: bool,
-) -> Result<(i32, usize), String> {
+) -> Result<(i32, usize, bool, bool), String> {
+    // The final two values indicate whether offset seconds were present and
+    // whether the input used `Z`, respectively.
     if accept_z && pos < s.len() && s[pos] == b'Z' {
-        return Ok((0, pos + 1));
+        return Ok((0, pos + 1, true, true));
     }
     if pos >= s.len() || (s[pos] != b'+' && s[pos] != b'-') {
         return Err(format!("Expected offset sign at position {}", pos));
@@ -1217,7 +1221,7 @@ fn parse_offset_value(
     p = new_p;
 
     if width == 1 {
-        return Ok((sign * oh as i32 * 3600, p));
+        return Ok((sign * oh as i32 * 3600, p, false, false));
     }
 
     let om;
@@ -1240,6 +1244,7 @@ fn parse_offset_value(
     }
 
     let mut os = 0u32;
+    let mut exact = false;
     if width >= 4 {
         let has_colon = width == 5;
         if has_colon && p < s.len() && s[p] == b':' {
@@ -1247,17 +1252,24 @@ fn parse_offset_value(
             let (v, new_p) = parse_digits(s, p, 2)?;
             os = v;
             p = new_p;
+            exact = true;
         } else if !has_colon && p < s.len() && s[p].is_ascii_digit() {
             let (v, new_p) = parse_digits(s, p, 2)?;
             os = v;
             p = new_p;
+            exact = true;
         }
         if os >= 60 {
             return Err("offset seconds must be 0..59".into());
         }
     }
 
-    Ok((sign * (oh as i32 * 3600 + om as i32 * 60 + os as i32), p))
+    Ok((
+        sign * (oh as i32 * 3600 + om as i32 * 60 + os as i32),
+        p,
+        exact,
+        false,
+    ))
 }
 
 fn parse_dot_frac(
@@ -1488,15 +1500,19 @@ fn parse_field(
             Ok(pos + 2)
         }
         Field::OffsetLower(width) => {
-            let (secs, p) = parse_offset_value(s, pos, width, false)?;
+            let (secs, p, exact, is_z) = parse_offset_value(s, pos, width, false)?;
             // SAFETY: parse_offset_value validates components, so secs is within Offset bounds.
             state.offset_secs = Some(Offset::new_unchecked(secs));
+            state.offset_exact = exact;
+            state.offset_is_z = is_z;
             Ok(p)
         }
         Field::OffsetUpper(width) => {
-            let (secs, p) = parse_offset_value(s, pos, width, true)?;
+            let (secs, p, exact, is_z) = parse_offset_value(s, pos, width, true)?;
             // SAFETY: parse_offset_value validates components, so secs is within Offset bounds.
             state.offset_secs = Some(Offset::new_unchecked(secs));
+            state.offset_exact = exact;
+            state.offset_is_z = is_z;
             Ok(p)
         }
         Field::TzId => {
