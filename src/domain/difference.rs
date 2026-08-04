@@ -319,10 +319,6 @@ impl DifferenceUnit {
         self.to_exact_with_days(false)
     }
 
-    pub(crate) fn to_exact_assuming_24h_days(self) -> Result<ExactUnit, CalendarUnit> {
-        self.to_exact_with_days(true)
-    }
-
     fn to_exact_with_days(self, days_are_24h: bool) -> Result<ExactUnit, CalendarUnit> {
         Ok(match self {
             DifferenceUnit::Weeks if days_are_24h => ExactUnit::Weeks,
@@ -637,7 +633,7 @@ impl TotalUnit {
 /// Semantic specification for a `since()` or `until()` difference.
 #[derive(Debug, Copy, Clone)]
 pub(crate) enum DifferenceSpec {
-    Total(DifferenceUnit),
+    Total(TotalUnit),
     InUnits {
         units: DifferenceUnitSet,
         mode: round::Mode,
@@ -650,10 +646,7 @@ impl DifferenceSpec {
         match self {
             DifferenceSpec::Total(u) => matches!(
                 u,
-                DifferenceUnit::Years
-                    | DifferenceUnit::Months
-                    | DifferenceUnit::Weeks
-                    | DifferenceUnit::Days
+                TotalUnit::Years | TotalUnit::Months | TotalUnit::Weeks | TotalUnit::Days
             ),
             DifferenceSpec::InUnits { units, .. } => units.has_calendar(),
         }

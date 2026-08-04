@@ -7,6 +7,7 @@ use crate::{
         time::{self, Time},
     },
     common::{
+        compat::{parse_pattern_keyword, warn_deprecated},
         disambiguation::*,
         fmt,
         format_args::{self, Suffix},
@@ -15,7 +16,7 @@ use crate::{
     },
     docstrings as doc,
     domain::{
-        difference::{self, CalendarIncrement, DifferenceSpec, DifferenceUnit, DifferenceUnitSet},
+        difference::{self, CalendarIncrement, DifferenceSpec, DifferenceUnitSet},
         local::ResolvePolicy,
         scalar::*,
     },
@@ -488,7 +489,7 @@ fn assume_utc(cls: PyClass<PlainDateTime>, d: PlainDateTime) -> PyReturn {
 
 fn assume_fixed_offset(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyObj) -> PyReturn {
     let state = cls.state();
-    slf.assume_offset(Offset::from_py(arg, *state.time_delta_type)?)
+    slf.assume_offset(Offset::from_py(arg, state)?)
         .ok_or_range_err()?
         .to_obj(*state.offset_datetime_type)
 }
@@ -502,10 +503,9 @@ fn assume_tz(
     let state = cls.state();
     let tz_obj = handle_one_arg("assume_tz", args)?;
 
-    let dis = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?
-        .unwrap_or(Disambiguation::Compatible);
-    let tz = state.tz_store.obj_get(tz_obj)?;
-    slf.resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
+    let dis = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?;
+    let tz = state.load_tz(tz_obj)?;
+    slf.resolve_with_disambiguation(&tz, dis, state)?
         .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type)
 }
 
@@ -516,9 +516,16 @@ fn assume_system_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
+    warn_deprecated(
+        state,
+        c"assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
+        1,
+    )?;
     handle_no_args("assume_system_tz", args)?;
 
-    let dis = Disambiguation::from_only_kwarg(kwargs, "assume_system_tz", state)?
+    let dis = handle_one_kwarg("assume_system_tz", *state.str_disambiguate, kwargs)?
+        .map(|value| Disambiguation::from_py(value, state))
+        .transpose()?
         .unwrap_or(Disambiguation::Compatible);
     let tz = state.tz_store.get_system_tz()?;
     slf.resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
@@ -631,7 +638,7 @@ pub(crate) fn plain_since_float(
     a: PlainDateTime,
     b: PlainDateTime,
     target_date: Date,
-    unit: DifferenceUnit,
+    unit: difference::TotalUnit,
     neg: bool,
 ) -> PyReturn {
     match unit.to_exact_assuming_24h_days() {
@@ -812,12 +819,10 @@ fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         .ok_or_type_err("parse() argument must be str")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = handle_one_kwarg("parse", *cls.state().str_format, kwargs)?.ok_or_else(|| {
-        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
-    })?;
+    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format must be str")?;
+        .ok_or_type_err("pattern must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
