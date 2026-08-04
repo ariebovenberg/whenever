@@ -44,6 +44,7 @@ from ._common import (
     WheneverDeprecationWarning,
     WheneverWarning,
     _Base,
+    _SystemTZ,
     add_alternate_constructors,
     check_no_kwargs,
     check_utc_bounds,
@@ -191,6 +192,13 @@ _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
+IMPLICIT_DISAMBIGUATION_MSG = (
+    "resolving a local datetime that is repeated or skipped by a timezone "
+    "transition without an explicit disambiguation policy can silently select "
+    "the wrong instant; pass disambiguation='compatible', 'earlier', 'later', "
+    "or 'raise'. See "
+    "https://whenever.readthedocs.io/en/latest/guide/ambiguity.html"
+)
 
 
 def _load_tz(tz: Any, /) -> TimeZone:
@@ -246,8 +254,7 @@ def _resolve_disambiguation(
     if disambiguation is UNSET:
         if not isinstance(ambiguity, Unique):
             warn(
-                "implicitly resolving an ambiguous local time using "
-                "disambiguation='compatible'",
+                IMPLICIT_DISAMBIGUATION_MSG,
                 ImplicitDisambiguationWarning,
                 stacklevel=warning_stacklevel,
             )
@@ -274,8 +281,7 @@ def _resolve_with_previous_offset(
         )
     ):
         warn(
-            "implicitly resolving an ambiguous local time using "
-            "disambiguation='compatible'",
+            IMPLICIT_DISAMBIGUATION_MSG,
             ImplicitDisambiguationWarning,
             stacklevel=warning_stacklevel,
         )
@@ -2711,7 +2717,7 @@ class _ExactTime(_BasicConversions):
             self._nanos,
         )
 
-    def to_tz(self, tz: str, /) -> ZonedDateTime:
+    def to_tz(self, tz: str | _SystemTZ, /) -> ZonedDateTime:
         """Convert to a ZonedDateTime that represents the same moment in time.
 
         Raises
@@ -4328,7 +4334,7 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     def assume_tz(
         self,
-        tz: str,
+        tz: str | _SystemTZ,
         *,
         offset_mismatch: OffsetMismatchStr = "raise",
         disambiguation: DisambiguationStr = UNSET,
@@ -4548,7 +4554,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             second: int = 0,
             *,
             nanosecond: int = 0,
-            tz: str,
+            tz: str | _SystemTZ,
             disambiguation: DisambiguationStr = ...,
         ) -> None: ...
 
@@ -4562,7 +4568,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        tz: str,
+        tz: str | _SystemTZ,
         disambiguation: DisambiguationStr = UNSET,
         **kwargs: Any,
     ) -> None:
@@ -4633,7 +4639,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     @classmethod
-    def now(cls, tz: str, /) -> ZonedDateTime:
+    def now(cls, tz: str | _SystemTZ, /) -> ZonedDateTime:
         """Create an instance from the current time in the given timezone."""
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         _tz = _load_tz(tz)
@@ -4763,12 +4769,18 @@ class ZonedDateTime(_ExactAndLocalTime):
         The timezone ID is a recent extension to the ISO 8601 format (RFC 9557).
         Although it is gaining popularity, it is not yet widely supported.
         """
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="parse_iso",
+            warning_stacklevel=5,
+        )
+        check_no_kwargs(kwargs, "parse_iso")
         self = _object_new(cls)
         self._init_from_iso(
             s,
             disambiguation=disambiguation,
             offset_mismatch=offset_mismatch,
-            **kwargs,
         )
         return self
 
@@ -4780,12 +4792,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         offset_mismatch: OffsetMismatchStr = "raise",
         **kwargs: Any,
     ) -> None:
-        disambiguation = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="ZonedDateTime",
-            warning_stacklevel=5,
-        )
         check_no_kwargs(kwargs, "ZonedDateTime")
         self._py_dt, self._nanos, self._tz = zdt_from_iso(
             s,
@@ -4864,12 +4870,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         ... )
         ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
         """
-        disambiguation = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="parse",
-            warning_stacklevel=4,
-        )
         pattern = _normalize_pattern(pattern, kwargs)
         if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
             raise ValueError(f"invalid offset_mismatch: {offset_mismatch!r}")
@@ -4944,7 +4944,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         return self
 
     @classmethod
-    def from_timestamp(cls, i: int | float, /, *, tz: str) -> ZonedDateTime:
+    def from_timestamp(
+        cls, i: int | float, /, *, tz: str | _SystemTZ
+    ) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
 
         The inverse of the ``timestamp()`` method.
@@ -4960,7 +4962,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     @classmethod
-    def from_timestamp_millis(cls, i: int, /, *, tz: str) -> ZonedDateTime:
+    def from_timestamp_millis(
+        cls, i: int, /, *, tz: str | _SystemTZ
+    ) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in milliseconds).
 
         The inverse of the ``timestamp_millis()`` method.
@@ -4978,7 +4982,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     @classmethod
-    def from_timestamp_nanos(cls, i: int, /, *, tz: str) -> ZonedDateTime:
+    def from_timestamp_nanos(
+        cls, i: int, /, *, tz: str | _SystemTZ
+    ) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in nanoseconds).
 
         The inverse of the ``timestamp_nanos()`` method.
@@ -5108,7 +5114,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             second: int = ...,
             *,
             nanosecond: int = ...,
-            tz: str = ...,
+            tz: str | _SystemTZ = ...,
             disambiguate: DisambiguateStr = ...,
         ) -> ZonedDateTime: ...
 
@@ -5832,7 +5838,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         return self.strict_eq(other)
 
     # An override with shortcut for efficiency if the timezone stays the same
-    def to_tz(self, tz: str, /) -> ZonedDateTime:
+    def to_tz(self, tz: str | _SystemTZ, /) -> ZonedDateTime:
         if (_tz := _load_tz(tz)) == self._tz:
             return self
         return self._from_py_unchecked(
@@ -6618,7 +6624,7 @@ class PlainDateTime(_LocalTime):
 
     def assume_tz(
         self,
-        tz: str,
+        tz: str | _SystemTZ,
         /,
         disambiguation: DisambiguationStr = UNSET,
         **kwargs: Any,
@@ -6750,13 +6756,14 @@ def _unpkl_local(data: bytes) -> PlainDateTime:
 class PotentialDstBugWarning(WheneverWarning):
     """Base class for warnings about potential DST-related bugs in user code.
 
-    Not raised directly. Subclasses cover three distinct scenarios:
+    Not raised directly. Subclasses cover four distinct scenarios:
 
     - :class:`~whenever.DaysAssumed24HoursWarning` — days treated as exact 24-hour units
     - :class:`~whenever.StaleOffsetWarning` — fixed offset may be wrong after a DST shift
     - :class:`~whenever.NaiveArithmeticWarning` — exact-time arithmetic without timezone context
+    - :class:`~whenever.ImplicitDisambiguationWarning` — resolving a repeated or skipped local time without an explicit policy
 
-    Catching or filtering this base class handles all three at once:
+    Catching or filtering this base class handles all four at once:
 
     .. code-block:: python
 
@@ -6772,7 +6779,13 @@ class PickleOffsetMismatchWarning(WheneverWarning):
 
 
 class ImplicitDisambiguationWarning(PotentialDstBugWarning):
-    """A fold or gap was resolved without an explicit disambiguation policy."""
+    """Raised when a repeated or skipped local datetime is resolved without an
+    explicit disambiguation policy.
+
+    Such local datetimes occur around timezone transitions and do not identify
+    one unambiguous instant. Pass ``disambiguation=`` explicitly to document
+    whether the compatible, earlier, later, or rejecting behavior is intended.
+    """
 
 
 class DaysAssumed24HoursWarning(PotentialDstBugWarning):

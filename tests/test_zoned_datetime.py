@@ -101,6 +101,11 @@ class TestInit:
             disambiguation="compatible",
         )
         assert caught[0].filename == __file__
+        message = str(caught[0].message)
+        assert "repeated or skipped" in message
+        assert "wrong instant" in message
+        assert "pass disambiguation=" in message
+        assert "/guide/ambiguity.html" in message
 
     def test_explicit_compatible_does_not_warn(self):
         with warnings.catch_warnings():
@@ -124,7 +129,7 @@ class TestInit:
                 2,
                 15,
                 tz="Europe/Amsterdam",
-                disambiguation=None,  # type: ignore[arg-type]
+                disambiguation=None,  # type: ignore[call-overload]
             )
 
     def test_repeated_time(self):
@@ -164,7 +169,7 @@ class TestInit:
                 15,
                 5,
                 12,
-                tz=hours(34),  # type: ignore[call-overload]
+                tz=hours(34),
             )
 
     @pytest.mark.parametrize(
