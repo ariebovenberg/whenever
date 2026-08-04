@@ -367,13 +367,13 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
     let warn_implicit_disambiguation = new_exception(
         module,
         c"whenever.ImplicitDisambiguationWarning",
-        c"A fold or gap was resolved without an explicit disambiguation policy.",
+        doc::IMPLICITDISAMBIGUATIONWARNING,
         *warn_potential_dst_bug,
     )?;
     let warn_pickle_offset_mismatch = new_exception(
         module,
         c"whenever.PickleOffsetMismatchWarning",
-        c"The offset stored in a ZonedDateTime pickle no longer matches the timezone's current rules.",
+        doc::PICKLEOFFSETMISMATCHWARNING,
         *warn_whenever,
     )?;
     let warn_days_not_always_24h = new_exception(

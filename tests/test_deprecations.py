@@ -86,6 +86,16 @@ def test_both_disambiguation_keywords_rejected():
         )
 
 
+def test_disambiguate_not_accepted_by_iso_constructor():
+    with pytest.raises(
+        TypeError, match="unexpected keyword argument:? 'disambiguate'"
+    ):
+        ZonedDateTime(
+            "2020-08-15T00:00:00+00:00[UTC]",
+            disambiguate="raise",  # type: ignore[call-overload]
+        )
+
+
 def test_parse_format_keyword():
     actual = deprecated(
         lambda: Date.parse("2020-08-15", format="YYYY-MM-DD"),
@@ -100,7 +110,7 @@ def test_both_parse_pattern_keywords_rejected():
             "2020-08-15",
             pattern="YYYY-MM-DD",
             format="YYYY-MM-DD",
-        )
+        )  # type: ignore[call-overload]
 
 
 def test_format_iso_tz_keyword():

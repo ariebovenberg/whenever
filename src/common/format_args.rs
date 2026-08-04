@@ -86,9 +86,9 @@ pub(crate) fn format_date_iso(
 ) -> PyReturn {
     handle_no_args("format_iso", args)?;
     let mut basic = false;
-    handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, *state.str_basic) {
-            basic = value.expect_bool("basic")?;
+    handle_kwargs("format_iso", kwargs, |k, v, eq| {
+        if eq(k, *state.str_basic) {
+            basic = v.expect_bool("basic")?;
         } else {
             return Ok(false);
         }
@@ -106,11 +106,11 @@ pub(crate) fn format_time_iso(
     handle_no_args("format_iso", args)?;
     let mut unit = Precision::Auto;
     let mut basic = false;
-    handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, *state.str_unit) {
-            unit = parse_precision(value, state)?;
-        } else if eq(key, *state.str_basic) {
-            basic = value.expect_bool("basic")?;
+    handle_kwargs("format_iso", kwargs, |k, v, eq| {
+        if eq(k, *state.str_unit) {
+            unit = parse_precision(v, state)?;
+        } else if eq(k, *state.str_basic) {
+            basic = v.expect_bool("basic")?;
         } else {
             return Ok(false);
         }
@@ -134,21 +134,17 @@ pub(crate) fn format_datetime_iso(
     let mut unit = Precision::Auto;
     let mut basic = false;
     let mut display_arg = RenamedKeyword::default();
-    handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, *state.str_sep) {
-            sep = match_interned_str(
-                "sep",
-                value,
-                &[(*state.str_space, b' '), (*state.str_t, b'T')],
-            )?;
-        } else if eq(key, *state.str_unit) {
-            unit = parse_precision(value, state)?;
-        } else if eq(key, *state.str_basic) {
-            basic = value.expect_bool("basic")?;
-        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(key, *state.str_tz_display) {
-            display_arg.set_new(value);
-        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(key, *state.str_tz) {
-            display_arg.set_old(value);
+    handle_kwargs("format_iso", kwargs, |k, v, eq| {
+        if eq(k, *state.str_sep) {
+            sep = match_interned_str("sep", v, &[(*state.str_space, b' '), (*state.str_t, b'T')])?;
+        } else if eq(k, *state.str_unit) {
+            unit = parse_precision(v, state)?;
+        } else if eq(k, *state.str_basic) {
+            basic = v.expect_bool("basic")?;
+        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.str_tz_display) {
+            display_arg.set_new(v);
+        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.str_tz) {
+            display_arg.set_old(v);
         } else {
             return Ok(false);
         }
