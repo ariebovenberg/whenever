@@ -37,12 +37,9 @@ def _tzid_display(tzid: str | None) -> str:
 def resolve_ambiguity(
     dt: _datetime,
     tz: TimeZone,
-    disambiguation: DisambiguationStr | _timedelta,
+    disambiguation: DisambiguationStr,
 ) -> _datetime:
     assert dt.tzinfo is None, "dt must be naive"
-    if isinstance(disambiguation, _timedelta):
-        return resolve_ambiguity_using_prev_offset(dt, disambiguation, tz)
-
     return _resolve_ambiguity_from_mapping(
         dt, tz, disambiguation, tz.ambiguity_for_local(dt)
     )

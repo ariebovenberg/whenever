@@ -982,6 +982,9 @@ class TestFormatIso:
         with pytest.raises(TypeError, match="basic"):
             ZDT1.format_iso(basic=1)  # type: ignore[arg-type]
 
+        with pytest.raises(ValueError, match="tz_display"):
+            ZDT1.format_iso(tz_display="sometimes")  # type: ignore[arg-type]
+
 
 class TestEquality:
     @pytest.mark.parametrize(
@@ -2715,6 +2718,19 @@ class TestParseIso:
                 "1900-01-01T00:00:00-00:25:00[Europe/Dublin]"
             )
 
+    def test_keep_instant_on_offset_mismatch(self):
+        assert ZonedDateTime.parse_iso(
+            "2020-08-15T12:00:00+03:00[Europe/Amsterdam]",
+            offset_mismatch="keep_instant",
+        ).strict_eq(ZonedDateTime(2020, 8, 15, 11, tz="Europe/Amsterdam"))
+
+    def test_invalid_offset_mismatch(self):
+        with pytest.raises(ValueError, match="offset_mismatch"):
+            ZonedDateTime.parse_iso(
+                "2020-08-15T12:00:00+02:00[Europe/Amsterdam]",
+                offset_mismatch="ignore",  # type: ignore[arg-type]
+            )
+
     @pytest.mark.parametrize(
         "s, disambiguation, expected",
         [
@@ -4091,6 +4107,13 @@ class TestReplace:
 
 
 class TestAddSubtractTimeUnits:
+    def test_invalid_arguments(self):
+        d = ZonedDateTime(2020, 8, 15, tz="UTC")
+        with pytest.raises(TypeError):
+            d.add(ItemizedDelta(days=1), days=1)  # type: ignore[call-overload]
+        with pytest.raises(TypeError, match="delta"):
+            d.add(42)  # type: ignore[call-overload]
+
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],

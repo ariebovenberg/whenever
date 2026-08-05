@@ -397,6 +397,19 @@ class TestAdd:
             py_date(2020, 1, 1) + Date(2021, 1, 1)  # type: ignore[operator]
 
 
+class TestShiftMethods:
+    def test_no_arguments(self):
+        d = Date(2021, 1, 1)
+        assert d.add() == d
+
+    def test_invalid_arguments(self):
+        d = Date(2021, 1, 1)
+        with pytest.raises(TypeError, match="ItemizedDateDelta"):
+            d.add(4)  # type: ignore[call-overload]
+        with pytest.raises(TypeError):
+            d.add(ItemizedDateDelta(days=1), days=1)  # type: ignore[call-overload]
+
+
 _EXAMPLE_DATES = [
     *chain.from_iterable(
         [
