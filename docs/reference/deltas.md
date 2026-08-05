@@ -105,6 +105,14 @@ where each unit is a key and its value is the corresponding amount:
 {'hours': 1, 'minutes': 90}
 ```
 
+Iteration always runs from the largest unit to the smallest and includes only
+fields that were explicitly supplied. Explicit zeroes remain present:
+
+```python
+>>> list(ItemizedDelta(seconds=0, hours=2))
+['hours', 'seconds']
+```
+
 {class}`TimeDelta`, on the other hand, normalizes all its components into each other.
 So "1 hour and 90 minutes" becomes "2 hours and 30 minutes".
 This enables easier arithmetic and comparisons,
@@ -143,6 +151,10 @@ if their total duration is the same, regardless of how their components are repr
 >>> TimeDelta(hours=1, minutes=90) == TimeDelta(hours=2, minutes=30)
 True  # normalized durations are the same
 ```
+
+Use `strict_eq()` when explicit field presence also matters. For example,
+`ItemizedDelta()` and `ItemizedDelta(seconds=0)` compare equal with `==` but
+not with `strict_eq()`.
 
 (delta-sign)=
 ## Sign
@@ -221,6 +233,12 @@ their `total()` method, which returns a `float`.
 
 When the total duration is requested in `"nanoseconds"` (the smallest supported unit),
 `total()` returns an `int` instead of a `float` to avoid precision issues.
+`ItemizedDelta.total()` also accepts `"milliseconds"` and `"microseconds"`.
+
+The `nanoseconds` constructor argument is a component field and is bounded to
+999,999,999 under the normal itemized sign rules. It is not a total-duration
+limit: use `delta.total("nanoseconds", relative_to=...)` to obtain the aggregate
+scalar value.
 
 ```{note}
 For {class}`ItemizedDelta` and {class}`ItemizedDateDelta`,

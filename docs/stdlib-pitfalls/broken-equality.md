@@ -28,8 +28,8 @@ It defines equality for "aware" objects based on the exact instant in time they 
 and this holds true consistenly.
 
 ```python
->>> dt1 = ZonedDateTime(2024, 10, 27, 2, 30, tz="Europe/Paris", disambiguate="earliest")
->>> dt2 = ZonedDateTime(2024, 10, 27, 2, 30, tz="Europe/Paris", disambiguate="latest")
+>>> dt1 = ZonedDateTime(2024, 10, 27, 2, 30, tz="Europe/Paris", disambiguation="earlier")
+>>> dt2 = ZonedDateTime(2024, 10, 27, 2, 30, tz="Europe/Paris", disambiguation="later")
 >>> dt1 == dt2  # different instant, same zone
 False
 >>> dt1 == dt1.to_tz("Asia/Tokyo")  # same instant, different zone

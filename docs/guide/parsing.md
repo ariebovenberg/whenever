@@ -66,17 +66,35 @@ Patterns use specifiers like `YYYY`, `MM`, `DD`, `hh`, `mm`, `ss`.
 ...     "EEE, DD MMM YYYY hh:mm:ssxxx"
 ... )
 'Fri, 15 Mar 2024 14:30:00+02:00'
->>> Date.parse("15 Mar 2024", format="DD MMM YYYY")
+>>> Date.parse("15 Mar 2024", pattern="DD MMM YYYY")
 Date("2024-03-15")
 >>> ZonedDateTime.parse(
 ...     "2024-03-15 14:30+01:00[Europe/Paris]",
-...     format="YYYY-MM-DD hh:mmxxx'['VV']'",
+...     pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
 ... )
 ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
 ```
 
 See the {ref}`pattern format reference <pattern-format>` for the
 full list of specifiers and details.
+
+### Zoned parsing policies
+
+The `ZonedDateTime` ISO-string constructor, `parse_iso()`, and patterned
+`parse()` accept `disambiguation=` and `offset_mismatch=`. A matching numeric
+offset identifies the occurrence of a repeated local time. If the input omits
+an offset, `disambiguation` selects how a fold or gap is resolved. If a numeric
+offset conflicts with the named timezone, `offset_mismatch` can `"raise"`,
+`"keep_instant"`, or `"keep_local"`. `"keep_instant"` treats the numeric
+offset as authoritative and changes the local fields to match the timezone.
+`"keep_local"` discards the conflicting offset and resolves the written local
+time in the named timezone; if that local time is repeated or skipped,
+`disambiguation` determines which instant is selected.
+
+Hour-and-minute offsets are compared with candidate timezone offsets rounded
+to the nearest minute, half away from zero. Offsets containing seconds match
+exactly. A `Z` suffix is different: it always identifies an exact UTC instant
+and is not treated as a numeric `+00:00` assertion about local time.
 
 ## Pydantic integration
 

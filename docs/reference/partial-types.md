@@ -68,6 +68,10 @@ partial date specifications (e.g. a birthday or an annual deadline):
 ```python
 >>> YearMonth(2024, 3).on_day(22)
 Date("2024-03-22")
+>>> YearMonth(2024, 3).add(months=10)
+YearMonth("2025-01")
 >>> MonthDay(2, 29).in_year(2024)
 Date("2024-02-29")
+>>> MonthDay(2, 29).is_leap_day()
+True
 ```

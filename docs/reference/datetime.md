@@ -42,19 +42,23 @@ exact points in time:
 |----|:--------:|:-----:|:------:|
 | `now()`  | {meth}`🔗 <Instant.now>`  | {meth}`🔗 <ZonedDateTime.now>` | {meth}`🔗 <OffsetDateTime.now>` |
 |    |   |   |   |
-|  `timestamp()` [^1] | {meth}`🔗 <Instant.timestamp>`   | {meth}`🔗 <ZonedDateTime.timestamp>` | {meth}`🔗 <OffsetDateTime.timestamp>`  |
+|  `timestamp()` | {meth}`🔗 <Instant.timestamp>`   | {meth}`🔗 <ZonedDateTime.timestamp>` | {meth}`🔗 <OffsetDateTime.timestamp>`  |
 | `from_timestamp()` [^2]  | {meth}`🔗 <Instant.from_timestamp>` | {meth}`🔗 <ZonedDateTime.from_timestamp>` | {meth}`🔗 <OffsetDateTime.from_timestamp>`  |
 |    |   |   |   |
 |  `to_fixed_offset()`  | {meth}`🔗 <Instant.to_fixed_offset>` | {meth}`🔗 <ZonedDateTime.to_fixed_offset>`  | {meth}`🔗 <OffsetDateTime.to_fixed_offset>`   |
 |  `to_tz()`  | {meth}`🔗 <Instant.to_tz>`  | {meth}`🔗 <ZonedDateTime.to_tz>` | {meth}`🔗 <OffsetDateTime.to_tz>`                          |
-|  `to_system_tz()`  | {meth}`🔗 <Instant.to_system_tz>` | {meth}`🔗 <ZonedDateTime.to_system_tz>` | {meth}`🔗 <OffsetDateTime.to_system_tz>` |
 |    |   |   |   |
 |  `x > other_exact` [^3]  | {meth}`🔗 <Instant.__gt__>`    | {meth}`🔗 <ZonedDateTime.__gt__>`    | {meth}`🔗 <OffsetDateTime.__gt__>`   |
 |  `x - other_exact`  | {meth}`🔗 <Instant.__sub__>`        | {meth}`🔗 <ZonedDateTime.__sub__>`        | {meth}`🔗 <OffsetDateTime.__sub__>`       |
 |  `x == other_exact`  | {meth}`🔗 <Instant.__eq__>`        | {meth}`🔗 <ZonedDateTime.__eq__>`        | {meth}`🔗 <OffsetDateTime.__eq__>`       |
-|  `exact_eq()`  | {meth}`🔗 <Instant.exact_eq>`       | {meth}`🔗 <ZonedDateTime.exact_eq>`       | {meth}`🔗 <OffsetDateTime.exact_eq>`      |
+|  `strict_eq()`  | {meth}`🔗 <Instant.strict_eq>`       | {meth}`🔗 <ZonedDateTime.strict_eq>`       | {meth}`🔗 <OffsetDateTime.strict_eq>`      |
 |    |   |   |   |
 |  `x + TimeDelta`  | {meth}`🔗 <Instant.__add__>` | {meth}`🔗 <ZonedDateTime.__add__>`  | {meth}`🔗 <OffsetDateTime.__add__>` |
+
+Timestamp conversion floors values before the UNIX epoch at the requested
+unit. Thus `1969-12-31T23:59:59.999999999Z` maps to `-1` in seconds,
+milliseconds, microseconds, and nanoseconds. This differs from applying
+`int()` to a negative floating-point timestamp, which truncates toward zero.
 
 
 ## Local time methods
@@ -107,10 +111,8 @@ Several other methods are unique to one or more classes:
 |                                            |                                         |                                        | {meth}`x - other_plain <PlainDateTime.__sub__>`         |
 |                                            |                                         |                                        | {meth}`~PlainDateTime.assume_utc`                      |
 |                                            |                                         | {meth}`~OffsetDateTime.assume_tz`      | {meth}`~PlainDateTime.assume_tz`                       |
-|                                            |                                         |                                        | {meth}`~PlainDateTime.assume_system_tz`                |
 |                                            |                                         |                                        | {meth}`~PlainDateTime.assume_fixed_offset`             |
-|                                            | {attr}`~ZonedDateTime.tz`               |                                        |                                                        |
-|                                            | {meth}`~ZonedDateTime.now_in_system_tz` |                                        |                                                        |
+|                                            | {attr}`~ZonedDateTime.tz_id`            |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.is_ambiguous`     |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.dst_offset`       |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.tz_abbrev`        |                                        |                                                        |
@@ -119,11 +121,8 @@ Several other methods are unique to one or more classes:
 |                                            | {meth}`~ZonedDateTime.prev_transition`  |                                        |                                                        |
 
 
-[^1]: `timestamp_millis()` and `timestamp_nanos()` methods are also
-    available for millisecond and nanosecond precision.
-
-[^2]: `from_timestamp_millis()` and `from_timestamp_nanos()` methods are
-    also available for millisecond and nanosecond precision.
+[^2]: Prefer {meth}`Instant.from_timestamp`; then convert it with `to_tz()`
+    or `to_fixed_offset()` when another exact representation is needed.
 
 [^3]: The other comparison operators `<=`, `<`, and `>=` are also
     supported.

@@ -15,7 +15,7 @@ that describes the expected format.
 >>> from whenever import Date, Time, OffsetDateTime, hours
 >>> Date(2024, 3, 15).format("YYYY/MM/DD")
 '2024/03/15'
->>> Date.parse("2024/03/15", format="YYYY/MM/DD")
+>>> Date.parse("2024/03/15", pattern="YYYY/MM/DD")
 Date("2024-03-15")
 >>> OffsetDateTime(2024, 3, 15, 14, 30, offset=+2).format(
 ...     "EEE, DD MMM YYYY hh:mm:ssxxx"
@@ -52,6 +52,13 @@ the corresponding value.
 | `F` | fractional seconds, trimmed [^4] | `F`<br/>`FF`<br/>`FFF`<br/>...<br/>`FFFFFFFFF` | `1` <br/> `12`, (omitted) <br/> `123`, `4` <br/>...<br/> `123456789`, `37493` |
 | `a`   | AM/PM [^5] | `a`<br/>`aa` | `P` <br/> `PM` |
 
+:::{important}
+Unlike `strftime`, `h` and `hh` are **24-hour** fields. Whenever uses `i`
+and `ii` for 12-hour clock values. Keeping them distinct makes an accidental
+`hh`/`HH` spelling change fail instead of silently changing the clock system.
+Pair `i` or `ii` with `a` or `aa` when parsing.
+:::
+
 :::{admonition} Optional seconds
 :class: hint
 
@@ -61,7 +68,9 @@ times like `14:30:05` in the same format string.
 
 - When seconds *or* nanoseconds are non-zero, `SS` writes two zero-padded
   digits
-- When **both are zero**, nothing is written. Any preceeding colon disappears as well.
+- When **both are zero**, nothing is written. A directly preceding colon is
+  part of the optional seconds field and disappears as well. Other punctuation
+  remains literal.
 
 
 ```python
@@ -75,6 +84,8 @@ times like `14:30:05` in the same format string.
 '14:30'
 >>> Time(14, 30, 0, nanosecond=500_000_000).format("hh:mm:SS.FFF")
 '14:30:00.5'
+>>> Time(14, 30).format("hh:mm-SS")
+'14:30-'
 ```
 
 :::
@@ -106,7 +117,7 @@ Use lowercase `x` when you always want a numeric offset
 '2024-07-15 14:30 CEST'
 >>> ZonedDateTime.parse(
 ...     "2024-07-15 14:30+02:00[Europe/Paris]",
-...     format="YYYY-MM-DD hh:mmxxx'['VV']'",
+...     pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
 ... )
 ZonedDateTime("2024-07-15 14:30:00+02:00[Europe/Paris]")
 ```

@@ -45,6 +45,6 @@ without explicit conversion:
 >>> d = PlainDateTime("2024-07-04 12:36:56")
 >>> d.assume_utc()
 Instant("2024-07-04 12:36:56Z")
->>> d.assume_system_tz()
+>>> d.assume_tz(SYSTEM_TZ)
 ZonedDateTime("2024-07-04 12:36:56+02:00[Europe/Berlin]")
 ```

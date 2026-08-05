@@ -73,7 +73,7 @@ If you need to access calendar fields, convert to a datetime type first:
 ```python
 >>> now.to_tz("Europe/Amsterdam").year
 2026
->>> now.to_fixed_offset(0).hour  # only if you truly need UTC fields
+>>> now.to_fixed_offset().hour  # only if you truly need UTC fields
 5
 ```
 
@@ -83,25 +83,11 @@ If you need to access calendar fields, convert to a datetime type first:
 Most datetime formats—ISO 8601, RFC 2822, RFC 3339—only carry a fixed
 UTC offset (e.g. `+02:00`), not a full timezone name.
 {class}`~whenever.OffsetDateTime` represents *exactly* what these formats
-contain: a local time pinned to a fixed offset.
+contain without inventing regional timezone rules. This is useful for preserving
+the local representation and observed offset from an API, log, or database.
 
-This makes it the natural choice for:
-
-- **Parsing and serializing** timestamps from APIs, logs, and databases.
-- **Representing moments in the past**, where the offset was correct
-  at the time of recording and the timezone rules no longer matter.
-- **Simple contexts** where no DST transitions are involved.
-
-The trade-off is that a fixed offset can't track DST.
-If you shift or round an {class}`~whenever.OffsetDateTime`, the
-library preserves the original offset verbatim—which may be wrong
-for future dates if the region's rules have changed.
-That's why these operations emit a
-{class}`~whenever.StaleOffsetWarning`.
-When you need DST-safe arithmetic, convert to
-{class}`~whenever.ZonedDateTime` first.
-
-See {ref}`choosing-a-type` for guidance on which type to use.
+See {ref}`offset-datetime-guidance` for when to use it, why an offset does not
+identify a timezone, and how to handle {class}`~whenever.StaleOffsetWarning`.
 
 (faq-why-3-deltas)=
 ## Why are there three delta types?

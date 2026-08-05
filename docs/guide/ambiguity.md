@@ -39,11 +39,11 @@ Two common situations arise:
   ```
 
 `whenever` allows you to customize how to handle these situations
-using the `disambiguate` argument:
+using the `disambiguation` argument:
 
 ```{eval-rst}
 +------------------+-------------------------------------------------+
-| ``disambiguate`` | Behavior in case of ambiguity                   |
+| ``disambiguation`` | Behavior in case of ambiguity                 |
 +==================+=================================================+
 | ``"raise"``      | Raise :exc:`~whenever.RepeatedTime`             |
 |                  | or :exc:`~whenever.SkippedTime` exception.      |
@@ -71,45 +71,45 @@ ZonedDateTime("2023-01-01 00:00:00+01:00[Europe/Paris]")
 >>> # --- Fold: 2:30am occurs TWICE (clocks fall back) ---
 
 >>> # Reject ambiguous times outright
->>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="raise")
+>>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguation="raise")
 Traceback (most recent call last):
     ...
 whenever.RepeatedTime: 2023-10-29 02:30:00 is repeated in timezone Europe/Paris
 
 >>> # Explicitly choose the earlier occurrence (summer time, +02:00)
->>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="earlier")
+>>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguation="earlier")
 ZonedDateTime("2023-10-29 02:30:00+02:00[Europe/Paris]")
 
 >>> # Explicitly choose the later occurrence (winter time, +01:00)
->>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="later")
+>>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguation="later")
 ZonedDateTime("2023-10-29 02:30:00+01:00[Europe/Paris]")
 
 >>> # Default ("compatible") picks "earlier" for folds — matching RFC 5545
->>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris)
+>>> ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguation="compatible")
 ZonedDateTime("2023-10-29 02:30:00+02:00[Europe/Paris]")
 
 >>> # The two occurrences are exactly 1 hour apart in real time:
->>> earlier = ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="earlier")
->>> later   = ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguate="later")
+>>> earlier = ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguation="earlier")
+>>> later   = ZonedDateTime(2023, 10, 29, 2, 30, tz=paris, disambiguation="later")
 >>> later - earlier
 TimeDelta("PT1h")
 
 >>> # --- Gap: 2:30am DOESN'T EXIST (clocks spring forward) ---
 
->>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="raise")
+>>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguation="raise")
 Traceback (most recent call last):
     ...
 whenever.SkippedTime: 2023-03-26 02:30:00 is skipped in timezone Europe/Paris
 
 >>> # "earlier" extrapolates backward → 1:30 AM (before the gap)
->>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="earlier")
+>>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguation="earlier")
 ZonedDateTime("2023-03-26 01:30:00+01:00[Europe/Paris]")
 
 >>> # "later" extrapolates forward → 3:30 AM (after the gap)
->>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguate="later")
+>>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguation="later")
 ZonedDateTime("2023-03-26 03:30:00+02:00[Europe/Paris]")
 
 >>> # Default ("compatible") picks "later" for gaps — matching RFC 5545
->>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris)
+>>> ZonedDateTime(2023, 3, 26, 2, 30, tz=paris, disambiguation="compatible")
 ZonedDateTime("2023-03-26 03:30:00+02:00[Europe/Paris]")
 ```
