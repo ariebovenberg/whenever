@@ -193,6 +193,20 @@ def test_offset_timestamp_factory_wrappers(method, value, unit):
 
 
 @pytest.mark.parametrize(
+    "method", ["from_timestamp_millis", "from_timestamp_nanos"]
+)
+def test_offset_timestamp_factory_wrappers_keep_integer_requirement(method):
+    with pytest.warns(WheneverDeprecationWarning) as caught:
+        with pytest.raises(TypeError, match="requires an integer"):
+            getattr(OffsetDateTime, method)(
+                1.5,
+                offset=hours(2),
+                stale_offset_ok=True,
+            )
+    assert caught[0].filename == __file__
+
+
+@pytest.mark.parametrize(
     "method, value, unit",
     [
         ("from_timestamp", 1.25, "second"),
