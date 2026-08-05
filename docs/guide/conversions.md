@@ -11,8 +11,8 @@ myst:
 ## Between exact types
 
 You can convert between exact types with the {meth}`~whenever.ZonedDateTime.to_instant`,
-{meth}`~whenever.ZonedDateTime.to_fixed_offset`, {meth}`~whenever.ZonedDateTime.to_tz`,
-and {meth}`~whenever.ZonedDateTime.to_system_tz` methods. These methods return a new
+{meth}`~whenever.ZonedDateTime.to_fixed_offset`, and
+{meth}`~whenever.ZonedDateTime.to_tz` methods. These methods return a new
 instance of the appropriate type, representing the same moment in time.
 This means the results will always compare equal to the original datetime.
 
@@ -20,13 +20,13 @@ This means the results will always compare equal to the original datetime.
 >>> d = ZonedDateTime(2023, 12, 28, 11, 30, tz="Europe/Amsterdam")
 >>> d.to_instant()  # The underlying moment in time
 Instant("2023-12-28 10:30:00Z")
->>> d.to_fixed_offset(5)  # same moment with a +5:00 offset
+>>> d.to_fixed_offset(hours(5))  # same moment with a +5:00 offset
 OffsetDateTime("2023-12-28 15:30:00+05:00")
 >>> d.to_tz("America/New_York")  # same moment in New York
 ZonedDateTime("2023-12-28 05:30:00-05:00[America/New_York]")
->>> d.to_system_tz()  # same moment in the system timezone (e.g. Europe/Paris)
+>>> d.to_tz(SYSTEM_TZ)  # same moment in the system timezone (e.g. Europe/Paris)
 ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Paris]")
->>> d.to_fixed_offset(4) == d
+>>> d.to_fixed_offset(hours(4)) == d
 True  # always the same moment in time
 ```
 
@@ -45,8 +45,7 @@ PlainDateTime("2023-12-28 11:30:00")
 
 You can convert from plain datetimes with the {meth}`~whenever.PlainDateTime.assume_utc`,
 {meth}`~whenever.PlainDateTime.assume_fixed_offset`,
-{meth}`~whenever.PlainDateTime.assume_tz`, and
-{meth}`~whenever.PlainDateTime.assume_system_tz` methods.
+and {meth}`~whenever.PlainDateTime.assume_tz` methods.
 
 ```python
 >>> n = PlainDateTime(2023, 12, 28, 11, 30)
@@ -60,7 +59,7 @@ Similarly, you can associate an {class}`~whenever.OffsetDateTime`
 with a timezone using {meth}`~whenever.OffsetDateTime.assume_tz`:
 
 ```python
->>> o = OffsetDateTime(2023, 12, 28, 11, 30, offset=1)
+>>> o = OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(1))
 >>> o.assume_tz("Europe/Amsterdam")
 ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Amsterdam]")
 ```
@@ -69,7 +68,7 @@ By default, this raises an error if the offset doesn't match the timezone.
 You can control what happens in case of a mismatch with the `offset_mismatch` argument:
 
 ```python
->>> o = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
+>>> o = OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
 >>> o.assume_tz("Europe/Amsterdam", offset_mismatch="keep_instant")
 ZonedDateTime("2023-12-28 07:30:00+01:00[Europe/Amsterdam]")
 >>> o.assume_tz("Europe/Amsterdam", offset_mismatch="keep_local")
