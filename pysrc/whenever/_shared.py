@@ -445,7 +445,11 @@ class MonthDay(_Base):
         return self._py.month == 2 and self._py.day == 29
 
     def is_leap(self) -> bool:
-        """Check if the month-day is February 29th."""
+        """Check if the month-day is February 29th.
+
+        .. deprecated:: 0.11
+           Use :meth:`is_leap_day` instead.
+        """
         warn_deprecated(
             "is_leap() is deprecated; use is_leap_day() instead",
             stacklevel=2,

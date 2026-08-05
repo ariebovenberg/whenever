@@ -199,6 +199,10 @@ IMPLICIT_DISAMBIGUATION_MSG = (
     "or 'raise'. See "
     "https://whenever.readthedocs.io/en/latest/guide/ambiguity.html"
 )
+INTEGER_OFFSET_DEPRECATION_MSG = (
+    "integer offsets are deprecated because their unit is implicit; "
+    "pass a TimeDelta instead, for example hours(2)"
+)
 
 
 def _load_tz(tz: Any, /) -> TimeZone:
@@ -483,6 +487,9 @@ class Date(_Base):
     @classmethod
     def today_in_system_tz(cls) -> Date:
         """Get the current date in the system's local timezone.
+
+        .. deprecated:: 0.11
+           Use ``Date.today(SYSTEM_TZ)`` instead.
 
         Alias for ``Instant.now().to_system_tz().date()``.
 
@@ -844,9 +851,9 @@ class Date(_Base):
 
         See :ref:`pattern-format` for details.
 
-        >>> Date.parse("2024/03/15", format="YYYY/MM/DD")
+        >>> Date.parse("2024/03/15", pattern="YYYY/MM/DD")
         Date("2024-03-15")
-        >>> Date.parse("15 Mar 2024", format="DD MMM YYYY")
+        >>> Date.parse("15 Mar 2024", pattern="DD MMM YYYY")
         Date("2024-03-15")
         """
         pattern = _normalize_pattern(pattern, kwargs)
@@ -1445,9 +1452,9 @@ class Time(_Base):
 
         See :ref:`pattern-format` for details.
 
-        >>> Time.parse("14:30:05", format="hh:mm:ss")
+        >>> Time.parse("14:30:05", pattern="hh:mm:ss")
         Time(14:30:05)
-        >>> Time.parse("02:30 PM", format="ii:mm aa")
+        >>> Time.parse("02:30 PM", pattern="ii:mm aa")
         Time(14:30:00)
         """
         pattern = _normalize_pattern(pattern, kwargs)
@@ -2655,7 +2662,7 @@ class _ExactTime(_BasicConversions):
     _nanos: int
 
     def timestamp(self, *, unit: TimestampUnitStr = "second") -> int:
-        """The UNIX timestamp for this datetime. Inverse of :meth:`from_timestamp`.
+        """The UNIX timestamp in the requested unit. Inverse of :meth:`from_timestamp`.
 
         >>> Instant.from_utc(1970, 1, 1).timestamp()
         0
@@ -2669,6 +2676,11 @@ class _ExactTime(_BasicConversions):
         not a float. This is because floating point timestamps are not precise
         enough to represent all instants to nanosecond precision.
         This decision is consistent with other modern date-time libraries.
+
+        Values before the epoch are floored at the requested unit. For example,
+        ``1969-12-31T23:59:59.999999999Z`` has timestamp ``-1`` in seconds,
+        milliseconds, microseconds, and nanoseconds. This differs from applying
+        ``int()`` to a negative float, which truncates toward zero.
         """
         return timestamp_from_parts(
             int(self._py_dt.timestamp()),
@@ -2677,7 +2689,11 @@ class _ExactTime(_BasicConversions):
         )
 
     def timestamp_millis(self) -> int:
-        """Like :meth:`timestamp`, but with millisecond precision."""
+        """Like :meth:`timestamp`, but with millisecond precision.
+
+        .. deprecated:: 0.11
+           Use ``timestamp(unit="millisecond")`` instead.
+        """
         warn_deprecated(
             "timestamp_millis() is deprecated; use timestamp(unit='millisecond') instead",
             stacklevel=2,
@@ -2685,7 +2701,11 @@ class _ExactTime(_BasicConversions):
         return self.timestamp(unit="millisecond")
 
     def timestamp_nanos(self) -> int:
-        """Like :meth:`timestamp`, but with nanosecond precision."""
+        """Like :meth:`timestamp`, but with nanosecond precision.
+
+        .. deprecated:: 0.11
+           Use ``timestamp(unit="nanosecond")`` instead.
+        """
         warn_deprecated(
             "timestamp_nanos() is deprecated; use timestamp(unit='nanosecond') instead",
             stacklevel=2,
@@ -2697,15 +2717,15 @@ class _ExactTime(_BasicConversions):
 
     @overload
     def to_fixed_offset(
-        self, offset: int | TimeDelta, /
+        self, offset: TimeDelta, /
     ) -> OffsetDateTime: ...
 
     def to_fixed_offset(
-        self, offset: int | TimeDelta = UNSET, /
+        self, offset: TimeDelta = UNSET, /
     ) -> OffsetDateTime:
         """Convert to an OffsetDateTime that represents the same moment in time.
 
-        If not offset is given, the offset is taken from the original datetime.
+        If no offset is given, the offset is taken from the original datetime.
         """
         return OffsetDateTime._from_py_unchecked(
             self._py_dt.astimezone(
@@ -2731,7 +2751,11 @@ class _ExactTime(_BasicConversions):
         )
 
     def to_system_tz(self) -> ZonedDateTime:
-        """Convert to a ZonedDateTime of the system's timezone."""
+        """Convert to a ZonedDateTime of the system's timezone.
+
+        .. deprecated:: 0.11
+           Use ``to_tz(SYSTEM_TZ)`` instead.
+        """
         warn_deprecated(
             "to_system_tz() is deprecated; use to_tz(SYSTEM_TZ) instead",
             stacklevel=2,
@@ -2743,18 +2767,18 @@ class _ExactTime(_BasicConversions):
         (instead of whether they represent the same instant).
         Different types are never equal.
 
-        >>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=1)
-        >>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=2)
+        >>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=hours(1))
+        >>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=hours(2))
         >>> a == b
         True  # equivalent instants
-        >>> a.exact_eq(b)
+        >>> a.strict_eq(b)
         False  # different values (hour and offset)
-        >>> a.exact_eq(Instant.now())
+        >>> a.strict_eq(Instant.now())
         TypeError  # different types
 
         Note
         ----
-        If ``a.exact_eq(b)`` is true, then
+        If ``a.strict_eq(b)`` is true, then
         ``a == b`` is also true, but the converse is not necessarily true.
         """
         if type(self) is not type(other):
@@ -2770,6 +2794,11 @@ class _ExactTime(_BasicConversions):
         )
 
     def exact_eq(self, other: Any, /) -> bool:
+        """Deprecated alias for :meth:`strict_eq`.
+
+        .. deprecated:: 0.11
+           Use :meth:`strict_eq` instead.
+        """
         warn_deprecated(
             "exact_eq() is deprecated; use strict_eq() instead",
             stacklevel=2,
@@ -2800,7 +2829,7 @@ class _ExactTime(_BasicConversions):
         Note
         ----
         If you want to exactly compare the values on their values
-        instead, use :meth:`exact_eq`.
+        instead, use :meth:`strict_eq`.
 
         >>> Instant.from_utc(2020, 8, 15, hour=23) == Instant.from_utc(2020, 8, 15, hour=23)
         True
@@ -2934,8 +2963,8 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
         """Get the underlying date and time without offset or timezone
 
         As an inverse, :class:`PlainDateTime` has methods
-        :meth:`~PlainDateTime.assume_utc`, :meth:`~PlainDateTime.assume_fixed_offset`
-        , :meth:`~PlainDateTime.assume_tz`, and :meth:`~PlainDateTime.assume_system_tz`.
+        :meth:`~PlainDateTime.assume_utc`, :meth:`~PlainDateTime.assume_fixed_offset`,
+        and :meth:`~PlainDateTime.assume_tz`.
         """
         return PlainDateTime._from_py_unchecked(
             self._py_dt.replace(tzinfo=None),
@@ -3031,9 +3060,12 @@ class Instant(_ExactTime):
         *,
         unit: TimestampUnitStr = "second",
     ) -> Instant:
-        """Create an Instant from a UNIX timestamp (in seconds).
+        """Create an Instant from a UNIX timestamp in the requested unit.
 
         The inverse of the ``timestamp()`` method.
+
+        Seconds accept integers and floats. Milliseconds, microseconds, and
+        nanoseconds require integers.
         """
         secs, nanos = split_timestamp(value, unit)
         return cls._from_py_unchecked(
@@ -3044,6 +3076,9 @@ class Instant(_ExactTime):
     @classmethod
     def from_timestamp_millis(cls, i: int, /) -> Instant:
         """Create an Instant from a UNIX timestamp (in milliseconds).
+
+        .. deprecated:: 0.11
+           Use ``from_timestamp(..., unit="millisecond")`` instead.
 
         The inverse of the ``timestamp_millis()`` method.
         """
@@ -3058,6 +3093,9 @@ class Instant(_ExactTime):
     @classmethod
     def from_timestamp_nanos(cls, i: int, /) -> Instant:
         """Create an Instant from a UNIX timestamp (in nanoseconds).
+
+        .. deprecated:: 0.11
+           Use ``from_timestamp(..., unit="nanosecond")`` instead.
 
         The inverse of the ``timestamp_nanos()`` method.
         """
@@ -3119,7 +3157,7 @@ class Instant(_ExactTime):
         return _format_dt(self._py_dt, self._nanos, "Z", unit, sep, basic)
 
     def format_rfc2822(self) -> str:
-        """Format as an RFC 2822 string.
+        """Format as an RFC 2822 string in the fixed UTC/GMT subset.
         The inverse of the ``parse_rfc2822()`` method.
 
         >>> Instant.from_utc(2020, 8, 8, hour=23, minute=12).format_rfc2822()
@@ -3127,7 +3165,8 @@ class Instant(_ExactTime):
 
         Note
         ----
-        The output is also compatible with the (stricter) RFC 9110 standard.
+        This is also the IMF-fixdate representation used to generate HTTP dates
+        under the stricter RFC 9110 standard.
 
         """
         return (
@@ -3206,9 +3245,9 @@ class Instant(_ExactTime):
             :meth:`~PlainDateTime.assume_utc` or
             :meth:`~PlainDateTime.assume_tz`.
 
-        >>> Instant.parse("2024-03-15 14:30Z", format="YYYY-MM-DD hh:mmXXX")
+        >>> Instant.parse("2024-03-15 14:30Z", pattern="YYYY-MM-DD hh:mmXXX")
         Instant("2024-03-15 14:30:00Z")
-        >>> Instant.parse("2024-03-15 14:30+05:30", format="YYYY-MM-DD hh:mmxxx")
+        >>> Instant.parse("2024-03-15 14:30+05:30", pattern="YYYY-MM-DD hh:mmxxx")
         Instant("2024-03-15 09:00:00Z")
         """
         pattern = _normalize_pattern(pattern, kwargs)
@@ -3664,6 +3703,9 @@ class OffsetDateTime(_ExactAndLocalTime):
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
 
+        .. deprecated:: 0.11
+           Create an :class:`Instant` and call ``to_fixed_offset()`` instead.
+
         The inverse of the ``timestamp()`` method.
 
         Warning
@@ -3703,6 +3745,9 @@ class OffsetDateTime(_ExactAndLocalTime):
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in milliseconds).
 
+        .. deprecated:: 0.11
+           Use ``Instant.from_timestamp(..., unit="millisecond").to_fixed_offset()``.
+
         The inverse of the ``timestamp_millis()`` method.
 
         See :meth:`from_timestamp` for more information.
@@ -3735,6 +3780,9 @@ class OffsetDateTime(_ExactAndLocalTime):
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
         """Create an instance from a UNIX timestamp (in nanoseconds).
+
+        .. deprecated:: 0.11
+           Use ``Instant.from_timestamp(..., unit="nanosecond").to_fixed_offset()``.
 
         The inverse of the ``timestamp_nanos()`` method.
 
@@ -4096,7 +4144,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             :meth:`~PlainDateTime.assume_fixed_offset` or
             :meth:`~PlainDateTime.assume_tz`.
 
-        >>> OffsetDateTime.parse("2024-03-15 14:30+02:00", format="YYYY-MM-DD hh:mmxxx")
+        >>> OffsetDateTime.parse("2024-03-15 14:30+02:00", pattern="YYYY-MM-DD hh:mmxxx")
         OffsetDateTime("2024-03-15 14:30:00+02:00")
         """
         pattern = _normalize_pattern(pattern, kwargs)
@@ -4511,7 +4559,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     >>> ZonedDateTime("2024-12-08T11[Europe/Paris]")
     ZonedDateTime("2024-12-08 11:00:00+01:00[Europe/Paris]")
     >>> # Explicitly resolve ambiguities during DST transitions
-    >>> ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguate="earlier")
+    >>> ZonedDateTime(2023, 10, 29, 1, 15, tz="Europe/London", disambiguation="earlier")
     ZonedDateTime("2023-10-29 01:15:00+01:00[Europe/London]")
     >>> # From a standard library datetime (must have a ZoneInfo tzinfo)
     >>> ZonedDateTime(datetime(2020, 8, 15, 23, 12, tzinfo=ZoneInfo("Europe/London")))
@@ -4615,6 +4663,9 @@ class ZonedDateTime(_ExactAndLocalTime):
     ) -> ZonedDateTime:
         """Create an instance in the system timezone.
 
+        .. deprecated:: 0.11
+           Use ``ZonedDateTime(..., tz=SYSTEM_TZ)`` instead.
+
         Equivalent to ``ZonedDateTime(..., tz=<the system timezone>)``,
         except it also works for system timezones whose corresponding
         IANA timezone ID is unknown.
@@ -4648,6 +4699,9 @@ class ZonedDateTime(_ExactAndLocalTime):
     @classmethod
     def now_in_system_tz(cls) -> ZonedDateTime:
         """Create an instance from the current time in the system timezone.
+
+        .. deprecated:: 0.11
+           Use ``ZonedDateTime.now(SYSTEM_TZ)`` instead.
 
         Equivalent to ``Instant.now().to_system_tz()``.
         """
@@ -4866,7 +4920,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         >>> ZonedDateTime.parse(
         ...     "2024-03-15 14:30+01:00[Europe/Paris]",
-        ...     format="YYYY-MM-DD hh:mmxxx'['VV']'",
+        ...     pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
         ... )
         ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
         """
@@ -4949,6 +5003,9 @@ class ZonedDateTime(_ExactAndLocalTime):
     ) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
 
+        .. deprecated:: 0.11
+           Create an :class:`Instant` and call ``to_tz()`` instead.
+
         The inverse of the ``timestamp()`` method.
         """
         warn_deprecated(
@@ -4966,6 +5023,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         cls, i: int, /, *, tz: str | _SystemTZ
     ) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in milliseconds).
+
+        .. deprecated:: 0.11
+           Use ``Instant.from_timestamp(..., unit="millisecond").to_tz()``.
 
         The inverse of the ``timestamp_millis()`` method.
         """
@@ -4986,6 +5046,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         cls, i: int, /, *, tz: str | _SystemTZ
     ) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in nanoseconds).
+
+        .. deprecated:: 0.11
+           Use ``Instant.from_timestamp(..., unit="nanosecond").to_tz()``.
 
         The inverse of the ``timestamp_nanos()`` method.
         """
@@ -5115,7 +5178,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             *,
             nanosecond: int = ...,
             tz: str | _SystemTZ = ...,
-            disambiguate: DisambiguateStr = ...,
+            disambiguation: DisambiguationStr = ...,
         ) -> ZonedDateTime: ...
 
     def replace(
@@ -5135,7 +5198,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         ---------
         Replacing fields of a ZonedDateTime may result in an ambiguous time
         (e.g. during a DST transition). Therefore, it's recommended to
-        specify how to handle such a situation using the ``disambiguate`` argument.
+        specify how to handle such a situation using the ``disambiguation`` argument.
 
         By default, if the tz remains the same, the offset is used to disambiguate
         if possible, falling back to the "compatible" strategy if needed.
@@ -5190,6 +5253,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         """The timezone ID. In rare cases, this may be ``None``,
         if the ``ZonedDateTime`` was created from a system timezone
         without a known IANA key.
+
+        .. deprecated:: 0.11
+           Use :attr:`tz_id` instead.
         """
         warn_deprecated(
             "tz is deprecated; use tz_id instead",
@@ -5252,7 +5318,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         d: AnyDelta,
         /,
         *,
-        disambiguate: DisambiguateStr = ...,
+        disambiguation: DisambiguationStr = ...,
     ) -> ZonedDateTime: ...
 
     @overload
@@ -5269,7 +5335,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         milliseconds: float = ...,
         microseconds: float = ...,
         nanoseconds: int = ...,
-        disambiguate: DisambiguateStr = ...,
+        disambiguation: DisambiguationStr = ...,
     ) -> ZonedDateTime: ...
 
     @no_type_check
@@ -5281,7 +5347,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         Shifting by **calendar units** (e.g. months, weeks)
         may result in an ambiguous time (e.g. during a DST transition).
         Therefore, when adding calendar units, it's recommended to
-        specify how to handle such a situation using the ``disambiguate`` argument.
+        specify how to handle such a situation using the ``disambiguation`` argument.
 
         See `the documentation <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__
         for more information.
@@ -5294,7 +5360,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         d: AnyDelta,
         /,
         *,
-        disambiguate: DisambiguateStr = ...,
+        disambiguation: DisambiguationStr = ...,
     ) -> ZonedDateTime: ...
 
     @overload
@@ -5311,7 +5377,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         milliseconds: float = ...,
         microseconds: float = ...,
         nanoseconds: int = ...,
-        disambiguate: DisambiguateStr = ...,
+        disambiguation: DisambiguationStr = ...,
     ) -> ZonedDateTime: ...
 
     @no_type_check
@@ -5831,6 +5897,11 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     def exact_eq(self, other: ZonedDateTime, /) -> bool:
+        """Deprecated alias for :meth:`strict_eq`.
+
+        .. deprecated:: 0.11
+           Use :meth:`strict_eq` instead.
+        """
         warn_deprecated(
             "exact_eq() is deprecated; use strict_eq() instead",
             stacklevel=2,
@@ -6068,7 +6139,7 @@ class PlainDateTime(_LocalTime):
 
         See :ref:`pattern-format` for details.
 
-        >>> PlainDateTime.parse("2024-03-15 14:30", format="YYYY-MM-DD hh:mm")
+        >>> PlainDateTime.parse("2024-03-15 14:30", pattern="YYYY-MM-DD hh:mm")
         PlainDateTime("2024-03-15 14:30:00")
         """
         pattern = _normalize_pattern(pattern, kwargs)
@@ -6636,12 +6707,12 @@ class PlainDateTime(_LocalTime):
         ----
         The local time may be ambiguous in the given timezone
         (e.g. during a DST transition). You can explicitly
-        specify how to handle such a situation using the ``disambiguate`` argument.
+        specify how to handle such a situation using the ``disambiguation`` argument.
         See `the documentation <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`__
         for more information.
 
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
-        >>> d.assume_tz("Europe/Amsterdam", disambiguate="raise")
+        >>> d.assume_tz("Europe/Amsterdam", disambiguation="raise")
         ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Amsterdam]")
         """
         disambiguation = _normalize_disambiguation(
@@ -6667,6 +6738,9 @@ class PlainDateTime(_LocalTime):
     ) -> ZonedDateTime:
         """Assume the datetime is in the system timezone,
         creating a ``ZonedDateTime``.
+
+        .. deprecated:: 0.11
+           Use ``assume_tz(SYSTEM_TZ)`` instead.
 
         Note
         ----
@@ -7028,7 +7102,7 @@ FORMAT_ISO_NO_TZ_MSG = (
     "standard ISO format, which requires it. "
     "This typically means the ZonedDateTime was created from a system timezone "
     "with an unknown ID. To format without the timezone designator, set the "
-    "`tz=` argument to 'never' or 'auto'."
+    "`tz_display=` argument to 'never' or 'auto'."
 )
 
 DAYS_NOT_ALWAYS_24H_MSG = (
@@ -7085,7 +7159,7 @@ def _load_offset(
 ) -> _timezone:
     if isinstance(offset, int):
         warn_deprecated(
-            "integer offsets are deprecated; use TimeDelta instead",
+            INTEGER_OFFSET_DEPRECATION_MSG,
             stacklevel=warning_stacklevel,
         )
         return _timezone(_timedelta(hours=offset))

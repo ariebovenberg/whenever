@@ -19,18 +19,29 @@ Context managers
 ----------------
 
 .. autoclass:: patch_current_time
+.. autoclass:: TimePatch
+   :members:
+
+
+System timezone
+---------------
+
+.. data:: SYSTEM_TZ
+
+   A public sentinel that requests the system timezone. Pass it where a named
+   timezone is accepted to resolve the system timezone at call time, for
+   example ``ZonedDateTime.now(SYSTEM_TZ)`` or
+   ``plain.assume_tz(SYSTEM_TZ)``. The returned datetime stores the resolved
+   timezone, not the sentinel itself.
+
+   See :ref:`systemtime` for caching, reset behavior, and system timezones
+   without an IANA ID.
 
 
 Timezone data
 -------------
 
-.. data:: TZPATH
-   :type: tuple[str, ...]
-
-   The paths in which ``whenever`` will search for timezone data.
-   By default, this is determined the same way as :data:`zoneinfo.TZPATH`,
-   although you can override it using :func:`reset_tzpath` for ``whenever`` specifically.
-
+.. autofunction:: get_tzpath
 .. autofunction:: clear_tzcache
 .. autofunction:: reset_tzpath
 .. autofunction:: available_timezones

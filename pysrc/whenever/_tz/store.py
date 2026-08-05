@@ -203,10 +203,10 @@ def reset_system_tz() -> None:
     >>> os.environ["TZ"] = "America/New_York"
     >>> reset_system_tz()  # system tz is now New York
     >>> os.environ["TZ"] = "Europe/London"
-    >>> ZonedDateTime.now_in_system_tz()  # still uses cached New York tz
+    >>> ZonedDateTime.now(SYSTEM_TZ)  # still uses cached New York tz
     ZonedDateTime(2025-06-18 15:11:08-04:00[America/New_York])
     >>> reset_system_tz()  # system tz is now London
-    >>> ZonedDateTime.now_in_system_tz()
+    >>> ZonedDateTime.now(SYSTEM_TZ)
     ZonedDateTime(2025-06-18 20:11:08+01:00[Europe/London])
     """
     global _CACHED_SYSTEM_TZ

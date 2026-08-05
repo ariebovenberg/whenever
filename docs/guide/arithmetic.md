@@ -220,13 +220,13 @@ ValueError: Calendar units can only be used to compare ZonedDateTimes with the s
 ```
 
 When adding calendar units, the result may land in a DST transition.
-Use `disambiguate` to control how this is resolved (default: `"compatible"`):
+Pass `disambiguation` explicitly to control how this is resolved:
 
 ```python
 >>> d = ZonedDateTime(2024, 10, 3, 1, 15, tz="America/Denver")
->>> d.add(months=1)                          # default: compatible
+>>> d.add(months=1, disambiguation="compatible")
 ZonedDateTime("2024-11-03 01:15:00-06:00[America/Denver]")
->>> d.add(months=1, disambiguate="raise")
+>>> d.add(months=1, disambiguation="raise")
 Traceback (most recent call last):
   ...
 whenever.RepeatedTime: 2024-11-03 01:15:00 is repeated in timezone 'America/Denver'

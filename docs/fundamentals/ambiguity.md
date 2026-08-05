@@ -52,11 +52,11 @@ However, `whenever` also provides explicit options to handle ambiguity:
 ```python
 >>> from whenever import ZonedDateTime, PlainDateTime
 >>> local = PlainDateTime(2024, 10, 27, 2, 30)
->>> local.assume_tz("Europe/Amsterdam", disambiguate="earlier")
+>>> local.assume_tz("Europe/Amsterdam", disambiguation="earlier")
 ZonedDateTime("2024-10-27 02:30:00+02:00[Europe/Amsterdam]")
->>> local.assume_tz("Europe/Amsterdam", disambiguate="later")
+>>> local.assume_tz("Europe/Amsterdam", disambiguation="later")
 ZonedDateTime("2024-10-27 02:30:00+01:00[Europe/Amsterdam]")
->>> local.assume_tz("Europe/Amsterdam", disambiguate="compatible")  # the default
+>>> local.assume_tz("Europe/Amsterdam", disambiguation="compatible")
 ZonedDateTime("2024-10-27 02:30:00+02:00[Europe/Amsterdam]")
 ```
 

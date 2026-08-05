@@ -63,11 +63,7 @@ impl Offset {
 
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         if let Some(py_int) = obj.cast_allow_subclass::<PyInt>() {
-            warn_deprecated(
-                state,
-                c"integer offsets are deprecated; use TimeDelta instead",
-                1,
-            )?;
+            warn_deprecated(state, doc::INTEGER_OFFSET_DEPRECATION_MSG, 1)?;
             Offset::from_hours(py_int.to_i64()?)
                 .ok_or_value_err("offset must be between -24 and 24 hours")
         } else if let Some(TimeDelta { secs, subsec }) = obj.extract(*state.time_delta_type) {

@@ -112,8 +112,8 @@ ZonedDateTime("2022-10-24 13:00:00-04:00[America/New_York]")
 ZonedDateTime("2020-03-14 15:00:00-04:00[America/New_York]")
 ```
 
+(offset-datetime-guidance)=
 ## {class}`~whenever.OffsetDateTime`
-
 
 ```{epigraph}
 In API design, if you've got two things that are even subtly different,
@@ -123,29 +123,39 @@ meaning of your data more accurately.
 -- Jon Skeet
 ```
 
-Like {class}`~whenever.ZonedDateTime`, this type represents an exact time
-*and* a local time. The difference is that {class}`~whenever.OffsetDateTime`
-has a *fixed* offset from UTC rather than a timezone.
-As a result, it doesn't know about Daylight Saving Time or other timezone changes.
-Many operations will emit a {class}`~whenever.StaleOffsetWarning`
-to prevent you from accidentally introducing DST bugs.
+Like {class}`~whenever.ZonedDateTime`, this type preserves both an exact
+instant and its local representation. The difference is that it stores only
+the observed UTC offset, not a regional timezone rule set.
 
-Then why use it? Firstly, most datetime formats (e.g. ISO 8601 and RFC 2822) only have fixed offsets,
-making {class}`~whenever.OffsetDateTime` ideal for representing datetimes in these formats.
-Second, a {class}`~whenever.OffsetDateTime` is simpler—so long as you
-don't need the ability to shift it. This makes {class}`~whenever.OffsetDateTime`
-an efficient and compatible choice for representing times in the past.
+### When to use it—and what to watch for
+
+Many external formats—such as ISO 8601 payloads, RFC 2822 messages, database
+records, and logs—provide a local datetime and offset but no timezone ID.
+{class}`~whenever.Instant` would preserve the moment while discarding that
+source representation. {class}`~whenever.ZonedDateTime` would require
+attaching regional rules the source never supplied. `OffsetDateTime` preserves
+the moment, local fields, and observed offset without inventing those rules.
+
+An offset does **not** identify a timezone: many regions can share `+02:00` at
+one instant and follow different rules later. Treating one observed offset as
+a timezone identity invents unsupported historical and future behavior. Even
+placing a fixed offset in timezone brackets does not supply regional rules; it
+only obscures the distinction.
+
+Operations that reuse an offset where regional rules might matter emit
+{class}`~whenever.StaleOffsetWarning`. If the offset is deliberately fixed,
+pass `stale_offset_ok=True`. If it represents a location, first associate the
+value with the known region using {meth}`~whenever.OffsetDateTime.assume_tz`.
 
 ```python
->>> flight_departure = OffsetDateTime(2023, 4, 21, hour=9, offset=-4)
->>> flight_arrival = OffsetDateTime(2023, 4, 21, hour=10, offset=-6)
+>>> flight_departure = OffsetDateTime(2023, 4, 21, hour=9, offset=hours(-4))
+>>> flight_arrival = OffsetDateTime(2023, 4, 21, hour=10, offset=hours(-6))
 >>> (flight_arrival - flight_departure).total("hours")
 3
->>> # This will emit a warning!
->>> flight_arrival.add(hours=3)  # a DST-bug waiting to happen!
->>> # instead:
->>> flight_arrival.add(hours=3, stale_offset_ok=True)  # explicitly suppress
->>> flight_arrival.in_tz("America/New_York").add(hours=3)  # use the full timezone
+>>> # Deliberately keep the supplied fixed offset:
+>>> flight_arrival.add(hours=3, stale_offset_ok=True)
+>>> # Or use regional rules when the location is known:
+>>> flight_arrival.assume_tz("America/Denver").add(hours=3)
 ```
 
 ## Comparison of types

@@ -24,7 +24,13 @@ Warnings
 .. autoexception:: StaleOffsetWarning
    :show-inheritance:
 
+.. autoexception:: ImplicitDisambiguationWarning
+   :show-inheritance:
+
 .. autoexception:: PotentialDstBugWarning
+   :show-inheritance:
+
+.. autoexception:: PickleOffsetMismatchWarning
    :show-inheritance:
 
 .. autoexception:: WheneverDeprecationWarning

@@ -53,6 +53,6 @@ common source of surprises, especially in servers and containers
 where the system timezone is often UTC or undefined.
 In `whenever`, the system timezone is never used implicitly;
 you must opt in with a dedicated method
-(e.g. {meth}`~whenever.Instant.to_system_tz`,
-{meth}`~whenever.PlainDateTime.assume_system_tz`)
+(e.g. {meth}`~whenever.Instant.to_tz` and
+{meth}`~whenever.PlainDateTime.assume_tz`, both with {data}`~whenever.SYSTEM_TZ`)
 so the dependency is visible in the code.

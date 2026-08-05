@@ -185,7 +185,7 @@ def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
     Caution
     -------
     Calling this function may change the behavior of existing ``ZonedDateTime``
-    instances in surprising ways. Most significantly, ``exact_eq()`` may
+    instances in surprising ways. Most significantly, ``strict_eq()`` may
     return ``False`` between two timezone instances with the same TZ ID,
     if this timezone definition was changed on disk.
 

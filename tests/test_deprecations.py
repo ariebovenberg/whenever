@@ -305,7 +305,10 @@ def test_tzpath():
     ],
 )
 def test_integer_offsets(old, new):
-    actual = deprecated(old, match="integer offsets are deprecated")
+    actual = deprecated(
+        old,
+        match=r"integer offsets are deprecated.*TimeDelta.*hours\(2\)",
+    )
     assert actual.strict_eq(new())
 
 
@@ -314,7 +317,7 @@ def test_integer_offset_to_now():
     with patch_current_time(instant, keep_ticking=False):
         actual = deprecated(
             lambda: OffsetDateTime.now(2, stale_offset_ok=True),
-            match="integer offsets are deprecated",
+            match=r"integer offsets are deprecated.*TimeDelta.*hours\(2\)",
         )
         assert actual.strict_eq(
             OffsetDateTime.now(hours(2), stale_offset_ok=True)
