@@ -608,11 +608,19 @@ def test_replace():
     with pytest.raises(ValueError, match="nano|time"):
         d.replace(nanosecond=-4)
 
+    with pytest.raises(TypeError, match="nanosecond"):
+        d.replace(nanosecond=1.5)  # type: ignore[arg-type]
+
     with pytest.raises(TypeError, match="tzinfo"):
         d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
 
 
 class TestShiftMethods:
+    @suppress(NaiveArithmeticWarning)
+    def test_no_arguments(self):
+        d = PlainDateTime(2020, 8, 15)
+        assert d.add(naive_arithmetic_ok=True) == d
+
     @pytest.mark.parametrize(
         "delta, kwargs",
         [

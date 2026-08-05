@@ -133,6 +133,10 @@ class TestCompilePattern:
         with pytest.raises(ValueError, match="YY.*only.*formatting"):
             Date.parse("24-03-15", pattern="YY-MM-DD")
 
+    def test_parse_requires_pattern(self):
+        with pytest.raises(TypeError, match="required.*pattern"):
+            Date.parse("2024-03-15")  # type: ignore[call-overload]
+
     def test_invalid_specifier_count(self):
         """E.g. YYY (3 Y's) is not valid — only 2 or 4."""
         with pytest.raises(ValueError, match="Valid counts"):
@@ -841,6 +845,21 @@ class TestZonedDateTimeParse:
             ZonedDateTime.parse(
                 "2024-03-15 14:30+05:00[Europe/Paris]",
                 pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
+            )
+
+    def test_keep_instant_on_offset_mismatch(self):
+        assert ZonedDateTime.parse(
+            "2020-08-15 12:00+03:00[Europe/Amsterdam]",
+            pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
+            offset_mismatch="keep_instant",
+        ).strict_eq(ZonedDateTime(2020, 8, 15, 11, tz="Europe/Amsterdam"))
+
+    def test_invalid_offset_mismatch(self):
+        with pytest.raises(ValueError, match="offset_mismatch"):
+            ZonedDateTime.parse(  # type: ignore[call-overload]
+                "2020-08-15 12:00+02:00[Europe/Amsterdam]",
+                pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
+                offset_mismatch="ignore",
             )
 
     @pytest.mark.parametrize("disambiguation", ["earlier", "later"])

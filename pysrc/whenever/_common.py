@@ -262,19 +262,12 @@ _Tcall = TypeVar("_Tcall", bound=Callable[..., None])
 def add_alternate_constructors(
     init_default: _Tcall,
     py_type: type | None = None,
-    deprecation_msg: str | None = None,
 ) -> _Tcall:
     """Add alternate constructors to a class's __init__ method."""
 
     def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
         match args:
             case [str() as iso_string]:
-                if deprecation_msg:
-                    warn(
-                        deprecation_msg,
-                        WheneverDeprecationWarning,
-                        stacklevel=2,
-                    )
                 self._init_from_iso(iso_string, **kwargs)
             case [obj] if (
                 py_type is not None and not kwargs and isinstance(obj, py_type)

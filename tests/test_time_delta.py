@@ -974,6 +974,10 @@ class TestDivision:
         with pytest.raises(ZeroDivisionError):
             d / 0.0
 
+    def test_invalid_type(self):
+        with pytest.raises(TypeError, match="unsupported operand"):
+            TimeDelta(hours=1) / Ellipsis  # type: ignore[operator]
+
 
 class TestFloorDiv:
     def test_examples(self):
