@@ -85,6 +85,11 @@ class TestInit:
                 2020, 8, 15, 5, 12, offset=hours(34) + milliseconds(1)
             )
 
+        with pytest.raises(TypeError, match="offset must be"):
+            OffsetDateTime(  # type: ignore[call-overload]
+                2020, 8, 15, offset="+02:00"
+            )
+
     def test_init_optionality(self):
         assert (
             OffsetDateTime(2020, 8, 15, 12, offset=hours(5))
@@ -1095,6 +1100,10 @@ class TestAddSubtractOperators:
 
 
 class TestShiftMethods:
+    def test_no_arguments(self):
+        d = OffsetDateTime(2020, 8, 15, offset=hours(2))
+        assert d.add(stale_offset_ok=True).strict_eq(d)
+
     @pytest.mark.parametrize(
         "delta, kwargs",
         [
@@ -2850,6 +2859,18 @@ class TestStaleOffsetOkKwarg:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             odt.replace_time(Time(12, 0), stale_offset_ok=True)
+
+    @pytest.mark.parametrize(
+        "replace",
+        [
+            lambda d: d.replace_date(Date(2025, 1, 1)),
+            lambda d: d.replace_time(Time(12, 0)),
+        ],
+    )
+    def test_replace_emits_warning(self, replace):
+        d = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
+        with pytest.warns(StaleOffsetWarning):
+            replace(d)
 
     def test_round(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))

@@ -151,7 +151,7 @@ def matching_local_offset(
             candidate_offsets = (offset,)
         case Fold(_, earlier_offset, later_offset):
             candidate_offsets = (earlier_offset, later_offset)
-        case Gap():
+        case Gap():  # pragma: no branch
             candidate_offsets = ()
 
     for offset in candidate_offsets:

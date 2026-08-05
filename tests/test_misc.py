@@ -303,6 +303,18 @@ def test_time_machine():
         assert Instant.now() == Instant.from_utc(1980, 3, 2, hour=2)
 
 
+def test_pydantic():
+    pydantic = pytest.importorskip("pydantic")
+    adapter = pydantic.TypeAdapter(Date)
+    d = Date(2020, 8, 15)
+
+    assert adapter.validate_python(d) is d
+    assert adapter.validate_python("2020-08-15") == d
+    with pytest.raises(pydantic.ValidationError):
+        adapter.validate_python(42)
+    assert adapter.json_schema()["type"] == "string"
+
+
 @system_tz_ams()
 def test_patch_time():
 
@@ -363,6 +375,13 @@ def test_time_patch_lifetime_and_overlap():
         handle.shift(hours(1))
     with pytest.raises(RuntimeError, match="no longer active"):
         handle.move_to(i)
+
+
+def test_time_patch_move_to_rejects_non_exact_time():
+    i = Instant.from_utc(1980, 3, 2, hour=2)
+    with patch_current_time(i, keep_ticking=False) as p:
+        with pytest.raises(TypeError, match="exact time"):
+            p.move_to(Date(2020, 8, 15))  # type: ignore[arg-type]
 
 
 def test_time_patch_rejects_invalid_shift_arguments():

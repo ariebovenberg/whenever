@@ -5420,7 +5420,7 @@ class ZonedDateTime(_ExactAndLocalTime):
                 disambiguation=disambiguation,
             )
         else:
-            raise TypeError("argument must be a delta, got {delta!r}")
+            raise TypeError(f"argument must be a delta, got {delta!r}")
 
     def _shift_kwargs(
         self,
