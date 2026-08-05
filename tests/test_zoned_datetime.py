@@ -2716,6 +2716,79 @@ class TestParseIso:
             )
 
     @pytest.mark.parametrize(
+        "s, disambiguation, expected",
+        [
+            (
+                "2023-10-29T02:15:30+03:00[Europe/Amsterdam]",
+                "earlier",
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguation="earlier",
+                ),
+            ),
+            (
+                "2023-10-29T02:15:30+03:00[Europe/Amsterdam]",
+                "later",
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguation="later",
+                ),
+            ),
+            (
+                "2023-03-26T02:15:30+03:00[Europe/Amsterdam]",
+                "earlier",
+                ZonedDateTime(
+                    2023,
+                    3,
+                    26,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguation="earlier",
+                ),
+            ),
+            (
+                "2023-03-26T02:15:30+03:00[Europe/Amsterdam]",
+                "later",
+                ZonedDateTime(
+                    2023,
+                    3,
+                    26,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguation="later",
+                ),
+            ),
+        ],
+    )
+    def test_keep_local_uses_disambiguation(self, s, disambiguation, expected):
+        assert ZonedDateTime.parse_iso(
+            s,
+            offset_mismatch="keep_local",
+            disambiguation=disambiguation,
+        ).strict_eq(expected)
+        assert ZonedDateTime(
+            s,
+            offset_mismatch="keep_local",
+            disambiguation=disambiguation,
+        ).strict_eq(expected)
+
+    @pytest.mark.parametrize(
         "s",
         [
             "2020-08-15T12:08:30+02:00",  # no tz

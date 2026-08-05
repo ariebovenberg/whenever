@@ -98,10 +98,10 @@ MANUALLY_DEFINED_SIGS: dict[object, str] = {
     W.ZonedDateTime.add: """\
 ($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, \
 minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-disambiguate=None)""",
+disambiguation=...)""",
     W.ZonedDateTime.replace: """\
 ($self, /, *, year=None, month=None, day=None, hour=None, \
-minute=None, second=None, nanosecond=None, tz=None, disambiguate)""",
+minute=None, second=None, nanosecond=None, tz=None, disambiguation=...)""",
     W.OffsetDateTime.add: """\
 ($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \

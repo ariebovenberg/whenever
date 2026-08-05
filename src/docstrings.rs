@@ -543,7 +543,7 @@ DST-aware: the offset is always kept in sync with the timezone rules.
 >>> ZonedDateTime(\"2024-12-08T11[Europe/Paris]\")
 ZonedDateTime(\"2024-12-08 11:00:00+01:00[Europe/Paris]\")
 >>> # Explicitly resolve ambiguities during DST transitions
->>> ZonedDateTime(2023, 10, 29, 1, 15, tz=\"Europe/London\", disambiguate=\"earlier\")
+>>> ZonedDateTime(2023, 10, 29, 1, 15, tz=\"Europe/London\", disambiguation=\"earlier\")
 ZonedDateTime(\"2023-10-29 01:15:00+01:00[Europe/London]\")
 >>> # From a standard library datetime (must have a ZoneInfo tzinfo)
 >>> ZonedDateTime(datetime(2020, 8, 15, 23, 12, tzinfo=ZoneInfo(\"Europe/London\")))
@@ -588,10 +588,10 @@ Resets the cached system timezone to the currently set system timezone.
 >>> os.environ[\"TZ\"] = \"America/New_York\"
 >>> reset_system_tz()  # system tz is now New York
 >>> os.environ[\"TZ\"] = \"Europe/London\"
->>> ZonedDateTime.now_in_system_tz()  # still uses cached New York tz
+>>> ZonedDateTime.now(SYSTEM_TZ)  # still uses cached New York tz
 ZonedDateTime(2025-06-18 15:11:08-04:00[America/New_York])
 >>> reset_system_tz()  # system tz is now London
->>> ZonedDateTime.now_in_system_tz()
+>>> ZonedDateTime.now(SYSTEM_TZ)
 ZonedDateTime(2025-06-18 20:11:08+01:00[Europe/London])
 ";
 pub(crate) const SECONDS: &CStr = c"\
@@ -763,9 +763,9 @@ Parse a date from a custom pattern string.
 
 See :ref:`pattern-format` for details.
 
->>> Date.parse(\"2024/03/15\", format=\"YYYY/MM/DD\")
+>>> Date.parse(\"2024/03/15\", pattern=\"YYYY/MM/DD\")
 Date(\"2024-03-15\")
->>> Date.parse(\"15 Mar 2024\", format=\"DD MMM YYYY\")
+>>> Date.parse(\"15 Mar 2024\", pattern=\"DD MMM YYYY\")
 Date(\"2024-03-15\")
 ";
 pub(crate) const DATE_PARSE_ISO: &CStr = c"\
@@ -872,6 +872,9 @@ Get the current date in the given named timezone.";
 pub(crate) const DATE_TODAY_IN_SYSTEM_TZ: &CStr = c"\
 Get the current date in the system's local timezone.
 
+.. deprecated:: 0.11
+   Use ``Date.today(SYSTEM_TZ)`` instead.
+
 Alias for ``Instant.now().to_system_tz().date()``.
 
 >>> Date.today_in_system_tz()
@@ -921,7 +924,7 @@ Convert to the ISO 8601 string representation.
 The inverse of the ``parse_iso()`` method.
 ";
 pub(crate) const INSTANT_FORMAT_RFC2822: &CStr = c"\
-Format as an RFC 2822 string.
+Format as an RFC 2822 string in the fixed UTC/GMT subset.
 The inverse of the ``parse_rfc2822()`` method.
 
 >>> Instant.from_utc(2020, 8, 8, hour=23, minute=12).format_rfc2822()
@@ -929,24 +932,34 @@ The inverse of the ``parse_rfc2822()`` method.
 
 Note
 ----
-The output is also compatible with the (stricter) RFC 9110 standard.
+This is also the IMF-fixdate representation used to generate HTTP dates
+under the stricter RFC 9110 standard.
 
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP: &CStr = c"\
 from_timestamp(value, /, *, unit='second')
 --
 
-Create an Instant from a UNIX timestamp (in seconds).
+Create an Instant from a UNIX timestamp in the requested unit.
 
 The inverse of the ``timestamp()`` method.
+
+Seconds accept integers and floats. Milliseconds, microseconds, and
+nanoseconds require integers.
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP_MILLIS: &CStr = c"\
 Create an Instant from a UNIX timestamp (in milliseconds).
+
+.. deprecated:: 0.11
+   Use ``from_timestamp(..., unit=\"millisecond\")`` instead.
 
 The inverse of the ``timestamp_millis()`` method.
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP_NANOS: &CStr = c"\
 Create an Instant from a UNIX timestamp (in nanoseconds).
+
+.. deprecated:: 0.11
+   Use ``from_timestamp(..., unit=\"nanosecond\")`` instead.
 
 The inverse of the ``timestamp_nanos()`` method.
 ";
@@ -978,9 +991,9 @@ See :ref:`pattern-format` for details.
     :meth:`~PlainDateTime.assume_utc` or
     :meth:`~PlainDateTime.assume_tz`.
 
->>> Instant.parse(\"2024-03-15 14:30Z\", format=\"YYYY-MM-DD hh:mmXXX\")
+>>> Instant.parse(\"2024-03-15 14:30Z\", pattern=\"YYYY-MM-DD hh:mmXXX\")
 Instant(\"2024-03-15 14:30:00Z\")
->>> Instant.parse(\"2024-03-15 14:30+05:30\", format=\"YYYY-MM-DD hh:mmxxx\")
+>>> Instant.parse(\"2024-03-15 14:30+05:30\", pattern=\"YYYY-MM-DD hh:mmxxx\")
 Instant(\"2024-03-15 09:00:00Z\")
 ";
 pub(crate) const INSTANT_PARSE_ISO: &CStr = c"\
@@ -1039,6 +1052,12 @@ add($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_i
 --
 
 Add time to this delta, returning a new delta.";
+pub(crate) const ITEMIZEDDATEDELTA_EXACT_EQ: &CStr = c"\
+Deprecated alias for :meth:`strict_eq`.
+
+.. deprecated:: 0.11
+   Use :meth:`strict_eq` instead.
+";
 pub(crate) const ITEMIZEDDATEDELTA_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, lowercase_units=False)
 --
@@ -1121,7 +1140,7 @@ Check for strict equality. All fields *and their presence* must match.
 True
 >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
 True
->>> d.exact_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
+>>> d.strict_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
 False
 ";
 pub(crate) const ITEMIZEDDATEDELTA_SUBTRACT: &CStr = c"\
@@ -1174,6 +1193,12 @@ TimeDelta(\"P5h6m7.000000008s\")
 >>> ItemizedDelta(weeks=2).date_and_time_parts()
 (ItemizedDateDelta(\"P2w\"), None)
 
+";
+pub(crate) const ITEMIZEDDELTA_EXACT_EQ: &CStr = c"\
+Deprecated alias for :meth:`strict_eq`.
+
+.. deprecated:: 0.11
+   Use :meth:`strict_eq` instead.
 ";
 pub(crate) const ITEMIZEDDELTA_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, lowercase_units=False)
@@ -1361,6 +1386,9 @@ from_timestamp(i, /, *, offset, stale_offset_ok=...)
 
 Create an instance from a UNIX timestamp (in seconds).
 
+.. deprecated:: 0.11
+   Create an :class:`Instant` and call ``to_fixed_offset()`` instead.
+
 The inverse of the ``timestamp()`` method.
 
 Warning
@@ -1379,6 +1407,9 @@ from_timestamp_millis(i, /, *, offset, stale_offset_ok=...)
 
 Create an instance from a UNIX timestamp (in milliseconds).
 
+.. deprecated:: 0.11
+   Use ``Instant.from_timestamp(..., unit=\"millisecond\").to_fixed_offset()``.
+
 The inverse of the ``timestamp_millis()`` method.
 
 See :meth:`from_timestamp` for more information.
@@ -1388,6 +1419,9 @@ from_timestamp_nanos(i, /, *, offset, stale_offset_ok=...)
 --
 
 Create an instance from a UNIX timestamp (in nanoseconds).
+
+.. deprecated:: 0.11
+   Use ``Instant.from_timestamp(..., unit=\"nanosecond\").to_fixed_offset()``.
 
 The inverse of the ``timestamp_nanos()`` method.
 
@@ -1424,7 +1458,7 @@ See :ref:`pattern-format` for details.
     :meth:`~PlainDateTime.assume_fixed_offset` or
     :meth:`~PlainDateTime.assume_tz`.
 
->>> OffsetDateTime.parse(\"2024-03-15 14:30+02:00\", format=\"YYYY-MM-DD hh:mmxxx\")
+>>> OffsetDateTime.parse(\"2024-03-15 14:30+02:00\", pattern=\"YYYY-MM-DD hh:mmxxx\")
 OffsetDateTime(\"2024-03-15 14:30:00+02:00\")
 ";
 pub(crate) const OFFSETDATETIME_PARSE_ISO: &CStr = c"\
@@ -1589,6 +1623,9 @@ assume_system_tz($self, disambiguate='compatible')
 Assume the datetime is in the system timezone,
 creating a ``ZonedDateTime``.
 
+.. deprecated:: 0.11
+   Use ``assume_tz(SYSTEM_TZ)`` instead.
+
 Note
 ----
 The local time may be ambiguous in the system timezone
@@ -1613,12 +1650,12 @@ Note
 ----
 The local time may be ambiguous in the given timezone
 (e.g. during a DST transition). You can explicitly
-specify how to handle such a situation using the ``disambiguate`` argument.
+specify how to handle such a situation using the ``disambiguation`` argument.
 See `the documentation <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`__
 for more information.
 
 >>> d = PlainDateTime(2020, 8, 15, 23, 12)
->>> d.assume_tz(\"Europe/Amsterdam\", disambiguate=\"raise\")
+>>> d.assume_tz(\"Europe/Amsterdam\", disambiguation=\"raise\")
 ZonedDateTime(\"2020-08-15 23:12:00+02:00[Europe/Amsterdam]\")
 ";
 pub(crate) const PLAINDATETIME_ASSUME_UTC: &CStr = c"\
@@ -1684,7 +1721,7 @@ Parse a plain datetime from a custom pattern string.
 
 See :ref:`pattern-format` for details.
 
->>> PlainDateTime.parse(\"2024-03-15 14:30\", format=\"YYYY-MM-DD hh:mm\")
+>>> PlainDateTime.parse(\"2024-03-15 14:30\", pattern=\"YYYY-MM-DD hh:mm\")
 PlainDateTime(\"2024-03-15 14:30:00\")
 ";
 pub(crate) const PLAINDATETIME_PARSE_ISO: &CStr = c"\
@@ -1816,9 +1853,9 @@ Parse a time from a custom pattern string.
 
 See :ref:`pattern-format` for details.
 
->>> Time.parse(\"14:30:05\", format=\"hh:mm:ss\")
+>>> Time.parse(\"14:30:05\", pattern=\"hh:mm:ss\")
 Time(14:30:05)
->>> Time.parse(\"02:30 PM\", format=\"ii:mm aa\")
+>>> Time.parse(\"02:30 PM\", pattern=\"ii:mm aa\")
 Time(14:30:00)
 ";
 pub(crate) const TIME_PARSE_ISO: &CStr = c"\
@@ -1994,7 +2031,7 @@ argument is required to determine the actual duration of each unit:
 90.0
 ";
 pub(crate) const ZONEDDATETIME_ADD: &CStr = c"\
-add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
+add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguation=...)
 --
 
 Return a new ``ZonedDateTime`` shifted by the given time amounts
@@ -2004,7 +2041,7 @@ Important
 Shifting by **calendar units** (e.g. months, weeks)
 may result in an ambiguous time (e.g. during a DST transition).
 Therefore, when adding calendar units, it's recommended to
-specify how to handle such a situation using the ``disambiguate`` argument.
+specify how to handle such a situation using the ``disambiguation`` argument.
 
 See `the documentation <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__
 for more information.
@@ -2045,6 +2082,12 @@ The end of the given unit
 ZonedDateTime(\"2024-08-15 23:59:59.999999999-04:00[America/New_York]\")
 
 See also :meth:`start_of`
+";
+pub(crate) const ZONEDDATETIME_EXACT_EQ: &CStr = c"\
+Deprecated alias for :meth:`strict_eq`.
+
+.. deprecated:: 0.11
+   Use :meth:`strict_eq` instead.
 ";
 pub(crate) const ZONEDDATETIME_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -2097,6 +2140,9 @@ from_system_tz(year, month, day, hour=0, minute=0, second=0, *, nanosecond=0, di
 
 Create an instance in the system timezone.
 
+.. deprecated:: 0.11
+   Use ``ZonedDateTime(..., tz=SYSTEM_TZ)`` instead.
+
 Equivalent to ``ZonedDateTime(..., tz=<the system timezone>)``,
 except it also works for system timezones whose corresponding
 IANA timezone ID is unknown.
@@ -2110,6 +2156,9 @@ from_timestamp(i, /, *, tz)
 
 Create an instance from a UNIX timestamp (in seconds).
 
+.. deprecated:: 0.11
+   Create an :class:`Instant` and call ``to_tz()`` instead.
+
 The inverse of the ``timestamp()`` method.
 ";
 pub(crate) const ZONEDDATETIME_FROM_TIMESTAMP_MILLIS: &CStr = c"\
@@ -2118,6 +2167,9 @@ from_timestamp_millis(i, /, *, tz)
 
 Create an instance from a UNIX timestamp (in milliseconds).
 
+.. deprecated:: 0.11
+   Use ``Instant.from_timestamp(..., unit=\"millisecond\").to_tz()``.
+
 The inverse of the ``timestamp_millis()`` method.
 ";
 pub(crate) const ZONEDDATETIME_FROM_TIMESTAMP_NANOS: &CStr = c"\
@@ -2125,6 +2177,9 @@ from_timestamp_nanos(i, /, *, tz)
 --
 
 Create an instance from a UNIX timestamp (in nanoseconds).
+
+.. deprecated:: 0.11
+   Use ``Instant.from_timestamp(..., unit=\"nanosecond\").to_tz()``.
 
 The inverse of the ``timestamp_nanos()`` method.
 ";
@@ -2151,6 +2206,9 @@ Create an instance from the current time in the given timezone.";
 pub(crate) const ZONEDDATETIME_NOW_IN_SYSTEM_TZ: &CStr = c"\
 Create an instance from the current time in the system timezone.
 
+.. deprecated:: 0.11
+   Use ``ZonedDateTime.now(SYSTEM_TZ)`` instead.
+
 Equivalent to ``Instant.now().to_system_tz()``.
 ";
 pub(crate) const ZONEDDATETIME_PARSE: &CStr = c"\
@@ -2172,7 +2230,7 @@ See :ref:`pattern-format` for details.
 
 >>> ZonedDateTime.parse(
 ...     \"2024-03-15 14:30+01:00[Europe/Paris]\",
-...     format=\"YYYY-MM-DD hh:mmxxx'['VV']'\",
+...     pattern=\"YYYY-MM-DD hh:mmxxx'['VV']'\",
 ... )
 ZonedDateTime(\"2024-03-15 14:30:00+01:00[Europe/Paris]\")
 ";
@@ -2203,7 +2261,7 @@ Returns ``None`` if the timezone has no earlier transitions
 ZonedDateTime(2023-11-05 01:00:00-05:00[America/New_York])
 ";
 pub(crate) const ZONEDDATETIME_REPLACE: &CStr = c"\
-replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguate)
+replace($self, /, *, year=None, month=None, day=None, hour=None, minute=None, second=None, nanosecond=None, tz=None, disambiguation=...)
 --
 
 Construct a new instance with the given fields replaced.
@@ -2217,7 +2275,7 @@ Important
 ---------
 Replacing fields of a ZonedDateTime may result in an ambiguous time
 (e.g. during a DST transition). Therefore, it's recommended to
-specify how to handle such a situation using the ``disambiguate`` argument.
+specify how to handle such a situation using the ``disambiguation`` argument.
 
 By default, if the tz remains the same, the offset is used to disambiguate
 if possible, falling back to the \"compatible\" strategy if needed.
@@ -2299,7 +2357,7 @@ is preserved if valid. A boundary skipped by a transition is moved to
 the first valid time after the gap.
 ";
 pub(crate) const ZONEDDATETIME_SUBTRACT: &CStr = c"\
-subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguate=None)
+subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguation=...)
 --
 
 The inverse of the ``add()`` method. See :meth:`add` for more information.";
@@ -2307,6 +2365,9 @@ pub(crate) const ZONEDDATETIME_TZ: &CStr = c"\
 The timezone ID. In rare cases, this may be ``None``,
 if the ``ZonedDateTime`` was created from a system timezone
 without a known IANA key.
+
+.. deprecated:: 0.11
+   Use :attr:`tz_id` instead.
 ";
 pub(crate) const ZONEDDATETIME_TZ_ABBREV: &CStr = c"\
 The timezone abbreviation (e.g. ``\"EST\"``, ``\"CEST\"``).
@@ -2354,8 +2415,8 @@ pub(crate) const EXACTANDLOCALTIME_TO_PLAIN: &CStr = c"\
 Get the underlying date and time without offset or timezone
 
 As an inverse, :class:`PlainDateTime` has methods
-:meth:`~PlainDateTime.assume_utc`, :meth:`~PlainDateTime.assume_fixed_offset`
-, :meth:`~PlainDateTime.assume_tz`, and :meth:`~PlainDateTime.assume_system_tz`.
+:meth:`~PlainDateTime.assume_utc`, :meth:`~PlainDateTime.assume_fixed_offset`,
+and :meth:`~PlainDateTime.assume_tz`.
 ";
 pub(crate) const EXACTTIME_DIFFERENCE: &CStr = c"\
 Calculate the exact time difference between two datetimes.
@@ -2367,30 +2428,36 @@ Use :meth:`~whenever.ZonedDateTime.since` or
 :meth:`~whenever.ZonedDateTime.until` for more advanced
 options such as calendar units, unit decomposition, and rounding.
 ";
+pub(crate) const EXACTTIME_EXACT_EQ: &CStr = c"\
+Deprecated alias for :meth:`strict_eq`.
+
+.. deprecated:: 0.11
+   Use :meth:`strict_eq` instead.
+";
 pub(crate) const EXACTTIME_STRICT_EQ: &CStr = c"\
 Compare objects by their values
 (instead of whether they represent the same instant).
 Different types are never equal.
 
->>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=1)
->>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=2)
+>>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=hours(1))
+>>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=hours(2))
 >>> a == b
 True  # equivalent instants
->>> a.exact_eq(b)
+>>> a.strict_eq(b)
 False  # different values (hour and offset)
->>> a.exact_eq(Instant.now())
+>>> a.strict_eq(Instant.now())
 TypeError  # different types
 
 Note
 ----
-If ``a.exact_eq(b)`` is true, then
+If ``a.strict_eq(b)`` is true, then
 ``a == b`` is also true, but the converse is not necessarily true.
 ";
 pub(crate) const EXACTTIME_TIMESTAMP: &CStr = c"\
 timestamp($self, *, unit='second')
 --
 
-The UNIX timestamp for this datetime. Inverse of :meth:`from_timestamp`.
+The UNIX timestamp in the requested unit. Inverse of :meth:`from_timestamp`.
 
 >>> Instant.from_utc(1970, 1, 1).timestamp()
 0
@@ -2404,21 +2471,38 @@ In contrast to the standard library, this method always returns an integer,
 not a float. This is because floating point timestamps are not precise
 enough to represent all instants to nanosecond precision.
 This decision is consistent with other modern date-time libraries.
+
+Values before the epoch are floored at the requested unit. For example,
+``1969-12-31T23:59:59.999999999Z`` has timestamp ``-1`` in seconds,
+milliseconds, microseconds, and nanoseconds. This differs from applying
+``int()`` to a negative float, which truncates toward zero.
 ";
 pub(crate) const EXACTTIME_TIMESTAMP_MILLIS: &CStr = c"\
-Like :meth:`timestamp`, but with millisecond precision.";
+Like :meth:`timestamp`, but with millisecond precision.
+
+.. deprecated:: 0.11
+   Use ``timestamp(unit=\"millisecond\")`` instead.
+";
 pub(crate) const EXACTTIME_TIMESTAMP_NANOS: &CStr = c"\
-Like :meth:`timestamp`, but with nanosecond precision.";
+Like :meth:`timestamp`, but with nanosecond precision.
+
+.. deprecated:: 0.11
+   Use ``timestamp(unit=\"nanosecond\")`` instead.
+";
 pub(crate) const EXACTTIME_TO_FIXED_OFFSET: &CStr = c"\
 to_fixed_offset($self, offset=..., /)
 --
 
 Convert to an OffsetDateTime that represents the same moment in time.
 
-If not offset is given, the offset is taken from the original datetime.
+If no offset is given, the offset is taken from the original datetime.
 ";
 pub(crate) const EXACTTIME_TO_SYSTEM_TZ: &CStr = c"\
-Convert to a ZonedDateTime of the system's timezone.";
+Convert to a ZonedDateTime of the system's timezone.
+
+.. deprecated:: 0.11
+   Use ``to_tz(SYSTEM_TZ)`` instead.
+";
 pub(crate) const EXACTTIME_TO_TZ: &CStr = c"\
 Convert to a ZonedDateTime that represents the same moment in time.
 
@@ -2495,8 +2579,9 @@ pub(crate) const LOCALTIME_YEAR: &CStr = c"\
 The year component of the datetime";
 pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours. If you wish to round to exactly 24 hours, use `round('hour', increment=24)`.";
 pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"You are using days or weeks as exact time, so Whenever will treat each day as exactly 24 hours. A calendar day can be 23 or 25 hours during a DST transition, so this may differ from calendar arithmetic. If you mean calendar days, perform the operation on a ZonedDateTime or pass `relative_to=...` where supported. If fixed 24-hour periods are intentional, pass `days_assumed_24h_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz=` argument to 'never' or 'auto'.";
+pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz_display=` argument to 'never' or 'auto'.";
 pub(crate) const IMPLICIT_DISAMBIGUATION_MSG: &CStr = c"resolving a local datetime that is repeated or skipped by a timezone transition without an explicit disambiguation policy can silently select the wrong instant; pass disambiguation='compatible', 'earlier', 'later', or 'raise'. See https://whenever.readthedocs.io/en/latest/guide/ambiguity.html";
+pub(crate) const INTEGER_OFFSET_DEPRECATION_MSG: &CStr = c"integer offsets are deprecated because their unit is implicit; pass a TimeDelta instead, for example hours(2)";
 pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"You are converting a timestamp using a fixed UTC offset. The result is correct for that offset, but the offset may be stale at this timestamp—no longer matching the actual offset used by the region you intend. If you mean a named timezone, use ZonedDateTime.from_timestamp(ts, tz='<tz>'); if you only need the instant, use Instant.from_timestamp(ts). If the fixed offset is intentional, pass `stale_offset_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_NOW_STALE_MSG: &CStr = c"You are getting the current time using a fixed UTC offset. A fixed offset has no timezone rules, so it may be stale for the region you intend—no longer matching that region's actual offset after a DST or other rule change. If you mean a named timezone, use ZonedDateTime.now('<tz>'); if you only need the current instant, use Instant.now(). If the fixed offset is intentional, pass `stale_offset_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an OffsetDateTime keeps its fixed UTC offset. The offset may become stale—no longer matching the region's actual offset—if the result is in a different DST or timezone-rule period (e.g. after replacing the month on a European-timezone datetime). Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware field replacement. If the fixed offset is intentional, pass `stale_offset_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";

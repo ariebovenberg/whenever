@@ -843,6 +843,25 @@ class TestZonedDateTimeParse:
                 pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
             )
 
+    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
+    def test_keep_local_uses_disambiguation(self, disambiguation):
+        result = ZonedDateTime.parse(
+            "2023-10-29 02:15+03:00[Europe/Amsterdam]",
+            pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
+            offset_mismatch="keep_local",
+            disambiguation=disambiguation,
+        )
+        expected = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            tz="Europe/Amsterdam",
+            disambiguation=disambiguation,
+        )
+        assert result.strict_eq(expected)
+
     def test_offset_disambiguation(self):
         # November 3, 2024: US DST transition (fall back)
         # 1:30 AM exists twice: EDT (-04:00) and EST (-05:00)

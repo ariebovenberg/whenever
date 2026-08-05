@@ -896,7 +896,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         False
 
         If you want strict equality (including presence of fields),
-        use :meth:`exact_eq`.
+        use :meth:`strict_eq`.
 
         """
         if not isinstance(other, ItemizedDelta):
@@ -928,6 +928,11 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         )
 
     def exact_eq(self, other: ItemizedDelta, /) -> bool:
+        """Deprecated alias for :meth:`strict_eq`.
+
+        .. deprecated:: 0.11
+           Use :meth:`strict_eq` instead.
+        """
         warn_deprecated(
             "exact_eq() is deprecated; use strict_eq() instead",
             stacklevel=2,
@@ -1989,7 +1994,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         - Zero values are considered equivalent to missing values.
 
         If you want strict equality (including presence of fields),
-        use :meth:`exact_eq`.
+        use :meth:`strict_eq`.
 
         >>> d = ItemizedDateDelta(weeks=2, days=3)
         >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
@@ -2014,7 +2019,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         True
         >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
         True
-        >>> d.exact_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
+        >>> d.strict_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
         False
         """
         if type(other) is not type(self):
@@ -2027,6 +2032,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         )
 
     def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
+        """Deprecated alias for :meth:`strict_eq`.
+
+        .. deprecated:: 0.11
+           Use :meth:`strict_eq` instead.
+        """
         warn_deprecated(
             "exact_eq() is deprecated; use strict_eq() instead",
             stacklevel=2,

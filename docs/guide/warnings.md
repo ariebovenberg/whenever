@@ -26,8 +26,10 @@ fully, giving you several levels of control.
 UserWarning (stdlib)
 └── WheneverWarning
     ├── CalendarUnitCompositionWarning
+    ├── PickleOffsetMismatchWarning
     ├── PotentialDstBugWarning
     │   ├── DaysAssumed24HoursWarning
+    │   ├── ImplicitDisambiguationWarning
     │   ├── NaiveArithmeticWarning
     │   └── StaleOffsetWarning
     └── WheneverDeprecationWarning
@@ -64,6 +66,9 @@ warnings.filterwarnings("error", category=whenever.NaiveArithmeticWarning)
 
 # Only error on potentially stale offset operations (OffsetDateTime):
 warnings.filterwarnings("error", category=whenever.StaleOffsetWarning)
+
+# Require an explicit policy whenever a timezone fold or gap needs resolving:
+warnings.filterwarnings("error", category=whenever.ImplicitDisambiguationWarning)
 ```
 
 ### In pytest

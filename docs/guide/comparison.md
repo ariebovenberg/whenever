@@ -23,30 +23,30 @@ time. This means that two objects with different values can be equal:
 ```python
 >>> # different ways of representing the same moment in time
 >>> inst = Instant.from_utc(2023, 12, 28, 11, 30)
->>> as_5hr_offset = OffsetDateTime(2023, 12, 28, 16, 30, offset=5)
->>> as_8hr_offset = OffsetDateTime(2023, 12, 28, 19, 30, offset=8)
+>>> as_5hr_offset = OffsetDateTime(2023, 12, 28, 16, 30, offset=hours(5))
+>>> as_8hr_offset = OffsetDateTime(2023, 12, 28, 19, 30, offset=hours(8))
 >>> in_nyc = ZonedDateTime(2023, 12, 28, 6, 30, tz="America/New_York")
 >>> # all equal
 >>> inst == as_5hr_offset == as_8hr_offset == in_nyc
 True
 >>> # comparison
->>> in_nyc > OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
+>>> in_nyc > OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
 True
 ```
 
 Note that if you want to compare for exact equality on the values
 (i.e. exactly the same year, month, day, hour, minute, etc.), you can use
-the {meth}`~whenever.ZonedDateTime.exact_eq` method.
+the {meth}`~whenever.ZonedDateTime.strict_eq` method.
 
 ```python
->>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
->>> same = OffsetDateTime(2023, 12, 28, 11, 30, offset=5)
->>> same_moment = OffsetDateTime(2023, 12, 28, 12, 30, offset=6)
+>>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
+>>> same = OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
+>>> same_moment = OffsetDateTime(2023, 12, 28, 12, 30, offset=hours(6))
 >>> d == same_moment
 True
->>> d.exact_eq(same_moment)
+>>> d.strict_eq(same_moment)
 False
->>> d.exact_eq(same)
+>>> d.strict_eq(same)
 True
 ```
 

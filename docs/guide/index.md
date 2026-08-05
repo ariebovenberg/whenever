@@ -52,6 +52,7 @@ For the details of a specific class or method, see the {ref}`API reference <api>
    parsing
    stdlib-convert
    system-tz
+   pickling
 ```
 
 ## Keeping it reliable
