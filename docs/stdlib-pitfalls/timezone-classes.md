@@ -42,3 +42,6 @@ so there's no confusion which class to use for full-featured time zones versus f
 >>> odt = OffsetDateTime(2024, 3, 10, 15, offset=-4)
 OffsetDateTime("2024-03-10 15:00:00-04:00")
 ```
+
+See {ref}`offset-datetime-guidance` for when this representation is necessary
+and why arithmetic may outlive the meaning of an observed offset.

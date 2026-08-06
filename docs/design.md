@@ -15,6 +15,9 @@ but only the former can track DST transitions.
 Encoding this distinction in the type system makes bugs that would
 otherwise surface at runtime visible at development time.
 
+For the information tradeoff and arithmetic risk of a fixed offset, see
+{ref}`offset-datetime-guidance`.
+
 This principle also extends to deltas:
 an exact duration ({class}`~whenever.TimeDelta`),
 a bag of calendar units ({class}`~whenever.ItemizedDateDelta`),

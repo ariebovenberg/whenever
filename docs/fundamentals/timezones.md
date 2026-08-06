@@ -24,13 +24,14 @@ Examples:
 * "This timestamp is 3 hours behind UTC"
 * `Thu, 29 Jan 2026 00:03:32 +0900`
 
-Offsets are precise and unambiguous.
-Given an offset, you can always convert between local and exact time.
+For the timestamp where it was recorded, an offset is precise and unambiguous.
+Given local fields and an offset, you can determine the exact instant.
 
-However, offsets are **not stable over time**.
-Many regions change their offset due to daylight saving time or political decisions.
-If you store only an offset, it may no longer be correct when the local rules
-change or when the time is shifted into the past or future.
+An offset is fixed by definition; what can change is the offset used by a
+region. Many regions change theirs because of daylight saving time or
+political decisions. A recorded offset therefore carries no guarantee about
+which offset applies after shifting or modifying the timestamp. Reusing it may
+produce an offset that is stale relative to the original region.
 
 Offsets are excellent for *interchange*, but risky as long-term identifiers.
 
@@ -95,26 +96,28 @@ Understanding their strengths and limitations helps avoid subtle bugs and incorr
 Whenever has two classes for dealing with time zones:
 
 - {class}`~whenever.OffsetDateTime` represents a local date and time with a fixed UTC offset.
-  It does not account for daylight saving time or historical changes,
-  and has a limited set of operations.
+  It does not retain daylight-saving or historical rules; see
+  {ref}`offset-datetime-guidance` for the resulting tradeoffs.
 - {class}`~whenever.ZonedDateTime` represents a local date and time in the context of an IANA time zone.
   It uses the full set of rules to convert between local and exact time.
 
-If possible, prefer {class}`~whenever.ZonedDateTime` for most applications.
+Use {class}`~whenever.ZonedDateTime` when regional rules are known and matter.
 
 ## Summary
 
 | Representation               | What it captures            | Strengths                    | Limitations                     | `whenever` class                |
 | ---------------------------- | --------------------------- | ---------------------------- | ------------------------------- | ------------------------------- |
-| UTC offset (`+01:00`)        | Current diff. from UTC | Simple, unambiguous | May become stale when shifted | {class}`~whenever.OffsetDateTime` |
+| UTC offset (`+01:00`)        | Observed diff. from UTC | Simple, unambiguous | No regional rules; may be stale after shifting | {class}`~whenever.OffsetDateTime` |
 | Abbreviation (`PST`)         | Human-friendly label        | Compact, readable            | Ambiguous | N/A                            |
 | IANA ID (`Europe/Amsterdam`) | Full time zone rules        | Accurate, widely supported   | Depends on database updates     | {class}`~whenever.ZonedDateTime`   |
 
-## What comes next: ambiguity
+## What comes next: resolving local times
 
-Time zones describe changing offsets from UTC.
-When offsets change—such as during daylight saving transitions—the mapping
-between local and exact time can break down.
-Some local times occur **twice**. Others do not occur **at all**.
+Converting an exact instant into a timezone is straightforward. Converting
+local fields back to an instant can require a decision: transitions make some
+local times occur twice and others not at all. Input containing both a numeric
+offset and a timezone can also contain a conflict.
 
-How software handles these situations is the next fundamental concept: {ref}`ambiguity <ambiguity2>`.
+The next fundamental concept is {ref}`local-time ambiguity <ambiguity2>`.
+For Whenever's complete resolution flow, including offset conflicts, see
+{ref}`resolving-local-times`.
