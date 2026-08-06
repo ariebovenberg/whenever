@@ -1431,7 +1431,7 @@ class Time(_Base):
 
         See :ref:`pattern-format` for details.
 
-        >>> Time(14, 30, 5).format("hh:mm:ss")
+        >>> Time(14, 30, 5).format("HH:mm:ss")
         '14:30:05'
         >>> Time(14, 30).format("ii:mm aa")
         '02:30 PM'
@@ -1458,7 +1458,7 @@ class Time(_Base):
 
         See :ref:`pattern-format` for details.
 
-        >>> Time.parse("14:30:05", pattern="hh:mm:ss")
+        >>> Time.parse("14:30:05", pattern="HH:mm:ss")
         Time(14:30:05)
         >>> Time.parse("02:30 PM", pattern="ii:mm aa")
         Time(14:30:00)
@@ -3214,7 +3214,7 @@ class Instant(_ExactTime):
 
         Instant formats as UTC; See :ref:`pattern-format` for details.
 
-        >>> Instant.from_utc(2024, 3, 15, 14, 30).format("YYYY-MM-DD hh:mm:ssXXX")
+        >>> Instant.from_utc(2024, 3, 15, 14, 30).format("YYYY-MM-DD HH:mm:ssXXX")
         '2024-03-15 14:30:00Z'
         """
         elements = compile_pattern(pattern)
@@ -3255,9 +3255,9 @@ class Instant(_ExactTime):
             :meth:`~PlainDateTime.assume_utc` or
             :meth:`~PlainDateTime.assume_tz`.
 
-        >>> Instant.parse("2024-03-15 14:30Z", pattern="YYYY-MM-DD hh:mmXXX")
+        >>> Instant.parse("2024-03-15 14:30Z", pattern="YYYY-MM-DD HH:mmXXX")
         Instant("2024-03-15 14:30:00Z")
-        >>> Instant.parse("2024-03-15 14:30+05:30", pattern="YYYY-MM-DD hh:mmxxx")
+        >>> Instant.parse("2024-03-15 14:30+05:30", pattern="YYYY-MM-DD HH:mmxxx")
         Instant("2024-03-15 09:00:00Z")
         """
         pattern = _normalize_pattern(pattern, kwargs)
@@ -4115,7 +4115,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         See :ref:`pattern-format` for details.
 
         >>> OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(2)).format(
-        ...     "YYYY-MM-DD hh:mmxxx"
+        ...     "YYYY-MM-DD HH:mmxxx"
         ... )
         '2024-03-15 14:30+02:00'
         """
@@ -4161,7 +4161,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             :meth:`~PlainDateTime.assume_fixed_offset` or
             :meth:`~PlainDateTime.assume_tz`.
 
-        >>> OffsetDateTime.parse("2024-03-15 14:30+02:00", pattern="YYYY-MM-DD hh:mmxxx")
+        >>> OffsetDateTime.parse("2024-03-15 14:30+02:00", pattern="YYYY-MM-DD HH:mmxxx")
         OffsetDateTime("2024-03-15 14:30:00+02:00")
         """
         pattern = _normalize_pattern(pattern, kwargs)
@@ -4889,7 +4889,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         See :ref:`pattern-format` for details.
 
         >>> ZonedDateTime(2024, 3, 15, 14, 30, tz="Europe/Paris").format(
-        ...     "YYYY-MM-DD hh:mmxxx'['VV']'"
+        ...     "YYYY-MM-DD HH:mmxxx'['VV']'"
         ... )
         '2024-03-15 14:30+01:00[Europe/Paris]'
         """
@@ -4947,7 +4947,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         >>> ZonedDateTime.parse(
         ...     "2024-03-15 14:30+01:00[Europe/Paris]",
-        ...     pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
+        ...     pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
         ... )
         ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
         """
@@ -6137,12 +6137,12 @@ class PlainDateTime(_LocalTime):
     def format(self, pattern: str, /) -> str:
         """Format as a custom pattern string.
 
-        Also available via ``f"{dt:YYYY-MM-DD hh:mm}"`` (Python's ``__format__``
+        Also available via ``f"{dt:YYYY-MM-DD HH:mm}"`` (Python's ``__format__``
         protocol), where an empty spec falls back to :meth:`__str__`.
 
         See :ref:`pattern-format` for details.
 
-        >>> PlainDateTime(2024, 3, 15, 14, 30).format("YYYY-MM-DD hh:mm")
+        >>> PlainDateTime(2024, 3, 15, 14, 30).format("YYYY-MM-DD HH:mm")
         '2024-03-15 14:30'
         """
         elements = compile_pattern(pattern)
@@ -6176,7 +6176,7 @@ class PlainDateTime(_LocalTime):
 
         See :ref:`pattern-format` for details.
 
-        >>> PlainDateTime.parse("2024-03-15 14:30", pattern="YYYY-MM-DD hh:mm")
+        >>> PlainDateTime.parse("2024-03-15 14:30", pattern="YYYY-MM-DD HH:mm")
         PlainDateTime("2024-03-15 14:30:00")
         """
         pattern = _normalize_pattern(pattern, kwargs)

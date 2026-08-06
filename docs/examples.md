@@ -296,7 +296,7 @@ For formats beyond ISO 8601, use pattern strings:
 Date("2024-03-15")
 >>> PlainDateTime.parse("03/15/2024 02:30 PM", pattern="MM/DD/YYYY ii:mm aa")
 PlainDateTime("2024-03-15 14:30:00")
->>> OffsetDateTime.parse("2024-03-15 14:30+02:00", pattern="YYYY-MM-DD hh:mmxxx")
+>>> OffsetDateTime.parse("2024-03-15 14:30+02:00", pattern="YYYY-MM-DD HH:mmxxx")
 OffsetDateTime("2024-03-15 14:30:00+02:00")
 ```
 
@@ -305,7 +305,7 @@ If your input doesn't include an offset or timezone, parse with
 
 ```python
 >>> from whenever import PlainDateTime
->>> pdt = PlainDateTime.parse("2024-03-15 14:30", pattern="YYYY-MM-DD hh:mm")
+>>> pdt = PlainDateTime.parse("2024-03-15 14:30", pattern="YYYY-MM-DD HH:mm")
 >>> pdt.assume_utc()
 Instant("2024-03-15 14:30:00Z")
 ```
