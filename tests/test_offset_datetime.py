@@ -10,12 +10,15 @@ from hypothesis import given
 from hypothesis.strategies import floats, integers, text
 from whenever import (
     Date,
+    ImplicitDisambiguationWarning,
     Instant,
     InvalidOffsetError,
     ItemizedDateDelta,
     ItemizedDelta,
     OffsetDateTime,
     PlainDateTime,
+    RepeatedTime,
+    SkippedTime,
     StaleOffsetWarning,
     Time,
     TimeDelta,
@@ -1085,6 +1088,16 @@ class TestAddSubtractOperators:
         with pytest.warns(StaleOffsetWarning) as w:
             d + hours(4)
         assert len(w) == 1
+        assert "usually an observation, not a timezone rule" in str(
+            w[0].message
+        )
+        assert "mathematically valid" in str(w[0].message)
+        assert "stale relative to the source timezone" in str(w[0].message)
+        assert "even after an exact shift" in str(w[0].message)
+        assert "stale_offset_ok=True" in str(w[0].message)
+        assert "choosing-a-type.html#offset-datetime-guidance" in str(
+            w[0].message
+        )
 
         with pytest.warns(StaleOffsetWarning) as w:
             d - hours(4)
@@ -1260,6 +1273,124 @@ class TestAssumeTz:
             OffsetDateTime("2023-05-01 12:30:00-09:00").assume_tz(
                 "America/New_York"
             )
+
+    @pytest.mark.parametrize(
+        "offset_mismatch", ["raise", "keep_instant", "keep_local"]
+    )
+    def test_matching_offset_ignores_policies(self, offset_mismatch):
+        d = OffsetDateTime("2023-10-29 02:30:00+02:00")
+        result = d.assume_tz(
+            "Europe/Paris",
+            offset_mismatch=offset_mismatch,
+            disambiguation="raise",
+        )
+        assert result.strict_eq(
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                30,
+                tz="Europe/Paris",
+                disambiguation="earlier",
+            )
+        )
+
+    @pytest.mark.parametrize(
+        ("value", "disambiguation", "expected"),
+        [
+            (
+                "2023-10-29 02:30:00+03:00",
+                "compatible",
+                "2023-10-29 02:30:00+02:00[Europe/Paris]",
+            ),
+            (
+                "2023-10-29 02:30:00+03:00",
+                "earlier",
+                "2023-10-29 02:30:00+02:00[Europe/Paris]",
+            ),
+            (
+                "2023-10-29 02:30:00+03:00",
+                "later",
+                "2023-10-29 02:30:00+01:00[Europe/Paris]",
+            ),
+            (
+                "2023-03-26 02:30:00+03:00",
+                "compatible",
+                "2023-03-26 03:30:00+02:00[Europe/Paris]",
+            ),
+            (
+                "2023-03-26 02:30:00+03:00",
+                "earlier",
+                "2023-03-26 01:30:00+01:00[Europe/Paris]",
+            ),
+            (
+                "2023-03-26 02:30:00+03:00",
+                "later",
+                "2023-03-26 03:30:00+02:00[Europe/Paris]",
+            ),
+        ],
+    )
+    def test_keep_local_uses_disambiguation(
+        self, value, disambiguation, expected
+    ):
+        result = OffsetDateTime(value).assume_tz(
+            "Europe/Paris",
+            offset_mismatch="keep_local",
+            disambiguation=disambiguation,
+        )
+        assert result.strict_eq(ZonedDateTime(expected))
+
+    @pytest.mark.parametrize(
+        ("value", "error"),
+        [
+            ("2023-10-29 02:30:00+03:00", RepeatedTime),
+            ("2023-03-26 02:30:00+03:00", SkippedTime),
+        ],
+    )
+    def test_keep_local_raise(self, value, error):
+        with pytest.raises(error):
+            OffsetDateTime(value).assume_tz(
+                "Europe/Paris",
+                offset_mismatch="keep_local",
+                disambiguation="raise",
+            )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "2023-10-29 02:30:00+03:00",
+            "2023-03-26 02:30:00+03:00",
+        ],
+    )
+    def test_keep_local_implicit_disambiguation_warns(self, value):
+        with pytest.warns(ImplicitDisambiguationWarning):
+            OffsetDateTime(value).assume_tz(
+                "Europe/Paris", offset_mismatch="keep_local"
+            )
+
+    def test_ordinary_mismatch_does_not_disambiguate(self):
+        d = OffsetDateTime("2023-05-01 12:30:00+03:00")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ImplicitDisambiguationWarning)
+            result = d.assume_tz("Europe/Paris", offset_mismatch="keep_local")
+        assert (result.hour, result.minute) == (12, 30)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "2023-10-29 02:30:00+03:00",
+            "2023-03-26 02:30:00+03:00",
+        ],
+    )
+    def test_keep_instant_ignores_disambiguation(self, value):
+        d = OffsetDateTime(value)
+        result = d.assume_tz(
+            "Europe/Paris",
+            offset_mismatch="keep_instant",
+            disambiguation="raise",
+        )
+        assert result.to_instant() == d.to_instant()
 
     def test_skipped_time(self):
         with pytest.raises(InvalidOffsetError):
@@ -2835,6 +2966,21 @@ class TestStaleOffsetOkKwarg:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             odt.add(hours=1, stale_offset_ok=True)
+
+    @pytest.mark.parametrize(
+        ("method", "delta"),
+        [
+            ("add", hours(1)),
+            ("subtract", hours(1)),
+            ("add", ItemizedDelta(hours=1)),
+            ("subtract", ItemizedDelta(hours=1)),
+        ],
+    )
+    def test_positional_delta(self, method, delta):
+        odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            getattr(odt, method)(delta, stale_offset_ok=True)
 
     def test_subtract(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))

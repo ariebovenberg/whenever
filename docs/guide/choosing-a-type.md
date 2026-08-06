@@ -30,7 +30,7 @@ The main types are:
 
 This is the simplest way to represent a moment on the timeline,
 independent of human complexities like timezones or calendars.
-An `Instant` maps 1:1 to UTC or a UNIX timestamp.
+An {class}`~whenever.Instant` maps 1:1 to UTC or a UNIX timestamp.
 It's great for storing when something happened (or will happen)
 regardless of location.
 
@@ -123,49 +123,80 @@ meaning of your data more accurately.
 -- Jon Skeet
 ```
 
-Like {class}`~whenever.ZonedDateTime`, this type preserves both an exact
-instant and its local representation. The difference is that it stores only
-the observed UTC offset, not a regional timezone rule set.
+An {class}`~whenever.OffsetDateTime` sits between a local datetime and a zoned
+datetime:
 
-### When to use it—and what to watch for
+| Type | Local fields | Exact instant | Regional timezone rules |
+|---|:---:|:---:|:---:|
+| {class}`~whenever.Instant` | ❌ | ✅ | ❌ |
+| {class}`~whenever.PlainDateTime` | ✅ | ❌ | ❌ |
+| {class}`~whenever.OffsetDateTime` | ✅ | ✅ | ❌ |
+| {class}`~whenever.ZonedDateTime` | ✅ | ✅ | ✅ |
 
-Many external formats—such as ISO 8601 payloads, RFC 2822 messages, database
-records, and logs—provide a local datetime and offset but no timezone ID.
-{class}`~whenever.Instant` would preserve the moment while discarding that
-source representation. {class}`~whenever.ZonedDateTime` would require
-attaching regional rules the source never supplied. `OffsetDateTime` preserves
-the moment, local fields, and observed offset without inventing those rules.
+The numeric offset makes an {class}`~whenever.OffsetDateTime` unambiguous on
+the timeline, so it contains more information than a
+{class}`~whenever.PlainDateTime`. It still contains less information than a
+{class}`~whenever.ZonedDateTime`: an offset such as `-07:00` says nothing about
+past or future daylight-saving and political changes.
 
-An offset does **not** identify a timezone: many regions can share `+02:00` at
-one instant and follow different rules later. Treating one observed offset as
-a timezone identity invents unsupported historical and future behavior. Even
-placing a fixed offset in timezone brackets does not supply regional rules; it
-only obscures the distinction.
+### Why offset datetimes are unavoidable
 
-Operations that reuse an offset where regional rules might matter emit
-{class}`~whenever.StaleOffsetWarning`. If the offset is deliberately fixed,
-pass `stale_offset_ok=True`. If it represents a location, first associate the
-value with the known region using {meth}`~whenever.OffsetDateTime.assume_tz`.
+Most interchange formats—including ISO 8601, RFC 2822, RFC 3339, API payloads,
+database records, and logs—commonly carry local fields and an offset but no
+timezone ID. {class}`~whenever.OffsetDateTime` represents exactly that input.
+Converting it to an {class}`~whenever.Instant` would discard the source's local
+representation; turning it into a {class}`~whenever.ZonedDateTime` would
+require regional rules the source never provided.
+
+An offset also does **not** identify a timezone. Many regions can share
+`+02:00` at one instant and follow different rules later. Even putting a fixed
+offset in timezone brackets does not add those missing rules.
+
+### The stale-offset footgun
+
+In common data, a numeric offset is a *snapshot*: the offset a location used
+at one instant. Arithmetic on an {class}`~whenever.OffsetDateTime` is
+mathematically valid and preserves that fixed offset, but it cannot update the
+offset when the location's rules change. The result may therefore be stale
+relative to the timezone the original value came from—even after an exact
+shift.
+
+When the intended meaning depends on that original timezone, shifting or
+modifying an {class}`~whenever.OffsetDateTime` is roughly as unsafe as doing
+timezone-sensitive arithmetic on a naive
+{class}`~whenever.PlainDateTime`: both lack the regional rules needed to
+account for transitions. The offset pins down the original instant, but it
+does not make a later or modified local time safe.
+
+For example, `-07:00` was Denver's observed offset before its 2024 spring
+transition:
 
 ```python
->>> flight_departure = OffsetDateTime(2023, 4, 21, hour=9, offset=hours(-4))
->>> flight_arrival = OffsetDateTime(2023, 4, 21, hour=10, offset=hours(-6))
->>> (flight_arrival - flight_departure).total("hours")
-3
->>> # Deliberately keep the supplied fixed offset:
->>> flight_arrival.add(hours=3, stale_offset_ok=True)
->>> # Or use regional rules when the location is known:
->>> flight_arrival.assume_tz("America/Denver").add(hours=3)
+>>> observed = OffsetDateTime(2024, 3, 9, 12, offset=hours(-7))
+>>> observed.add(days=1)  # emits StaleOffsetWarning
+OffsetDateTime("2024-03-10 12:00:00-07:00")
+>>> observed.assume_tz("America/Denver").add(days=1)
+ZonedDateTime("2024-03-10 12:00:00-06:00[America/Denver]")
 ```
 
-## Comparison of types
+When the originating timezone is known, associate it **before** doing the
+arithmetic using {meth}`~whenever.OffsetDateTime.assume_tz`; see the complete
+{ref}`offset mismatch <offset-mismatch>` flow. Whenever emits
+{class}`~whenever.StaleOffsetWarning` for operations that preserve an offset
+which may no longer apply in its original regional context.
 
-Here's a summary of the differences between the types:
+Some domains genuinely define an offset as permanently fixed. In that case,
+preserving it is intentional:
 
-|                              | Instant | OffsetDT|ZonedDT|PlainDT  |
-|:-----------------------------|:-------:|:-------:|:-----:|:-------:|
-| knows the **exact** time     |   ✅    | ✅      | ✅    |  ❌     |
-| knows the **local** time     |  ❌     |  ✅     |  ✅   |  ✅     |
-| knows about DST rules        |  ❌     |  ❌     |  ✅   |  ❌     |
+```python
+>>> protocol_time = OffsetDateTime(2024, 3, 9, 12, offset=hours(5))
+>>> protocol_time.add(days=1, stale_offset_ok=True)
+OffsetDateTime("2024-03-10 12:00:00+05:00")
+```
+
+Use `stale_offset_ok=True` when fixed-offset arithmetic is deliberate or the
+provenance risk is accepted. If the entire domain uses permanently fixed
+offsets, configure {class}`~whenever.StaleOffsetWarning` globally as described
+in {ref}`warnings`.
 
 [^1]: `java.time`, Noda Time (C#), and Temporal (JavaScript) all use a similar datamodel.
