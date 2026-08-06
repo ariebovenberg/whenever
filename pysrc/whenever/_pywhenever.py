@@ -832,7 +832,9 @@ class Date(_Base):
         '15 Mar 2024'
         """
         elements = compile_pattern(pattern)
-        validate_fields(elements, self._PATTERN_CATS, "Date")
+        validate_fields(
+            elements, self._PATTERN_CATS, "Date", warning_stacklevel=3
+        )
         d = self._py_date
         return format_fields(
             elements,
@@ -858,7 +860,9 @@ class Date(_Base):
         """
         pattern = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
-        validate_fields(elements, cls._PATTERN_CATS, "Date")
+        validate_fields(
+            elements, cls._PATTERN_CATS, "Date", warning_stacklevel=3
+        )
         state = parse_fields(elements, s)
         if state.year is None or state.month is None or state.day is None:
             raise ValueError(
@@ -1433,7 +1437,9 @@ class Time(_Base):
         '02:30 PM'
         """
         elements = compile_pattern(pattern)
-        validate_fields(elements, self._PATTERN_CATS, "Time")
+        validate_fields(
+            elements, self._PATTERN_CATS, "Time", warning_stacklevel=3
+        )
         t = self._py
         return format_fields(
             elements,
@@ -1459,7 +1465,9 @@ class Time(_Base):
         """
         pattern = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
-        validate_fields(elements, cls._PATTERN_CATS, "Time")
+        validate_fields(
+            elements, cls._PATTERN_CATS, "Time", warning_stacklevel=3
+        )
         state = parse_fields(elements, s)
         return cls(
             hour=state.hour or 0,
@@ -3210,7 +3218,9 @@ class Instant(_ExactTime):
         '2024-03-15 14:30:00Z'
         """
         elements = compile_pattern(pattern)
-        validate_fields(elements, self._PATTERN_CATS, "Instant")
+        validate_fields(
+            elements, self._PATTERN_CATS, "Instant", warning_stacklevel=3
+        )
         d = self._py_dt
         return format_fields(
             elements,
@@ -3252,7 +3262,9 @@ class Instant(_ExactTime):
         """
         pattern = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
-        validate_fields(elements, cls._PATTERN_CATS, "Instant")
+        validate_fields(
+            elements, cls._PATTERN_CATS, "Instant", warning_stacklevel=3
+        )
         state = parse_fields(elements, s)
         if state.offset_secs is None:
             raise ValueError(
@@ -4108,7 +4120,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         '2024-03-15 14:30+02:00'
         """
         elements = compile_pattern(pattern)
-        validate_fields(elements, self._PATTERN_CATS, "OffsetDateTime")
+        validate_fields(
+            elements,
+            self._PATTERN_CATS,
+            "OffsetDateTime",
+            warning_stacklevel=3,
+        )
         d = self._py_dt
         return format_fields(
             elements,
@@ -4149,7 +4166,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         pattern = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
-        validate_fields(elements, cls._PATTERN_CATS, "OffsetDateTime")
+        validate_fields(
+            elements,
+            cls._PATTERN_CATS,
+            "OffsetDateTime",
+            warning_stacklevel=3,
+        )
         state = parse_fields(elements, s)
         if state.offset_secs is None:
             raise ValueError(
@@ -4872,7 +4894,12 @@ class ZonedDateTime(_ExactAndLocalTime):
         '2024-03-15 14:30+01:00[Europe/Paris]'
         """
         elements = compile_pattern(pattern)
-        validate_fields(elements, self._PATTERN_CATS, "ZonedDateTime")
+        validate_fields(
+            elements,
+            self._PATTERN_CATS,
+            "ZonedDateTime",
+            warning_stacklevel=3,
+        )
         d = self._py_dt
         return format_fields(
             elements,
@@ -4928,7 +4955,12 @@ class ZonedDateTime(_ExactAndLocalTime):
         if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
             raise ValueError(f"invalid offset_mismatch: {offset_mismatch!r}")
         elements = compile_pattern(pattern)
-        validate_fields(elements, cls._PATTERN_CATS, "ZonedDateTime")
+        validate_fields(
+            elements,
+            cls._PATTERN_CATS,
+            "ZonedDateTime",
+            warning_stacklevel=3,
+        )
         state = parse_fields(elements, s)
         if state.tz_id is None:
             raise ValueError(
@@ -6114,7 +6146,12 @@ class PlainDateTime(_LocalTime):
         '2024-03-15 14:30'
         """
         elements = compile_pattern(pattern)
-        validate_fields(elements, self._PATTERN_CATS, "PlainDateTime")
+        validate_fields(
+            elements,
+            self._PATTERN_CATS,
+            "PlainDateTime",
+            warning_stacklevel=3,
+        )
         d = self._py_dt
         return format_fields(
             elements,
@@ -6144,7 +6181,12 @@ class PlainDateTime(_LocalTime):
         """
         pattern = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
-        validate_fields(elements, cls._PATTERN_CATS, "PlainDateTime")
+        validate_fields(
+            elements,
+            cls._PATTERN_CATS,
+            "PlainDateTime",
+            warning_stacklevel=3,
+        )
         state = parse_fields(elements, s)
         if state.year is None or state.month is None or state.day is None:
             raise ValueError(
