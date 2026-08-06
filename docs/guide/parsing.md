@@ -70,18 +70,18 @@ OffsetDateTime("2021-07-13 09:45:00-09:00")
 
 All datetime types support custom format and parse patterns via
 the `format()` and `parse()` methods.
-Patterns use specifiers like `YYYY`, `MM`, `DD`, `hh`, `mm`, `ss`.
+Patterns use specifiers like `YYYY`, `MM`, `DD`, `HH`, `mm`, `ss`.
 
 ```python
 >>> OffsetDateTime(2024, 3, 15, 14, 30, offset=+2).format(
-...     "EEE, DD MMM YYYY hh:mm:ssxxx"
+...     "EEE, DD MMM YYYY HH:mm:ssxxx"
 ... )
 'Fri, 15 Mar 2024 14:30:00+02:00'
 >>> Date.parse("15 Mar 2024", pattern="DD MMM YYYY")
 Date("2024-03-15")
 >>> ZonedDateTime.parse(
 ...     "2024-03-15 14:30+01:00[Europe/Paris]",
-...     pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
+...     pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
 ... )
 ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
 ```
