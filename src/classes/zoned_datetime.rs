@@ -1364,8 +1364,12 @@ fn format(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) 
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET_TZ, "ZonedDateTime")?;
-    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
+    pattern.validate(
+        pattern::CategorySet::DATE_TIME_OFFSET_TZ,
+        "ZonedDateTime",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
     // SAFETY: TzAbbrev always contains valid ASCII bytes
     let abbrev_str = unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) };
@@ -1428,7 +1432,12 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET_TZ, "ZonedDateTime")?;
+    pattern.validate(
+        pattern::CategorySet::DATE_TIME_OFFSET_TZ,
+        "ZonedDateTime",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     let parsed = pattern.parse(s).into_value_err()?;
 
     let tz_id = parsed

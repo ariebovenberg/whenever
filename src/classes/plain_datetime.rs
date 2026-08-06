@@ -799,8 +799,12 @@ fn format(cls: PyClass<PlainDateTime>, slf: PlainDateTime, pattern_obj: PyObj) -
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(pattern::CategorySet::DATE_TIME, "PlainDateTime")?;
-    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
+    pattern.validate(
+        pattern::CategorySet::DATE_TIME,
+        "PlainDateTime",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     pattern.format(&slf.pattern_values())
 }
 
@@ -826,7 +830,12 @@ fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(pattern::CategorySet::DATE_TIME, "PlainDateTime")?;
+    pattern.validate(
+        pattern::CategorySet::DATE_TIME,
+        "PlainDateTime",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     let parsed = pattern.parse(s).into_value_err()?;
     let date = parsed
         .date("Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields")?;
