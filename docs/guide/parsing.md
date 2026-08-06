@@ -25,8 +25,7 @@ Instant("2023-12-28 11:00:00Z")
 PlainDateTime("2023-12-28 11:30:00")
 ```
 
-Below are the default string formats you get for calling each type's
-`format_iso()` method:
+Below are the default ISO string formats produced by each type:
 
 | Type                                    | Default string format                          |
 |:----------------------------------------|:-----------------------------------------------|
@@ -69,7 +68,9 @@ OffsetDateTime("2021-07-13 09:45:00-09:00")
 ## Custom formats
 
 All datetime types support custom format and parse patterns via
-the `format()` and `parse()` methods.
+their format and parse methods—for example,
+{meth}`~whenever.OffsetDateTime.format` and
+{meth}`~whenever.OffsetDateTime.parse`.
 Patterns use specifiers like `YYYY`, `MM`, `DD`, `HH`, `mm`, `ss`.
 
 ```python
@@ -91,21 +92,12 @@ full list of specifiers and details.
 
 ### Zoned parsing policies
 
-The `ZonedDateTime` ISO-string constructor, `parse_iso()`, and patterned
-`parse()` accept `disambiguation=` and `offset_mismatch=`. A matching numeric
-offset identifies the occurrence of a repeated local time. If the input omits
-an offset, `disambiguation` selects how a fold or gap is resolved. If a numeric
-offset conflicts with the named timezone, `offset_mismatch` can `"raise"`,
-`"keep_instant"`, or `"keep_local"`. `"keep_instant"` treats the numeric
-offset as authoritative and changes the local fields to match the timezone.
-`"keep_local"` discards the conflicting offset and resolves the written local
-time in the named timezone; if that local time is repeated or skipped,
-`disambiguation` determines which instant is selected.
-
-Hour-and-minute offsets are compared with candidate timezone offsets rounded
-to the nearest minute, half away from zero. Offsets containing seconds match
-exactly. A `Z` suffix is different: it always identifies an exact UTC instant
-and is not treated as a numeric `+00:00` assertion about local time.
+The {class}`~whenever.ZonedDateTime` ISO-string constructor,
+{meth}`~whenever.ZonedDateTime.parse_iso`, and patterned
+{meth}`~whenever.ZonedDateTime.parse` accept `disambiguation=` and
+`offset_mismatch=`. See
+{ref}`resolving-local-times` for the complete decision flow, including
+matching offsets, conflicts, `Z`, folds, gaps, and offset precision.
 
 ## Pydantic integration
 
@@ -115,7 +107,8 @@ Pydantic support is still in beta and may change in the future.
 
 `whenever` types support basic serialization and deserialization
 with [Pydantic](https://docs.pydantic.dev). The behavior is identical to
-the `parse_iso()` and `format_iso()` methods.
+{meth}`~whenever.ZonedDateTime.parse_iso` and
+{meth}`~whenever.ZonedDateTime.format_iso`.
 
 ```python
 >>> from pydantic import BaseModel

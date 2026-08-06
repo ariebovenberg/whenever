@@ -55,6 +55,12 @@ Instant("2023-12-28 11:30:00Z")
 ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Amsterdam]")
 ```
 
+```{tip}
+The naming difference between `to_*` and `assume_*` methods is intentional.
+See the {ref}`FAQ <faq-to-vs-assume>` for the rationale.
+```
+
+
 Similarly, you can associate an {class}`~whenever.OffsetDateTime`
 with a timezone using {meth}`~whenever.OffsetDateTime.assume_tz`:
 
@@ -65,7 +71,8 @@ ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Amsterdam]")
 ```
 
 By default, this raises an error if the offset doesn't match the timezone.
-You can control what happens in case of a mismatch with the `offset_mismatch` argument:
+The `offset_mismatch` argument can instead preserve either the instant or the
+local fields:
 
 ```python
 >>> o = OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
@@ -75,20 +82,15 @@ ZonedDateTime("2023-12-28 07:30:00+01:00[Europe/Amsterdam]")
 ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Amsterdam]")
 ```
 
-```{tip}
-The naming difference between `to_*` and `assume_*` methods is intentional.
-See the {ref}`FAQ <faq-to-vs-assume>` for the rationale.
-```
+See {ref}`offset-mismatch` for how matching and conflicting offsets interact
+with `disambiguation`.
 
-```{admonition} When is `assume_tz` useful?
+:::{admonition} When is `assume_tz` useful?
 :class: hint
 
-A common scenario is receiving timestamps from an external source
-(API, database, log file) that only carries a fixed offset.
-If the timezone rules for that region change later—for example,
-a country abolishes DST—the stored offset may no longer be valid
-for arithmetic on future dates.
-{meth}`~whenever.OffsetDateTime.assume_tz` lets you associate the
-correct timezone so that subsequent operations account for the
-current rules.
-```
+A common scenario is receiving timestamps from an external source that only
+carries a fixed offset. If the originating timezone is known,
+{meth}`~whenever.OffsetDateTime.assume_tz` associates its rules before further
+arithmetic. See {ref}`offset-datetime-guidance` for why doing this before
+moving the value matters.
+:::

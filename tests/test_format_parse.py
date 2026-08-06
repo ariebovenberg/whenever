@@ -5,9 +5,13 @@ import warnings
 import pytest
 from whenever import (
     Date,
+    ImplicitDisambiguationWarning,
     Instant,
+    InvalidOffsetError,
     OffsetDateTime,
     PlainDateTime,
+    RepeatedTime,
+    SkippedTime,
     Time,
     TimeDelta,
     WheneverDeprecationWarning,
@@ -1016,7 +1020,7 @@ class TestZonedDateTimeParse:
 
     def test_offset_mismatch(self):
         """Offset doesn't match timezone: should raise."""
-        with pytest.raises(ValueError, match="does not match"):
+        with pytest.raises(InvalidOffsetError, match="does not match"):
             ZonedDateTime.parse(
                 "2024-03-15 14:30+05:00[Europe/Paris]",
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
@@ -1029,6 +1033,28 @@ class TestZonedDateTimeParse:
             offset_mismatch="keep_instant",
         ).strict_eq(ZonedDateTime(2020, 8, 15, 11, tz="Europe/Amsterdam"))
 
+    @pytest.mark.parametrize(
+        "offset_mismatch", ["raise", "keep_instant", "keep_local"]
+    )
+    def test_matching_offset_ignores_policies(self, offset_mismatch):
+        result = ZonedDateTime.parse(
+            "2023-10-29 02:15+02:00[Europe/Amsterdam]",
+            pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+            offset_mismatch=offset_mismatch,
+            disambiguation="raise",
+        )
+        assert result.strict_eq(
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                tz="Europe/Amsterdam",
+                disambiguation="earlier",
+            )
+        )
+
     def test_invalid_offset_mismatch(self):
         with pytest.raises(ValueError, match="offset_mismatch"):
             ZonedDateTime.parse(  # type: ignore[call-overload]
@@ -1037,24 +1063,107 @@ class TestZonedDateTimeParse:
                 offset_mismatch="ignore",
             )
 
-    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
-    def test_keep_local_uses_disambiguation(self, disambiguation):
+    @pytest.mark.parametrize(
+        ("value", "disambiguation", "expected"),
+        [
+            (
+                "2023-10-29 02:15+03:00[Europe/Amsterdam]",
+                "compatible",
+                "2023-10-29 02:15:00+02:00[Europe/Amsterdam]",
+            ),
+            (
+                "2023-10-29 02:15+03:00[Europe/Amsterdam]",
+                "earlier",
+                "2023-10-29 02:15:00+02:00[Europe/Amsterdam]",
+            ),
+            (
+                "2023-10-29 02:15+03:00[Europe/Amsterdam]",
+                "later",
+                "2023-10-29 02:15:00+01:00[Europe/Amsterdam]",
+            ),
+            (
+                "2023-03-26 02:15+03:00[Europe/Amsterdam]",
+                "compatible",
+                "2023-03-26 03:15:00+02:00[Europe/Amsterdam]",
+            ),
+            (
+                "2023-03-26 02:15+03:00[Europe/Amsterdam]",
+                "earlier",
+                "2023-03-26 01:15:00+01:00[Europe/Amsterdam]",
+            ),
+            (
+                "2023-03-26 02:15+03:00[Europe/Amsterdam]",
+                "later",
+                "2023-03-26 03:15:00+02:00[Europe/Amsterdam]",
+            ),
+        ],
+    )
+    def test_keep_local_uses_disambiguation(
+        self, value, disambiguation, expected
+    ):
         result = ZonedDateTime.parse(
-            "2023-10-29 02:15+03:00[Europe/Amsterdam]",
+            value,
             pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
             offset_mismatch="keep_local",
             disambiguation=disambiguation,
         )
-        expected = ZonedDateTime(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            tz="Europe/Amsterdam",
-            disambiguation=disambiguation,
+        assert result.strict_eq(ZonedDateTime(expected))
+
+    @pytest.mark.parametrize(
+        ("value", "error"),
+        [
+            (
+                "2023-10-29 02:15+03:00[Europe/Amsterdam]",
+                RepeatedTime,
+            ),
+            ("2023-03-26 02:15+03:00[Europe/Amsterdam]", SkippedTime),
+        ],
+    )
+    def test_keep_local_raise(self, value, error):
+        with pytest.raises(error):
+            ZonedDateTime.parse(
+                value,
+                pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+                offset_mismatch="keep_local",
+                disambiguation="raise",
+            )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "2023-10-29 02:15+03:00[Europe/Amsterdam]",
+            "2023-03-26 02:15+03:00[Europe/Amsterdam]",
+        ],
+    )
+    def test_keep_local_implicit_disambiguation_warns(self, value):
+        with pytest.warns(ImplicitDisambiguationWarning):
+            ZonedDateTime.parse(
+                value,
+                pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+                offset_mismatch="keep_local",
+            )
+
+    def test_ordinary_mismatch_does_not_disambiguate(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ImplicitDisambiguationWarning)
+            result = ZonedDateTime.parse(
+                "2023-05-01 12:15+03:00[Europe/Amsterdam]",
+                pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+                offset_mismatch="keep_local",
+            )
+        assert (result.hour, result.minute) == (12, 15)
+
+    def test_keep_instant_ignores_disambiguation(self):
+        result = ZonedDateTime.parse(
+            "2023-03-26 02:15+03:00[Europe/Amsterdam]",
+            pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+            offset_mismatch="keep_instant",
+            disambiguation="raise",
         )
-        assert result.strict_eq(expected)
+        assert (
+            result.to_instant()
+            == OffsetDateTime("2023-03-26 02:15:00+03:00").to_instant()
+        )
 
     def test_offset_disambiguation(self):
         # November 3, 2024: US DST transition (fall back)

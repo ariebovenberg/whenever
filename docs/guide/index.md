@@ -29,7 +29,7 @@ For the details of a specific class or method, see the {ref}`API reference <api>
    partial-types
    comparison
    conversions
-   ambiguity
+   resolving-local-times
 ```
 
 ## Calculating with dates and times

@@ -105,7 +105,7 @@ class TestInit:
         assert "repeated or skipped" in message
         assert "wrong instant" in message
         assert "pass disambiguation=" in message
-        assert "/guide/ambiguity.html" in message
+        assert "/guide/resolving-local-times.html" in message
 
     def test_explicit_compatible_does_not_warn(self):
         with warnings.catch_warnings():
@@ -2724,6 +2724,32 @@ class TestParseIso:
             offset_mismatch="keep_instant",
         ).strict_eq(ZonedDateTime(2020, 8, 15, 11, tz="Europe/Amsterdam"))
 
+    @pytest.mark.parametrize(
+        "offset_mismatch", ["raise", "keep_instant", "keep_local"]
+    )
+    def test_matching_offset_ignores_policies(self, offset_mismatch):
+        value = "2023-10-29T02:15:30+02:00[Europe/Amsterdam]"
+        expected = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz="Europe/Amsterdam",
+            disambiguation="earlier",
+        )
+        assert ZonedDateTime.parse_iso(
+            value,
+            offset_mismatch=offset_mismatch,
+            disambiguation="raise",
+        ).strict_eq(expected)
+        assert ZonedDateTime(
+            value,
+            offset_mismatch=offset_mismatch,
+            disambiguation="raise",
+        ).strict_eq(expected)
+
     def test_invalid_offset_mismatch(self):
         with pytest.raises(ValueError, match="offset_mismatch"):
             ZonedDateTime.parse_iso(
@@ -2734,6 +2760,20 @@ class TestParseIso:
     @pytest.mark.parametrize(
         "s, disambiguation, expected",
         [
+            (
+                "2023-10-29T02:15:30+03:00[Europe/Amsterdam]",
+                "compatible",
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguation="earlier",
+                ),
+            ),
             (
                 "2023-10-29T02:15:30+03:00[Europe/Amsterdam]",
                 "earlier",
@@ -2755,6 +2795,20 @@ class TestParseIso:
                     2023,
                     10,
                     29,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguation="later",
+                ),
+            ),
+            (
+                "2023-03-26T02:15:30+03:00[Europe/Amsterdam]",
+                "compatible",
+                ZonedDateTime(
+                    2023,
+                    3,
+                    26,
                     2,
                     15,
                     30,
@@ -2803,6 +2857,69 @@ class TestParseIso:
             offset_mismatch="keep_local",
             disambiguation=disambiguation,
         ).strict_eq(expected)
+
+    @pytest.mark.parametrize(
+        ("value", "error"),
+        [
+            (
+                "2023-10-29T02:15:30+03:00[Europe/Amsterdam]",
+                RepeatedTime,
+            ),
+            (
+                "2023-03-26T02:15:30+03:00[Europe/Amsterdam]",
+                SkippedTime,
+            ),
+        ],
+    )
+    def test_keep_local_raise(self, value, error):
+        with pytest.raises(error):
+            ZonedDateTime.parse_iso(
+                value,
+                offset_mismatch="keep_local",
+                disambiguation="raise",
+            )
+        with pytest.raises(error):
+            ZonedDateTime(
+                value,
+                offset_mismatch="keep_local",
+                disambiguation="raise",
+            )
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "2023-10-29T02:15:30+03:00[Europe/Amsterdam]",
+            "2023-03-26T02:15:30+03:00[Europe/Amsterdam]",
+        ],
+    )
+    def test_keep_local_implicit_disambiguation_warns(self, value):
+        with pytest.warns(ImplicitDisambiguationWarning):
+            ZonedDateTime.parse_iso(value, offset_mismatch="keep_local")
+        with pytest.warns(ImplicitDisambiguationWarning):
+            ZonedDateTime(value, offset_mismatch="keep_local")
+
+    def test_ordinary_mismatch_does_not_disambiguate(self):
+        value = "2023-05-01T12:15:30+03:00[Europe/Amsterdam]"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ImplicitDisambiguationWarning)
+            parsed = ZonedDateTime.parse_iso(
+                value, offset_mismatch="keep_local"
+            )
+            constructed = ZonedDateTime(value, offset_mismatch="keep_local")
+        assert (parsed.hour, parsed.minute) == (12, 15)
+        assert constructed.strict_eq(parsed)
+
+    def test_keep_instant_ignores_disambiguation(self):
+        value = "2023-03-26T02:15:30+03:00[Europe/Amsterdam]"
+        expected = OffsetDateTime("2023-03-26 02:15:30+03:00").to_instant()
+        assert (
+            ZonedDateTime.parse_iso(
+                value,
+                offset_mismatch="keep_instant",
+                disambiguation="raise",
+            ).to_instant()
+            == expected
+        )
 
     @pytest.mark.parametrize(
         "s",
