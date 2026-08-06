@@ -7,7 +7,8 @@
 
 Custom format and parse patterns allow you to format datetime values into
 strings and parse strings into datetime values, using a pattern string
-that describes the expected format.
+that describes the expected format. The canonical full datetime pattern is
+`YYYY-MM-DD HH:mm:ss`.
 
 ## Quick example
 
@@ -18,7 +19,7 @@ that describes the expected format.
 >>> Date.parse("2024/03/15", pattern="YYYY/MM/DD")
 Date("2024-03-15")
 >>> OffsetDateTime(2024, 3, 15, 14, 30, offset=+2).format(
-...     "EEE, DD MMM YYYY hh:mm:ssxxx"
+...     "EEE, DD MMM YYYY HH:mm:ssxxx"
 ... )
 'Fri, 15 Mar 2024 14:30:00+02:00'
 ```
@@ -38,54 +39,59 @@ the corresponding value.
 | `D`   | day of month | `D` <br/> `DD` | `5` <br/> `05` |
 | `E`   | day of week [^2] | `EEE` <br/> `EEEE` | `Fri` <br/> `Friday` |
 
+:::{admonition} Why are Whenever's patterns different?
+:class: important
+
+Whenever deliberately avoids classic datetime-pattern footguns. `Y` is always
+the calendar year, never the ISO week-numbering year. `H` is the 24-hour clock,
+as in almost all other datetime libraries, while the distinct `i` is the
+12-hour clock and makes a missing AM/PM field detectable. `D` is always the
+day of the month; day-of-year is not supported. Familiar but unsupported
+letters fail instead of silently acquiring a different meaning.
+:::
+
 ### Time specifiers
 
 
 | Symbol  | Meaning                    | Pattern | Example output |
 |:---------|:---------------------------|:---------------|:--------------|
-| `h` | hour | `h` <br/> `hh` | `4` <br/> `04` |
+| `H` | hour (24-hour) | `H` <br/> `HH` | `4` <br/> `04` |
 | `i`   | hour (12-hour) | `i` <br/> `ii` | `4` <br/> `04` |
 | `m`   | minute | `m` <br/> `mm` | `5` <br/> `05` |
 | `s`   | second | `s` <br/> `ss` | `5` <br/> `05` |
-| `S`   | second, optional [^3] | `SS` | `05`, (omitted) |
+| `[...]` | optional seconds tail [^3] | `[ss]` <br/> `[:ss]` <br/> `[:ss.fff]` <br/> `[:ss.FFF]` | `05`, (omitted) <br/> `:05`, (omitted) <br/> `:05.123`, (omitted) <br/> `:05.12`, (omitted) |
 | `f` | fractional seconds, exact digits | `f`<br/>`ff`<br/>`fff`<br/>...<br/>`fffffffff` | `1` <br/> `12`, `00` <br/> `123`, `400` <br/> ... <br/> `123456789`, `374930000` |
 | `F` | fractional seconds, trimmed [^4] | `F`<br/>`FF`<br/>`FFF`<br/>...<br/>`FFFFFFFFF` | `1` <br/> `12`, (omitted) <br/> `123`, `4` <br/>...<br/> `123456789`, `37493` |
 | `a`   | AM/PM [^5] | `a`<br/>`aa` | `P` <br/> `PM` |
 
-:::{important}
-Unlike `strftime`, `h` and `hh` are **24-hour** fields. Whenever uses `i`
-and `ii` for 12-hour clock values. Keeping them distinct makes an accidental
-`hh`/`HH` spelling change fail instead of silently changing the clock system.
-Pair `i` or `ii` with `a` or `aa` when parsing.
-:::
-
 :::{admonition} Optional seconds
 :class: hint
 
-`SS` omits the seconds component entirely when **both** seconds *and*
-nanoseconds are zero, allowing compact times like `14:30` alongside full
-times like `14:30:05` in the same format string.
+Brackets have one limited use: an optional unquoted literal
+separator, followed by `ss`, followed optionally by `.` and 1–9 `f` or `F`
+characters. They are not general-purpose optional groups.
 
-- When seconds *or* nanoseconds are non-zero, `SS` writes two zero-padded
-  digits
-- When **both are zero**, nothing is written. A directly preceding colon is
-  part of the optional seconds field and disappears as well. Other punctuation
-  remains literal.
+The whole tail is omitted when both seconds and nanoseconds are zero. Otherwise,
+the separator and two zero-padded second digits are emitted. Lowercase `f`
+requires exactly that many fractional digits; uppercase `F` trims trailing
+zeroes and omits the decimal point when the fraction is empty.
 
 
 ```python
->>> Time(14, 30, 0).format("hh:mm:SS")
+>>> Time(14, 30, 0).format("HH:mm[:ss]")
 '14:30'
->>> Time(14, 30, 5).format("hh:mm:SS")
+>>> Time(14, 30, 5).format("HH:mm[:ss]")
 '14:30:05'
->>> Time(14, 30, 0, nanosecond=500_000_000).format("hh:mm:SS")
+>>> Time(14, 30, 0, nanosecond=500_000_000).format("HH:mm[:ss]")
 '14:30:00'
->>> Time(14, 30, 0).format("hh:mm:SS.FFF")
+>>> Time(14, 30, 0).format("HH:mm[:ss.FFF]")
 '14:30'
->>> Time(14, 30, 0, nanosecond=500_000_000).format("hh:mm:SS.FFF")
+>>> Time(14, 30, 0, nanosecond=500_000_000).format("HH:mm[:ss.FFF]")
 '14:30:00.5'
->>> Time(14, 30).format("hh:mm-SS")
-'14:30-'
+>>> Time(14, 30, 5).format("HH:mm[-ss]")
+'14:30-05'
+>>> Time(14, 30, 5).format("HH:mm[ss]")
+'14:3005'
 ```
 
 :::
@@ -112,12 +118,12 @@ Use lowercase `x` when you always want a numeric offset
 
 ```python
 >>> ZonedDateTime(2024, 7, 15, 14, 30, tz="Europe/Paris").format(
-...     "YYYY-MM-DD hh:mm zz"
+...     "YYYY-MM-DD HH:mm zz"
 ... )
 '2024-07-15 14:30 CEST'
 >>> ZonedDateTime.parse(
 ...     "2024-07-15 14:30+02:00[Europe/Paris]",
-...     pattern="YYYY-MM-DD hh:mmxxx'['VV']'",
+...     pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
 ... )
 ZonedDateTime("2024-07-15 14:30:00+02:00[Europe/Paris]")
 ```
@@ -164,8 +170,8 @@ To include a literal single quote, use `''`:
 
 - **ASCII-only**: Pattern strings must contain only ASCII characters.
   Non-ASCII characters raise ``ValueError``.
-- **Reserved characters**: `<`, `>`, `[`, `]`, `{`, `}`, and `#`
-  are reserved for future use and cannot appear unquoted.
+- **Reserved characters**: `<`, `>`, `[`, `]`, `{`, `}`, and `#` cannot
+  appear unquoted, except for brackets used by the optional-seconds syntax.
 - **No duplicate fields**: A pattern cannot contain two specifiers that
   set the same value. For example, `MM` and `MMM` both set the month,
   so `"DD MM MMM YYYY"` is invalid.
@@ -184,6 +190,24 @@ All types that include date fields require `YYYY`, `MM`, and `DD`.
 A second value of ``60`` (leap second) is accepted and normalized to ``59``.
 See [](faq-leap-seconds) for details.
 
+## Migrating patterns in 0.11
+
+Version 0.11 accepts both the final spellings and the previous forms. Previous
+forms emit {class}`WheneverDeprecationWarning` on every `format()` or `parse()`
+call and will be rejected in 1.0.
+
+| Previous pattern | Replacement |
+|:-----------------|:------------|
+| `h` | `H` |
+| `hh` | `HH` |
+| `:SS` | `[:ss]` |
+| `:SS.FFF` | `[:ss.FFF]` |
+| separator-free `SS` | `[ss]` |
+
+The same bracketed spelling applies to exact fractions, such as replacing
+`:SS.fff` with `[:ss.fff]`. Keeping the separator inside the brackets makes
+it disappear with the seconds tail.
+
 ## Comparison with strftime
 
 The following table maps common `strftime` directives to Whenever patterns:
@@ -198,7 +222,7 @@ The following table maps common `strftime` directives to Whenever patterns:
 | `%d`   | `DD`  |       |
 | `%a`   | `EEE` |       |
 | `%A`   | `EEEE`|       |
-| `%H`   | `hh`  | Note: `hh` = 24-hour |
+| `%H`   | `HH`  | 24-hour clock |
 | `%I`   | `ii`  | Note: `ii` = 12-hour |
 | `%M`   | `mm`  |       |
 | `%S`   | `ss`  |       |
@@ -210,7 +234,7 @@ The following table maps common `strftime` directives to Whenever patterns:
 
 [^1]: `YY` is only supported for formatting. When parsing, use `YYYY` to avoid ambiguity.
 [^2]: During parsing, weekday names are validated against the parsed date. A mismatch raises ``ValueError``.
-[^3]: Omitted when both seconds and nanoseconds are zero.
+[^3]: The complete bracketed tail is omitted when both seconds and nanoseconds are zero.
 [^4]: Omitted when the value is zero, with preceding `.` also omitted.
 [^5]: AM/PM is determined by the hour value. Using `i`/`ii` without `a`/`aa` emits a warning about ambiguity.
 [^6]: Timezone abbreviations are ambiguous and not supported for parsing. Use `VV` (IANA timezone ID) instead. See {ref}`timezones-explained` for details.

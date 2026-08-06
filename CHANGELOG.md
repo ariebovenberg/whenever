@@ -50,6 +50,15 @@ deprecated interfaces are removed.
   **Rationale**: the new names describe their concepts and behavior more
   precisely and use consistent terminology across the API.
 
+- Custom format and parse patterns now use `H`/`HH` for the 24-hour clock.
+  The previous `h`/`hh` spellings are deprecated. Optional seconds use a
+  limited bracketed tail such as `[:ss]`, `[:ss.fff]`, or `[:ss.FFF]`;
+  separator-free optional seconds use `[ss]`. The previous `SS` forms remain
+  available with deprecation warnings through 0.11.
+
+  **Rationale**: `H`/`HH` is the near-universal spelling for 24-hour fields,
+  while brackets make the optional separator and seconds tail explicit.
+
 - Fixed-offset arguments now accept `TimeDelta`. Compatibility with integer
   offsets is deprecated. Use `hours(2)`—short for
   `TimeDelta(hours=2)`—instead of `2`.
@@ -102,6 +111,11 @@ Migration summary:
 | `ZonedDateTime.tz` | `ZonedDateTime.tz_id` |
 | `exact_eq()` | `strict_eq()` |
 | `parse(..., format=p)` | `parse(..., pattern=p)` |
+| pattern `h` / `hh` | `H` / `HH` |
+| pattern `:SS` | `[:ss]` |
+| pattern `:SS.fff` | `[:ss.fff]` |
+| pattern `:SS.FFF` | `[:ss.FFF]` |
+| separator-free pattern `SS` | `[ss]` |
 | `offset=2` | `offset=hours(2)` |
 | `MonthDay.is_leap()` | `MonthDay.is_leap_day()` |
 | `TZPATH` | `get_tzpath()` |
