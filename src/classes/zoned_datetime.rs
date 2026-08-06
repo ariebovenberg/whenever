@@ -1462,10 +1462,10 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
                 .into_zoned_obj_unchecked(tz, cls)
         } else {
             match mismatch {
-                OffsetMismatch::Raise => raise_value_err(format!(
-                    "Offset {}s does not match timezone {tz_id:?}",
-                    offset.get()
-                )),
+                OffsetMismatch::Raise => raise(
+                    *state.exc_invalid_offset,
+                    format!("Offset {}s does not match timezone {tz_id:?}", offset.get()),
+                ),
                 OffsetMismatch::KeepInstant => dt
                     .assume_offset(offset)
                     .ok_or_range_err()?

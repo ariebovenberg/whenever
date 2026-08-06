@@ -89,14 +89,10 @@ If you need to access calendar fields, convert to a datetime type first:
 (faq-why-offset-dt)=
 ## Why does {class}`~whenever.OffsetDateTime` exist?
 
-Most datetime formats—ISO 8601, RFC 2822, RFC 3339—only carry a fixed
-UTC offset (e.g. `+02:00`), not a full timezone name.
-{class}`~whenever.OffsetDateTime` represents *exactly* what these formats
-contain without inventing regional timezone rules. This is useful for preserving
-the local representation and observed offset from an API, log, or database.
-
-See {ref}`offset-datetime-guidance` for when to use it, why an offset does not
-identify a timezone, and how to handle {class}`~whenever.StaleOffsetWarning`.
+It represents the common interchange case where local fields and a numeric
+offset are available but regional timezone rules are not. See the complete
+{ref}`OffsetDateTime guidance <offset-datetime-guidance>` for why this type is
+necessary and how to avoid stale-offset arithmetic.
 
 (faq-why-3-deltas)=
 ## Why are there three delta types?
@@ -146,7 +142,7 @@ The warning approach gives you four levels of control:
 1. **Learn by default** — if you're scripting quickly, the warning appears
    in the console and teaches you about the pitfall. If you're in a hurry,
    the library doesn't get in your way and you can fix the issue later.
-2. **Ban project-wide** — in production code, convert warnings to errors
+2. **Ban project-wide** — in application code, convert warnings to errors
    with Python's standard {mod}`warnings` filter:
    ```python
    import warnings

@@ -33,15 +33,23 @@ WARNING_HANDLING_DOCS_MSG = (
     "https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
+OFFSET_DATETIME_DOCS_MSG = (
+    "For comprehensive OffsetDateTime guidance, see "
+    "https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html"
+    "#offset-datetime-guidance for details and examples."
+)
+
 OFFSET_SHIFT_STALE_MSG = (
-    "Shifting an OffsetDateTime keeps its fixed UTC offset. If the operation "
-    "crosses a DST or other timezone transition, that offset may become stale—"
-    "no longer matching the region's actual offset "
-    "(e.g. adding 1 day to 2024-03-09 12:00-07:00 gives 2024-03-10 12:00-07:00, "
-    "but if this offset represents Denver, Colorado (America/Denver), "
-    "the actual offset changed to -06:00 on that date). "
-    "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. "
-    "If the fixed offset is intentional, pass `stale_offset_ok=True`. "
+    "An OffsetDateTime's offset is usually an observation, not a timezone rule. "
+    "The arithmetic is mathematically valid and preserves that fixed offset, "
+    "but OffsetDateTime does not retain regional timezone rules. The result's "
+    "offset may therefore be stale relative to the source timezone, even after "
+    "an exact shift. If the originating timezone is known, convert to "
+    "ZonedDateTime first using .assume_tz(). If fixed-offset arithmetic is "
+    "intentional or the risk is accepted, pass `stale_offset_ok=True`. For "
+    "an entirely fixed-offset domain, configure StaleOffsetWarning globally. "
+    + OFFSET_DATETIME_DOCS_MSG
+    + " "
     + WARNING_HANDLING_DOCS_MSG
 )
 
@@ -127,7 +135,7 @@ class WheneverDeprecationWarning(WheneverWarning):
     This is a custom warning class (not a subclass of
     :class:`DeprecationWarning`) so that deprecation warnings from this
     library are visible by default—unlike standard ``DeprecationWarning``,
-    which Python silences in production code.
+    which Python silences in application code.
     """
 
 

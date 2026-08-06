@@ -1855,6 +1855,8 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         self,
         d: ItemizedDelta | ItemizedDateDelta | TimeDelta,
         /,
+        *,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     @overload
     def subtract(
@@ -1877,6 +1879,8 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         self,
         d: ItemizedDelta | ItemizedDateDelta | TimeDelta,
         /,
+        *,
+        stale_offset_ok: bool = ...,
     ) -> Self: ...
     @overload
     def round(

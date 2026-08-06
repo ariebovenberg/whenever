@@ -35,6 +35,7 @@ from warnings import warn
 
 from . import _ideltas
 from ._common import (
+    OFFSET_DATETIME_DOCS_MSG,
     OFFSET_SHIFT_STALE_MSG,
     PLAIN_SHIFT_UNAWARE_MSG,
     SPHINX_RUNNING,
@@ -197,7 +198,8 @@ IMPLICIT_DISAMBIGUATION_MSG = (
     "transition without an explicit disambiguation policy can silently select "
     "the wrong instant; pass disambiguation='compatible', 'earlier', 'later', "
     "or 'raise'. See "
-    "https://whenever.readthedocs.io/en/latest/guide/ambiguity.html"
+    "https://whenever.readthedocs.io/en/latest/guide/"
+    "resolving-local-times.html"
 )
 INTEGER_OFFSET_DEPRECATION_MSG = (
     "integer offsets are deprecated because their unit is implicit; "
@@ -3540,7 +3542,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     does not account for DST transitions.
 
     >>> # Midnight in Salt Lake City
-    >>> OffsetDateTime(2023, 4, 21, offset=-6)
+    >>> OffsetDateTime(2023, 4, 21, offset=hours(-6))
     OffsetDateTime("2023-04-21 00:00:00-06:00")
 
     Can also be constructed from an ISO 8601 string
@@ -3551,16 +3553,16 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     Convert to :class:`~whenever.ZonedDateTime` for DST-aware operations:
 
-    >>> dt = OffsetDateTime(2023, 4, 21, offset=-6)
+    >>> dt = OffsetDateTime(2023, 4, 21, offset=hours(-6))
     >>> dt.assume_tz("US/Mountain")
     ZonedDateTime("2023-04-21 00:00:00-06:00[US/Mountain]")
 
     Important
     ---------
-    Operations that shift, round, or replace fields of this type keep the
-    original offset, which may become stale if DST rules have changed.
-    Use :meth:`assume_tz` to convert to a ``ZonedDateTime`` first if you
-    need DST-aware arithmetic.
+    See the `OffsetDateTime guidance
+    <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_
+    for the information this type preserves and its fixed-offset arithmetic
+    footgun.
     """
 
     __slots__ = ()
@@ -3631,12 +3633,10 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         Warning
         -------
-        Getting the current time as an ``OffsetDateTime`` with a fixed UTC offset
-        is correct for that offset, but the offset may be stale for the region you
-        intend: fixed offsets don't update when DST or other timezone rules change.
-        Use ``ZonedDateTime.now('<tz>')`` if you know the timezone, or
-        ``Instant.now()`` for timezone-agnostic exact time.
-        Pass ``stale_offset_ok=True`` to suppress.
+        A fixed offset may be stale relative to the region you intend. See the
+        `OffsetDateTime guidance
+        <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
+        Pass ``stale_offset_ok=True`` when the fixed offset is intentional.
         """
         if not stale_offset_ok:
             warn(
@@ -3860,12 +3860,10 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         Warning
         -------
-        Replacing fields of an ``OffsetDateTime`` keeps the fixed UTC offset,
-        which may no longer be correct after the change (e.g. replacing the month
-        on a European-timezone datetime may move it into a different DST period).
-        Convert to ``ZonedDateTime`` first for timezone-aware field replacement
-        using :meth:`assume_tz`.
-        Pass ``stale_offset_ok=True`` to suppress.
+        The observed offset may be stale relative to its source timezone after
+        replacement. See the `OffsetDateTime guidance
+        <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
+        Pass ``stale_offset_ok=True`` when preserving it is intentional.
         """
         if not stale_offset_ok:
             warn(
@@ -3958,9 +3956,10 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         Warning
         -------
-        The offset is preserved, which may not be correct for the
-        resulting time. See :class:`~whenever.StaleOffsetWarning`.
-        Pass ``stale_offset_ok=True`` to suppress.
+        The preserved offset may be stale relative to its source timezone. See
+        the `OffsetDateTime guidance
+        <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
+        Pass ``stale_offset_ok=True`` when preserving it is intentional.
         """
         if not stale_offset_ok:
             warn(
@@ -4013,15 +4012,10 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         Warning
         -------
-        Shifting an ``OffsetDateTime`` keeps the fixed UTC offset, which may not
-        match the actual offset after a DST or other timezone transition.
-        For example, adding 1 day to ``2024-03-09 12:00-07:00`` gives
-        ``2024-03-10 12:00-07:00``, but if this offset represents Denver,
-        Colorado (America/Denver), the actual offset changed to ``-06:00`` that day.
-        Convert to a ``ZonedDateTime`` first for timezone-aware arithmetic
-        using :meth:`assume_tz`.
-        Use ``.add(..., stale_offset_ok=True)`` or Python's
-        standard warning filters to suppress.
+        See the `OffsetDateTime guidance
+        <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_
+        for why the preserved offset may be stale relative to its source
+        timezone.
         """
         if isinstance(delta, TimeDelta):
             warn(
@@ -4202,7 +4196,13 @@ class OffsetDateTime(_ExactAndLocalTime):
     if not TYPE_CHECKING:  # for a nicer autodoc
 
         @overload
-        def add(self, delta: AnyDelta, /) -> OffsetDateTime: ...
+        def add(
+            self,
+            delta: AnyDelta,
+            /,
+            *,
+            stale_offset_ok: bool = ...,
+        ) -> OffsetDateTime: ...
 
         @overload
         def add(
@@ -4227,19 +4227,23 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         Warning
         -------
-        Shifting an ``OffsetDateTime`` keeps the fixed UTC offset, which may not
-        match the actual offset after a DST or other timezone transition.
-        Convert to a ``ZonedDateTime`` first for timezone-aware arithmetic
-        using :meth:`assume_tz`.
-        Pass ``stale_offset_ok=True`` to suppress;
-        Python's standard warning filters also apply.
+        See the `OffsetDateTime guidance
+        <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_
+        for the fixed-offset arithmetic footgun. Pass
+        ``stale_offset_ok=True`` when preserving the offset is intentional.
         """
         return self._shift(1, *args, **kwargs)
 
     if not TYPE_CHECKING:  # for a nicer autodoc
 
         @overload
-        def subtract(self, delta: AnyDelta, /) -> OffsetDateTime: ...
+        def subtract(
+            self,
+            delta: AnyDelta,
+            /,
+            *,
+            stale_offset_ok: bool = ...,
+        ) -> OffsetDateTime: ...
 
         @overload
         def subtract(
@@ -4372,11 +4376,10 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         Warning
         -------
-        Rounding an ``OffsetDateTime`` keeps the fixed UTC offset, which may not
-        be accurate if the rounded datetime crosses into a different DST period.
-        Convert to a ``ZonedDateTime`` first for timezone-aware rounding
-        using :meth:`assume_tz`.
-        Pass ``stale_offset_ok=True`` to suppress.
+        The preserved offset may be stale relative to its source timezone. See
+        the `OffsetDateTime guidance
+        <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
+        Pass ``stale_offset_ok=True`` when preserving it is intentional.
         """
         if not stale_offset_ok:
             warn(
@@ -4413,10 +4416,9 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         This is the inverse of :meth:`ZonedDateTime.to_fixed_offset`.
 
-        By default, if the offset of this datetime doesn't match the actual
-        offset of the timezone at this datetime, an error is raised.
-        Using the ``offset_mismatch`` parameter, you can choose to ignore
-        the mismatch, keeping either the instant or the local time the same.
+        See the `timezone-resolution guide
+        <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html#offset-mismatch>`_
+        for how ``offset_mismatch`` interacts with ``disambiguation``.
         """
         if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
             raise ValueError(
@@ -4598,7 +4600,11 @@ class ZonedDateTime(_ExactAndLocalTime):
     Important
     ---------
     To use this type properly, read more about
-    `ambiguity in timezones <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`_.
+    `resolving local times in timezones
+    <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html>`_.
+    For ISO inputs containing both an offset and timezone ID, see the
+    `offset-mismatch flow
+    <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html#offset-mismatch>`_.
     """
 
     __slots__ = ("_tz",)
@@ -4837,6 +4843,10 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         The inverse of the ``format_iso()`` method.
 
+        See the `timezone-resolution guide
+        <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html#offset-mismatch>`_
+        for how ``offset_mismatch`` interacts with ``disambiguation``.
+
         >>> ZonedDateTime.parse_iso("2020-08-15T23:12:00+01:00[Europe/London]")
         ZonedDateTime("2020-08-15 23:12:00+01:00[Europe/London]")
 
@@ -4937,6 +4947,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         The pattern **must** include a timezone ID field (``VV``).
         An offset field (``x``/``X``) is optional but recommended for
         disambiguation during DST transitions.
+        See the `timezone-resolution guide
+        <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html#offset-mismatch>`_
+        for how ``offset_mismatch`` interacts with ``disambiguation``.
         See :ref:`pattern-format` for details.
 
         .. tip::
@@ -4998,7 +5011,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             ) is not None:
                 resolved = matching
             elif offset_mismatch == "raise":
-                raise ValueError(
+                raise InvalidOffsetError(
                     f"Offset {state.offset_secs}s does not match "
                     f"timezone {state.tz_id!r}"
                 )
@@ -5235,7 +5248,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         By default, if the tz remains the same, the offset is used to disambiguate
         if possible, falling back to the "compatible" strategy if needed.
 
-        See `the documentation <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`__
+        See `the documentation
+        <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html>`__
         for more information.
 
         """
@@ -6750,7 +6764,8 @@ class PlainDateTime(_LocalTime):
         The local time may be ambiguous in the given timezone
         (e.g. during a DST transition). You can explicitly
         specify how to handle such a situation using the ``disambiguation`` argument.
-        See `the documentation <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`__
+        See `the documentation
+        <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html>`__
         for more information.
 
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
@@ -6789,7 +6804,8 @@ class PlainDateTime(_LocalTime):
         The local time may be ambiguous in the system timezone
         (e.g. during a DST transition). You can explicitly
         specify how to handle such a situation using the ``disambiguate`` argument.
-        See `the documentation <https://whenever.rtfd.io/en/latest/guide/ambiguity.html>`__
+        See `the documentation
+        <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html>`__
         for more information.
 
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
@@ -6875,7 +6891,7 @@ class PotentialDstBugWarning(WheneverWarning):
     Not raised directly. Subclasses cover four distinct scenarios:
 
     - :class:`~whenever.DaysAssumed24HoursWarning` — days treated as exact 24-hour units
-    - :class:`~whenever.StaleOffsetWarning` — fixed offset may be wrong after a DST shift
+    - :class:`~whenever.StaleOffsetWarning` — fixed offset may become stale relative to its source timezone
     - :class:`~whenever.NaiveArithmeticWarning` — exact-time arithmetic without timezone context
     - :class:`~whenever.ImplicitDisambiguationWarning` — resolving a repeated or skipped local time without an explicit policy
 
@@ -6952,44 +6968,11 @@ class DaysAssumed24HoursWarning(PotentialDstBugWarning):
 
 class StaleOffsetWarning(PotentialDstBugWarning):
     """Raised when an :class:`~whenever.OffsetDateTime` operation may
-    silently preserve an incorrect UTC offset.
+    preserve an offset that is stale relative to its source timezone.
 
-    A fixed UTC offset (e.g. ``+02:00``) carries no timezone rules — it doesn't
-    know about DST, historical offset changes, or future policy decisions.
-    After shifting, rounding, or replacing fields of an
-    :class:`~whenever.OffsetDateTime`, the original offset is kept verbatim.
-    If the region's rules changed since that offset was recorded, the result
-    is a timestamp that is off by the difference — silently.
-
-    .. rubric:: When it can occur
-
-    .. code-block:: python
-
-        from whenever import OffsetDateTime
-
-        # Denver is UTC-7 in winter, UTC-6 in summer.
-        # On 2024-03-10, clocks spring forward at 2:00 AM.
-        d = OffsetDateTime(2024, 3, 9, 13, offset=-7)
-        d.add(hours=24)  # StaleOffsetWarning
-        # OffsetDateTime("2024-03-10 13:00:00-07:00")
-        # ^^ -07:00 is wrong; Denver is -06:00 on this date
-
-    .. rubric:: How to fix it
-
-    Convert to :class:`~whenever.ZonedDateTime` first so the offset updates
-    automatically with the timezone rules:
-
-    .. code-block:: python
-
-        d.assume_tz("America/Denver").add(hours=24)
-        # ZonedDateTime("2024-03-10 14:00:00-06:00[America/Denver]")  ✓
-
-    To suppress when the fixed offset is deliberate and known to be correct,
-    pass ``stale_offset_ok=True`` (or use Python's standard warning filters):
-
-    .. code-block:: python
-
-        d.add(hours=24, stale_offset_ok=True)
+    See the `OffsetDateTime guidance
+    <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_
+    for the stale-offset footgun, examples, and remediation.
     """
 
 
@@ -7044,49 +7027,60 @@ class NaiveArithmeticWarning(PotentialDstBugWarning):
 
 OFFSET_NOW_STALE_MSG = (
     "You are getting the current time using a fixed UTC offset. A fixed offset "
-    "has no timezone rules, so it may be stale for the region you intend—no "
-    "longer matching that region's actual offset after a DST or other rule "
-    "change. If you mean a named timezone, use ZonedDateTime.now('<tz>'); if "
+    "has no timezone rules, so it may be stale relative to the region you "
+    "intend after a DST or other rule change. If you mean a named timezone, "
+    "use ZonedDateTime.now('<tz>'); if "
     "you only need the current instant, use Instant.now(). If the fixed offset "
-    "is intentional, pass `stale_offset_ok=True`. " + WARNING_HANDLING_DOCS_MSG
+    "is intentional, pass `stale_offset_ok=True`. "
+    + OFFSET_DATETIME_DOCS_MSG
+    + " "
+    + WARNING_HANDLING_DOCS_MSG
 )
 
 OFFSET_FROM_TIMESTAMP_STALE_MSG = (
     "You are converting a timestamp using a fixed UTC offset. The result is "
-    "correct for that offset, but the offset may be stale at this timestamp—no "
-    "longer matching the actual offset used by the region you intend. If you "
+    "correct for that offset, but the offset may be stale relative to the "
+    "region you intend at this timestamp. If you "
     "mean a named timezone, use ZonedDateTime.from_timestamp(ts, tz='<tz>'); "
     "if you only need the instant, use Instant.from_timestamp(ts). If the fixed "
     "offset is intentional, pass `stale_offset_ok=True`. "
+    + OFFSET_DATETIME_DOCS_MSG
+    + " "
     + WARNING_HANDLING_DOCS_MSG
 )
 
 OFFSET_REPLACE_STALE_MSG = (
-    "Replacing fields of an OffsetDateTime keeps its fixed UTC offset. The "
-    "offset may become stale—no longer matching the region's actual offset—if "
+    "Replacing fields of an OffsetDateTime is valid and preserves its observed "
+    "UTC offset. That offset may be stale relative to the source timezone if "
     "the result is in a different DST or timezone-rule period (e.g. after "
     "replacing the month on a European-timezone datetime). "
     "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware field replacement. "
     "If the fixed offset is intentional, pass `stale_offset_ok=True`. "
+    + OFFSET_DATETIME_DOCS_MSG
+    + " "
     + WARNING_HANDLING_DOCS_MSG
 )
 
 OFFSET_ROUND_STALE_MSG = (
-    "Rounding an OffsetDateTime keeps its fixed UTC offset. The offset may "
-    "become stale—no longer matching the region's actual offset—if the rounded "
+    "Rounding an OffsetDateTime is valid and preserves its observed UTC offset. "
+    "That offset may be stale relative to the source timezone if the rounded "
     "time crosses a DST or other timezone boundary. "
     "Convert to a ZonedDateTime first (using .assume_tz()) for timezone-aware rounding. "
     "If the fixed offset is intentional, pass `stale_offset_ok=True`. "
+    + OFFSET_DATETIME_DOCS_MSG
+    + " "
     + WARNING_HANDLING_DOCS_MSG
 )
 
 OFFSET_START_END_OF_STALE_MSG = (
-    "Getting the start or end of a unit on an OffsetDateTime keeps its fixed "
-    "UTC offset. The offset may become stale—no longer matching the region's "
-    "actual offset—at the resulting time "
+    "Getting the start or end of a unit on an OffsetDateTime is valid and "
+    "preserves its observed UTC offset. That offset may be stale relative to "
+    "the source timezone at the resulting time "
     "(e.g. the start of the year may have a different UTC offset due to DST). "
     "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware results. "
     "If the fixed offset is intentional, pass `stale_offset_ok=True`. "
+    + OFFSET_DATETIME_DOCS_MSG
+    + " "
     + WARNING_HANDLING_DOCS_MSG
 )
 
@@ -7114,10 +7108,12 @@ STALE_OFFSET_CALENDAR_MSG = (
     "You are calculating calendar units relative to an OffsetDateTime. Because "
     "it contains only a fixed offset, Whenever must assume that the offset "
     "remains constant throughout the calculation. That offset may be stale "
-    "during part of the period if the value represents a region that crosses a "
-    "DST or other rule change, producing an incorrect result. Use a "
+    "relative to the source timezone during part of the period if the value "
+    "represents a region that crosses a DST or other rule change. Use a "
     "ZonedDateTime for timezone-aware calendar arithmetic. If the fixed-offset "
     "assumption is intentional, pass `stale_offset_ok=True`. "
+    + OFFSET_DATETIME_DOCS_MSG
+    + " "
     + WARNING_HANDLING_DOCS_MSG
 )
 
