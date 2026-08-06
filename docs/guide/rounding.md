@@ -42,7 +42,7 @@ This results in the following modes:
 | `half_expand` | nearest increment  | away from zero |  3.5→4, -3.5→-4 |n/a  |
 | `half_even` | nearest increment  | to even | 3.5→4, 4.5→4, | {func}`round` |
 
-For positive values, the behavior of `ceil`/`floor` and `trunc`/`expand` is the same.
+For positive values, the behavior of `ceil` is identical to `expand` and the behaviour of `floor` is identical to `trunc`.
 The difference is only visible for negative values.
 
 ## Supported units
