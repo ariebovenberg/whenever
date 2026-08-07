@@ -22,22 +22,22 @@ pub struct TimeZone {
     // The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
     // but essential because in our case we almost always associate a tzif file with a tz ID.
     // Notable exception is the system timezone in some cases.
-    pub(crate) key: Option<String>,
+    pub(crate) key: Option<Box<str>>,
     // The following two fields are used to map UTC time to local time and vice versa.
     // For UTC -> local, the transition is unambiguous and simple.
     // Read Vec(X, Y) as "FROM time X onwards (expressed in epoch seconds) the offset is Y".
-    offsets_by_utc: Vec<(EpochSecs, Offset)>,
+    offsets_by_utc: Box<[(EpochSecs, Offset)]>,
     // For local -> UTC, the transition is may be ambiguous and therefore requires extra information.
     // Read Vec<(X, (Y, Z))> as "UNTIL time X (expressed in local epoch seconds) the offset is Y. At this point
     // it shifts by Z.
-    offsets_by_local: Vec<(LocalSeconds, (Offset, OffsetDelta))>,
+    offsets_by_local: Box<[(LocalSeconds, (Offset, OffsetDelta))]>,
     // Invariant: if posix TZ isn't given, there must be at least one entry in each of the above
-    // vectors.
+    // slices.
     end: Option<TzStr>,
     // Timezone metadata (parallel to offsets_by_utc: same length, same indexing)
-    meta_by_utc: Vec<TransitionMeta>,
+    meta_by_utc: Box<[TransitionMeta]>,
     // NUL-terminated abbreviation strings from TZif
-    abbrev_data: Vec<u8>,
+    abbrev_data: Box<[u8]>,
 }
 
 impl PartialEq for TimeZone {
@@ -124,11 +124,11 @@ impl TimeZone {
     pub(crate) fn parse_posix(s: &str) -> Option<Self> {
         Some(Self {
             key: None,
-            offsets_by_utc: vec![],
-            offsets_by_local: vec![],
+            offsets_by_utc: Box::default(),
+            offsets_by_local: Box::default(),
             end: Some(TzStr::parse(s.as_bytes())?),
-            meta_by_utc: vec![],
-            abbrev_data: vec![],
+            meta_by_utc: Box::default(),
+            abbrev_data: Box::default(),
         })
     }
 
@@ -331,12 +331,12 @@ fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult
         return Err(ErrorCause::Body);
     }
     Ok(TimeZone {
-        key: key.map(String::from),
-        offsets_by_local: local_transitions(&offsets_by_utc),
-        offsets_by_utc,
+        key: key.map(Box::from),
+        offsets_by_local: local_transitions(&offsets_by_utc).into_boxed_slice(),
+        offsets_by_utc: offsets_by_utc.into_boxed_slice(),
         end,
-        meta_by_utc,
-        abbrev_data,
+        meta_by_utc: meta_by_utc.into_boxed_slice(),
+        abbrev_data: abbrev_data.into_boxed_slice(),
     })
 }
 
@@ -642,7 +642,7 @@ mod tests {
         const TZ_UTC: &[u8] = include_bytes!("../../tests/tzif/UTC.tzif");
         let tzif = TimeZone::parse_tzif(TZ_UTC, None).unwrap();
         assert_eq!(
-            tzif.offsets_by_utc,
+            tzif.offsets_by_utc.as_ref(),
             &[(EpochSecs::MIN, 0.try_into().unwrap())]
         );
         assert_eq!(tzif.end, TzStr::parse(b"UTC0"));
@@ -662,7 +662,7 @@ mod tests {
         const TZ_FIXED: &[u8] = include_bytes!("../../tests/tzif/GMT-13.tzif");
         let tzif = TimeZone::parse_tzif(TZ_FIXED, None).unwrap();
         assert_eq!(
-            tzif.offsets_by_utc,
+            tzif.offsets_by_utc.as_ref(),
             &[(EpochSecs::MIN, (13 * 3_600).try_into().unwrap())]
         );
         assert_eq!(tzif.end, TzStr::parse(b"<+13>-13"));
