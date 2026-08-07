@@ -141,7 +141,7 @@ jobs:
       - name: Sanity check wheel count
         run: |
           COUNT=$(find wheels-* -maxdepth 1 -type f | wc -l)
-          EXPECTED=86
+          EXPECTED=114
 
           if [ "$COUNT" -ne "$EXPECTED" ]; then
             echo "Expected exactly $EXPECTED wheels, found $COUNT"
