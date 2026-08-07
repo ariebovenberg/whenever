@@ -2171,7 +2171,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         ] = "auto",
         basic: bool = False,
         sep: Literal["T", " "] = "T",
-        tz_display: Literal[
+        tz_id_display: Literal[
             "required", "never", "auto", "always"
         ] = "required",
         tz: Literal["required", "always", "never", "auto"] = ...,

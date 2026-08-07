@@ -42,7 +42,7 @@ deprecated interfaces are removed.
 
 - Several public names have been clarified: `disambiguate=` becomes
   `disambiguation=`, `exact_eq()` becomes `strict_eq()`, patterned-parse
-  `format=` becomes `pattern=`, ISO-format `tz=` becomes `tz_display=`,
+  `format=` becomes `pattern=`, ISO-format `tz=` becomes `tz_id_display=`,
   timezone display `"always"` becomes `"required"`, `ZonedDateTime.tz`
   becomes `tz_id`, `MonthDay.is_leap()` becomes `is_leap_day()`, and `TZPATH`
   becomes `get_tzpath()`. The old spellings are deprecated.
@@ -101,8 +101,8 @@ Migration summary:
 | `timestamp_nanos()` | `timestamp(unit="nanosecond")` |
 | `ZonedDateTime.from_timestamp(v, tz=tz)` | `Instant.from_timestamp(v).to_tz(tz)` |
 | `OffsetDateTime.from_timestamp(v, offset=o)` | `Instant.from_timestamp(v).to_fixed_offset(o)` |
-| `format_iso(tz="never")` | `format_iso(tz_display="never")` |
-| `tz_display="always"` | `tz_display="required"` |
+| `format_iso(tz="never")` | `format_iso(tz_id_display="never")` |
+| `tz_id_display="always"` | `tz_id_display="required"` |
 | `to_system_tz()` | `to_tz(SYSTEM_TZ)` |
 | `assume_system_tz()` | `assume_tz(SYSTEM_TZ)` |
 | `Date.today_in_system_tz()` | `Date.today(SYSTEM_TZ)` |
@@ -127,7 +127,7 @@ Migration summary:
 - Remove the timestamp convenience methods and datetime timestamp factories.
 - Remove the system-timezone convenience methods.
 - Remove `disambiguate=`, `exact_eq()`, and patterned-parse `format=`.
-- Remove ISO-format `tz=` and the `tz_display="always"` value.
+- Remove ISO-format `tz=` and the `tz_id_display="always"` value.
 - Remove `ZonedDateTime.tz`, `MonthDay.is_leap()`, and `TZPATH`.
 - Stop accepting integer offsets.
 

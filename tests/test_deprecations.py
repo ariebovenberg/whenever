@@ -138,16 +138,16 @@ def test_format_iso_tz_keyword():
     actual = deprecated(
         lambda: dt.format_iso(tz="never"), match="'tz' is deprecated"
     )
-    assert actual == dt.format_iso(tz_display="never")
+    assert actual == dt.format_iso(tz_id_display="never")
 
 
 def test_format_iso_always_value():
     dt = ZonedDateTime(2020, 8, 15, tz="UTC")
     actual = deprecated(
-        lambda: dt.format_iso(tz_display="always"),
-        match="tz_display='always' is deprecated",
+        lambda: dt.format_iso(tz_id_display="always"),
+        match="tz_id_display='always' is deprecated",
     )
-    assert actual == dt.format_iso(tz_display="required")
+    assert actual == dt.format_iso(tz_id_display="required")
 
 
 @pytest.mark.parametrize(
