@@ -293,7 +293,7 @@ def _pydantic_parse(cls: type, v: object) -> object:
     elif type(v) is str:
         return cls.parse_iso(v)
     else:
-        raise ValueError(f"Cannot parse {cls.__name__} from type {type(v)}")
+        raise ValueError(f"cannot parse {cls.__name__} from type {type(v)}")
 
 
 @no_type_check

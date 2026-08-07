@@ -116,17 +116,20 @@ x = Instant.from_utc(2023, 12, 28, 10)
 x == Instant.from_utc(2023, 12, 28, 10)
 
 # mypy: ❌ (too strict, this should be allowed)
-x == OffsetDateTime(2023, 12, 28, 11, offset=1)
+x == OffsetDateTime(2023, 12, 28, 11, offset=hours(1))
 ```
 
 To work around this, you can either convert explicitly:
 
 ```python
-x == OffsetDateTime(2023, 12, 28, 11, offset=1).to_instant()
+x == OffsetDateTime(2023, 12, 28, 11, offset=hours(1)).to_instant()
 ```
 
-Or annotate with a union:
+Or annotate the other value with a union:
 
 ```python
-x: OffsetDateTime | Instant == OffsetDateTime(2023, 12, 28, 11, offset=1)
+other: OffsetDateTime | Instant = OffsetDateTime(
+    2023, 12, 28, 11, offset=hours(1)
+)
+x == other
 ```

@@ -54,13 +54,18 @@ PlainDateTime("2023-10-01 12:30:00")
 ## Calculate somebody's age
 
 ```python
->>> from whenever import Date, SYSTEM_TZ
->>> birth_date = Date(2023, 11, 2)
->>> today = Date.today(SYSTEM_TZ)
->>> today.since(birth_date, total="years")
-2.3753424657534246
->>> years, months = today.since(birth_date, in_units=("years", "months")).values()
-(2, 4)
+>>> from whenever import Date
+>>> birth_date = Date(2000, 11, 2)
+>>> today = Date(2026, 3, 10)
+>>> today.since(birth_date, total="years")  # scalar totals may be fractional
+25.350684931506848
+>>> years, months, days = today.since(
+...     birth_date, in_units=("years", "months", "days")
+... ).values()
+>>> years  # completed calendar years
+25
+>>> months, days  # optional remainder
+(4, 8)
 ```
 
 ## Assign a timezone to a datetime
@@ -246,9 +251,9 @@ ZonedDateTime("2025-03-31 02:00:00+02:00[Europe/Amsterdam]")
 ## Flight itinerary across time zones
 
 ```python
->>> from whenever import OffsetDateTime
->>> departure = OffsetDateTime(2025, 7, 1, hour=9, offset=-4)   # New York
->>> arrival = OffsetDateTime(2025, 7, 1, hour=22, offset=2)     # Amsterdam
+>>> from whenever import OffsetDateTime, hours
+>>> departure = OffsetDateTime(2025, 7, 1, hour=9, offset=-hours(4))  # New York
+>>> arrival = OffsetDateTime(2025, 7, 1, hour=22, offset=hours(2))    # Amsterdam
 >>> flight_time = arrival - departure
 >>> flight_time.total("hours")
 7.0
@@ -273,11 +278,11 @@ Date("2025-03-31")
 All *exact types* can be compared and sorted amongst each other:
 
 ```python
->>> from whenever import Instant, ZonedDateTime, OffsetDateTime
+>>> from whenever import Instant, ZonedDateTime, OffsetDateTime, hours
 >>> times = [
 ...     ZonedDateTime(2025, 6, 1, hour=12, tz="Asia/Tokyo"),
 ...     Instant.from_utc(2025, 6, 1, hour=2),
-...     OffsetDateTime(2025, 6, 1, hour=6, offset=4),
+...     OffsetDateTime(2025, 6, 1, hour=6, offset=hours(4)),
 ... ]
 >>> sorted(times)  # all represent the same moment—sorted by the underlying instant
 [...]

@@ -169,7 +169,7 @@ Instant("2024-07-04 10:30:00Z")
 >>> now.format_rfc2822()
 "Thu, 04 Jul 2024 10:36:56 GMT"
 # Custom pattern formatting and parsing
->>> party_starts.format("MMM DD, hh:mm zz")
+>>> party_starts.format("MMM DD, HH:mm zz")
 "Oct 28, 22:00 CEST"
 
 # If you must: you can convert to/from the standard lib
