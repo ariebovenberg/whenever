@@ -30,7 +30,7 @@ While `whenever` also defaults to the same convention as Python (as do most libr
 it provides explicit tools to handle ambiguity:
 
 ```python
->>> dt = ZonedDateTime(2024, 10, 27, 2, 30, tz="Europe/Amsterdam", disambiguate="raise")
+>>> dt = ZonedDateTime(2024, 10, 27, 2, 30, tz="Europe/Amsterdam", disambiguation="raise")
 Traceback (most recent call last):
   ...
 RepeatedTime: 2024-10-27 02:30:00 is repeated in timezone 'Europe/Amsterdam'

@@ -5,6 +5,7 @@ from collections.abc import ItemsView, KeysView, Mapping, Sequence, ValuesView
 from typing import Any, Literal, cast
 
 import pytest
+from typing_extensions import assert_type
 from whenever import (
     CalendarUnitCompositionWarning,
     Instant,
@@ -16,6 +17,7 @@ from whenever import (
     StaleOffsetWarning,
     TimeDelta,
     ZonedDateTime,
+    hours,
 )
 
 from .common import INVALID_DDELTAS, AlwaysEqual, NeverEqual, suppress
@@ -394,17 +396,19 @@ class TestEq:
         assert d != ItemizedDateDelta(days=5)
 
 
-def test_exact_eq():
+def test_strict_eq():
     d1 = ItemizedDelta(years=2, months=0, minutes=5, seconds=0)
     d2 = ItemizedDelta(years=2, minutes=5)
     d3 = ItemizedDelta(years=2, months=1, minutes=5)
     d4 = ItemizedDelta(years=2, months=1, minutes=5, seconds=0)
     d5 = ItemizedDelta(years=2, months=0, minutes=5, seconds=0)
-    assert d1.exact_eq(d1)
-    assert d1.exact_eq(d5)
-    assert not d1.exact_eq(d2)
-    assert not d1.exact_eq(d3)
-    assert not d1.exact_eq(d4)
+    assert d1.strict_eq(d1)
+    assert d1.strict_eq(d5)
+    assert not d1.strict_eq(d2)
+    assert not d1.strict_eq(d3)
+    assert not d1.strict_eq(d4)
+    with pytest.raises(TypeError):
+        d1.strict_eq(ItemizedDateDelta(years=2))  # type: ignore[arg-type]
 
 
 class TestFormatIso:
@@ -477,8 +481,8 @@ def test_str():
 
 
 def test_init_from_str():
-    assert ItemizedDelta("P2W3D").exact_eq(ItemizedDelta(weeks=2, days=3))
-    assert ItemizedDelta("PT1H30M").exact_eq(
+    assert ItemizedDelta("P2W3D").strict_eq(ItemizedDelta(weeks=2, days=3))
+    assert ItemizedDelta("PT1H30M").strict_eq(
         ItemizedDelta(hours=1, minutes=30)
     )
     with pytest.raises(ValueError):
@@ -607,7 +611,7 @@ class TestParseIso:
         ],
     )
     def test_valid(self, s: str, expected: ItemizedDelta):
-        assert ItemizedDelta.parse_iso(s).exact_eq(expected)
+        assert ItemizedDelta.parse_iso(s).strict_eq(expected)
 
     @pytest.mark.parametrize("s", INVALID_DELTAS)
     def test_invalid(self, s: str):
@@ -622,7 +626,9 @@ class TestParseIso:
     [
         (
             ItemizedDelta(years=2, months=3, weeks=4, days=5, hours=6),
-            ZonedDateTime("2021-12-31T00:34+01:00[Europe/Berlin]"),
+            ZonedDateTime(
+                "2021-12-31T00:34+01:00[Europe/Berlin]",
+            ),
             ["weeks", "minutes"],
             {},
             True,
@@ -630,7 +636,9 @@ class TestParseIso:
         ),
         (
             -ItemizedDelta(years=2, months=3, weeks=4, days=5),
-            ZonedDateTime("2021-02-28T23:00+09:00[Asia/Tokyo]"),
+            ZonedDateTime(
+                "2021-02-28T23:00+09:00[Asia/Tokyo]",
+            ),
             ["years", "days"],
             {"round_increment": 5, "round_mode": "ceil"},
             False,
@@ -638,7 +646,9 @@ class TestParseIso:
         ),
         (
             ItemizedDelta(days=0),
-            ZonedDateTime("0023-02-28T14:15Z[Europe/London]"),
+            ZonedDateTime(
+                "0023-02-28T14:15Z[Europe/London]",
+            ),
             ["years", "months", "weeks", "seconds"],
             {},
             True,
@@ -665,7 +675,7 @@ def test_in_units(
     is_exact: bool,
     expect: ItemizedDelta,
 ):
-    assert d.in_units(units, relative_to=relative_to, **kwargs).exact_eq(
+    assert d.in_units(units, relative_to=relative_to, **kwargs).strict_eq(
         expect
     )
     if is_exact:
@@ -721,7 +731,7 @@ class TestInUnitsRelativeToNonZoned:
     def test_offset_datetime_cal_delta_cal_output(self):
         # calendar delta + calendar output → warns (offset, calendar both sides)
         d = ItemizedDelta(months=1, days=5)
-        ref = OffsetDateTime(2020, 1, 1, offset=3)
+        ref = OffsetDateTime(2020, 1, 1, offset=hours(3))
         with pytest.warns(StaleOffsetWarning):
             result = d.in_units(["weeks", "days"], relative_to=ref)
         assert result == ItemizedDelta(weeks=5, days=1)
@@ -729,7 +739,7 @@ class TestInUnitsRelativeToNonZoned:
     def test_offset_datetime_exact_delta_cal_output(self):
         # exact delta + calendar output → warns (output has calendar)
         d = ItemizedDelta(hours=50)
-        ref = OffsetDateTime(2020, 1, 1, offset=3)
+        ref = OffsetDateTime(2020, 1, 1, offset=hours(3))
         with pytest.warns(StaleOffsetWarning):
             result = d.in_units(["days", "hours"], relative_to=ref)
         assert result == ItemizedDelta(days=2, hours=2)
@@ -737,7 +747,7 @@ class TestInUnitsRelativeToNonZoned:
     def test_offset_datetime_mixed_delta_mixed_output(self):
         # mixed delta + mixed output → warns
         d = ItemizedDelta(months=1, hours=5)
-        ref = OffsetDateTime(2020, 1, 1, offset=3)
+        ref = OffsetDateTime(2020, 1, 1, offset=hours(3))
         with pytest.warns(StaleOffsetWarning):
             result = d.in_units(["days", "hours"], relative_to=ref)
         assert result == ItemizedDelta(days=31, hours=5)
@@ -747,7 +757,7 @@ class TestInUnitsRelativeToNonZoned:
         import warnings as warnings
 
         d = ItemizedDelta(hours=5, minutes=30)
-        ref = OffsetDateTime(2020, 1, 1, 12, offset=3)
+        ref = OffsetDateTime(2020, 1, 1, 12, offset=hours(3))
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             result = d.in_units(["hours", "minutes"], relative_to=ref)
@@ -766,7 +776,7 @@ class TestInUnitsRelativeToNonZoned:
         with suppress(StaleOffsetWarning):
             result = d.in_units(
                 ["weeks", "days"],
-                relative_to=OffsetDateTime(2020, 1, 1, offset=3),
+                relative_to=OffsetDateTime(2020, 1, 1, offset=hours(3)),
             )
         assert result == ItemizedDelta(weeks=4, days=3)
 
@@ -782,7 +792,7 @@ class TestInUnitsRelativeToNonZoned:
             ["months", "days", "hours"],
             relative_to=ZonedDateTime(2020, 3, 15, 10, tz="UTC"),
         )
-        assert plain_result.exact_eq(zoned_result)
+        assert plain_result.strict_eq(zoned_result)
 
     def test_invalid_relative_to_type(self):
         with pytest.raises(TypeError, match="relative_to"):
@@ -802,7 +812,9 @@ class TestAddSub:
             (
                 ItemizedDelta(years=2, months=3, minutes=5),
                 ItemizedDelta(years=1, months=2, seconds=500),
-                ZonedDateTime("2021-12-31T15:16Z[America/Sao_Paulo]"),
+                ZonedDateTime(
+                    "2021-12-31T15:16Z[America/Sao_Paulo]",
+                ),
                 ItemizedDelta(years=3, months=5, minutes=13, seconds=20),
                 {"in_units": ["years", "months", "minutes", "seconds"]},
             ),
@@ -815,7 +827,7 @@ class TestAddSub:
                     years=1, months=8, weeks=3, days=30, hours=0, seconds=1042
                 ),
                 ZonedDateTime(
-                    "2024-02-29T05:16:00.00004Z[America/Los_Angeles]"
+                    "2024-02-29T05:16:00.00004Z[America/Los_Angeles]",
                 ),
                 ItemizedDelta(
                     years=4, months=1, weeks=3, days=3, hours=1, seconds=2442
@@ -835,7 +847,9 @@ class TestAddSub:
             (
                 ItemizedDelta(years=2, days=5, minutes=3_000),
                 ItemizedDelta(years=1, months=8, days=30, seconds=3603),
-                ZonedDateTime("0021-01-01T00:16Z[Europe/Dublin]"),
+                ZonedDateTime(
+                    "0021-01-01T00:16Z[Europe/Dublin]",
+                ),
                 ItemizedDelta(
                     years=3, months=9, days=7, minutes=180, seconds=3
                 ),
@@ -853,7 +867,9 @@ class TestAddSub:
             (
                 ItemizedDelta(years=2, days=5, minutes=3_000),
                 ItemizedDelta(years=1, months=8, days=30, seconds=3603),
-                ZonedDateTime("9921-01-01T00:16Z[Africa/Johannesburg]"),
+                ZonedDateTime(
+                    "9921-01-01T00:16Z[Africa/Johannesburg]",
+                ),
                 ItemizedDelta(months=45, weeks=1, hours=3, minutes=2),
                 {
                     "in_units": ["months", "weeks", "hours", "minutes"],
@@ -866,7 +882,7 @@ class TestAddSub:
                 ItemizedDelta(years=2, months=3, hours=2),
                 ItemizedDelta(years=-2, months=-3, minutes=-120),
                 ZonedDateTime(
-                    "2024-02-29T05:16:00.00004Z[America/Los_Angeles]"
+                    "2024-02-29T05:16:00.00004Z[America/Los_Angeles]",
                 ),
                 ItemizedDelta(years=0, months=0, hours=0, minutes=0),
                 {"in_units": ["years", "months", "hours", "minutes"]},
@@ -875,7 +891,9 @@ class TestAddSub:
             (
                 ItemizedDelta(years=2, months=3, hours=2),
                 ItemizedDelta(years=-1, months=-4, hours=-4_000),
-                ZonedDateTime("1995-03-30T23:16Z[Australia/Sydney]"),
+                ZonedDateTime(
+                    "1995-03-30T23:16Z[Australia/Sydney]",
+                ),
                 ItemizedDelta(years=0, months=5, hours=369),
                 {"in_units": ["years", "months", "hours"]},
             ),
@@ -883,7 +901,9 @@ class TestAddSub:
             (
                 ItemizedDelta(years=2, months=3, hours=2),
                 ItemizedDelta(years=-1, months=-20, hours=-4_000),
-                ZonedDateTime("1995-03-01T23:16Z[Australia/Sydney]"),
+                ZonedDateTime(
+                    "1995-03-01T23:16Z[Australia/Sydney]",
+                ),
                 ItemizedDelta(years=-0, months=-10, hours=-326),
                 {"in_units": ["years", "months", "hours"]},
             ),
@@ -898,10 +918,10 @@ class TestAddSub:
         kwargs: Any,
     ):
         result = d1.add(d2, relative_to=relative_to, **kwargs)
-        assert result.exact_eq(expected)
+        assert result.strict_eq(expected)
 
         # same result with kwargs
-        assert d1.add(**d2, relative_to=relative_to, **kwargs).exact_eq(  # type: ignore[call-overload, arg-type]
+        assert d1.add(**d2, relative_to=relative_to, **kwargs).strict_eq(  # type: ignore[call-overload, arg-type]
             expected
         )
 
@@ -912,13 +932,13 @@ class TestAddSub:
         ):
             assert d1.subtract(
                 -d2, relative_to=relative_to, **kwargs
-            ).exact_eq(expected)
+            ).strict_eq(expected)
 
             assert d1.subtract(  # type: ignore[call-overload]
                 **{k: -v for k, v in d2.items()},
                 relative_to=relative_to,
                 **kwargs,
-            ).exact_eq(expected)
+            ).strict_eq(expected)
 
     def test_mixed_sign_in_kwargs_allowed(self):
         assert (
@@ -926,10 +946,12 @@ class TestAddSub:
             .add(
                 days=-1,
                 minutes=3,
-                relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                relative_to=ZonedDateTime(
+                    "2021-12-31T00:00Z[Africa/Cairo]",
+                ),
                 in_units=["days", "minutes"],
             )
-            .exact_eq(ItemizedDelta(days=1, minutes=3))
+            .strict_eq(ItemizedDelta(days=1, minutes=3))
         )
 
     def test_no_positional_and_kwarg_mix(self):
@@ -937,7 +959,9 @@ class TestAddSub:
             ItemizedDelta(years=2).add(  # type: ignore[call-overload]
                 ItemizedDelta(years=1),
                 years=3,
-                relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                relative_to=ZonedDateTime(
+                    "2021-12-31T00:00Z[Africa/Cairo]",
+                ),
                 in_units=["years"],
             )
 
@@ -948,13 +972,15 @@ class TestAddSub:
             ),
             in_units=["years"],
         )
-        assert result.exact_eq(ItemizedDelta(years=2))
+        assert result.strict_eq(ItemizedDelta(years=2))
 
     def test_invalid_unit_kwarg(self):
         with pytest.raises(TypeError, match="foo"):
             ItemizedDelta(years=2).add(  # type: ignore[call-overload]
                 foo=5,
-                relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                relative_to=ZonedDateTime(
+                    "2021-12-31T00:00Z[Africa/Cairo]",
+                ),
                 in_units=["years", "months"],
             )
 
@@ -962,7 +988,9 @@ class TestAddSub:
         with pytest.raises((ValueError, OverflowError)):
             ItemizedDelta(years=5_000).add(
                 years=5_000,
-                relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+                relative_to=ZonedDateTime(
+                    "2021-12-31T00:00Z[Africa/Cairo]",
+                ),
                 in_units=["years"],
             )
 
@@ -970,7 +998,9 @@ class TestAddSub:
         with pytest.raises((ValueError, OverflowError)):
             ItemizedDelta(years=5).add(
                 months=29,
-                relative_to=ZonedDateTime("9994-12-31T00:00Z[Asia/Tokyo]"),
+                relative_to=ZonedDateTime(
+                    "9994-12-31T00:00Z[Asia/Tokyo]",
+                ),
                 in_units=["years"],
             )
 
@@ -980,11 +1010,13 @@ class TestAddSub:
 
         assert d1.add(
             d2,
-            relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+            relative_to=ZonedDateTime(
+                "2021-12-31T00:00Z[Africa/Cairo]",
+            ),
             round_mode="floor",
             round_increment=2,
             in_units=["years", "seconds"],
-        ).exact_eq(ItemizedDelta(years=-3, seconds=-31036006))
+        ).strict_eq(ItemizedDelta(years=-3, seconds=-31036006))
 
     def test_month_clamping_avoided_by_summing_first(self):
         # Sequential application would apply the month-end clamping twice:
@@ -998,13 +1030,13 @@ class TestAddSub:
                 relative_to=ZonedDateTime(2021, 1, 31, tz="UTC"),
                 in_units=["months"],
             )
-            .exact_eq(ItemizedDelta(months=2))
+            .strict_eq(ItemizedDelta(months=2))
         )
 
     def test_without_relative_to(self):
         with pytest.warns(CalendarUnitCompositionWarning) as caught:
             result = ItemizedDelta(hours=1).add(days=2, minutes=3)
-        assert result.exact_eq(ItemizedDelta(days=2, hours=1, minutes=3))
+        assert result.strict_eq(ItemizedDelta(days=2, hours=1, minutes=3))
         message = str(caught[0].message)
         assert (
             "Calling `.add()` or `.subtract()` without `relative_to`"
@@ -1015,41 +1047,41 @@ class TestAddSub:
 
         with pytest.warns(CalendarUnitCompositionWarning):
             result = ItemizedDelta(days=2).subtract(ItemizedDateDelta(days=1))
-        assert result.exact_eq(ItemizedDelta(days=1))
+        assert result.strict_eq(ItemizedDelta(days=1))
 
     def test_operator_composition(self):
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             result = ItemizedDelta(hours=1) + ItemizedDelta(minutes=2)
-        assert result.exact_eq(ItemizedDelta(hours=1, minutes=2))
+        assert result.strict_eq(ItemizedDelta(hours=1, minutes=2))
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             result = ItemizedDelta(hours=1) - ItemizedDelta(minutes=-2)
-        assert result.exact_eq(ItemizedDelta(hours=1, minutes=2))
+        assert result.strict_eq(ItemizedDelta(hours=1, minutes=2))
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             result = ItemizedDateDelta(days=0) + ItemizedDelta(hours=1)
-        assert result.exact_eq(ItemizedDelta(days=0, hours=1))
+        assert result.strict_eq(ItemizedDelta(days=0, hours=1))
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             result = ItemizedDateDelta(days=0) - ItemizedDelta(hours=1)
-        assert result.exact_eq(ItemizedDelta(days=0, hours=-1))
+        assert result.strict_eq(ItemizedDelta(days=0, hours=-1))
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             result = ItemizedDelta(months=0, hours=1).add(minutes=2)
-        assert result.exact_eq(ItemizedDelta(months=0, hours=1, minutes=2))
+        assert result.strict_eq(ItemizedDelta(months=0, hours=1, minutes=2))
 
         with pytest.warns(CalendarUnitCompositionWarning):
             result = ItemizedDelta(days=2) + ItemizedDelta(hours=1)
-        assert result.exact_eq(ItemizedDelta(days=2, hours=1))
+        assert result.strict_eq(ItemizedDelta(days=2, hours=1))
 
         with pytest.warns(CalendarUnitCompositionWarning) as caught:
             result = ItemizedDateDelta(days=2) + ItemizedDelta(hours=1)
-        assert result.exact_eq(ItemizedDelta(days=2, hours=1))
+        assert result.strict_eq(ItemizedDelta(days=2, hours=1))
         message = str(caught[0].message)
         assert "Using `+` or `-` between two itemized deltas" in message
         assert "cal_unit_composition_ok=True" in message
@@ -1057,18 +1089,18 @@ class TestAddSub:
 
         with pytest.warns(CalendarUnitCompositionWarning):
             result = ItemizedDelta(days=2) - ItemizedDateDelta(days=1)
-        assert result.exact_eq(ItemizedDelta(days=1))
+        assert result.strict_eq(ItemizedDelta(days=1))
 
         with pytest.warns(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=2) - ItemizedDelta(days=1)
-        assert result.exact_eq(ItemizedDelta(days=1))
+        assert result.strict_eq(ItemizedDelta(days=1))
 
     def test_cal_unit_composition_ok_suppresses_warning(self):
         result = ItemizedDelta(hours=1).add(
             ItemizedDateDelta(days=1),
             cal_unit_composition_ok=True,
         )
-        assert result.exact_eq(ItemizedDelta(hours=1, days=1))
+        assert result.strict_eq(ItemizedDelta(hours=1, days=1))
 
     def test_no_op_does_not_warn(self):
         d = ItemizedDelta(hours=1)
@@ -1143,7 +1175,7 @@ class TestAddSub:
         delta = ItemizedDelta(hours=1)
         assert delta.subtract() is delta
         result = delta.subtract(hours=1, cal_unit_composition_ok=True)
-        assert result.exact_eq(ItemizedDelta(hours=0))
+        assert result.strict_eq(ItemizedDelta(hours=0))
 
     def test_unsupported_operand(self):
         with pytest.raises(TypeError):
@@ -1161,37 +1193,65 @@ class TestTotal:
         [
             (
                 ItemizedDelta(years=2, months=3, weeks=4, days=5),
-                ZonedDateTime("2021-12-31T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-12-31T03Z[America/New_York]",
+                ),
                 "months",
                 28.06666666666666,
             ),
             (
                 ItemizedDelta(weeks=-4),
-                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
                 "months",
                 -0.9032258064516129,
             ),
             (
                 ItemizedDelta(weeks=-4, minutes=-9123),
-                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
                 "days",
                 -34.33541666666667,
             ),
             (
                 ItemizedDelta(months=6, seconds=3),
-                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
                 "hours",
                 4343.0008333333335,
             ),
             (
                 ItemizedDelta(months=6, seconds=3),
-                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
                 "hours",
                 4343.0008333333335,
             ),
             (
                 ItemizedDelta(months=6, seconds=3),
-                ZonedDateTime("2021-02-23T03Z[America/New_York]"),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
+                "milliseconds",
+                15634803000,
+            ),
+            (
+                ItemizedDelta(months=6, seconds=3),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
+                "microseconds",
+                15634803000000,
+            ),
+            (
+                ItemizedDelta(months=6, seconds=3),
+                ZonedDateTime(
+                    "2021-02-23T03Z[America/New_York]",
+                ),
                 "nanoseconds",
                 15634803000000000,
             ),
@@ -1209,53 +1269,71 @@ class TestTotal:
             "hours",
             "minutes",
             "seconds",
+            "milliseconds",
+            "microseconds",
             "nanoseconds",
         ],
         expected: float,
     ):
-        assert d.total(unit, relative_to=relative_to) == pytest.approx(
-            expected
-        )
+        assert d.total(
+            cast(Any, unit), relative_to=relative_to
+        ) == pytest.approx(expected)
 
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="foo"):
-            ItemizedDelta(years=2, seconds=4_000_000).total(
-                "foo",  # type: ignore[arg-type]
-                relative_to=ZonedDateTime("2021-12-31T22Z[Europe/Athens]"),
+            ItemizedDelta(years=2, seconds=4_000_000).total(  # type: ignore[call-overload]
+                "foo",
+                relative_to=ZonedDateTime(
+                    "2021-12-31T22Z[Europe/Athens]",
+                ),
             )
 
     def test_no_relative_to(self):
         with pytest.raises(TypeError, match="relative_to"):
-            ItemizedDelta(years=2, hours=9).total("months")  # type: ignore[call-arg]
+            ItemizedDelta(years=2, hours=9).total("months")  # type: ignore[call-overload]
 
     def test_invalid_relative_to_type(self):
         with pytest.raises(TypeError, match="relative_to"):
-            ItemizedDelta(years=2, hours=9).total(
+            ItemizedDelta(years=2, hours=9).total(  # type: ignore[call-overload]
                 "months",
-                relative_to=Instant.from_utc(2021, 1, 1),  # type: ignore[arg-type]
+                relative_to=Instant.from_utc(2021, 1, 1),
             )
 
     def test_nanoseconds_is_int(self):
-        assert isinstance(
-            ItemizedDelta(years=200, nanoseconds=1).total(
-                "nanoseconds",
-                relative_to=ZonedDateTime("2021-12-31T22Z[Europe/Athens]"),
-            ),
-            int,
+        relative_to = ZonedDateTime(
+            "2021-12-31T22Z[Europe/Athens]",
         )
+        d = ItemizedDelta(years=200, nanoseconds=1)
+        result = d.total("nanoseconds", relative_to=relative_to)
+        assert_type(result, int)
+        assert isinstance(result, int)
+
+    def test_other_totals_are_float(self):
+        relative_to = ZonedDateTime(
+            "2021-12-31T22Z[Europe/Athens]",
+        )
+        d = ItemizedDelta(seconds=1, nanoseconds=234_567_890)
+        milliseconds_result = d.total("milliseconds", relative_to=relative_to)
+        microseconds_result = d.total("microseconds", relative_to=relative_to)
+        assert_type(milliseconds_result, float)
+        assert_type(microseconds_result, float)
+        assert isinstance(milliseconds_result, float)
+        assert isinstance(microseconds_result, float)
 
     def test_relative_to_overflows(self):
         with pytest.raises((ValueError, OverflowError)):
             ItemizedDelta(years=2, nanoseconds=1).total(
                 "months",
-                relative_to=ZonedDateTime("9998-04-30T00:00Z[Asia/Tokyo]"),
+                relative_to=ZonedDateTime(
+                    "9998-04-30T00:00Z[Asia/Tokyo]",
+                ),
             )
 
         with pytest.raises((ValueError, OverflowError)):
             ItemizedDelta(years=-2, minutes=0).total(
                 "months",
                 relative_to=ZonedDateTime(
-                    "0001-12-31T00:00Z[America/New_York]"
+                    "0001-12-31T00:00Z[America/New_York]",
                 ),
             )
 
@@ -1307,7 +1385,8 @@ class TestTotal:
         d_cal = ItemizedDelta(months=1)
         with pytest.warns(StaleOffsetWarning):
             result = d_cal.total(
-                "days", relative_to=OffsetDateTime(2020, 1, 1, offset=2)
+                "days",
+                relative_to=OffsetDateTime(2020, 1, 1, offset=hours(2)),
             )
         assert result == pytest.approx(31.0)
 
@@ -1318,20 +1397,23 @@ class TestTotal:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             result = d_exact.total(
-                "hours", relative_to=OffsetDateTime(2020, 1, 1, 12, offset=3)
+                "hours",
+                relative_to=OffsetDateTime(2020, 1, 1, 12, offset=hours(3)),
             )
         assert result == pytest.approx(10.5)
 
         # calendar delta + exact unit → warns (delta has calendar)
         with pytest.warns(StaleOffsetWarning):
             d_cal.total(
-                "hours", relative_to=OffsetDateTime(2020, 1, 1, offset=2)
+                "hours",
+                relative_to=OffsetDateTime(2020, 1, 1, offset=hours(2)),
             )
 
         # exact delta + calendar unit → warns (unit is calendar)
         with pytest.warns(StaleOffsetWarning):
             d_exact.total(
-                "days", relative_to=OffsetDateTime(2020, 1, 1, offset=3)
+                "days",
+                relative_to=OffsetDateTime(2020, 1, 1, offset=hours(3)),
             )
 
     def test_relative_to_warning_suppressed(self):
@@ -1341,7 +1423,8 @@ class TestTotal:
         assert result == pytest.approx(744.0)
         with suppress(StaleOffsetWarning):
             result = d.total(
-                "days", relative_to=OffsetDateTime(2020, 1, 1, offset=2)
+                "days",
+                relative_to=OffsetDateTime(2020, 1, 1, offset=hours(2)),
             )
         assert result == pytest.approx(31.0)
 
@@ -1350,22 +1433,22 @@ def test_replace():
     d = ItemizedDelta(years=2, months=3, seconds=4)
 
     # changing an existing value
-    assert d.replace(months=10).exact_eq(
+    assert d.replace(months=10).strict_eq(
         ItemizedDelta(years=2, months=10, seconds=4)
     )
 
     # adding a value
-    assert d.replace(hours=5).exact_eq(
+    assert d.replace(hours=5).strict_eq(
         ItemizedDelta(years=2, months=3, seconds=4, hours=5)
     )
 
     # setting to zero
-    assert d.replace(seconds=0).exact_eq(
+    assert d.replace(seconds=0).strict_eq(
         ItemizedDelta(years=2, months=3, seconds=0)
     )
 
     # setting to missing (zero)
-    assert d.replace(years=None).exact_eq(ItemizedDelta(months=3, seconds=4))
+    assert d.replace(years=None).strict_eq(ItemizedDelta(months=3, seconds=4))
 
     # invalid sign
     with pytest.raises(ValueError, match="sign"):
@@ -1375,12 +1458,12 @@ def test_replace():
         assert (-d).replace(days=1)
 
     # sign becomes zero
-    assert d.replace(years=0, months=0, seconds=0).exact_eq(
+    assert d.replace(years=0, months=0, seconds=0).strict_eq(
         ItemizedDelta(years=0, months=0, seconds=0)
     )
 
     # sign becomes negative
-    assert d.replace(years=-3, months=-1, seconds=0, days=-4).exact_eq(
+    assert d.replace(years=-3, months=-1, seconds=0, days=-4).strict_eq(
         ItemizedDelta(years=-3, months=-1, seconds=0, days=-4)
     )
 
@@ -1388,7 +1471,7 @@ def test_replace():
     assert (
         (-d)
         .replace(years=3, months=1, seconds=0, days=4)
-        .exact_eq(ItemizedDelta(years=3, months=1, seconds=0, days=4))
+        .strict_eq(ItemizedDelta(years=3, months=1, seconds=0, days=4))
     )
 
     # last field dropped
@@ -1396,8 +1479,8 @@ def test_replace():
         d.replace(years=None, months=None, seconds=None)
 
     # no arguments
-    assert d.replace().exact_eq(d)
-    assert (-d).replace().exact_eq(-d)
+    assert d.replace().strict_eq(d)
+    assert (-d).replace().strict_eq(-d)
 
     # invalid field
     with pytest.raises(TypeError, match="foo"):
@@ -1406,7 +1489,7 @@ def test_replace():
 
 def test_abs():
     d = ItemizedDelta(days=-5, hours=-3, nanoseconds=-200)
-    assert abs(d).exact_eq(ItemizedDelta(days=5, hours=3, nanoseconds=200))
+    assert abs(d).strict_eq(ItemizedDelta(days=5, hours=3, nanoseconds=200))
 
     d_pos = ItemizedDelta(days=2, minutes=30)
     assert abs(d_pos) is d_pos
@@ -1417,8 +1500,8 @@ def test_abs():
 
 def test_neg():
     d = ItemizedDelta(days=5, hours=3, nanoseconds=200)
-    assert (-d).exact_eq(ItemizedDelta(days=-5, hours=-3, nanoseconds=-200))
-    assert (--d).exact_eq(d)
+    assert (-d).strict_eq(ItemizedDelta(days=-5, hours=-3, nanoseconds=-200))
+    assert (--d).strict_eq(d)
 
     d_zero = ItemizedDelta(seconds=0)
     neg_zero = -d_zero
@@ -1501,7 +1584,7 @@ def test_parts(
     if date_part is None:
         assert expected_date is None
     else:
-        assert date_part.exact_eq(expected_date)
+        assert date_part.strict_eq(expected_date)
     assert time_part == expected_time
 
 
@@ -1528,7 +1611,7 @@ def test_pickle(d: ItemizedDelta):
     assert len(dumped) < 100
     assert d.__reduce__()[0].__module__ == "whenever"
     assert b"whenever._ideltas" not in dumped
-    assert pickle.loads(dumped).exact_eq(d)
+    assert pickle.loads(dumped).strict_eq(d)
 
 
 def test_compatible_unpickle():
@@ -1539,7 +1622,7 @@ def test_compatible_unpickle():
         b"delta\x94\x93\x94(K\x01K\x02K\x03K\x04K\x05K\x06K\x07K\x08t\x94R\x94."
     )
     result = pickle.loads(dumped)
-    assert result.exact_eq(
+    assert result.strict_eq(
         ItemizedDelta(
             years=1,
             months=2,

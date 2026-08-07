@@ -40,14 +40,19 @@ In `whenever`, ambiguous local times are by default resolved using the same conv
 as most libraries: the offset before the change is used.
 However, `whenever` also provides explicit options to handle ambiguity:
 
+If `disambiguation` is omitted, this `"compatible"` policy is applied, but an
+{class}`~whenever.ImplicitDisambiguationWarning` is emitted when a repeated or
+skipped time is actually encountered. Pass `disambiguation="compatible"`
+explicitly to make the choice without a warning.
+
 ```python
 >>> from whenever import ZonedDateTime, PlainDateTime
 >>> local = PlainDateTime(2024, 10, 27, 2, 30)
->>> local.assume_tz("Europe/Amsterdam", disambiguate="earlier")
+>>> local.assume_tz("Europe/Amsterdam", disambiguation="earlier")
 ZonedDateTime("2024-10-27 02:30:00+02:00[Europe/Amsterdam]")
->>> local.assume_tz("Europe/Amsterdam", disambiguate="later")
+>>> local.assume_tz("Europe/Amsterdam", disambiguation="later")
 ZonedDateTime("2024-10-27 02:30:00+01:00[Europe/Amsterdam]")
->>> local.assume_tz("Europe/Amsterdam", disambiguate="compatible")  # the default
+>>> local.assume_tz("Europe/Amsterdam", disambiguation="compatible")
 ZonedDateTime("2024-10-27 02:30:00+02:00[Europe/Amsterdam]")
 ```
 

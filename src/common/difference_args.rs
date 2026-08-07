@@ -154,7 +154,7 @@ impl TotalUnit {
 
 #[derive(Copy, Clone)]
 enum Units {
-    One(DifferenceUnit),
+    One(TotalUnit),
     Many(DifferenceUnitSet),
 }
 
@@ -181,7 +181,7 @@ impl DifferenceSpec {
                 if units.is_some() {
                     raise_type_err("cannot specify both 'total' and 'in_units'")?;
                 }
-                units = Some(Units::One(DifferenceUnit::from_py(v, state)?));
+                units = Some(Units::One(TotalUnit::from_py(v, state)?));
             } else if eq(k, *state.str_in_units) {
                 if units.is_some() {
                     raise_type_err("cannot specify both 'total' and 'in_units'")?;

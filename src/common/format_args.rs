@@ -1,7 +1,10 @@
 //! Python argument parsing for ISO formatting.
 
 use crate::{
-    common::fmt::{Chunk, Precision, Sink},
+    common::{
+        compat::{RenamedKeyword, warn_deprecated},
+        fmt::{Chunk, Precision, Sink},
+    },
     docstrings::FORMAT_ISO_NO_TZ_MSG,
     domain::{
         date::Date,
@@ -54,7 +57,7 @@ impl Chunk for SuffixFormat<'_> {
 
 #[derive(Clone, Copy)]
 enum TzDisplay {
-    Always,
+    Required,
     Never,
     Auto,
 }
@@ -83,9 +86,9 @@ pub(crate) fn format_date_iso(
 ) -> PyReturn {
     handle_no_args("format_iso", args)?;
     let mut basic = false;
-    handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, *state.str_basic) {
-            basic = value.expect_bool("basic")?;
+    handle_kwargs("format_iso", kwargs, |k, v, eq| {
+        if eq(k, *state.str_basic) {
+            basic = v.expect_bool("basic")?;
         } else {
             return Ok(false);
         }
@@ -103,11 +106,11 @@ pub(crate) fn format_time_iso(
     handle_no_args("format_iso", args)?;
     let mut unit = Precision::Auto;
     let mut basic = false;
-    handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, *state.str_unit) {
-            unit = parse_precision(value, state)?;
-        } else if eq(key, *state.str_basic) {
-            basic = value.expect_bool("basic")?;
+    handle_kwargs("format_iso", kwargs, |k, v, eq| {
+        if eq(k, *state.str_unit) {
+            unit = parse_precision(v, state)?;
+        } else if eq(k, *state.str_basic) {
+            basic = v.expect_bool("basic")?;
         } else {
             return Ok(false);
         }
@@ -130,46 +133,64 @@ pub(crate) fn format_datetime_iso(
     let mut sep = b'T';
     let mut unit = Precision::Auto;
     let mut basic = false;
-    let mut tz_display = TzDisplay::Always;
-    handle_kwargs("format_iso", kwargs, |key, value, eq| {
-        if eq(key, *state.str_sep) {
-            sep = match_interned_str(
-                "sep",
-                value,
-                &[(*state.str_space, b' '), (*state.str_t, b'T')],
-            )?;
-        } else if eq(key, *state.str_unit) {
-            unit = parse_precision(value, state)?;
-        } else if eq(key, *state.str_basic) {
-            basic = value.expect_bool("basic")?;
-        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(key, *state.str_tz) {
-            tz_display = match_interned_str(
-                "tz",
-                value,
-                &[
-                    (*state.str_auto, TzDisplay::Auto),
-                    (*state.str_never, TzDisplay::Never),
-                    (*state.str_always, TzDisplay::Always),
-                ],
-            )?;
+    let mut display_arg = RenamedKeyword::default();
+    handle_kwargs("format_iso", kwargs, |k, v, eq| {
+        if eq(k, *state.str_sep) {
+            sep = match_interned_str("sep", v, &[(*state.str_space, b' '), (*state.str_t, b'T')])?;
+        } else if eq(k, *state.str_unit) {
+            unit = parse_precision(v, state)?;
+        } else if eq(k, *state.str_basic) {
+            basic = v.expect_bool("basic")?;
+        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.str_tz_id_display) {
+            display_arg.set_new(v);
+        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.str_tz) {
+            display_arg.set_old(v);
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
 
+    let tz_id_display = match display_arg.finish(
+        state,
+        "format_iso",
+        "tz_id_display",
+        "tz",
+        c"'tz' is deprecated; use 'tz_id_display' instead",
+        1,
+    )? {
+        None => TzDisplay::Required,
+        Some(value) if value.is(*state.str_always) => {
+            warn_deprecated(
+                state,
+                c"tz_id_display='always' is deprecated; use 'required' instead",
+                1,
+            )?;
+            TzDisplay::Required
+        }
+        Some(value) => match_interned_str(
+            "tz_id_display",
+            value,
+            &[
+                (*state.str_auto, TzDisplay::Auto),
+                (*state.str_never, TzDisplay::Never),
+                (*state.str_required, TzDisplay::Required),
+            ],
+        )?,
+    };
+
     let suffix = match suffix {
         Suffix::Absent => SuffixFormat::Absent,
         Suffix::Zulu => SuffixFormat::Zulu,
         Suffix::Offset(offset) => SuffixFormat::Offset(offset.iso_format(basic)),
-        Suffix::OffsetTz(offset, tz_key) => match (tz_key, tz_display) {
-            (Some(key), TzDisplay::Auto | TzDisplay::Always) => {
+        Suffix::OffsetTz(offset, tz_key) => match (tz_key, tz_id_display) {
+            (Some(key), TzDisplay::Auto | TzDisplay::Required) => {
                 SuffixFormat::OffsetTz(offset.iso_format(basic), key)
             }
             (_, TzDisplay::Never | TzDisplay::Auto) => {
                 SuffixFormat::Offset(offset.iso_format(basic))
             }
-            (None, TzDisplay::Always) => raise_value_err(FORMAT_ISO_NO_TZ_MSG)?,
+            (None, TzDisplay::Required) => raise_value_err(FORMAT_ISO_NO_TZ_MSG)?,
         },
     };
 

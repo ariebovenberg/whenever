@@ -8,8 +8,9 @@ pub use crate::domain::date::Date;
 pub(crate) use crate::domain::date::DateBoundaryUnit;
 
 use crate::{
-    classes::{date_delta::DateDelta, itemized_date_delta::ItemizedDateDelta},
+    classes::itemized_date_delta::ItemizedDateDelta,
     common::{
+        compat::{parse_pattern_keyword, warn_deprecated},
         format_args, pattern, pickle, round_args as round,
         shift_args::{parse_calendar_shift_arg, parse_calendar_shift_kwargs},
     },
@@ -151,8 +152,6 @@ static mut SLOTS: &[PyType_Slot] = &[
     slotmethod!(Date, Py_tp_str, __str__, 1),
     slotmethod!(Date, Py_tp_repr, __repr__, 1),
     slotmethod!(Date, Py_tp_richcompare, __richcmp__),
-    slotmethod!(Py_nb_subtract, __sub__, 2),
-    slotmethod!(Py_nb_add, __add__, 2),
     PyType_Slot {
         slot: Py_tp_doc,
         pfunc: doc::DATE.as_ptr() as *mut c_void,
@@ -181,28 +180,6 @@ static mut SLOTS: &[PyType_Slot] = &[
 
 fn to_stdlib(cls: PyClass<Date>, slf: Date) -> PyReturn {
     slf.to_stdlib_date(cls.state().py_api()?)
-}
-
-fn py_date(cls: PyClass<Date>, slf: Date) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"py_date() is deprecated and will be removed in a future release; use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
-}
-
-fn from_py_date(cls: PyClass<Date>, arg: PyObj) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"from_py_date() is deprecated and will be removed in a future release; use Date() instead.",
-        1,
-    )?;
-    Date::from_stdlib_date(
-        arg.cast_allow_subclass::<PyDate>()
-            .ok_or_type_err("argument must be a datetime.date")?,
-    )
-    .to_obj(cls)
 }
 
 fn year_month(cls: PyClass<Date>, Date { year, month, .. }: Date) -> PyReturn {
@@ -377,82 +354,6 @@ fn __reduce__(cls: PyClass<Date>, slf: Date) -> PyReturn {
     .into_pytuple()
 }
 
-fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
-    binary_operation::<Date>(obj_a, obj_b, "-", |operands| match operands {
-        BinaryCall::SameType { cls, slf, other } => {
-            warn_with_class(
-                *cls.state().warn_deprecation,
-                c"Using the `-` operator on Date is deprecated and will be removed in a future release; use the .since() method with explicit units instead.",
-                1,
-            )?;
-
-            let mut days = slf.day as i32;
-            let mut months = DeltaMonths::new_unchecked(
-                slf.month as i32 - other.month as i32
-                    + 12 * (slf.year.get() as i32 - other.year.get() as i32),
-            );
-            let mut moved_other = other.shift_months(months).unwrap();
-            if *other > *slf && moved_other < *slf {
-                months = DeltaMonths::new_unchecked(months.get() + 1);
-                moved_other = other.shift_months(months).unwrap();
-                days -= slf.year.days_in_month(slf.month) as i32;
-            } else if *other < *slf && moved_other > *slf {
-                months = DeltaMonths::new_unchecked(months.get() - 1);
-                moved_other = other.shift_months(months).unwrap();
-                days += moved_other.year.days_in_month(moved_other.month) as i32;
-            };
-            Ok(Some(
-                DateDelta {
-                    months,
-                    days: DeltaDays::new_unchecked(days - moved_other.day as i32),
-                }
-                .to_obj(*cls.state().date_delta_type)?,
-            ))
-        }
-        BinaryCall::ExtTypes { cls, slf, other } => {
-            let state = cls.state();
-            let Some(d) = other.extract(*state.date_delta_type) else {
-                return Ok(None);
-            };
-            warn_with_class(
-                *state.warn_deprecation,
-                c"Using the `-` operator on Date is deprecated and will be removed in a future release; use the .subtract() method instead.",
-                1,
-            )?;
-            Ok(Some(
-                slf.shift_months(-d.months)
-                    .and_then(|date| date.shift_days(-d.days))
-                    .ok_or_range_err()?
-                    .to_obj(cls)?,
-            ))
-        }
-        BinaryCall::OtherTypes => Ok(None),
-    })
-}
-
-fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
-    binary_operation::<Date>(obj_a, obj_b, "+", |operands| {
-        let BinaryCall::ExtTypes { cls, slf, other } = operands else {
-            return Ok(None);
-        };
-        let state = cls.state();
-        let Some(d) = other.extract(*state.date_delta_type) else {
-            return Ok(None);
-        };
-        warn_with_class(
-            *state.warn_deprecation,
-            c"Using the + operator on Date is deprecated and will be removed in a future release; use the .add() method instead.",
-            1,
-        )?;
-        Ok(Some(
-            slf.shift_months(d.months)
-                .and_then(|date| date.shift_days(d.days))
-                .ok_or_range_err()?
-                .to_obj(cls)?,
-        ))
-    })
-}
-
 fn add(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     shift_method(cls, slf, args, kwargs, false)
 }
@@ -600,38 +501,6 @@ fn date_since_float(a: Date, b: Date, unit: CalendarUnit) -> PyReturn {
     ((result.abs() as f64 + num / denom).negate_if(neg)).to_py()
 }
 
-fn days_since(cls: PyClass<Date>, slf: Date, other: PyObj) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"days_since() is deprecated and will be removed in a future release; use since() with total='days' instead.",
-        1,
-    )?;
-    slf.unix_days()
-        .diff(
-            other
-                .extract(cls)
-                .ok_or_type_err("argument must be a whenever.Date")?
-                .unix_days(),
-        )
-        .get()
-        .to_py()
-}
-
-fn days_until(cls: PyClass<Date>, slf: Date, other: PyObj) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"days_until() is deprecated and will be removed in a future release; use until() with total='days' instead.",
-        1,
-    )?;
-    other
-        .extract(cls)
-        .ok_or_type_err("argument must be a whenever.Date")?
-        .unix_days()
-        .diff(slf.unix_days())
-        .get()
-        .to_py()
-}
-
 fn replace(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     handle_no_args("replace", args)?;
 
@@ -666,7 +535,23 @@ fn at(cls: PyClass<Date>, date: Date, time_obj: PyObj) -> PyReturn {
 
 fn today_in_system_tz(cls: PyClass<Date>) -> PyReturn {
     let state = cls.state();
+    warn_deprecated(
+        state,
+        c"today_in_system_tz() is deprecated; use today(SYSTEM_TZ) instead",
+        1,
+    )?;
     let tz = state.tz_store.get_system_tz()?;
+    state
+        .now()?
+        .to_offset_in(&tz)
+        .ok_or_range_err()?
+        .date
+        .to_obj(cls)
+}
+
+fn today(cls: PyClass<Date>, tz_obj: PyObj) -> PyReturn {
+    let state = cls.state();
+    let tz = state.load_tz(tz_obj)?;
     state
         .now()?
         .to_offset_in(&tz)
@@ -681,8 +566,12 @@ fn format(cls: PyClass<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(pattern::CategorySet::DATE, "Date")?;
-    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
+    pattern.validate(
+        pattern::CategorySet::DATE,
+        "Date",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     pattern.format(&slf.pattern_values())
 }
 
@@ -701,16 +590,19 @@ fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         .ok_or_type_err("parse() argument must be str")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = handle_one_kwarg("parse", *cls.state().str_format, kwargs)?.ok_or_else(|| {
-        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
-    })?;
+    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format must be str")?;
+        .ok_or_type_err("pattern must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(pattern::CategorySet::DATE, "Date")?;
+    pattern.validate(
+        pattern::CategorySet::DATE,
+        "Date",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     let parsed = pattern.parse(s).into_value_err()?;
     let date = parsed
         .date("Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields")?;
@@ -720,11 +612,10 @@ fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
 
 static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, to_stdlib, doc::DATE_TO_STDLIB),
-    method0!(Date, py_date, doc::DATE_PY_DATE),
     method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
+    classmethod1!(Date, today, doc::DATE_TODAY_IN_SYSTEM_TZ),
     classmethod1!(Date, parse_iso, doc::DATE_PARSE_ISO),
-    classmethod1!(Date, from_py_date, doc::DATE_FROM_PY_DATE),
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(Date, year_month, doc::DATE_YEAR_MONTH),
@@ -745,8 +636,6 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, __reduce__, c""),
     method_kwargs!(Date, add, doc::DATE_ADD),
     method_kwargs!(Date, subtract, doc::DATE_SUBTRACT),
-    method1!(Date, days_since, doc::DATE_DAYS_SINCE),
-    method1!(Date, days_until, doc::DATE_DAYS_UNTIL),
     method_kwargs!(Date, since, doc::DATE_SINCE),
     method_kwargs!(Date, until, doc::DATE_UNTIL),
     method_kwargs!(Date, replace, doc::DATE_REPLACE),

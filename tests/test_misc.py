@@ -1,25 +1,21 @@
 import json
 import os
+import pickle
 import subprocess
 import sys
 import warnings
 from contextlib import nullcontext
-from inspect import signature
-from itertools import chain
+from copy import copy, deepcopy
 from time import sleep
-from typing import no_type_check
 from unittest.mock import patch
 
 import pytest
 from whenever import (
     _EXTENSION_LOADED,
-    CalendarUnitCompositionWarning,
+    SYSTEM_TZ,
     Date,
-    DateDelta,
-    DateTimeDelta,
-    ImplicitlyIgnoringDST,
     Instant,
-    InvalidOffsetError,
+    IsoWeekDate,
     ItemizedDateDelta,
     ItemizedDelta,
     MonthDay,
@@ -27,11 +23,14 @@ from whenever import (
     PlainDateTime,
     Time,
     TimeDelta,
-    WheneverWarning,
+    TimePatch,
     YearMonth,
     ZonedDateTime,
+    get_tzpath,
+    hours,
     patch_current_time,
     reset_system_tz,
+    reset_tzpath,
 )
 from whenever._tz.system import _tzid_from_path, get_tz
 
@@ -56,9 +55,9 @@ pytestmark = pytest.mark.filterwarnings(
             PlainDateTime(2021, 2, 28, 2),
         ),
         (
-            OffsetDateTime(2021, 1, 31, offset=0),
+            OffsetDateTime(2021, 1, 31, offset=hours(0)),
             ItemizedDelta(months=1, hours=2),
-            OffsetDateTime(2021, 2, 28, 2, offset=0),
+            OffsetDateTime(2021, 2, 28, 2, offset=hours(0)),
         ),
         (
             ZonedDateTime(2021, 1, 31, tz="UTC"),
@@ -88,7 +87,7 @@ def test_itemized_delta_datetime_operators(dt, delta, expected):
         lambda dt, delta: dt - delta,
     ],
 )
-@pytest.mark.parametrize("delta", [ItemizedDelta(hours=1), TimeDelta(hours=1)])
+@pytest.mark.parametrize("delta", [ItemizedDelta(hours=1), hours(1)])
 def test_datetime_operator_warning_location(operation, delta):
     dt = PlainDateTime(2021, 1, 31)
     with pytest.warns(Warning) as caught:
@@ -130,13 +129,13 @@ def test_itemized_delta_reflected_operator_not_implemented(delta, method):
     "dt",
     [
         PlainDateTime(2021, 1, 31),
-        OffsetDateTime(2021, 1, 31, offset=0),
+        OffsetDateTime(2021, 1, 31, offset=hours(0)),
         ZonedDateTime(2021, 1, 31, tz="UTC"),
         Instant.from_utc(2021, 1, 31),
     ],
 )
 def test_time_delta_reflected_datetime_addition(dt):
-    delta = TimeDelta(hours=2)
+    delta = hours(2)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         expected = dt + delta
@@ -169,18 +168,6 @@ def test_type_aliases():
     from whenever import ExactDeltaUnitStr  # noqa
     from whenever import OffsetMismatchStr  # noqa
     from whenever import RoundModeStr  # noqa
-
-
-def test_exceptions():
-    assert issubclass(ImplicitlyIgnoringDST, TypeError)
-    assert issubclass(InvalidOffsetError, ValueError)
-    from whenever import PotentialDstBugWarning
-
-    assert issubclass(CalendarUnitCompositionWarning, WheneverWarning)
-    assert issubclass(PotentialDstBugWarning, WheneverWarning)
-    assert not issubclass(
-        CalendarUnitCompositionWarning, PotentialDstBugWarning
-    )
 
 
 def test_version():
@@ -320,6 +307,45 @@ def test_time_machine():
         assert Instant.now() == Instant.from_utc(1980, 3, 2, hour=2)
 
 
+@pytest.mark.parametrize(
+    "value, invalid_iso",
+    [
+        (Date(2020, 8, 15), "2020-13-15"),
+        (YearMonth(2020, 8), "2020-13"),
+        (MonthDay(8, 15), "--13-15"),
+        (IsoWeekDate("2020-W33-6"), "2020-W54-1"),
+        (Time(12, 30, 45), "25:30:45"),
+        (PlainDateTime(2020, 8, 15, 12, 30), "2020-08-15T25:30"),
+        (Instant("2020-08-15T12:30Z"), "2020-08-15T12:30"),
+        (
+            OffsetDateTime("2020-08-15T12:30+02:00"),
+            "2020-08-15T12:30",
+        ),
+        (
+            ZonedDateTime("2020-08-15T12:30+02:00[Europe/Amsterdam]"),
+            "2020-08-15T12:30+03:00[Europe/Amsterdam]",
+        ),
+        (TimeDelta("PT2H30M"), "P1M"),
+        (ItemizedDateDelta("P1Y2M"), "PT1H"),
+        (ItemizedDelta("P1Y2MT3H"), "invalid"),
+    ],
+)
+def test_pydantic(value, invalid_iso):
+    pydantic = pytest.importorskip("pydantic")
+    adapter = pydantic.TypeAdapter(type(value))
+    serialized = json.dumps(str(value), separators=(",", ":"))
+
+    assert adapter.validate_python(value) is value
+    assert adapter.validate_python(str(value)) == value
+    assert adapter.validate_json(serialized) == value
+    assert adapter.dump_json(value) == serialized.encode()
+    with pytest.raises(pydantic.ValidationError, match="cannot parse"):
+        adapter.validate_python(42)
+    with pytest.raises(pydantic.ValidationError):
+        adapter.validate_python(invalid_iso)
+    assert adapter.json_schema()["type"] == "string"
+
+
 @system_tz_ams()
 def test_patch_time():
 
@@ -327,11 +353,28 @@ def test_patch_time():
 
     # simplest case: freeze time at fixed UTC
     with patch_current_time(i, keep_ticking=False) as p:
+        assert isinstance(p, TimePatch)
         assert Instant.now() == i
         assert Date.today_in_system_tz() == i.to_system_tz().date()
+        assert Date.today(SYSTEM_TZ) == i.to_tz(SYSTEM_TZ).date()
+        assert (
+            Date.today("Europe/Amsterdam")
+            == i.to_tz("Europe/Amsterdam").date()
+        )
+        with pytest.raises(TypeError):
+            Date.today(tz="Europe/Amsterdam")  # type: ignore[call-arg]
+        assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
+        assert PlainDateTime(2020, 8, 15).assume_tz(SYSTEM_TZ).tz_id == (
+            "Europe/Amsterdam"
+        )
+        assert i.to_fixed_offset(hours(1)).assume_tz(SYSTEM_TZ).tz_id == (
+            "Europe/Amsterdam"
+        )
         p.shift(hours=3)
-        p.shift(hours=1)
+        p.shift(hours(1))
         assert Instant.now() == i.add(hours=4)
+        p.move_to(i.to_fixed_offset(hours(2)))
+        assert Instant.now() == i
 
     # patch has ended
     assert Instant.now() > Instant.from_utc(2024, 1, 1)
@@ -342,247 +385,76 @@ def test_patch_time():
         i.to_tz("Europe/Amsterdam"), keep_ticking=True
     ) as p:
         assert (Instant.now() - i).total("seconds") < 1
-        p.shift(hours=2)
+        p.shift(hours(2))
         sleep(0.000001)
         assert 2 < (Instant.now() - i).total("hours") < 2.1
-        p.shift(days=2, disambiguate="raise")
+        p.move_to(Instant.now().to_tz("Europe/Amsterdam").add(days=2))
         sleep(0.000001)
         assert 50 < (Instant.now() - i).total("hours") < 50.1
 
     assert Instant.now() - i > TimeDelta(hours=40_000)
 
 
-@pytest.mark.skipif(
-    not (
-        _EXTENSION_LOADED
-        # We rely on __text_signature__ being set automatically for 1-argument
-        # methods in Python 3.13+.
-        and sys.version_info > (3, 13)
-    ),
-    reason="text signatures only relevant for the Rust extension",
-)
-def test_text_signature():
-    classes = [
-        Instant,
-        OffsetDateTime,
-        ZonedDateTime,
-        PlainDateTime,
-        Date,
-        Time,
-        TimeDelta,
-        DateDelta,
-        DateTimeDelta,
-    ]
-    deprecated: list[str] = []
-    methods = (
-        m
-        for m in chain.from_iterable(cls.__dict__.values() for cls in classes)
-        if callable(m)
-    )
+def test_time_patch_lifetime_and_overlap():
+    i = Instant.from_utc(1980, 3, 2, hour=2)
+    with patch_current_time(i, keep_ticking=False) as handle:
+        with pytest.raises(RuntimeError, match="already active"):
+            with patch_current_time(i, keep_ticking=False):
+                pass
 
-    for c in classes:
-        assert c.__module__ == "whenever"
-
-    for m in methods:
-        if m.__name__.startswith("_") or m.__name__ in deprecated:
-            continue
-        sig = m.__text_signature__
-        assert sig is not None, (
-            f"{m} missing __text_signature__. Hint: try running `python scripts/generate_docstrings.py > src/docstrings.py`"
-        )
-        signature(m)  # raises ValueError if invalid
+    with pytest.raises(RuntimeError, match="no longer active"):
+        handle.shift(hours(1))
+    with pytest.raises(RuntimeError, match="no longer active"):
+        handle.move_to(i)
 
 
-@no_type_check
-def test_pydantic():
+def test_time_patch_move_to_rejects_non_exact_time():
+    i = Instant.from_utc(1980, 3, 2, hour=2)
+    with patch_current_time(i, keep_ticking=False) as p:
+        with pytest.raises(TypeError, match="exact time"):
+            p.move_to(Date(2020, 8, 15))  # type: ignore[arg-type]
+
+
+def test_time_patch_rejects_invalid_shift_arguments():
+    i = Instant.from_utc(1980, 3, 2, hour=2)
+    with patch_current_time(i, keep_ticking=False) as handle:
+        with pytest.raises(TypeError, match="must be a TimeDelta"):
+            handle.shift(ItemizedDelta(days=1))  # type: ignore[call-overload]
+        with pytest.raises(TypeError, match="unexpected keyword"):
+            handle.shift(years=1)  # type: ignore[call-overload]
+        with pytest.raises(TypeError, match="[Cc]annot mix"):
+            handle.shift(hours(1), minutes=1)  # type: ignore[call-overload]
+
+
+def test_patch_current_time_decorator_does_not_inject_handle():
+    i = Instant.from_utc(1980, 3, 2, hour=2)
+
+    @patch_current_time(i, keep_ticking=False)  # type: ignore[operator]
+    def decorated() -> Instant:
+        return Instant.now()
+
+    assert decorated() == i
+
+
+def test_system_tz_sentinel():
+    assert repr(SYSTEM_TZ) == "SYSTEM_TZ"
+    assert copy(SYSTEM_TZ) is SYSTEM_TZ
+    assert deepcopy(SYSTEM_TZ) is SYSTEM_TZ
+    payload = pickle.dumps(SYSTEM_TZ)
+    assert b"whenever._" not in payload
+    assert b"whenever" in payload
+    assert b"SYSTEM_TZ" in payload
+    assert pickle.loads(payload) is SYSTEM_TZ
+
+
+def test_get_tzpath_returns_snapshot(tmp_path):
+    previous = get_tzpath()
     try:
-        import pydantic
-    except ImportError:
-        pytest.skip("pydantic not installed")
-
-    # NOTE: the type ignore is needed because we generally don't install pydantic
-    # when type-checking.
-    class Model(pydantic.BaseModel):  # type: ignore[misc, unused-ignore]
-        inst: Instant
-        zdt: ZonedDateTime
-        odt: OffsetDateTime
-        date: Date = Date(2024, 1, 4)  # default value for testing
-        time: Time
-        ddelta: DateDelta
-        tdelta: TimeDelta
-        dtdelta: DateTimeDelta
-        monthday: MonthDay
-        yearmonth: YearMonth
-
-    # Older versions of pydantic use inspect.signature()
-    # in schema generation. Let's make sure that works.
-    signature(DateTimeDelta.__get_pydantic_core_schema__)
-
-    inst = Instant.from_utc(2024, 1, 1, hour=12)
-    zdt = ZonedDateTime(2024, 1, 1, hour=12, tz="Europe/Amsterdam")
-    odt = OffsetDateTime(2024, 1, 1, hour=12, offset=1)
-    time = Time(12, 0, 0)
-    date = Date(2024, 1, 4)
-    ddelta = DateDelta(days=3, months=9)
-    tdelta = TimeDelta(hours=3, minutes=9)
-    dtdelta = DateTimeDelta(days=3, months=9, hours=3, minutes=9)
-    monthday = MonthDay(month=1, day=1)
-    yearmonth = YearMonth(year=2024, month=1)
-
-    m = Model(
-        inst=inst,
-        zdt=zdt,
-        odt=odt,
-        time=time,
-        ddelta=ddelta,
-        tdelta=tdelta,
-        dtdelta=dtdelta,
-        monthday=monthday,
-        yearmonth=yearmonth,
-    )
-
-    assert m.inst is inst
-    assert m.zdt is zdt
-    assert m.odt is odt
-    assert m.date == date  # default value
-    assert m.time is time
-    assert m.ddelta is ddelta
-    assert m.tdelta is tdelta
-    assert m.dtdelta is dtdelta
-    assert m.monthday is monthday
-    assert m.yearmonth is yearmonth
-
-    data = m.model_dump()
-    m2 = Model.model_validate(data)
-    assert m2.inst is inst
-    assert m2.zdt is zdt
-    assert m2.odt is odt
-    assert m2.date == date  # default value
-    assert m2.time is time
-    assert m2.ddelta is ddelta
-    assert m2.tdelta is tdelta
-    assert m2.dtdelta is dtdelta
-    assert m2.monthday is monthday
-    assert m2.yearmonth is yearmonth
-
-    json_str = m.model_dump_json()
-    json_data = json.loads(json_str)
-    assert json_data["inst"] == inst.format_iso()
-    assert json_data["zdt"] == zdt.format_iso()
-    assert json_data["odt"] == odt.format_iso()
-    assert json_data["date"] == date.format_iso()
-    assert json_data["time"] == time.format_iso()
-    assert json_data["ddelta"] == ddelta.format_iso()
-    assert json_data["tdelta"] == tdelta.format_iso()
-    assert json_data["dtdelta"] == dtdelta.format_iso()
-    assert json_data["monthday"] == monthday.format_iso()
-    assert json_data["yearmonth"] == yearmonth.format_iso()
-
-    m3 = Model.model_validate_json(json_str)
-    assert m3.inst == inst
-    assert m3.zdt == zdt
-    assert m3.odt == odt
-    assert m3.date == date
-    assert m3.time == time
-    assert m3.ddelta == ddelta
-    assert m3.tdelta == tdelta
-    assert m3.dtdelta == dtdelta
-    assert m3.monthday == monthday
-    assert m3.yearmonth == yearmonth
-
-    json_schema = Model.model_json_schema()
-    assert json_schema == {
-        "properties": {
-            "date": {
-                "default": "2024-01-04",
-                "title": "Date",
-                "type": "string",
-            },
-            "ddelta": {"title": "Ddelta", "type": "string"},
-            "dtdelta": {"title": "Dtdelta", "type": "string"},
-            "inst": {"title": "Inst", "type": "string"},
-            "monthday": {"title": "Monthday", "type": "string"},
-            "odt": {"title": "Odt", "type": "string"},
-            "tdelta": {"title": "Tdelta", "type": "string"},
-            "time": {"title": "Time", "type": "string"},
-            "yearmonth": {"title": "Yearmonth", "type": "string"},
-            "zdt": {"title": "Zdt", "type": "string"},
-        },
-        "required": [
-            "inst",
-            "zdt",
-            "odt",
-            "time",
-            "ddelta",
-            "tdelta",
-            "dtdelta",
-            "monthday",
-            "yearmonth",
-        ],
-        "title": "Model",
-        "type": "object",
-    }
-    # This mode is apparently used by FastAPI, and could give unexpected results
-    assert Model.model_json_schema(mode="serialization") == json_schema
-
-    # The constructor should be able to handle strings
-    assert (
-        Model(
-            inst=inst.format_iso(),
-            zdt=zdt.format_iso(),
-            odt=odt.format_iso(),
-            date=date.format_iso(),
-            time=time.format_iso(),
-            ddelta=ddelta.format_iso(),
-            tdelta=tdelta.format_iso(),
-            dtdelta=dtdelta.format_iso(),
-            monthday=monthday.format_iso(),
-            yearmonth=yearmonth.format_iso(),
-        )
-        == m2
-    )
-
-    # Parsing errors
-    try:
-        Model(
-            inst=123,  # not a string
-            zdt=zdt.format_iso().encode(),  # bytes instead of str
-            odt=odt.format_iso(),
-            date=date.format_iso(),
-            time=time.format_iso(),
-            ddelta=ddelta.format_iso(),
-            tdelta=tdelta.format_iso(),
-            dtdelta=dtdelta.format_iso(),
-            monthday=monthday.format_iso(),
-            yearmonth=yearmonth.format_iso(),
-        )
-    except pydantic.ValidationError as e:
-        assert e.error_count() == 2
-    else:
-        assert False, "Expected ValidationError not raised"
-
-    # JSON parsing errors
-    try:
-        Model.model_validate_json(
-            json.dumps(
-                {
-                    "inst": 123,  # not a string
-                    "zdt": "INVALID",
-                    "odt": "",
-                    "date": None,
-                    "time": time.format_iso(),
-                    "ddelta": ddelta.format_iso(),
-                    "tdelta": tdelta.format_iso(),
-                    "dtdelta": dtdelta.format_iso(),
-                    "monthday": monthday.format_iso(),
-                    "yearmonth": yearmonth.format_iso(),
-                }
-            )
-        )
-    except pydantic.ValidationError as e:
-        assert e.error_count() == 4
-    else:
-        assert False, "Expected ValidationError not raised"
+        reset_tzpath([tmp_path])
+        assert get_tzpath() == (str(tmp_path),)
+        assert previous != get_tzpath()
+    finally:
+        reset_tzpath(previous)
 
 
 def test_get_system_tz():
@@ -596,25 +468,25 @@ def test_get_system_tz():
 def test_reset_system_tz():
     plain = PlainDateTime(2020, 1, 1)
     d1 = plain.assume_system_tz()
-    assert d1.tz == "Europe/Amsterdam"
+    assert d1.tz_id == "Europe/Amsterdam"
 
     with patch.dict(os.environ, {"TZ": "America/New_York"}):
         # The system timezone is now set to America/New_York
         # ...but the cache isn't updated until we call reset_system_tz()
-        assert plain.assume_system_tz().tz == "Europe/Amsterdam"
+        assert plain.assume_system_tz().tz_id == "Europe/Amsterdam"
 
         reset_system_tz()
         d2 = plain.assume_system_tz()
-        assert d2.tz == "America/New_York"
+        assert d2.tz_id == "America/New_York"
 
         # old instances should not change
-        assert d1.tz == "Europe/Amsterdam"
+        assert d1.tz_id == "Europe/Amsterdam"
 
     # Cache not yet updated again...
-    assert plain.assume_system_tz().tz == "America/New_York"
+    assert plain.assume_system_tz().tz_id == "America/New_York"
 
     reset_system_tz()
-    assert plain.assume_system_tz().tz == "Europe/Amsterdam"
+    assert plain.assume_system_tz().tz_id == "Europe/Amsterdam"
 
 
 @pytest.mark.parametrize(

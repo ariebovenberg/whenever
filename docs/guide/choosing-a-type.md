@@ -22,7 +22,7 @@ The main types are:
 
 This is the simplest way to represent a moment on the timeline,
 independent of human complexities like timezones or calendars.
-An `Instant` maps 1:1 to UTC or a UNIX timestamp.
+An {class}`~whenever.Instant` maps 1:1 to UTC or a UNIX timestamp.
 It's great for storing when something happened (or will happen)
 regardless of location.
 
@@ -104,8 +104,8 @@ ZonedDateTime("2022-10-24 13:00:00-04:00[America/New_York]")
 ZonedDateTime("2020-03-14 15:00:00-04:00[America/New_York]")
 ```
 
+(offset-datetime-guidance)=
 ## {class}`~whenever.OffsetDateTime`
-
 
 ```{epigraph}
 In API design, if you've got two things that are even subtly different,
@@ -115,39 +115,80 @@ meaning of your data more accurately.
 -- Jon Skeet
 ```
 
-Like {class}`~whenever.ZonedDateTime`, this type represents an exact time
-*and* a local time. The difference is that {class}`~whenever.OffsetDateTime`
-has a *fixed* offset from UTC rather than a timezone.
-As a result, it doesn't know about Daylight Saving Time or other timezone changes.
-Many operations will emit a {class}`~whenever.StaleOffsetWarning`
-to prevent you from accidentally introducing DST bugs.
+An {class}`~whenever.OffsetDateTime` sits between a local datetime and a zoned
+datetime:
 
-Then why use it? Firstly, most datetime formats (e.g. ISO 8601 and RFC 2822) only have fixed offsets,
-making {class}`~whenever.OffsetDateTime` ideal for representing datetimes in these formats.
-Second, a {class}`~whenever.OffsetDateTime` is simpler—so long as you
-don't need the ability to shift it. This makes {class}`~whenever.OffsetDateTime`
-an efficient and compatible choice for representing times in the past.
+| Type | Local fields | Exact instant | Regional timezone rules |
+|---|:---:|:---:|:---:|
+| {class}`~whenever.Instant` | ❌ | ✅ | ❌ |
+| {class}`~whenever.PlainDateTime` | ✅ | ❌ | ❌ |
+| {class}`~whenever.OffsetDateTime` | ✅ | ✅ | ❌ |
+| {class}`~whenever.ZonedDateTime` | ✅ | ✅ | ✅ |
+
+The numeric offset makes an {class}`~whenever.OffsetDateTime` unambiguous on
+the timeline, so it contains more information than a
+{class}`~whenever.PlainDateTime`. It still contains less information than a
+{class}`~whenever.ZonedDateTime`: an offset such as `-07:00` says nothing about
+past or future daylight-saving and political changes.
+
+### Why offset datetimes are unavoidable
+
+Most interchange formats—including ISO 8601, RFC 2822, RFC 3339, API payloads,
+database records, and logs—commonly carry local fields and an offset but no
+timezone ID. {class}`~whenever.OffsetDateTime` represents exactly that input.
+Converting it to an {class}`~whenever.Instant` would discard the source's local
+representation; turning it into a {class}`~whenever.ZonedDateTime` would
+require regional rules the source never provided.
+
+An offset also does **not** identify a timezone. Many regions can share
+`+02:00` at one instant and follow different rules later. Even putting a fixed
+offset in timezone brackets does not add those missing rules.
+
+### The stale-offset footgun
+
+In common data, a numeric offset is a *snapshot*: the offset a location used
+at one instant. Arithmetic on an {class}`~whenever.OffsetDateTime` is
+mathematically valid and preserves that fixed offset, but it cannot update the
+offset when the location's rules change. The result may therefore be stale
+relative to the timezone the original value came from—even after an exact
+shift.
+
+When the intended meaning depends on that original timezone, shifting or
+modifying an {class}`~whenever.OffsetDateTime` is roughly as unsafe as doing
+timezone-sensitive arithmetic on a naive
+{class}`~whenever.PlainDateTime`: both lack the regional rules needed to
+account for transitions. The offset pins down the original instant, but it
+does not make a later or modified local time safe.
+
+For example, `-07:00` was Denver's observed offset before its 2024 spring
+transition:
 
 ```python
->>> flight_departure = OffsetDateTime(2023, 4, 21, hour=9, offset=-4)
->>> flight_arrival = OffsetDateTime(2023, 4, 21, hour=10, offset=-6)
->>> (flight_arrival - flight_departure).in_hours()
-3
->>> # This will emit a warning!
->>> flight_arrival.add(hours=3)  # a DST-bug waiting to happen!
->>> # instead:
->>> flight_arrival.add(hours=3, stale_offset_ok=True)  # explicitly suppress
->>> flight_arrival.in_tz("America/New_York").add(hours=3)  # use the full timezone
+>>> observed = OffsetDateTime(2024, 3, 9, 12, offset=hours(-7))
+>>> observed.add(days=1)  # emits StaleOffsetWarning
+OffsetDateTime("2024-03-10 12:00:00-07:00")
+>>> observed.assume_tz("America/Denver").add(days=1)
+ZonedDateTime("2024-03-10 12:00:00-06:00[America/Denver]")
 ```
 
-## Comparison of types
+When the originating timezone is known, associate it **before** doing the
+arithmetic using {meth}`~whenever.OffsetDateTime.assume_tz`; see the complete
+{ref}`offset mismatch <offset-mismatch>` flow. Whenever emits
+{class}`~whenever.StaleOffsetWarning` for operations that preserve an offset
+which may no longer apply in its original regional context.
 
-Here's a summary of the differences between the types:
+Some domains genuinely define an offset as permanently fixed. In that case,
+preserving it is intentional:
 
-|                              | Instant | OffsetDT|ZonedDT|PlainDT  |
-|:-----------------------------|:-------:|:-------:|:-----:|:-------:|
-| knows the **exact** time     |   ✅    | ✅      | ✅    |  ❌     |
-| knows the **local** time     |  ❌     |  ✅     |  ✅   |  ✅     |
-| knows about DST rules        |  ❌     |  ❌     |  ✅   |  ❌     |
+```python
+>>> protocol_time = OffsetDateTime(2024, 3, 9, 12, offset=hours(5))
+>>> protocol_time.add(days=1, stale_offset_ok=True)
+OffsetDateTime("2024-03-10 12:00:00+05:00")
+```
+
+Use `stale_offset_ok=True` when fixed-offset arithmetic is deliberate or the
+provenance risk is accepted. If the entire domain uses permanently fixed
+offsets, configure {class}`~whenever.StaleOffsetWarning` globally as described
+in {ref}`warnings`.
 
 [^1]: `java.time`, Noda Time (C#), and Temporal (JavaScript) all use a similar datamodel.

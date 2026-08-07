@@ -196,22 +196,24 @@ def test_replace():
     d = ItemizedDateDelta(years=2, months=3, weeks=4)
 
     # changing an existing value
-    assert d.replace(months=10).exact_eq(
+    assert d.replace(months=10).strict_eq(
         ItemizedDateDelta(years=2, months=10, weeks=4)
     )
 
     # adding a value
-    assert d.replace(days=5).exact_eq(
+    assert d.replace(days=5).strict_eq(
         ItemizedDateDelta(years=2, months=3, weeks=4, days=5)
     )
 
     # setting to zero
-    assert d.replace(weeks=0).exact_eq(
+    assert d.replace(weeks=0).strict_eq(
         ItemizedDateDelta(years=2, months=3, weeks=0)
     )
 
     # setting to missing (zero)
-    assert d.replace(years=None).exact_eq(ItemizedDateDelta(months=3, weeks=4))
+    assert d.replace(years=None).strict_eq(
+        ItemizedDateDelta(months=3, weeks=4)
+    )
 
     # invalid sign
     with pytest.raises(ValueError, match="sign"):
@@ -221,12 +223,12 @@ def test_replace():
         assert (-d).replace(days=1)
 
     # sign becomes zero
-    assert d.replace(years=0, months=0, weeks=0).exact_eq(
+    assert d.replace(years=0, months=0, weeks=0).strict_eq(
         ItemizedDateDelta(years=0, months=0, weeks=0)
     )
 
     # sign becomes negative
-    assert d.replace(years=-3, months=-1, weeks=0, days=-4).exact_eq(
+    assert d.replace(years=-3, months=-1, weeks=0, days=-4).strict_eq(
         ItemizedDateDelta(years=-3, months=-1, weeks=0, days=-4)
     )
 
@@ -234,7 +236,7 @@ def test_replace():
     assert (
         (-d)
         .replace(years=3, months=1, weeks=0, days=4)
-        .exact_eq(ItemizedDateDelta(years=3, months=1, weeks=0, days=4))
+        .strict_eq(ItemizedDateDelta(years=3, months=1, weeks=0, days=4))
     )
 
     # last field dropped
@@ -242,8 +244,8 @@ def test_replace():
         d.replace(years=None, months=None, weeks=None)
 
     # no arguments
-    assert d.replace().exact_eq(d)
-    assert (-d).replace().exact_eq(-d)
+    assert d.replace().strict_eq(d)
+    assert (-d).replace().strict_eq(-d)
 
     # invalid field
     with pytest.raises(TypeError, match="foo"):
@@ -291,13 +293,15 @@ class TestEq:
         assert d != ItemizedDelta(days=5)
 
 
-def test_exact_eq():
+def test_strict_eq():
     d1 = ItemizedDateDelta(years=2, months=0, weeks=5, days=0)
     d2 = ItemizedDateDelta(years=2, weeks=5)
     d3 = ItemizedDateDelta(years=2, months=1, weeks=5)
-    assert d1.exact_eq(d1)
-    assert not d1.exact_eq(d2)
-    assert not d1.exact_eq(d3)
+    assert d1.strict_eq(d1)
+    assert not d1.strict_eq(d2)
+    assert not d1.strict_eq(d3)
+    with pytest.raises(TypeError):
+        d1.strict_eq(ItemizedDelta(years=2))  # type: ignore[arg-type]
 
 
 class TestFormatIso:
@@ -356,10 +360,10 @@ def test_str():
 
 
 def test_init_from_str():
-    assert ItemizedDateDelta("P2W3D").exact_eq(
+    assert ItemizedDateDelta("P2W3D").strict_eq(
         ItemizedDateDelta(weeks=2, days=3)
     )
-    assert ItemizedDateDelta("P1Y6M").exact_eq(
+    assert ItemizedDateDelta("P1Y6M").strict_eq(
         ItemizedDateDelta(years=1, months=6)
     )
     with pytest.raises(ValueError):
@@ -422,7 +426,7 @@ class TestParseIso:
         ],
     )
     def test_valid(self, s: str, expected: ItemizedDateDelta):
-        assert ItemizedDateDelta.parse_iso(s).exact_eq(expected)
+        assert ItemizedDateDelta.parse_iso(s).strict_eq(expected)
 
     @pytest.mark.parametrize("s", INVALID_DELTAS)
     def test_invalid(self, s: str):
@@ -465,7 +469,7 @@ def test_in_units(
     kwargs: Any,
     expect: ItemizedDateDelta,
 ):
-    assert d.in_units(units, relative_to=relative_to, **kwargs).exact_eq(
+    assert d.in_units(units, relative_to=relative_to, **kwargs).strict_eq(
         expect
     )
     if kwargs.get("round_increment", 1) == 1 and units[-1] == "days":
@@ -549,10 +553,10 @@ class TestAddSub:
         kwargs: Any,
     ):
         result = d1.add(d2, relative_to=relative_to, **kwargs)
-        assert result.exact_eq(expected)
+        assert result.strict_eq(expected)
 
         # same result with kwargs
-        assert d1.add(**d2, relative_to=relative_to, **kwargs).exact_eq(  # type: ignore[call-overload, arg-type]
+        assert d1.add(**d2, relative_to=relative_to, **kwargs).strict_eq(  # type: ignore[call-overload, arg-type]
             expected
         )
 
@@ -563,13 +567,13 @@ class TestAddSub:
         ):
             assert d1.subtract(
                 -d2, relative_to=relative_to, **kwargs
-            ).exact_eq(expected)
+            ).strict_eq(expected)
 
             assert d1.subtract(  # type: ignore[call-overload]
                 **{k: -v for k, v in d2.items()},
                 relative_to=relative_to,
                 **kwargs,
-            ).exact_eq(expected)
+            ).strict_eq(expected)
 
     def test_mixed_sign_in_kwargs_allowed(self):
         assert (
@@ -580,7 +584,7 @@ class TestAddSub:
                 relative_to=Date("2021-12-31"),
                 in_units=["years", "months"],
             )
-            .exact_eq(ItemizedDateDelta(years=1, months=3))
+            .strict_eq(ItemizedDateDelta(years=1, months=3))
         )
 
     def test_no_positional_and_kwarg_mix(self):
@@ -597,12 +601,12 @@ class TestAddSub:
             relative_to=Date("2021-12-31"),
             in_units=["years", "months"],
         )
-        assert result.exact_eq(ItemizedDateDelta(years=2, months=0))
+        assert result.strict_eq(ItemizedDateDelta(years=2, months=0))
 
     def test_add_nothing_changes_units(self):
         ItemizedDateDelta(years=2).add(
             relative_to=Date("2021-12-31"), in_units=["months", "days"]
-        ).exact_eq(ItemizedDateDelta(months=24, days=0))
+        ).strict_eq(ItemizedDateDelta(months=24, days=0))
 
     def test_invalid_unit_kwarg(self):
         with pytest.raises(TypeError, match="foo"):
@@ -638,7 +642,7 @@ class TestAddSub:
             round_mode="floor",
             round_increment=2,
             in_units=["years", "months"],
-        ).exact_eq(ItemizedDateDelta(years=-3, months=-10))
+        ).strict_eq(ItemizedDateDelta(years=-3, months=-10))
 
     def test_month_clamping_avoided_by_summing_first(self):
         # Sequential application would apply the month-end clamping twice:
@@ -648,7 +652,7 @@ class TestAddSub:
         assert (
             ItemizedDateDelta(months=1)
             .add(months=1, relative_to=Date(2021, 1, 31), in_units=["months"])
-            .exact_eq(ItemizedDateDelta(months=2))
+            .strict_eq(ItemizedDateDelta(months=2))
         )
 
     def test_full_delta_with_datetime_reference(self):
@@ -658,14 +662,14 @@ class TestAddSub:
             relative_to=reference,
             in_units=["months", "hours"],
         )
-        assert result.exact_eq(ItemizedDelta(months=2, hours=2))
+        assert result.strict_eq(ItemizedDelta(months=2, hours=2))
 
         result = ItemizedDateDelta(months=3).subtract(
             ItemizedDelta(months=1, hours=2),
             relative_to=reference,
             in_units=["hours"],
         )
-        assert result.exact_eq(ItemizedDelta(hours=1414))
+        assert result.strict_eq(ItemizedDelta(hours=1414))
 
     def test_full_delta_requires_datetime_reference(self):
         with pytest.raises(
@@ -680,36 +684,36 @@ class TestAddSub:
     def test_reference_free_add_and_subtract(self):
         with pytest.warns(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=1).add(ItemizedDateDelta(days=0))
-        assert result.exact_eq(ItemizedDateDelta(days=1))
+        assert result.strict_eq(ItemizedDateDelta(days=1))
 
         with pytest.warns(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=1).add(days=2)
-        assert result.exact_eq(ItemizedDateDelta(days=3))
+        assert result.strict_eq(ItemizedDateDelta(days=3))
 
         with pytest.warns(CalendarUnitCompositionWarning):
             full_result = ItemizedDateDelta(days=2).subtract(
                 ItemizedDelta(days=1)
             )
-        assert full_result.exact_eq(ItemizedDelta(days=1))
+        assert full_result.strict_eq(ItemizedDelta(days=1))
 
     def test_operator_composition(self):
         with pytest.warns(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=1) + ItemizedDateDelta(months=2)
-        assert result.exact_eq(ItemizedDateDelta(months=2, days=1))
+        assert result.strict_eq(ItemizedDateDelta(months=2, days=1))
 
         with pytest.warns(CalendarUnitCompositionWarning):
             full_result = ItemizedDateDelta(days=2) + ItemizedDelta(days=3)
-        assert full_result.exact_eq(ItemizedDelta(days=5))
+        assert full_result.strict_eq(ItemizedDelta(days=5))
 
         with pytest.warns(CalendarUnitCompositionWarning):
             full_result = ItemizedDateDelta(days=2) - ItemizedDelta(days=1)
-        assert full_result.exact_eq(ItemizedDelta(days=1))
+        assert full_result.strict_eq(ItemizedDelta(days=1))
 
     def test_cal_unit_composition_ok_suppresses_warning(self):
         result = ItemizedDateDelta(days=1).add(
             ItemizedDateDelta(days=0), cal_unit_composition_ok=True
         )
-        assert result.exact_eq(ItemizedDateDelta(days=1))
+        assert result.strict_eq(ItemizedDateDelta(days=1))
 
     def test_no_op_does_not_warn(self):
         d = ItemizedDateDelta(days=1)
@@ -777,17 +781,17 @@ class TestAddSub:
         assert delta.subtract() is delta
         with pytest.warns(CalendarUnitCompositionWarning):
             result = delta.subtract(ItemizedDateDelta(days=1))
-        assert result.exact_eq(ItemizedDateDelta(days=0))
+        assert result.strict_eq(ItemizedDateDelta(days=0))
 
     def test_full_delta_add_and_suppressed_subtract_warning(self):
         with pytest.warns(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=1).add(ItemizedDelta(hours=1))
-        assert result.exact_eq(ItemizedDelta(days=1, hours=1))
+        assert result.strict_eq(ItemizedDelta(days=1, hours=1))
 
         result = ItemizedDateDelta(days=1).subtract(
             ItemizedDelta(hours=-1), cal_unit_composition_ok=True
         )
-        assert result.exact_eq(ItemizedDelta(days=1, hours=1))
+        assert result.strict_eq(ItemizedDelta(days=1, hours=1))
 
     def test_unsupported_operand(self):
         with pytest.raises(TypeError):
@@ -863,7 +867,7 @@ class TestTotal:
 
 def test_abs():
     d = ItemizedDateDelta(days=-5, weeks=-3)
-    assert abs(d).exact_eq(ItemizedDateDelta(days=5, weeks=3))
+    assert abs(d).strict_eq(ItemizedDateDelta(days=5, weeks=3))
 
     d_pos = ItemizedDateDelta(days=2, years=30)
     assert abs(d_pos) is d_pos
@@ -874,8 +878,8 @@ def test_abs():
 
 def test_neg():
     d = ItemizedDateDelta(days=5, weeks=3, years=200)
-    assert (-d).exact_eq(ItemizedDateDelta(days=-5, weeks=-3, years=-200))
-    assert (--d).exact_eq(d)
+    assert (-d).strict_eq(ItemizedDateDelta(days=-5, weeks=-3, years=-200))
+    assert (--d).strict_eq(d)
 
     d_zero = ItemizedDateDelta(weeks=0)
     assert -d_zero is d_zero
@@ -913,7 +917,7 @@ def test_pickle(d: ItemizedDateDelta):
     assert len(dumped) < 100
     assert d.__reduce__()[0].__module__ == "whenever"
     assert b"whenever._ideltas" not in dumped
-    assert pickle.loads(dumped).exact_eq(d)
+    assert pickle.loads(dumped).strict_eq(d)
 
 
 def test_compatible_unpickle():
@@ -924,6 +928,6 @@ def test_compatible_unpickle():
         b"kl_iddelta\x94\x93\x94(K\x01K\x02K\x03K\x04t\x94R\x94."
     )
     result = pickle.loads(dumped)
-    assert result.exact_eq(
+    assert result.strict_eq(
         ItemizedDateDelta(years=1, months=2, weeks=3, days=4)
     )

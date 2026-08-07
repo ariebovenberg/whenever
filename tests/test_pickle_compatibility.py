@@ -1,4 +1,5 @@
 import struct
+import warnings
 from collections.abc import Callable, Iterator
 from typing import cast
 
@@ -123,12 +124,6 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
             "_unpkl_tdelta",
             (struct.pack("<qI", 9999 * 366 * 24 * 3_600, 1),),
         ),
-        ("_unpkl_ddelta", (1 << 40, 0)),
-        ("_unpkl_ddelta", (1, -1)),
-        ("_unpkl_dtdelta", (1 << 40, 0, 0, 0)),
-        ("_unpkl_dtdelta", (1, -1, 0, 0)),
-        ("_unpkl_dtdelta", (1, 0, -1, 0)),
-        ("_unpkl_dtdelta", (0, 0, 9999 * 366 * 24 * 3_600, 1)),
         (
             "_unpkl_offset",
             (struct.pack("<HBBBBBil", 2024, 1, 1, 0, 0, 0, 0, 86_400),),
@@ -166,20 +161,6 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
 def test_malformed_payload_is_rejected(name: str, args: tuple[object, ...]):
     with pytest.raises((TypeError, ValueError, OverflowError, struct.error)):
         getattr(w, name)(*args)
-
-
-@pytest.mark.parametrize(
-    ("secs", "nanos", "expected"),
-    [
-        (0, 1_000_000_000, (1, 0)),
-        (0, -1, (0, -1)),
-    ],
-)
-def test_legacy_datetime_delta_unpickler_normalizes_subseconds(
-    secs: int, nanos: int, expected: tuple[int, int]
-):
-    value = getattr(w, "_unpkl_dtdelta")(0, 0, secs, nanos)
-    assert value.in_months_days_secs_nanos()[2:] == expected
 
 
 @pytest.mark.parametrize(
@@ -223,13 +204,44 @@ def test_rust_unpicklers_require_exact_bytes(
         getattr(w, name)(*args)
 
 
-def test_zoned_pickle_preserves_stored_offset():
-    value = getattr(w, "_unpkl_zoned")(
-        struct.pack("<HBBBBBil", 2023, 7, 1, 12, 0, 0, 0, 3_600),
-        "Europe/Amsterdam",
-    )
+def test_zoned_pickle_reconciles_changed_offset_rules():
+    with pytest.warns(w.PickleOffsetMismatchWarning) as caught:
+        value = getattr(w, "_unpkl_zoned")(
+            struct.pack("<HBBBBBil", 2023, 7, 1, 12, 0, 0, 0, 3_600),
+            "Europe/Amsterdam",
+        )
 
-    assert value.offset == w.TimeDelta(hours=1)
+    assert caught[0].filename == __file__
+    assert value.to_instant() == w.Instant.from_utc(2023, 7, 1, 11)
+    assert value.to_plain() == w.PlainDateTime(2023, 7, 1, 13)
+    assert value.offset == w.TimeDelta(hours=2)
+    message = str(caught[0].message)
+    assert "Europe/Amsterdam" in message
+    assert "pickle stored 2023-07-01 12:00:00 with offset +01:00" in message
+    assert "current timezone rules" in message
+    assert "instant to 2023-07-01 13:00:00 with offset +02:00" in message
+    assert "instant was preserved" in message
+    assert "local datetime and offset were updated" in message
+
+
+def test_zoned_pickle_unchanged_rules_do_not_warn():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        value = getattr(w, "_unpkl_zoned")(
+            struct.pack("<HBBBBBil", 2023, 7, 1, 12, 0, 0, 123, 7_200),
+            "Europe/Amsterdam",
+        )
+
+    assert value.strict_eq(
+        w.ZonedDateTime(
+            2023,
+            7,
+            1,
+            12,
+            nanosecond=123,
+            tz="Europe/Amsterdam",
+        )
+    )
 
 
 @pytest.mark.skipif(
@@ -329,8 +341,8 @@ def test_cross_backend_payloads_and_unpicklers(
 
 @pytest.fixture
 def initialized_pure_tz_store() -> Iterator[None]:
-    previous = py._get_tzpath()
-    py._set_tzpath(w.TZPATH)
+    previous = py.get_tzpath()
+    py._set_tzpath(w.get_tzpath())
     try:
         yield
     finally:

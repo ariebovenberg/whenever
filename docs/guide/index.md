@@ -20,7 +20,7 @@ For more details, see the {ref}`API reference <api>`.
    choosing-a-type
    comparison
    conversions
-   ambiguity
+   resolving-local-times
    arithmetic
    deltas
    rounding
@@ -28,6 +28,7 @@ For more details, see the {ref}`API reference <api>`.
    stdlib-convert
    partial-types
    system-tz
+   pickling
    testing
    warnings
 ```

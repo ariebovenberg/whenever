@@ -1,7 +1,9 @@
 #[cfg(test)]
 use crate::common::{fmt::Sink, parse::Scan};
 use crate::{
-    common::{fmt, format_args, pattern, pickle, round_args as round},
+    common::{
+        compat::parse_pattern_keyword, fmt, format_args, pattern, pickle, round_args as round,
+    },
     docstrings as doc,
     domain::scalar::*,
     py::*,
@@ -219,28 +221,6 @@ fn to_stdlib(cls: PyClass<Time>, slf: Time) -> PyReturn {
     slf.to_stdlib_time(cls.state().py_api()?)
 }
 
-fn py_time(cls: PyClass<Time>, slf: Time) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"py_time() is deprecated and will be removed in a future release; use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
-}
-
-fn from_py_time(cls: PyClass<Time>, arg: PyObj) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"from_py_time() is deprecated and will be removed in a future release; use Time() instead.",
-        1,
-    )?;
-    Time::from_stdlib_time(
-        arg.cast_allow_subclass::<PyTime>()
-            .ok_or_type_err("argument must be a datetime.time")?,
-    )
-    .to_obj(cls)
-}
-
 fn format_iso(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     format_args::format_time_iso(slf, cls.state(), args, kwargs)
 }
@@ -319,8 +299,12 @@ fn format(cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(pattern::CategorySet::TIME, "Time")?;
-    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
+    pattern.validate(
+        pattern::CategorySet::TIME,
+        "Time",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     pattern.format(&slf.pattern_values())
 }
 
@@ -339,16 +323,19 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         .ok_or_type_err("parse() argument must be str")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = handle_one_kwarg("parse", *cls.state().str_format, kwargs)?.ok_or_else(|| {
-        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
-    })?;
+    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format must be str")?;
+        .ok_or_type_err("pattern must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(pattern::CategorySet::TIME, "Time")?;
+    pattern.validate(
+        pattern::CategorySet::TIME,
+        "Time",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     pattern.parse(s).into_value_err()?.time()?.to_obj(cls)
 }
 
@@ -357,11 +344,9 @@ static mut METHODS: &[PyMethodDef] = &[
     DEEPCOPY_METHOD,
     method0!(Time, __reduce__, c""),
     method0!(Time, to_stdlib, doc::TIME_TO_STDLIB),
-    method0!(Time, py_time, doc::TIME_PY_TIME),
     method_kwargs!(Time, replace, doc::TIME_REPLACE),
     method_kwargs!(Time, format_iso, doc::TIME_FORMAT_ISO),
     classmethod1!(Time, parse_iso, doc::TIME_PARSE_ISO),
-    classmethod1!(Time, from_py_time, doc::TIME_FROM_PY_TIME),
     method1!(Time, on, doc::TIME_ON),
     method_kwargs!(Time, round, doc::TIME_ROUND),
     method1!(Time, format, doc::TIME_FORMAT),

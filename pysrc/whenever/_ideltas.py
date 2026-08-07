@@ -36,17 +36,24 @@ from ._common import (
     _Base,
     add_alternate_constructors,
     final,
+    warn_deprecated,
 )
 from ._math import (
     DATE_DELTA_UNITS,
     DELTA_UNITS,
     DIFF_FUNCS,
+    EXACT_TOTAL_UNITS,
     EXACT_UNITS_STRICT,
     Sign,
     resolve_leap_day,
 )
 from ._parse import parse_timedelta_component
-from ._typing import DateDeltaUnitStr, DeltaUnitStr, RoundModeStr
+from ._typing import (
+    DateDeltaUnitStr,
+    DeltaTotalUnitStr,
+    DeltaUnitStr,
+    RoundModeStr,
+)
 
 if TYPE_CHECKING:
     from . import _pywhenever as _whenever
@@ -889,7 +896,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         False
 
         If you want strict equality (including presence of fields),
-        use :meth:`exact_eq`.
+        use :meth:`strict_eq`.
 
         """
         if not isinstance(other, ItemizedDelta):
@@ -905,8 +912,10 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             and (self._nanoseconds or 0) == (other._nanoseconds or 0)
         )
 
-    def exact_eq(self, other: ItemizedDelta, /) -> bool:
+    def strict_eq(self, other: ItemizedDelta, /) -> bool:
         """Check for strict equality. All fields *and their presence* must match."""
+        if type(other) is not type(self):
+            raise TypeError("strict_eq() requires same-type arguments")
         return (
             self._years == other._years
             and self._months == other._months
@@ -917,6 +926,18 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             and self._seconds == other._seconds
             and self._nanoseconds == other._nanoseconds
         )
+
+    def exact_eq(self, other: ItemizedDelta, /) -> bool:
+        """Deprecated alias for :meth:`strict_eq`.
+
+        .. deprecated:: 0.11
+           Use :meth:`strict_eq` instead.
+        """
+        warn_deprecated(
+            "exact_eq() is deprecated; use strict_eq() instead",
+            stacklevel=2,
+        )
+        return self.strict_eq(other)
 
     def __abs__(self) -> ItemizedDelta:
         """If the contents are negative, return the positive version
@@ -1364,7 +1385,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     def total(
         self,
-        unit: DeltaUnitStr,
+        unit: DeltaTotalUnitStr,
         /,
         *,
         relative_to: _whenever.ZonedDateTime
@@ -1400,7 +1421,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             STALE_OFFSET_CALENDAR_MSG,
         )
 
-        is_exact_unit = unit in EXACT_UNITS_STRICT
+        is_exact_unit = unit in EXACT_TOTAL_UNITS
         if isinstance(relative_to, PlainDateTime):
             if (self._has_exact_time() or is_exact_unit) and (
                 self._has_cal() or not is_exact_unit
@@ -1593,8 +1614,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     Note
     ----
-    Unlike its predecessor ``DateDelta``, ``ItemizedDateDelta`` does not normalize
-    its fields. This means that ``ItemizedDateDelta(months=14)`` and
+    ``ItemizedDateDelta`` does not normalize its fields. This means that
+    ``ItemizedDateDelta(months=14)`` and
     ``ItemizedDateDelta(years=1, months=2)`` are considered different values.
     To convert to a normalized form, use :meth:`in_units`.
     See also the `delta documentation <https://whenever.rtfd.io/en/latest/guide/deltas.html>`_.
@@ -1973,7 +1994,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         - Zero values are considered equivalent to missing values.
 
         If you want strict equality (including presence of fields),
-        use :meth:`exact_eq`.
+        use :meth:`strict_eq`.
 
         >>> d = ItemizedDateDelta(weeks=2, days=3)
         >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
@@ -1990,7 +2011,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             and (self._days or 0) == (other._days or 0)
         )
 
-    def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
+    def strict_eq(self, other: ItemizedDateDelta, /) -> bool:
         """Check for strict equality. All fields *and their presence* must match.
 
         >>> d = ItemizedDateDelta(weeks=2, days=3)
@@ -1998,15 +2019,29 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         True
         >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
         True
-        >>> d.exact_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
+        >>> d.strict_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
         False
         """
+        if type(other) is not type(self):
+            raise TypeError("strict_eq() requires same-type arguments")
         return (
             self._years == other._years
             and self._months == other._months
             and self._weeks == other._weeks
             and self._days == other._days
         )
+
+    def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
+        """Deprecated alias for :meth:`strict_eq`.
+
+        .. deprecated:: 0.11
+           Use :meth:`strict_eq` instead.
+        """
+        warn_deprecated(
+            "exact_eq() is deprecated; use strict_eq() instead",
+            stacklevel=2,
+        )
+        return self.strict_eq(other)
 
     def __abs__(self) -> ItemizedDateDelta:
         """If the contents are negative, return the positive version

@@ -20,6 +20,7 @@ release = metadata["Version"]
 nitpicky = True
 nitpick_ignore = [
     ("py:class", "whenever._pywhenever._T"),
+    ("py:class", "_SystemTZ"),
     (
         "py:class",
         "TypeAliasForwardRef",
@@ -70,8 +71,12 @@ maximum_signature_line_length = 150
 autodoc_type_aliases = {
     "RoundModeStr": "RoundModeStr",
     "DeltaUnitStr": "DeltaUnitStr",
+    "DeltaTotalUnitStr": "DeltaTotalUnitStr",
     "DateDeltaUnitStr": "DateDeltaUnitStr",
     "ExactDeltaUnitStr": "ExactDeltaUnitStr",
+    "DisambiguationStr": "DisambiguationStr",
     "DisambiguateStr": "DisambiguateStr",
     "OffsetMismatchStr": "OffsetMismatchStr",
+    "TimestampUnitStr": "TimestampUnitStr",
+    "_SystemTZ": "SYSTEM_TZ",
 }

@@ -38,7 +38,7 @@ This is the case when converting from a naive datetime:
 ```python
 >>> from whenever import PlainDateTime
 >>> dt = PlainDateTime(2024, 3, 10, 15, 0, 0)
->>> dt.assume_system_tz()
+>>> dt.assume_tz(SYSTEM_TZ)
 ZonedDateTime("2024-03-10 15:00:00-05:00[America/New_York]")
 ```
 
@@ -46,7 +46,7 @@ or when converting from a moment in time:
 
 ```python
 >>> now = Instant.now()
->>> now.to_system_tz()
+>>> now.to_tz(SYSTEM_TZ)
 ZonedDateTime("2024-03-10 10:30:00-05:00[America/New_York]")
 ```
 

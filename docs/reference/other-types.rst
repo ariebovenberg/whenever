@@ -14,12 +14,18 @@ i.e. enums, unions, and literals.
 
    See :ref:`rounding-modes` for more information.
 
-.. autotype:: DisambiguateStr
+.. autotype:: DisambiguationStr
 
    See :ref:`ambiguity` for more information.
 
+.. autotype:: DisambiguateStr
+
+   Deprecated alias of :class:`DisambiguationStr`.
+
 
 .. autotype:: DeltaUnitStr
+.. autotype:: DeltaTotalUnitStr
 .. autotype:: DateDeltaUnitStr
 .. autotype:: ExactDeltaUnitStr
 .. autotype:: OffsetMismatchStr
+.. autotype:: TimestampUnitStr

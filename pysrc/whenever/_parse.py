@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from datetime import (
     date as _date,
     datetime as _datetime,
@@ -113,7 +114,7 @@ def offset_dt_from_iso(s: str) -> tuple[_datetime, Nanos]:
 
     try:
         rest, date = _split_iso_date_time(s)
-        time, nanos, offset, _ = _time_offset_tz_from_iso(rest)
+        time, nanos, offset, _, _ = _time_offset_tz_from_iso(rest)
         if offset is None:
             raise ValueError("Missing offset")
         elif offset == "Z":
@@ -130,15 +131,53 @@ def offset_dt_from_iso(s: str) -> tuple[_datetime, Nanos]:
         _parse_err(s)
 
 
-def zdt_from_iso(s: str) -> tuple[_datetime, Nanos, TimeZone]:
-    from ._tz import get_tz, resolve_ambiguity
+def _round_offset_to_minute(offset: int, /) -> int:
+    sign = 1 if offset >= 0 else -1
+    return sign * ((abs(offset) + 30) // 60 * 60)
+
+
+def matching_local_offset(
+    local: _datetime,
+    tz: TimeZone,
+    parsed_offset: int,
+    exact: bool,
+    /,
+) -> _datetime | None:
+    from ._tz import Fold, Gap, Unique
+
+    candidate_offsets: tuple[int, ...]
+    match tz.ambiguity_for_local(local):
+        case Unique(offset):
+            candidate_offsets = (offset,)
+        case Fold(_, earlier_offset, later_offset):
+            candidate_offsets = (earlier_offset, later_offset)
+        case Gap():  # pragma: no branch
+            candidate_offsets = ()
+
+    for offset in candidate_offsets:
+        comparable = offset if exact else _round_offset_to_minute(offset)
+        if comparable == parsed_offset:
+            return check_utc_bounds(
+                local.replace(tzinfo=mk_fixed_tzinfo(offset))
+            )
+    return None
+
+
+def zdt_from_iso(
+    s: str,
+    disambiguation: object,
+    offset_mismatch: str,
+    resolve_local: Callable[[_datetime, TimeZone, object], _datetime],
+    /,
+) -> tuple[_datetime, Nanos, TimeZone]:
+    from ._tz import get_tz
 
     if len(s) < 11 or "W" in s[:11] or not s.isascii():
         _parse_err(s)
 
     try:
         rest, date = _split_iso_date_time(s)
-        time, nanos, offset, tzid = _time_offset_tz_from_iso(rest)
+        time, nanos, offset, offset_exact, tzid = _time_offset_tz_from_iso(rest)
     except ValueError:
         _parse_err(s)
 
@@ -147,23 +186,35 @@ def zdt_from_iso(s: str) -> tuple[_datetime, Nanos, TimeZone]:
 
     tz = get_tz(tzid)
 
+    if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
+        raise ValueError(f"invalid offset_mismatch: {offset_mismatch!r}")
+
+    local = _datetime.combine(date, time)
     if offset is None:
-        dt = resolve_ambiguity(_datetime.combine(date, time), tz, "compatible")
+        dt = resolve_local(local, tz, disambiguation)
     elif offset == "Z":
-        utc_dt = _datetime.combine(date, time, UTC)
-        dt = utc_dt.astimezone(
-            mk_fixed_tzinfo(tz.offset_for_instant(int(utc_dt.timestamp())))
-        )
-    else:
-        assert isinstance(offset, _timezone)
-        dt = _datetime.combine(date, time, offset)
+        dt = local.replace(tzinfo=UTC)
         # Raise an exception if instant is out of range
         dt.astimezone(UTC)
-        # Ensure the offset is correct for the given instant
         expected_offset = tz.offset_for_instant(int(dt.timestamp()))
-        # NOTE: mypy doesn't know utcoffset() can never return None here
-        if dt.utcoffset().total_seconds() != expected_offset:  # type: ignore[union-attr]
+        dt = dt.astimezone(mk_fixed_tzinfo(expected_offset))
+    else:
+        assert isinstance(offset, _timezone)
+        parsed_offset = int(offset.utcoffset(None).total_seconds())
+        matching = matching_local_offset(
+            local, tz, parsed_offset, offset_exact
+        )
+        if matching is not None:
+            dt = matching
+        elif offset_mismatch == "raise":
             raise InvalidOffsetError()
+        elif offset_mismatch == "keep_instant":
+            dt = local.replace(tzinfo=offset)
+            dt.astimezone(UTC)
+            expected_offset = tz.offset_for_instant(int(dt.timestamp()))
+            dt = dt.astimezone(mk_fixed_tzinfo(expected_offset))
+        else:
+            dt = resolve_local(local, tz, disambiguation)
 
     return (dt, nanos, tz)
 
@@ -183,7 +234,13 @@ def time_from_iso(s_orig: str) -> tuple[_time, Nanos]:
 # Parse the time, UTC offset, and timezone ID
 def _time_offset_tz_from_iso(
     s: str,
-) -> tuple[_time, Nanos, _timezone | Literal["Z"] | None, SafeTzId | None]:
+) -> tuple[
+    _time,
+    Nanos,
+    _timezone | Literal["Z"] | None,
+    bool,
+    SafeTzId | None,
+]:
     # ditch the bracketted timezone (if present)
     if s.endswith("]"):
         from ._tz import validate_tzid
@@ -200,18 +257,21 @@ def _time_offset_tz_from_iso(
     if s.endswith(("Z", "z")):
         s_time = s[:-1]
         offset = "Z"
+        offset_exact = True
     else:
         s_time, sign, s_offset = _split_nextchar(s, "+-")
         if sign is None:
             offset = None
+            offset_exact = False
         else:
             offset_secs = _offset_from_iso(s_offset)
             if sign == "-":
                 offset_secs = -offset_secs
             offset = mk_fixed_tzinfo(offset_secs)
+            offset_exact = len(s_offset) in (6, 8)
 
     time, nanos = time_from_iso(s_time)
-    return (time, nanos, offset, tz)
+    return (time, nanos, offset, offset_exact, tz)
 
 
 def yearmonth_from_iso(s: str) -> _date:
