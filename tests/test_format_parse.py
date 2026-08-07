@@ -352,10 +352,10 @@ class TestPatternDeprecations:
     def test_cached_pattern_warns_at_each_call_site(self):
         compile_pattern.cache_clear()
 
-        def first():
+        def first() -> None:
             Time(13).format("h")
 
-        def second():
+        def second() -> None:
             Time(13).format("h")
 
         with warnings.catch_warnings(record=True) as w:
