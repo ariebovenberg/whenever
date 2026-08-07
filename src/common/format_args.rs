@@ -141,7 +141,7 @@ pub(crate) fn format_datetime_iso(
             unit = parse_precision(v, state)?;
         } else if eq(k, *state.str_basic) {
             basic = v.expect_bool("basic")?;
-        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.str_tz_display) {
+        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.str_tz_id_display) {
             display_arg.set_new(v);
         } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.str_tz) {
             display_arg.set_old(v);
@@ -151,25 +151,25 @@ pub(crate) fn format_datetime_iso(
         Ok(true)
     })?;
 
-    let tz_display = match display_arg.finish(
+    let tz_id_display = match display_arg.finish(
         state,
         "format_iso",
-        "tz_display",
+        "tz_id_display",
         "tz",
-        c"'tz' is deprecated; use 'tz_display' instead",
+        c"'tz' is deprecated; use 'tz_id_display' instead",
         1,
     )? {
         None => TzDisplay::Required,
         Some(value) if value.is(*state.str_always) => {
             warn_deprecated(
                 state,
-                c"tz_display='always' is deprecated; use 'required' instead",
+                c"tz_id_display='always' is deprecated; use 'required' instead",
                 1,
             )?;
             TzDisplay::Required
         }
         Some(value) => match_interned_str(
-            "tz_display",
+            "tz_id_display",
             value,
             &[
                 (*state.str_auto, TzDisplay::Auto),
@@ -183,7 +183,7 @@ pub(crate) fn format_datetime_iso(
         Suffix::Absent => SuffixFormat::Absent,
         Suffix::Zulu => SuffixFormat::Zulu,
         Suffix::Offset(offset) => SuffixFormat::Offset(offset.iso_format(basic)),
-        Suffix::OffsetTz(offset, tz_key) => match (tz_key, tz_display) {
+        Suffix::OffsetTz(offset, tz_key) => match (tz_key, tz_id_display) {
             (Some(key), TzDisplay::Auto | TzDisplay::Required) => {
                 SuffixFormat::OffsetTz(offset.iso_format(basic), key)
             }

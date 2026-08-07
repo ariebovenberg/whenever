@@ -4757,7 +4757,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         ] = "auto",
         basic: bool = False,
         sep: Literal["T", " "] = "T",
-        tz_display: Literal["required", "never", "auto", "always"] = UNSET,
+        tz_id_display: Literal["required", "never", "auto", "always"] = UNSET,
         **kwargs: Any,
     ) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
@@ -4778,9 +4778,9 @@ class ZonedDateTime(_ExactAndLocalTime):
             Whether to use the basic ISO format (without separators) instead of the extended one.
         sep
             The separator between the date and time parts.
-        tz
+        tz_id_display
             Whether to include the timezone ID in the output.
-            ``"always"`` (default) raises an error if the timezone ID is not available
+            ``"required"`` (default) raises an error if the timezone ID is not available
             (in practice, this should only happen for some system timezones without a corresponding IANA timezone ID).
             ``"auto"`` includes the ID if available, and omits it otherwise.
             ``"never"`` always omits the ID.
@@ -4791,34 +4791,34 @@ class ZonedDateTime(_ExactAndLocalTime):
         Although it is gaining popularity, it is not yet widely supported
         by ISO 8601 parsers.
         """
-        tz_display = normalize_renamed_keyword(
-            tz_display,
+        tz_id_display = normalize_renamed_keyword(
+            tz_id_display,
             kwargs,
             function_name="format_iso",
-            new_name="tz_display",
+            new_name="tz_id_display",
             old_name="tz",
             warning_stacklevel=3,
         )
         check_no_kwargs(kwargs, "format_iso")
-        if tz_display is UNSET:
-            tz_display = "required"
-        elif tz_display == "always":
+        if tz_id_display is UNSET:
+            tz_id_display = "required"
+        elif tz_id_display == "always":
             warn_deprecated(
-                "tz_display='always' is deprecated; use 'required' instead",
+                "tz_id_display='always' is deprecated; use 'required' instead",
                 stacklevel=2,
             )
-            tz_display = "required"
+            tz_id_display = "required"
 
-        if tz_display == "required":
+        if tz_id_display == "required":
             if self._tz.key is None:
                 raise ValueError(FORMAT_ISO_NO_TZ_MSG)
             suffix = f"[{self._tz.key}]"
-        elif tz_display == "auto":
+        elif tz_id_display == "auto":
             suffix = f"[{self._tz.key}]" if self._tz.key is not None else ""
-        elif tz_display == "never":
+        elif tz_id_display == "never":
             suffix = ""
         else:
-            raise ValueError(f"invalid tz_display: {tz_display!r}")
+            raise ValueError(f"invalid tz_id_display: {tz_id_display!r}")
 
         return (
             _format_dt(
@@ -7147,7 +7147,7 @@ FORMAT_ISO_NO_TZ_MSG = (
     "standard ISO format, which requires it. "
     "This typically means the ZonedDateTime was created from a system timezone "
     "with an unknown ID. To format without the timezone designator, set the "
-    "`tz_display=` argument to 'never' or 'auto'."
+    "`tz_id_display=` argument to 'never' or 'auto'."
 )
 
 DAYS_NOT_ALWAYS_24H_MSG = (

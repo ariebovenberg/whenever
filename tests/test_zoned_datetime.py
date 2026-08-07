@@ -793,16 +793,16 @@ class TestReplaceTime:
 
 class TestFormatIso:
     @pytest.mark.parametrize(
-        ("tz_display", "suffix"),
+        ("tz_id_display", "suffix"),
         [
             ("required", "[Europe/Amsterdam]"),
             ("auto", "[Europe/Amsterdam]"),
             ("never", ""),
         ],
     )
-    def test_tz_display(self, tz_display, suffix):
+    def test_tz_id_display(self, tz_id_display, suffix):
         value = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
-        formatted = value.format_iso(tz_display=tz_display)
+        formatted = value.format_iso(tz_id_display=tz_id_display)
         if suffix:
             assert formatted.endswith(suffix)
         else:
@@ -982,8 +982,8 @@ class TestFormatIso:
         with pytest.raises(TypeError, match="basic"):
             ZDT1.format_iso(basic=1)  # type: ignore[arg-type]
 
-        with pytest.raises(ValueError, match="tz_display"):
-            ZDT1.format_iso(tz_display="sometimes")  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="tz_id_display"):
+            ZDT1.format_iso(tz_id_display="sometimes")  # type: ignore[arg-type]
 
 
 class TestEquality:

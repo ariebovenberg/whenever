@@ -2070,7 +2070,7 @@ See :ref:`pattern-format` for details.
 '2024-03-15 14:30+01:00[Europe/Paris]'
 ";
 pub(crate) const ZONEDDATETIME_FORMAT_ISO: &CStr = c"\
-format_iso($self, *, unit='auto', basic=False, sep='T', tz_display=..., **kwargs)
+format_iso($self, *, unit='auto', basic=False, sep='T', tz_id_display=..., **kwargs)
 --
 
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
@@ -2091,9 +2091,9 @@ basic
     Whether to use the basic ISO format (without separators) instead of the extended one.
 sep
     The separator between the date and time parts.
-tz
+tz_id_display
     Whether to include the timezone ID in the output.
-    ``\"always\"`` (default) raises an error if the timezone ID is not available
+    ``\"required\"`` (default) raises an error if the timezone ID is not available
     (in practice, this should only happen for some system timezones without a corresponding IANA timezone ID).
     ``\"auto\"`` includes the ID if available, and omits it otherwise.
     ``\"never\"`` always omits the ID.
@@ -2557,7 +2557,7 @@ pub(crate) const LOCALTIME_YEAR: &CStr = c"\
 The year component of the datetime";
 pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours. If you wish to round to exactly 24 hours, use `round('hour', increment=24)`.";
 pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"You are using days or weeks as exact time, so Whenever will treat each day as exactly 24 hours. A calendar day can be 23 or 25 hours during a DST transition, so this may differ from calendar arithmetic. If you mean calendar days, perform the operation on a ZonedDateTime or pass `relative_to=...` where supported. If fixed 24-hour periods are intentional, pass `days_assumed_24h_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz_display=` argument to 'never' or 'auto'.";
+pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no timezone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system timezone with an unknown ID. To format without the timezone designator, set the `tz_id_display=` argument to 'never' or 'auto'.";
 pub(crate) const IMPLICIT_DISAMBIGUATION_MSG: &CStr = c"resolving a local datetime that is repeated or skipped by a timezone transition without an explicit disambiguation policy can silently select the wrong instant; pass disambiguation='compatible', 'earlier', 'later', or 'raise'. See https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html";
 pub(crate) const INTEGER_OFFSET_DEPRECATION_MSG: &CStr = c"integer offsets are deprecated because their unit is implicit; pass a TimeDelta instead, for example hours(2)";
 pub(crate) const OFFSET_DATETIME_DOCS_MSG: &CStr = c"For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples.";
