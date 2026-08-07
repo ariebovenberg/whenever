@@ -94,7 +94,7 @@ Migration summary:
 
 | Deprecated spelling | Preferred spelling |
 |---|---|
-| `disambiguate=` / `DisambiguateStr` | `disambiguation=` / `DisambiguationStr` |
+| `disambiguate=` | `disambiguation=` |
 | `from_timestamp_millis(v)` | `from_timestamp(v, unit="millisecond")` |
 | `from_timestamp_nanos(v)` | `from_timestamp(v, unit="nanosecond")` |
 | `timestamp_millis()` | `timestamp(unit="millisecond")` |
@@ -119,6 +119,19 @@ Migration summary:
 | `offset=2` | `offset=hours(2)` |
 | `MonthDay.is_leap()` | `MonthDay.is_leap_day()` |
 | `TZPATH` | `get_tzpath()` |
+
+1.0 removal checklist (after 0.11 has been released):
+
+- Remove the legacy `h`/`hh` and `SS` pattern forms. Keep `h` and `S`
+  reserved rather than assigning them new meanings.
+- Remove the timestamp convenience methods and datetime timestamp factories.
+- Remove the system-timezone convenience methods.
+- Remove `disambiguate=`, `exact_eq()`, and patterned-parse `format=`.
+- Remove ISO-format `tz=` and the `tz_display="always"` value.
+- Remove `ZonedDateTime.tz`, `MonthDay.is_leap()`, and `TZPATH`.
+- Stop accepting integer offsets.
+
+The public type aliases are not part of this removal pass.
 
 ## 0.10.5 (2026-08-07)
 
