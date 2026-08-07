@@ -38,8 +38,8 @@ Additionally, fixed-offset datetimes are explicitly represented with a separate 
 so there's no confusion which class to use for full-featured time zones versus fixed offsets:
 
 ```python
->>> from whenever import OffsetDateTime
->>> odt = OffsetDateTime(2024, 3, 10, 15, offset=-4)
+>>> from whenever import OffsetDateTime, hours
+>>> odt = OffsetDateTime(2024, 3, 10, 15, offset=-hours(4))
 OffsetDateTime("2024-03-10 15:00:00-04:00")
 ```
 

@@ -43,15 +43,14 @@ ZonedDateTime("2020-08-15 08:00:00-04:00[America/New_York]")
 ZonedDateTime("2020-08-15 08:00:00-04:00[America/New_York]")
 >>> # new objects will use the new system timezone
 >>> Instant.now().to_tz(SYSTEM_TZ)
-ZonedDateTime("2025-08-15 15:03:28+01:00[Europe/Amsterdam]")
+ZonedDateTime("2025-08-15 15:03:28+02:00[Europe/Amsterdam]")
 ```
 
 ## Non-IANA system timezones
 
-While most system timezones can be matched with a IANA timezone ID
-(like `Europe/Amsterdam`),
-some systems use custom timezone definitions that don't (unambiguously)
-map to a IANA timezone ID.
+This is uncommon: most system timezones can be matched with an IANA timezone
+ID (like `Europe/Amsterdam`). However, some systems use custom timezone
+definitions that don't unambiguously map to an IANA timezone ID.
 For example, some systems may set the `TZ` environment variable to a POSIX TZ
 string like `CET-1CEST,M3.5.0,M10.5.0/3`,
 or specify a custom timezone file.
@@ -61,7 +60,7 @@ or specify a custom timezone file.
 >>> whenever.reset_system_tz()
 ```
 
-These type of timezone definitions can still account for Daylight Saving Time
+These types of timezone definitions can still account for Daylight Saving Time
 (DST) and other timezone changes:
 
 ```python
@@ -76,5 +75,8 @@ However there are some limitations of such instances of {class}`~whenever.ZonedD
 
 1. Their `tz_id` attribute is `None`
 2. They cannot be pickled
-3. Their ISO 8601 string representation does not include a IANA timezone ID
+3. Their string representation cannot preserve the timezone rules and is not
+   round-trippable. {meth}`~whenever.ZonedDateTime.format_iso` requires an IANA
+   identifier by default; `tz_display="never"` or `"auto"` produces only the
+   local fields and current offset.
 4. The result of `to_stdlib()` will have a fixed offset, not a `ZoneInfo` object.

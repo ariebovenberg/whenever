@@ -80,7 +80,7 @@ and `unit="minute"`.
 There are some restrictions on the allowed increments:
 
 - The increment must be a positive, non-zero integer.
-- In case of rounding datetimes, the increment must be a divide a 24-hour day evenly.
+- When rounding datetimes, the increment must divide a 24-hour day evenly.
   For example, you can round to the nearest 90 minutes (16 increments per day),
   but not to the nearest 7 seconds.
 

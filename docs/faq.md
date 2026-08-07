@@ -357,7 +357,7 @@ use the {meth}`~whenever.ZonedDateTime.since` /
 >>> d2 - d1  # exact elapsed time
 TimeDelta("PT30263h")
 >>> d2.since(d1, in_units=["years", "months", "days"])  # calendar units
-ItemizedDateDelta("P3y5m14d")
+ItemizedDelta("P3y5m14d")
 ```
 
 See {ref}`design` for the full rationale.
