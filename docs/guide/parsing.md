@@ -15,7 +15,10 @@ patterns for everything else.
 
 ## ISO 8601
 
-All types in *whenever* use ISO8601 as their canonical, round-trippable, string representation.
+All types in *whenever* use ISO 8601 as their canonical string representation.
+This representation is round-trippable except in the uncommon case of a zoned
+datetime backed by a system timezone without an IANA identifier (see
+{ref}`systemtime`).
 You can even instantiate objects directly from their ISO 8601 string representation:
 
 ```python
@@ -58,12 +61,16 @@ Use the methods {meth}`~whenever.OffsetDateTime.format_rfc2822` and
 to this format, respectively:
 
 ```python
->>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
+>>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
 >>> d.format_rfc2822()
 'Thu, 28 Dec 2023 11:30:00 +0500'
 >>> OffsetDateTime.parse_rfc2822('Tue, 13 Jul 2021 09:45:00 -0900')
 OffsetDateTime("2021-07-13 09:45:00-09:00")
 ```
+
+RFC 2822 only represents whole seconds and minute-precision offsets.
+Formatting therefore discards nanoseconds and any seconds in the offset; use
+ISO 8601 when those values must round-trip exactly.
 
 ## Custom formats
 
@@ -74,7 +81,7 @@ their format and parse methods—for example,
 Patterns use specifiers like `YYYY`, `MM`, `DD`, `HH`, `mm`, `ss`.
 
 ```python
->>> OffsetDateTime(2024, 3, 15, 14, 30, offset=+2).format(
+>>> OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(2)).format(
 ...     "EEE, DD MMM YYYY HH:mm:ssxxx"
 ... )
 'Fri, 15 Mar 2024 14:30:00+02:00'
@@ -101,14 +108,11 @@ matching offsets, conflicts, `Z`, folds, gaps, and offset precision.
 
 ## Pydantic integration
 
-```{warning}
-Pydantic support is still in beta and may change in the future.
-```
-
-`whenever` types support basic serialization and deserialization
-with [Pydantic](https://docs.pydantic.dev). The behavior is identical to
-{meth}`~whenever.ZonedDateTime.parse_iso` and
-{meth}`~whenever.ZonedDateTime.format_iso`.
+`whenever` types support serialization and deserialization with
+[Pydantic](https://docs.pydantic.dev). Existing instances are preserved;
+strings are validated with each type's `parse_iso()` method and serialized to
+its canonical ISO representation. Other input types and invalid strings raise
+Pydantic's `ValidationError`.
 
 ```python
 >>> from pydantic import BaseModel
@@ -128,6 +132,6 @@ with [Pydantic](https://docs.pydantic.dev). The behavior is identical to
 
 ```{note}
 
-Whenever's parsing is stricter then Pydantic's default `datetime` parsing
+Whenever's parsing is stricter than Pydantic's default `datetime` parsing
 behavior. More flexible parsing may be added in the future.
 ```

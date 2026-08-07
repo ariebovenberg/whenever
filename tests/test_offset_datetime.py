@@ -1109,7 +1109,7 @@ class TestAddSubtractOperators:
         with pytest.raises(ValueError, match="range"):
             OffsetDateTime(9999, 12, 31, 19, 0, offset=hours(-4)) + hours(2)
         with pytest.raises(ValueError, match="range"):
-            OffsetDateTime(1, 1, 1, 5, 0, offset=+5) - hours(2)
+            OffsetDateTime(1, 1, 1, 5, 0, offset=hours(5)) - hours(2)
 
 
 class TestShiftMethods:
@@ -1162,7 +1162,7 @@ class TestShiftMethods:
         with pytest.raises(ValueError, match="out of range"):
             OffsetDateTime(9999, 12, 31, 19, 0, offset=hours(-4)).add(hours=2)
         with pytest.raises(ValueError, match="out of range"):
-            OffsetDateTime(1, 1, 1, 5, 0, offset=+5).subtract(hours=2)
+            OffsetDateTime(1, 1, 1, 5, 0, offset=hours(5)).subtract(hours=2)
 
     @given(
         years=integers(),
@@ -1655,7 +1655,16 @@ def test_to_plain():
     "d, expected",
     [
         (
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(5)),
+            OffsetDateTime(
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                nanosecond=450,
+                offset=hours(5),
+            ),
             "Sat, 15 Aug 2020 23:12:09 +0500",
         ),
         (
@@ -2266,27 +2275,29 @@ class TestRound:
 
     @suppress(StaleOffsetWarning)
     def test_round_by_timedelta(self):
-        d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=+4)
+        d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=hours(4))
         assert d.round(TimeDelta(minutes=15)) == OffsetDateTime(
-            2020, 8, 15, 23, 30, offset=+4
+            2020, 8, 15, 23, 30, offset=hours(4)
         )
-        assert d.round(hours(1)) == OffsetDateTime(2020, 8, 15, 23, offset=+4)
+        assert d.round(hours(1)) == OffsetDateTime(
+            2020, 8, 15, 23, offset=hours(4)
+        )
 
     @suppress(StaleOffsetWarning)
     def test_round_by_timedelta_invalid_not_divides_day(self):
-        d = OffsetDateTime(2020, 8, 15, 12, offset=+4)
+        d = OffsetDateTime(2020, 8, 15, 12, offset=hours(4))
         with pytest.raises(ValueError, match="24.hour"):
             d.round(hours(7))
 
     @suppress(StaleOffsetWarning)
     def test_round_by_timedelta_negative(self):
-        d = OffsetDateTime(2020, 8, 15, 12, offset=+4)
+        d = OffsetDateTime(2020, 8, 15, 12, offset=hours(4))
         with pytest.raises(ValueError, match="positive"):
             d.round(hours(-1))
 
     @suppress(StaleOffsetWarning)
     def test_round_by_timedelta_with_increment(self):
-        d = OffsetDateTime(2020, 8, 15, 12, offset=+4)
+        d = OffsetDateTime(2020, 8, 15, 12, offset=hours(4))
         with pytest.raises(TypeError):
             d.round(hours(1), increment=2)  # type: ignore[call-overload]
 
