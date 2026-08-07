@@ -974,6 +974,7 @@ class ItemizedDelta(
         *,
         cal_unit_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
+    @overload
     def total(
         self,
         unit: Literal[
@@ -986,12 +987,19 @@ class ItemizedDelta(
             "seconds",
             "milliseconds",
             "microseconds",
-            "nanoseconds",
         ],
         /,
         *,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
     ) -> float: ...
+    @overload
+    def total(
+        self,
+        unit: Literal["nanoseconds"],
+        /,
+        *,
+        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
+    ) -> int: ...
     def __iter__(
         self,
     ) -> Iterator[

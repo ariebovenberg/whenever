@@ -19,14 +19,18 @@ For the full API reference, see {ref}`durations`.
 ## Three types for three use cases
 
 `whenever` provides three delta types because durations
-have fundamentally different arithmetic rules depending on the units involved
-(see the {ref}`FAQ <faq-why-3-deltas>` for the reasoning):
+have fundamentally different arithmetic rules depending on the units involved:
 
 | Type | Units | When to use |
 |---|---|---|
 | {class}`TimeDelta` | hours, minutes, seconds, … | Measuring exact elapsed time |
 | {class}`ItemizedDateDelta` | years, months, weeks, days | Calendar arithmetic (e.g. "3 months from now") |
 | {class}`ItemizedDelta` | all of the above | Display, ISO 8601 round-tripping, mixed durations |
+
+Keeping these cases separate prevents operations that need context—such as
+comparing `1 month` with `30 days`—from looking like ordinary exact-duration
+arithmetic. It also avoids normalizing away calendar components that a display
+or interchange format needs to preserve.
 
 Most of the time you won't create delta objects directly—you'll use
 `add()`, `subtract()`, `since()`, and `until()` on datetime and date objects.
@@ -50,6 +54,29 @@ TimeDelta("PT2h30m")          # normalized: 2 hours 30 minutes
 >>> ItemizedDelta(hours=1, minutes=90)
 ItemizedDelta("PT1h90m")      # itemized: components kept as-is
 ```
+
+Itemized deltas preserve calendar units and whole-second-or-larger exact
+units. Subsecond values use one canonical `nanoseconds` component.
+Milliseconds and microseconds are available as scalar totals but are not
+itemized fields, so itemized mappings never silently replace a requested
+component with a differently named one.
+
+Use {meth}`~whenever.ItemizedDelta.total` to express the same duration in a
+scalar subsecond unit:
+
+```python
+>>> d = ItemizedDelta(seconds=1, nanoseconds=234_567_890)
+>>> reference = PlainDateTime(2024, 1, 1)
+>>> d.total("milliseconds", relative_to=reference)
+1234.56789
+>>> d.total("microseconds", relative_to=reference)
+1234567.89
+>>> d.total("nanoseconds", relative_to=reference)
+1234567890
+```
+
+Nanosecond totals are integers to preserve precision; other totals are
+floating-point values.
 
 ## Calendar units need context
 
@@ -98,7 +125,7 @@ Date("2023-03-31")
 ## Balancing into different units
 
 "Balancing" means redistributing a delta's value across a new set of units.
-Use `in_units()`:
+Use {meth}`~whenever.TimeDelta.in_units`:
 
 ```python
 >>> td = TimeDelta(minutes=150)
