@@ -165,17 +165,20 @@ Instant("2023-03-26 12:00:00Z")
 TimeDelta("PT66h")
 ```
 
-`years` and `months` are not available; `weeks` and `days` 
-can be treated as exact units, but emit a {class}`DaysAssumed24HoursWarning`:
+`years` and `months` are not available. `weeks` and `days` can be converted to
+exact units, but emit a {class}`DaysAssumed24HoursWarning`:
 
 ```python
 >>> i.add(days=1)                                # emits DaysAssumed24HoursWarning
 Instant("2023-03-26 12:00:00Z")
->>> i.add(days=1, days_assumed_24h_ok=True)      # suppress
+>>> i.add(days=1, days_assumed_24h_ok=True)      # explicitly means 24 hours
 Instant("2023-03-26 12:00:00Z")
 ```
 
-Becuase {class}`Instant` has no calendar or timezone context, 
+The `days_assumed_24h_ok` opt-in also covers exact weeks. See
+{ref}`the rounding distinction <rounding-instant-day>`.
+
+Because {class}`Instant` has no calendar or timezone context,
 it doesn't support `since()`/`until()`.
 Use {meth}`~TimeDelta.in_units`/{meth}`~TimeDelta.total` 
 on the result of `-`/`difference()` instead:
