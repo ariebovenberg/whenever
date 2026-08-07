@@ -5,6 +5,7 @@ from collections.abc import ItemsView, KeysView, Mapping, Sequence, ValuesView
 from typing import Any, Literal, cast
 
 import pytest
+from typing_extensions import assert_type
 from whenever import (
     CalendarUnitCompositionWarning,
     Instant,
@@ -1274,14 +1275,14 @@ class TestTotal:
         ],
         expected: float,
     ):
-        assert d.total(unit, relative_to=relative_to) == pytest.approx(
-            expected
-        )
+        assert d.total(
+            cast(Any, unit), relative_to=relative_to
+        ) == pytest.approx(expected)
 
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="foo"):
-            ItemizedDelta(years=2, seconds=4_000_000).total(
-                "foo",  # type: ignore[arg-type]
+            ItemizedDelta(years=2, seconds=4_000_000).total(  # type: ignore[call-overload]
+                "foo",
                 relative_to=ZonedDateTime(
                     "2021-12-31T22Z[Europe/Athens]",
                 ),
@@ -1289,25 +1290,35 @@ class TestTotal:
 
     def test_no_relative_to(self):
         with pytest.raises(TypeError, match="relative_to"):
-            ItemizedDelta(years=2, hours=9).total("months")  # type: ignore[call-arg]
+            ItemizedDelta(years=2, hours=9).total("months")  # type: ignore[call-overload]
 
     def test_invalid_relative_to_type(self):
         with pytest.raises(TypeError, match="relative_to"):
-            ItemizedDelta(years=2, hours=9).total(
+            ItemizedDelta(years=2, hours=9).total(  # type: ignore[call-overload]
                 "months",
-                relative_to=Instant.from_utc(2021, 1, 1),  # type: ignore[arg-type]
+                relative_to=Instant.from_utc(2021, 1, 1),
             )
 
     def test_nanoseconds_is_int(self):
-        assert isinstance(
-            ItemizedDelta(years=200, nanoseconds=1).total(
-                "nanoseconds",
-                relative_to=ZonedDateTime(
-                    "2021-12-31T22Z[Europe/Athens]",
-                ),
-            ),
-            int,
+        relative_to = ZonedDateTime(
+            "2021-12-31T22Z[Europe/Athens]",
         )
+        d = ItemizedDelta(years=200, nanoseconds=1)
+        result = d.total("nanoseconds", relative_to=relative_to)
+        assert_type(result, int)
+        assert isinstance(result, int)
+
+    def test_other_totals_are_float(self):
+        relative_to = ZonedDateTime(
+            "2021-12-31T22Z[Europe/Athens]",
+        )
+        d = ItemizedDelta(seconds=1, nanoseconds=234_567_890)
+        milliseconds_result = d.total("milliseconds", relative_to=relative_to)
+        microseconds_result = d.total("microseconds", relative_to=relative_to)
+        assert_type(milliseconds_result, float)
+        assert_type(microseconds_result, float)
+        assert isinstance(milliseconds_result, float)
+        assert isinstance(microseconds_result, float)
 
     def test_relative_to_overflows(self):
         with pytest.raises((ValueError, OverflowError)):
