@@ -320,6 +320,7 @@ class TestPatternDeprecations:
             ("HH:mmSS", "`[ss]`"),
             ("HH:mmSS.fff", "`[ss.fff]`"),
             ("HH:mmSS.FFF", "`[ss.FFF]`"),
+            ("HH:mmSS.'x'", "`[ss]`"),
         ],
     )
     def test_legacy_separator_free_optional_seconds(
