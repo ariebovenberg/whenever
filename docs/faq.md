@@ -89,35 +89,14 @@ necessary and how to avoid stale-offset arithmetic.
 ## Why are there three delta types?
 
 Date and time durations have fundamentally different arithmetic rules
-depending on the units involved.
-Rather than papering over this with a single type,
-`whenever` gives each category its own type
-(see {ref}`design`):
+depending on whether their units are exact or calendar-based. The three types
+make that distinction explicit: {class}`~whenever.TimeDelta` holds normalized
+exact durations, {class}`~whenever.ItemizedDateDelta` holds calendar
+components, and {class}`~whenever.ItemizedDelta` holds a mix of both (including
+durations preserved from interchange formats).
 
-1. **{class}`~whenever.TimeDelta`** — for exact durations
-   (hours, minutes, seconds, nanoseconds).
-   These normalize automatically: `90 minutes` becomes `1 hour 30 minutes`.
-   They support comparison, mathematical operators, and don't need
-   any context to resolve.
-
-2. **{class}`~whenever.ItemizedDateDelta`** — for pure calendar durations
-   (years, months, weeks, days).
-   These keep their components *itemized*: `1 month` stays `1 month`,
-   and isn't normalized to a number of days.
-   Converting between calendar units requires a reference date
-   (because `1 month` is 28–31 days depending on when you start).
-
-3. **{class}`~whenever.ItemizedDelta`** — for mixed bags of calendar *and*
-   exact units, such as `1 month, 3 hours, 20 minutes`.
-   Useful for display and ISO 8601 round-tripping.
-   Like {class}`~whenever.ItemizedDateDelta`, it keeps components itemized and
-   needs a reference date for conversion.
-
-Having three explicit types prevents subtle bugs like comparing
-`1 month` to `30 days` without context,
-or accidentally normalizing away important calendar semantics.
-
-See {ref}`durations` for the full reference.
+See {ref}`guide-deltas` for how to choose a type and why itemization matters.
+The complete API details are in the {ref}`delta reference <durations>`.
 
 (faq-why-warnings)=
 ## Why warnings instead of errors?
