@@ -9,7 +9,6 @@
 import enum
 from abc import ABC
 from collections.abc import Iterator, Mapping
-from contextlib import _GeneratorContextManager
 from datetime import (
     date as _date,
     datetime as _datetime,
@@ -19,6 +18,7 @@ from datetime import (
 from os import PathLike
 from typing import (
     ClassVar,
+    ContextManager,
     Iterable,
     Literal,
     Sequence,
@@ -272,7 +272,6 @@ class Date(_DateOrTimeMixin):
         /,
         *,
         in_units: Sequence[Literal["years", "months", "weeks", "days"]],
-        round_increment: int = ...,
         round_mode: Literal[
             "ceil",
             "expand",
@@ -284,6 +283,7 @@ class Date(_DateOrTimeMixin):
             "half_trunc",
             "half_even",
         ] = ...,
+        round_increment: int = ...,
     ) -> ItemizedDateDelta: ...
     @overload
     def until(
@@ -300,7 +300,6 @@ class Date(_DateOrTimeMixin):
         /,
         *,
         in_units: Sequence[Literal["years", "months", "weeks", "days"]],
-        round_increment: int = ...,
         round_mode: Literal[
             "ceil",
             "expand",
@@ -312,6 +311,7 @@ class Date(_DateOrTimeMixin):
             "half_trunc",
             "half_even",
         ] = ...,
+        round_increment: int = ...,
     ) -> ItemizedDateDelta: ...
     def __add__(self, p: ItemizedDateDelta, /) -> Self: ...
     def __sub__(self, d: ItemizedDateDelta, /) -> Self: ...
@@ -353,7 +353,7 @@ class MonthDay(_DateOrTimeMixin):
 @final
 class IsoWeekDate(_DateOrTimeMixin):
     @overload
-    def __init__(self, year: int, week: int, weekday: Weekday, /) -> None: ...
+    def __init__(self, year: int, week: int, weekday: Weekday) -> None: ...
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
     MIN: ClassVar[Self]
@@ -1597,13 +1597,23 @@ class Instant(_PyDateTimeMixin, _ExactTime):
     MAX: ClassVar[Self]
     @classmethod
     def now(cls) -> Self: ...
+    @overload
     @classmethod
     def from_timestamp(
         cls,
         i: int | float,
         /,
         *,
-        unit: Literal["second", "millisecond", "microsecond", "nanosecond"] = "second",
+        unit: Literal["second"] = "second",
+    ) -> Self: ...
+    @overload
+    @classmethod
+    def from_timestamp(
+        cls,
+        i: int,
+        /,
+        *,
+        unit: Literal["millisecond", "microsecond", "nanosecond"],
     ) -> Self: ...
     @classmethod
     @deprecated("use from_timestamp(..., unit='millisecond') instead")
@@ -2121,9 +2131,11 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
+    def subtract(self, d: TimeDelta, /) -> Self: ...
+    @overload
     def subtract(
         self,
-        d: ItemizedDelta | ItemizedDateDelta | TimeDelta,
+        d: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         disambiguation: Literal[
@@ -2531,7 +2543,7 @@ class TimePatch:
 
 def patch_current_time(
     i: Instant | OffsetDateTime | ZonedDateTime, /, *, keep_ticking: bool
-) -> _GeneratorContextManager[TimePatch]: ...
+) -> ContextManager[TimePatch]: ...
 
 # Deprecated: use get_tzpath().
 TZPATH: tuple[str, ...]

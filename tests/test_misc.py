@@ -398,7 +398,7 @@ def test_time_patch_rejects_invalid_shift_arguments():
 def test_patch_current_time_decorator_does_not_inject_handle():
     i = Instant.from_utc(1980, 3, 2, hour=2)
 
-    @patch_current_time(i, keep_ticking=False)
+    @patch_current_time(i, keep_ticking=False)  # type: ignore[operator]
     def decorated() -> Instant:
         return Instant.now()
 

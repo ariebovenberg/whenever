@@ -5401,9 +5401,12 @@ class ZonedDateTime(_ExactAndLocalTime):
         return self._shift(1, *args, **kwargs)
 
     @overload
+    def subtract(self, d: TimeDelta, /) -> ZonedDateTime: ...
+
+    @overload
     def subtract(
         self,
-        d: AnyDelta,
+        d: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         disambiguation: DisambiguationStr = ...,
