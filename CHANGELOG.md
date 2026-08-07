@@ -1,8 +1,10 @@
 # Changelog
 
-## 0.10.5 (2026-08-04)
+## 0.10.5 (2026-08-07)
 
 - Add binary wheels for Python 3.15.
+- Clarified comparison between ceil/expand and floor/trunc rounding modes
+  in docs (Thanks to @LilyFirefly)
 
 ## 0.10.4 (2026-08-02)
 
