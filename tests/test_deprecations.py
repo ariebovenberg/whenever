@@ -13,6 +13,7 @@ from whenever import (
     MonthDay,
     OffsetDateTime,
     PlainDateTime,
+    Time,
     WheneverDeprecationWarning,
     ZonedDateTime,
     get_tzpath,
@@ -96,12 +97,31 @@ def test_disambiguate_not_accepted_by_iso_constructor():
         )
 
 
-def test_parse_format_keyword():
+@pytest.mark.parametrize(
+    "cls, value, pattern",
+    [
+        (Date, "2020-08-15", "YYYY-MM-DD"),
+        (Time, "14:30", "HH:mm"),
+        (PlainDateTime, "2020-08-15 14:30", "YYYY-MM-DD HH:mm"),
+        (Instant, "2020-08-15 14:30Z", "YYYY-MM-DD HH:mmXXX"),
+        (
+            OffsetDateTime,
+            "2020-08-15 14:30+02:00",
+            "YYYY-MM-DD HH:mmxxx",
+        ),
+        (
+            ZonedDateTime,
+            "2020-08-15 14:30+02:00[Europe/Amsterdam]",
+            "YYYY-MM-DD HH:mmxxx'['VV']'",
+        ),
+    ],
+)
+def test_parse_format_keyword(cls, value, pattern):
     actual = deprecated(
-        lambda: Date.parse("2020-08-15", format="YYYY-MM-DD"),
+        lambda: cls.parse(value, format=pattern),
         match="'format' is deprecated",
     )
-    assert actual == Date.parse("2020-08-15", pattern="YYYY-MM-DD")
+    assert actual == cls.parse(value, pattern=pattern)
 
 
 def test_both_parse_pattern_keywords_rejected():
@@ -131,19 +151,35 @@ def test_format_iso_always_value():
 
 
 @pytest.mark.parametrize(
-    "method, unit",
+    "value",
     [
-        ("timestamp_millis", "millisecond"),
-        ("timestamp_nanos", "nanosecond"),
+        Instant.from_utc(2020, 8, 15, nanosecond=123_456_789),
+        OffsetDateTime(
+            2020,
+            8,
+            15,
+            nanosecond=123_456_789,
+            offset=hours(2),
+        ),
+        ZonedDateTime(
+            2020,
+            8,
+            15,
+            nanosecond=123_456_789,
+            tz="Europe/Amsterdam",
+        ),
     ],
 )
-def test_timestamp_method_wrappers(method, unit):
-    instant = Instant.from_utc(2020, 8, 15, nanosecond=123_456_789)
+@pytest.mark.parametrize(
+    "method, unit",
+    [("timestamp_millis", "millisecond"), ("timestamp_nanos", "nanosecond")],
+)
+def test_timestamp_method_wrappers(value, method, unit):
     actual = deprecated(
-        lambda: getattr(instant, method)(),
+        lambda: getattr(value, method)(),
         match=rf"{method}\(\) is deprecated",
     )
-    assert actual == instant.timestamp(unit=unit)
+    assert actual == value.timestamp(unit=unit)
 
 
 @pytest.mark.parametrize(
@@ -244,9 +280,20 @@ def test_exact_eq_wrapper(value):
 @system_tz_ams()
 def test_system_timezone_wrappers():
     instant = Instant.from_utc(2020, 8, 15)
-    assert deprecated(
-        instant.to_system_tz, match=r"to_system_tz\(\) is deprecated"
-    ).strict_eq(instant.to_tz(SYSTEM_TZ))
+    with patch_current_time(instant, keep_ticking=False):
+        assert deprecated(
+            Date.today_in_system_tz,
+            match=r"today_in_system_tz\(\) is deprecated",
+        ) == Date.today(SYSTEM_TZ)
+
+    for v in (
+        instant,
+        instant.to_fixed_offset(hours(2)),
+        instant.to_tz("UTC"),
+    ):
+        assert deprecated(
+            v.to_system_tz, match=r"to_system_tz\(\) is deprecated"
+        ).strict_eq(v.to_tz(SYSTEM_TZ))
 
     actual = deprecated(
         lambda: ZonedDateTime.from_system_tz(
