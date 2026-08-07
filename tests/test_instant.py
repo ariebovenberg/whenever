@@ -3,6 +3,7 @@ import pickle
 import re
 from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -315,15 +316,25 @@ class TestFromTimestamp:
     @pytest.mark.parametrize(
         "unit", ["millisecond", "microsecond", "nanosecond"]
     )
-    def test_subsecond_unit_rejects_float(self, unit):
+    def test_subsecond_unit_rejects_float(
+        self, unit: Literal["millisecond", "microsecond", "nanosecond"]
+    ):
         with pytest.raises(TypeError, match="must be an integer"):
-            Instant.from_timestamp(1.0, unit=unit)
+            Instant.from_timestamp(1.0, unit=unit)  # type: ignore[call-overload]
+
+    def test_typed_units(self):
+        assert Instant.from_timestamp(1.0) == Instant.from_timestamp(
+            1.0, unit="second"
+        )
+        Instant.from_timestamp(1, unit="millisecond")
+        Instant.from_timestamp(1, unit="microsecond")
+        Instant.from_timestamp(1, unit="nanosecond")
 
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="invalid timestamp unit"):
             Instant.from_timestamp(
                 0,
-                unit="seconds",  # type: ignore[arg-type]
+                unit="seconds",  # type: ignore[call-overload]
             )
 
     @pytest.mark.parametrize(
@@ -423,7 +434,7 @@ class TestFromTimestamp:
 
     def test_invalid(self):
         with pytest.raises(TypeError):
-            Instant.from_timestamp("2020")  # type: ignore[arg-type]
+            Instant.from_timestamp("2020")  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
         "method",

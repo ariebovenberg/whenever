@@ -4224,6 +4224,13 @@ class TestReplace:
 
 
 class TestAddSubtractTimeUnits:
+    def test_subtract_overloads(self):
+        d = ZonedDateTime(2020, 8, 15, tz="UTC")
+        assert d.subtract(hours(1)) == d - hours(1)
+        assert d.subtract(
+            ItemizedDelta(days=1), disambiguation="compatible"
+        ) == d.subtract(days=1, disambiguation="compatible")
+
     def test_invalid_arguments(self):
         d = ZonedDateTime(2020, 8, 15, tz="UTC")
         with pytest.raises(TypeError):

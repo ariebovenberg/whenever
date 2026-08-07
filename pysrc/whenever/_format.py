@@ -1299,15 +1299,17 @@ def validate_fields(
         elif isinstance(el, (_ColonSec, _SecondOpt)):
             separator = ":" if isinstance(el, _ColonSec) else ""
             replacement = f"[{separator}ss]"
-            if i + 1 < len(elements) and isinstance(elements[i + 1], _DotFrac):
-                replacement = f"[{separator}ss.{'F' * elements[i + 1].width}]"
+            next_el = elements[i + 1] if i + 1 < len(elements) else None
+            if isinstance(next_el, _DotFrac):
+                replacement = f"[{separator}ss.{'F' * next_el.width}]"
             elif (
                 i + 2 < len(elements)
-                and isinstance(elements[i + 1], _Literal)
-                and elements[i + 1].text == "."
-                and isinstance(elements[i + 2], _FracExact)
+                and isinstance(next_el, _Literal)
+                and next_el.text == "."
             ):
-                replacement = f"[{separator}ss.{'f' * elements[i + 2].width}]"
+                frac_el = elements[i + 2]
+                if isinstance(frac_el, _FracExact):
+                    replacement = f"[{separator}ss.{'f' * frac_el.width}]"
             legacy = f"{separator}SS"
             warnings.warn(
                 f"The pattern field `{legacy}` is deprecated; use "

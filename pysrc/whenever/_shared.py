@@ -567,10 +567,10 @@ class IsoWeekDate(_Base):
 
         @overload
         def __init__(
-            self, year: int, week: int, weekday: Weekday, /
+            self, year: int, week: int, weekday: Weekday
         ) -> None: ...
 
-    def __init__(self, year: int, week: int, weekday: Weekday, /) -> None:
+    def __init__(self, year: int, week: int, weekday: Weekday) -> None:
         if not isinstance(weekday, Weekday):
             raise TypeError("weekday must be a Weekday")
         max_weeks = 53 if _is_long_year(year) else 52
