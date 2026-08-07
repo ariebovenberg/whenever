@@ -27,7 +27,7 @@ that describes the expected format. The canonical full datetime pattern is
 '2024/03/15'
 >>> Date.parse("2024/03/15", pattern="YYYY/MM/DD")
 Date("2024-03-15")
->>> OffsetDateTime(2024, 3, 15, 14, 30, offset=+2).format(
+>>> OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(2)).format(
 ...     "EEE, DD MMM YYYY HH:mm:ssxxx"
 ... )
 'Fri, 15 Mar 2024 14:30:00+02:00'

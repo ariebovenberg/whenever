@@ -1342,7 +1342,7 @@ class Time(_Base):
     def nanosecond(self) -> int:
         """The nanosecond component of the time
 
-        >>> Time("12:30:00.003).nanosecond
+        >>> Time("12:30:00.003").nanosecond
         3000000
         """
         return self._nanos
@@ -1359,7 +1359,7 @@ class Time(_Base):
         to find the corresponding exact time:
 
         >>> t.on(Date(2021, 1, 2)).assume_tz("America/New_York")
-        ExactDateTime("2021-01-02 12:30:00-05:00[America/New_York]")
+        ZonedDateTime("2021-01-02 12:30:00-05:00[America/New_York]")
         """
         return PlainDateTime._from_py_unchecked(
             _datetime.combine(d._py_date, self._py),
@@ -1422,7 +1422,7 @@ class Time(_Base):
         Inverse of :meth:`format_iso`
 
         >>> Time.parse_iso("12:30:00")
-        Time(12:30:00)
+        Time("12:30:00")
         """
         return cls._from_py_unchecked(*time_from_iso(s))
 
@@ -1461,9 +1461,9 @@ class Time(_Base):
         See :ref:`pattern-format` for details.
 
         >>> Time.parse("14:30:05", pattern="HH:mm:ss")
-        Time(14:30:05)
+        Time("14:30:05")
         >>> Time.parse("02:30 PM", pattern="ii:mm aa")
-        Time(14:30:00)
+        Time("14:30:00")
         """
         pattern = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
@@ -1493,8 +1493,8 @@ class Time(_Base):
         """Create a new instance with the given fields replaced
 
         >>> t = Time(12, 30, 0)
-        >>> d.replace(minute=3, nanosecond=4_000)
-        Time(12:03:00.000004)
+        >>> t.replace(minute=3, nanosecond=4_000)
+        Time("12:03:00.000004")
 
         """
         _check_invalid_replace_kwargs(kwargs)
@@ -1540,11 +1540,17 @@ class Time(_Base):
         Various rounding modes are available.
 
         >>> Time(12, 39, 59).round("minute", 15)
-        Time(12:45:00)
+        Time("12:45:00")
         >>> Time(8, 9, 13).round("second", 5, mode="floor")
-        Time(08:09:10)
+        Time("08:09:10")
         >>> Time(12, 39, 59).round(TimeDelta(minutes=15))
-        Time(12:45:00)
+        Time("12:45:00")
+
+        A :class:`Time` has no date to carry into, so rounding past the end of
+        the day wraps around to midnight:
+
+        >>> Time(23, 59, 59).round("minute", mode="ceil")
+        Time("00:00:00")
         """
         if isinstance(unit, TimeDelta):
             if increment != 1:
@@ -2614,9 +2620,9 @@ class _LocalTime(_BasicConversions):
     def time(self) -> Time:
         """The time-of-day part of the datetime
 
-        >>> d = ZonedDateTime("2021-01-02T03:04:05+01:00[Europe/Paris])"
+        >>> d = ZonedDateTime("2021-01-02T03:04:05+01:00[Europe/Paris]")
         >>> d.time()
-        Time(03:04:05)
+        Time("03:04:05")
 
         To perform the inverse, use :meth:`Time.on` and a method
         like :meth:`~PlainDateTime.assume_utc` or
@@ -2843,7 +2849,7 @@ class _ExactTime(_BasicConversions):
 
         >>> Instant.from_utc(2020, 8, 15, hour=23) == Instant.from_utc(2020, 8, 15, hour=23)
         True
-        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=1) == (
+        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=hours(1)) == (
         ...     ZonedDateTime(2020, 8, 15, hour=18, tz="America/New_York")
         ... )
         True
@@ -2865,8 +2871,8 @@ class _ExactTime(_BasicConversions):
 
         ``a < b`` is equivalent to ``a.to_instant() < b.to_instant()``
 
-        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=8) < (
-        ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
+        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=hours(8)) < (
+        ...     ZonedDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
         True
         """
@@ -2882,8 +2888,8 @@ class _ExactTime(_BasicConversions):
 
         ``a <= b`` is equivalent to ``a.to_instant() <= b.to_instant()``
 
-        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=8) <= (
-        ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
+        >>> OffsetDateTime(2020, 8, 15, hour=23, offset=hours(8)) <= (
+        ...     ZonedDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
         True
         """
@@ -2899,8 +2905,8 @@ class _ExactTime(_BasicConversions):
 
         ``a > b`` is equivalent to ``a.to_instant() > b.to_instant()``
 
-        >>> OffsetDateTime(2020, 8, 15, hour=19, offset=-8) > (
-        ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
+        >>> OffsetDateTime(2020, 8, 15, hour=19, offset=-hours(8)) > (
+        ...     ZonedDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
         True
         """
@@ -2916,8 +2922,8 @@ class _ExactTime(_BasicConversions):
 
         ``a >= b`` is equivalent to ``a.to_instant() >= b.to_instant()``
 
-        >>> OffsetDateTime(2020, 8, 15, hour=19, offset=-8) >= (
-        ...     ZoneDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
+        >>> OffsetDateTime(2020, 8, 15, hour=19, offset=-hours(8)) >= (
+        ...     ZonedDateTime(2020, 8, 15, hour=20, tz="Europe/Amsterdam")
         ... )
         True
         """
@@ -3168,7 +3174,8 @@ class Instant(_ExactTime):
 
     def format_rfc2822(self) -> str:
         """Format as an RFC 2822 string in the fixed UTC/GMT subset.
-        The inverse of the ``parse_rfc2822()`` method.
+
+        RFC 2822 has whole-second precision, so nanoseconds are discarded.
 
         >>> Instant.from_utc(2020, 8, 8, hour=23, minute=12).format_rfc2822()
         "Sat, 08 Aug 2020 23:12:00 GMT"
@@ -3189,8 +3196,6 @@ class Instant(_ExactTime):
     @classmethod
     def parse_rfc2822(cls, s: str, /) -> Instant:
         """Parse a UTC datetime in RFC 2822 format.
-
-        The inverse of the ``format_rfc2822()`` method.
 
         >>> Instant.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 GMT")
         Instant("2020-08-15 23:12:00Z")
@@ -3951,7 +3956,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     ) -> OffsetDateTime:
         """The start of the given unit
 
-        >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).start_of("day")
+        >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).start_of("day")
         OffsetDateTime("2024-08-15 00:00:00+05:00")
 
         Warning
@@ -3988,7 +3993,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     ) -> OffsetDateTime:
         """The end of the given unit
 
-        >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=5).end_of("day")
+        >>> OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).end_of("day")
         OffsetDateTime("2024-08-15 23:59:59.999999999+05:00")
 
         See also :meth:`start_of`
@@ -4061,7 +4066,8 @@ class OffsetDateTime(_ExactAndLocalTime):
     def format_rfc2822(self) -> str:
         """Format as an RFC 2822 string.
 
-        The inverse of the ``parse_rfc2822()`` method.
+        RFC 2822 has whole-second datetimes and minute-precision offsets.
+        Nanoseconds and offset seconds are discarded.
 
         >>> OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2)).format_rfc2822()
         "Sat, 15 Aug 2020 23:12:00 +0200"
@@ -4082,8 +4088,6 @@ class OffsetDateTime(_ExactAndLocalTime):
     @classmethod
     def parse_rfc2822(cls, s: str, /) -> OffsetDateTime:
         """Parse an offset datetime in RFC 2822 format.
-
-        The inverse of the ``format_rfc2822()`` method.
 
         >>> OffsetDateTime.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 +0200")
         OffsetDateTime("2020-08-15 23:12:00+02:00")
@@ -4368,11 +4372,11 @@ class OffsetDateTime(_ExactAndLocalTime):
         or to a multiple of a :class:`TimeDelta`.
         Different rounding modes are available.
 
-        >>> d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=+4)
+        >>> d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=hours(4))
         >>> d.round("day")
-        OffsetDateTime("2020-08-16 00:00:00[+04:00]")
+        OffsetDateTime("2020-08-16 00:00:00+04:00")
         >>> d.round("minute", increment=15, mode="floor")
-        OffsetDateTime("2020-08-15 23:15:00[+04:00]")
+        OffsetDateTime("2020-08-15 23:15:00+04:00")
 
         Warning
         -------
@@ -4482,8 +4486,8 @@ class OffsetDateTime(_ExactAndLocalTime):
         """Calculate the duration since another OffsetDateTime,
         in terms of the specified units.
 
-        >>> d1 = OffsetDateTime(2020, 8, 15, 23, 12, offset=2)
-        >>> d2 = OffsetDateTime(2020, 8, 14, 22, offset=2)
+        >>> d1 = OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2))
+        >>> d2 = OffsetDateTime(2020, 8, 14, 22, offset=hours(2))
         >>> d1.since(d2, in_units=["hours", "minutes"],
         ...          round_increment=15,
         ...          round_mode="ceil")
@@ -6806,14 +6810,14 @@ class PlainDateTime(_LocalTime):
         ----
         The local time may be ambiguous in the system timezone
         (e.g. during a DST transition). You can explicitly
-        specify how to handle such a situation using the ``disambiguate`` argument.
+        specify how to handle such a situation using ``disambiguation``.
         See `the documentation
         <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html>`__
         for more information.
 
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
         >>> # assuming system timezone is America/New_York
-        >>> d.assume_system_tz(disambiguate="raise")
+        >>> d.assume_tz(SYSTEM_TZ, disambiguation="raise")
         ZonedDateTime("2020-08-15 23:12:00-04:00[America/New_York]")
         """
         warn_deprecated(

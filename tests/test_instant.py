@@ -205,7 +205,7 @@ class TestEquality:
 
     def test_offset(self):
         d: Instant | OffsetDateTime = Instant.from_utc(2023, 4, 5, 4)
-        offset_same = OffsetDateTime(2023, 4, 5, 6, offset=+2)
+        offset_same = OffsetDateTime(2023, 4, 5, 6, offset=hours(2))
         offset_different = OffsetDateTime(2023, 4, 5, 4, offset=hours(-3))
         assert d == offset_same
         assert not d != offset_same

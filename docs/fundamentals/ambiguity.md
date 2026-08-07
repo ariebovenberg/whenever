@@ -49,6 +49,11 @@ In `whenever`, ambiguous local times are by default resolved using the same conv
 as most libraries: the offset before the change is used.
 However, `whenever` also provides explicit options to handle ambiguity:
 
+If `disambiguation` is omitted, this `"compatible"` policy is applied, but an
+{class}`~whenever.ImplicitDisambiguationWarning` is emitted when a repeated or
+skipped time is actually encountered. Pass `disambiguation="compatible"`
+explicitly to make the choice without a warning.
+
 ```python
 >>> from whenever import ZonedDateTime, PlainDateTime
 >>> local = PlainDateTime(2024, 10, 27, 2, 30)
