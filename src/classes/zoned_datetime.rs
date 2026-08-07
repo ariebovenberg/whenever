@@ -86,7 +86,7 @@ impl ZonedDateTime {
             .unwrap();
         let api = state.py_api()?;
         let tzinfo = match self.tz.key.as_ref() {
-            Some(key) => state.zoneinfo_type.get()?.call1(*key.as_str().to_py()?),
+            Some(key) => state.zoneinfo_type.get()?.call1(*key.as_ref().to_py()?),
             None => api.new_timezone(self.offset),
         }?;
 
@@ -1010,7 +1010,7 @@ fn __reduce__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
         .ok_or_value_err("cannot pickle ZonedDateTime without timezone ID")?;
     [
         cls.state().unpickle_zoned_datetime.newref(),
-        [data.to_py()?, tz_key.as_str().to_py()?].into_pytuple()?,
+        [data.to_py()?, tz_key.as_ref().to_py()?].into_pytuple()?,
     ]
     .into_pytuple()
 }
@@ -1235,7 +1235,7 @@ fn round(
     .into_zoned_obj_unchecked(slf.tz.clone(), cls)
 }
 
-fn tz_err_display(k: &Option<String>) -> String {
+fn tz_err_display(k: &Option<Box<str>>) -> String {
     match k {
         Some(key) => format!("timezone '{key}'"),
         None => "the system timezone (with unknown ID)".to_string(),
@@ -1629,7 +1629,7 @@ fn nanosecond(_: PyType, slf: &ZonedDateTime) -> PyReturn {
 
 fn tz_id(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     match slf.tz.key.as_ref() {
-        Some(key) => key.as_str().to_py(),
+        Some(key) => key.as_ref().to_py(),
         None => Ok(none()),
     }
 }
