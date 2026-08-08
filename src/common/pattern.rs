@@ -387,6 +387,35 @@ impl Field {
         matches!(self, Self::Year2 | Self::TzAbbrev)
     }
 
+    fn needs_digit_terminator(self) -> bool {
+        matches!(
+            self,
+            Self::MonthNumUnpadded
+                | Self::DayUnpadded
+                | Self::Hour24Unpadded
+                | Self::Hour24UnpaddedLegacy
+                | Self::Hour12Unpadded
+                | Self::MinuteUnpadded
+                | Self::SecondUnpadded
+                | Self::SecondOpt
+                | Self::FracTrim(_)
+                | Self::DotFrac(_)
+                | Self::OffsetLower(4)
+                | Self::OffsetUpper(4)
+        )
+    }
+
+    fn needs_colon_terminator(self) -> bool {
+        matches!(
+            self,
+            Self::ColonSec | Self::OffsetLower(5) | Self::OffsetUpper(5)
+        )
+    }
+
+    fn needs_dot_terminator(self) -> bool {
+        matches!(self, Self::DotFrac(_))
+    }
+
     /// Display name for error messages.
     fn display_name(self) -> &'static str {
         match self {
@@ -935,6 +964,44 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
             "24-hour format (H/HH) cannot be combined with AM/PM (a/aa). Use 12-hour format (i/ii) instead.".into(),
         );
     }
+
+    for pair in elements.windows(2) {
+        let Element::Field(field) = pair[0] else {
+            continue;
+        };
+        let follower = &pair[1];
+        if field.needs_digit_terminator()
+            && element_can_start_with_digit(follower)
+            && !matches!(
+                (field, follower),
+                (Field::SecondOpt, Element::Field(Field::FracTrim(_)))
+            )
+        {
+            return Err(format!(
+                "pattern field {} cannot be followed by an element that starts with a digit",
+                field.display_name()
+            ));
+        }
+        if field.needs_colon_terminator() && element_can_start_with_colon(follower) {
+            return Err(format!(
+                "pattern field {} cannot be followed by an element that starts with ':'",
+                field.display_name()
+            ));
+        }
+        if field.needs_dot_terminator() && element_can_start_with_dot(follower) {
+            return Err(format!(
+                "pattern field {} cannot be followed by an element that starts with '.'",
+                field.display_name()
+            ));
+        }
+        if matches!(field, Field::TzId)
+            && !matches!(follower, Element::Literal(s) if !is_tz_id_char(s[0]))
+        {
+            return Err(
+                "timezone ID field VV must be followed by a literal delimiter that is not valid in a timezone ID".into(),
+            );
+        }
+    }
     // 12h without AM/PM: we return Ok but the Python side emits a warning.
     // The warning is handled by the caller since we don't have Python API access here.
     Ok(())
@@ -1125,6 +1192,9 @@ fn frac_trim_is_empty(nanos: SubSecNanos, width: usize) -> bool {
 fn write_offset(mut secs: i32, width: u8, use_z: bool, sink: &mut impl Sink) -> Result<(), String> {
     if width <= 3 {
         secs = secs.signum() * ((secs.abs() + 30) / 60 * 60);
+        if secs.unsigned_abs() >= 24 * 3_600 {
+            return Err("rounded offset is out of range".into());
+        }
         if width == 1 && secs % 3600 != 0 {
             return Err(
                 "offset cannot be formatted with x/X: rounded offset has nonzero minutes".into(),
@@ -1348,6 +1418,9 @@ fn format_to_py(elements: &[Element<'_>], vals: &PatternValues) -> PyReturn {
 
 /// Parse a string using compiled pattern elements.
 fn parse_to_state(elements: &[Element<'_>], s: &[u8]) -> Result<ParseState, String> {
+    if !s.is_ascii() {
+        return Err("Input string must be ASCII-only".to_string());
+    }
     if s.len() > 1000 {
         return Err("Input string too long (max 1000 characters)".to_string());
     }
@@ -1532,6 +1605,9 @@ fn parse_offset_value(
 
     let (oh, new_p) = parse_digits(s, p, 2)?;
     p = new_p;
+    if oh >= 24 {
+        return Err("offset hours must be 0..23".into());
+    }
 
     if width == 1 {
         return Ok((sign * oh as i32 * 3600, p, false, false));

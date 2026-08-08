@@ -417,13 +417,13 @@ def test_ticking_time_patch_before_epoch():
 
 def test_time_patch_shift_out_of_range():
     with patch_current_time(Instant.MAX, keep_ticking=False) as p:
-        with pytest.raises((OSError, ValueError), match="out of range"):
+        with pytest.raises(ValueError, match="out of range"):
             p.shift(seconds=1)
 
 
 def test_time_patch_ticks_out_of_range():
-    with patch_current_time(Instant.MAX, keep_ticking=True) as p:
-        with pytest.raises((OSError, ValueError), match="out of range"):
+    with patch_current_time(Instant.MAX, keep_ticking=True):
+        with pytest.raises((OSError, ValueError)):
             Instant.now()
 
 

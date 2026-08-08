@@ -5,7 +5,7 @@ use crate::{
     py::*,
     pymodule::State,
 };
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 pub(crate) fn _patch_time_frozen(state: &State, arg: PyObj) -> PyReturn {
     _patch_time(state, arg, true)
@@ -73,16 +73,13 @@ fn time_machine_installed() -> PyResult<bool> {
 pub(crate) enum PatchState {
     Unset,
     Frozen(Instant),
-    KeepTicking {
-        pin: Instant,
-        at: SystemTime,
-    },
+    KeepTicking { pin: Instant, at: SystemTime },
 }
 
 impl Instant {
     pub(crate) fn from_duration_since_epoch(d: std::time::Duration) -> Option<Self> {
         Some(Instant {
-            epoch: EpochSecs::new(d.as_secs() as _)?,
+            epoch: EpochSecs::new(i64::try_from(d.as_secs()).ok()?)?,
             // Safe: subsec on Duration is always in range
             subsec: SubSecNanos::new_unchecked(d.subsec_nanos() as _),
         })
@@ -94,6 +91,12 @@ impl Instant {
             subsec: SubSecNanos::from_remainder(ns),
         })
     }
+}
+
+fn duration_nanos(d: Duration) -> PyResult<i128> {
+    i128::try_from(d.as_nanos())
+        .ok()
+        .ok_or_raise(exc_os_error(), "system time out of range")
 }
 
 impl State {
@@ -113,14 +116,14 @@ impl State {
             PatchState::Frozen(e) => Ok(e),
             PatchState::KeepTicking { pin, at } => {
                 let elapsed = match SystemTime::now().duration_since(at) {
-                    Ok(d) => d.as_nanos() as i128,
-                    Err(e) => -(e.duration().as_nanos() as i128),
+                    Ok(d) => duration_nanos(d)?,
+                    Err(e) => -duration_nanos(e.duration())?,
                 };
                 pin.shift(
                     TimeDelta::from_nanos(elapsed)
-                        .ok_or_raise(exc_os_error(), "System time out of range")?,
+                        .ok_or_raise(exc_os_error(), "system time out of range")?,
                 )
-                .ok_or_raise(exc_os_error(), "System time out of range")
+                .ok_or_raise(exc_os_error(), "system time out of range")
             }
         }
     }
@@ -132,7 +135,7 @@ impl State {
             .ok_or_raise(exc_runtime_error(), "time_ns() returned a non-integer")?
             // FUTURE: this will break in the year 2262. Fix it before then.
             .to_i64()?;
-        Instant::from_nanos_i64(ns).ok_or_raise(exc_os_error(), "System time out of range")
+        Instant::from_nanos_i64(ns).ok_or_raise(exc_os_error(), "system time out of range")
     }
 
     fn time_ns_rust(&self) -> PyResult<Instant> {
@@ -140,6 +143,6 @@ impl State {
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()
             .and_then(Instant::from_duration_since_epoch)
-            .ok_or_raise(exc_os_error(), "System time out of range")
+            .ok_or_raise(exc_os_error(), "system time out of range")
     }
 }

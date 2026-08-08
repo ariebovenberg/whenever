@@ -3066,7 +3066,11 @@ class Instant(_ExactTime):
         Instant("2024-06-15 12:34:56.789123456Z")
         """
         secs, nanos = divmod(time_ns(), 1_000_000_000)
-        return cls._from_py_unchecked(_fromtimestamp(secs, _UTC), nanos)
+        try:
+            dt = _from_epoch_offset(secs, 0)
+        except OverflowError as e:
+            raise ValueError("timestamp out of range") from e
+        return cls._from_py_unchecked(dt, nanos)
 
     @classmethod
     def from_timestamp(

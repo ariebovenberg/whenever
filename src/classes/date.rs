@@ -614,7 +614,7 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     method0!(Date, to_stdlib, doc::DATE_TO_STDLIB),
     method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
-    classmethod1!(Date, today, doc::DATE_TODAY_IN_SYSTEM_TZ),
+    classmethod1!(Date, today, doc::DATE_TODAY),
     classmethod1!(Date, parse_iso, doc::DATE_PARSE_ISO),
     COPY_METHOD,
     DEEPCOPY_METHOD,

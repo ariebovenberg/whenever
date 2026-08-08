@@ -303,6 +303,18 @@ class TestInit:
         # exact_eq() works again
         assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc).strict_eq(d)
 
+        fold = ZonedDateTime(
+            2023,
+            11,
+            5,
+            1,
+            30,
+            tz=nyc,
+            disambiguation="later",
+        )
+        clear_tzcache(only_keys=[nyc])
+        assert fold.replace(tz=nyc).strict_eq(fold)
+
         # check exception handling invalid arguments
         with pytest.raises(TypeError, match="iterable"):
             reset_tzpath("/usr/share/zoneinfo")  # must be a list!

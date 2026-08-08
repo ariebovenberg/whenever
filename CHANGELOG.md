@@ -61,21 +61,21 @@ deprecated interfaces are removed.
   limited bracketed tail such as `[:ss]`, `[:ss.fff]`, or `[:ss.FFF]`;
   separator-free optional seconds use `[ss]`. These groups must immediately
   follow fixed-width `mm`; only the optional colon or no separator is
-  supported. The previous `SS` forms remain available with deprecation
-  warnings through 0.11.
+  supported. Patterns and parsed input strings are ASCII-only, and ambiguous
+  boundaries after variable-width fields are rejected. The previous `SS`
+  forms remain available with deprecation warnings through 0.11.
 
   **Rationale**: `H`/`HH` is the near-universal spelling for 24-hour fields,
   while brackets make the optional separator and seconds tail explicit.
 
 - Pattern offsets without seconds now round timezone offset seconds to the
-  nearest minute, matching Temporal. Hour-only `x`/`X` patterns reject values
-  whose rounded offsets still contain minutes. Formatting `VV` without an IANA
-  timezone ID now consistently raises an error.
+  nearest minute. Hour-only `x`/`X` patterns reject values
+  whose rounded offsets still contain minutes.
 
-- Ticking time patches support pre-1970 instants
+- Formatting `VV` without an IANA timezone ID now consistently raises an error.
 
-- Fixed-offset arguments now no longer accept bare integers
-  Use `hours(2)`—short for `TimeDelta(hours=2)`—instead of `2`.
+- Fixed-offset arguments now no longer accept bare integers signifying hours.
+  Use `TimeDelta` or a factory like `hours()` instead.
 
   **Rationale**: the unit of a bare integer is implicit, which makes offset
   values easy to misread or misuse.
@@ -103,6 +103,13 @@ deprecated interfaces are removed.
 - Added `YearMonth.add()` and `subtract()`, and `MonthDay.is_leap_day()`.
 - Stabilized `patch_current_time()` and exposed its `TimePatch` handle with
   `shift()` and `move_to()`.
+- `patch_current_time()` now supports pre-1970 instants.
+
+**Fixed**
+
+- Brought timezone equility in the Pure Python version on par with
+  the Rust extention. This affected rare cases where a timezone was reloaded
+  from disk.
 
 Migration summary:
 
@@ -133,19 +140,6 @@ Migration summary:
 | `offset=2` | `offset=hours(2)` |
 | `MonthDay.is_leap()` | `MonthDay.is_leap_day()` |
 | `TZPATH` | `get_tzpath()` |
-
-1.0 removal checklist (after 0.11 has been released):
-
-- Remove the legacy `h`/`hh` and `SS` pattern forms. Keep `h` and `S`
-  reserved rather than assigning them new meanings.
-- Remove the timestamp convenience methods and datetime timestamp factories.
-- Remove the system-timezone convenience methods.
-- Remove `disambiguate=`, `exact_eq()`, and patterned-parse `format=`.
-- Remove ISO-format `tz=` and the `tz_id_display="always"` value.
-- Remove `ZonedDateTime.tz`, `MonthDay.is_leap()`, and `TZPATH`.
-- Stop accepting integer offsets.
-
-The public type aliases are not part of this removal pass.
 
 ## 0.10.5 (2026-08-07)
 

@@ -18,6 +18,7 @@ from .posix import TzStr, epoch_for_date, year_for_epoch
 EpochSecs = int
 Offset = int
 OffsetDelta = int
+TransitionMeta = tuple[int, int | None, str]
 Year = int
 
 EPOCH_SECS_MIN = -62135596800
@@ -58,6 +59,7 @@ class TimeZone:
         "_local_values",
         "_end",
         "_meta_by_utc",
+        "_abbrev_data",
     )
 
     # The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
@@ -77,8 +79,9 @@ class TimeZone:
         _utc_offsets: tuple[Offset, ...],
         _local_epochs: tuple[EpochSecs, ...],
         _local_values: tuple[tuple[Offset, OffsetDelta], ...],
-        _end: TzStr | None = None,
-        _meta_by_utc: tuple[tuple[int, str], ...] = (),
+        _end: TzStr | None,
+        _meta_by_utc: tuple[TransitionMeta, ...],
+        _abbrev_data: bytes,
     ):
         self.key = key
         self._utc_epochs = _utc_epochs
@@ -87,6 +90,7 @@ class TimeZone:
         self._local_values = _local_values
         self._end = _end
         self._meta_by_utc = _meta_by_utc
+        self._abbrev_data = _abbrev_data
 
     def offset_for_instant(self, t: EpochSecs) -> Offset:
         """Get the UTC offset at the given exact time"""
@@ -141,14 +145,16 @@ class TimeZone:
         at the given exact time."""
         idx = _bisect_right(self._utc_epochs, t)
         if idx < len(self._utc_epochs):
-            return self._meta_by_utc[max(0, idx - 1)]
+            saving, _, abbrev = self._meta_by_utc[max(0, idx - 1)]
+            return saving, abbrev
 
         # After last transition: try POSIX TZ string, then fall back
         if self._end is not None:
             return self._end.meta_for_instant(t)
         else:
             assert self._meta_by_utc  # ensured during parsing
-            return self._meta_by_utc[-1]
+            saving, _, abbrev = self._meta_by_utc[-1]
+            return saving, abbrev
 
     def next_transition(self, t: EpochSecs) -> tuple[EpochSecs, Offset] | None:
         """Get the (epoch, new_offset) of the next UTC offset transition
@@ -200,6 +206,7 @@ class TimeZone:
                 and self._local_values == other._local_values
                 and self._end == other._end
                 and self._meta_by_utc == other._meta_by_utc
+                and self._abbrev_data == other._abbrev_data
             )
         return NotImplemented  # pragma: no cover
 
@@ -213,6 +220,8 @@ class TimeZone:
             _local_epochs=(),
             _local_values=(),
             _end=TzStr.parse(s),
+            _meta_by_utc=(),
+            _abbrev_data=b"",
         )
 
     @classmethod
@@ -318,7 +327,7 @@ _PRECALC_UNTIL = 2050
 
 def _extend_with_posix(
     offsets: MutableSequence[tuple[EpochSecs, Offset]],
-    meta: MutableSequence[tuple[int, str]],
+    meta: MutableSequence[TransitionMeta],
     end: TzStr,
 ) -> None:
     """Append pre-computed DST transitions from the POSIX TZ rule to *offsets*
@@ -348,14 +357,14 @@ def _extend_with_posix(
         if dst_start < dst_end:
             # Northern hemisphere: DST active in summer
             transitions = (
-                ((dst_start, dst_offset), (dst_saving, dst_abbrev)),
-                ((dst_end, std), (0, std_abbrev)),
+                ((dst_start, dst_offset), (dst_saving, None, dst_abbrev)),
+                ((dst_end, std), (0, None, std_abbrev)),
             )
         else:
             # Southern hemisphere: DST active in winter
             transitions = (
-                ((dst_end, std), (0, std_abbrev)),
-                ((dst_start, dst_offset), (dst_saving, dst_abbrev)),
+                ((dst_end, std), (0, None, std_abbrev)),
+                ((dst_start, dst_offset), (dst_saving, None, dst_abbrev)),
             )
         for transition, transition_meta in transitions:
             if transition[0] > last_epoch:
@@ -423,6 +432,7 @@ def _parse_content(
         _local_values=tuple(v for _, v in local_transitions),
         _end=end,
         _meta_by_utc=tuple(meta_by_utc),
+        _abbrev_data=abbrev_data,
     )
 
 
@@ -473,7 +483,7 @@ def _load_transitions(
     abbrev_data: bytes,
 ) -> tuple[
     MutableSequence[tuple[EpochSecs, Offset]],
-    MutableSequence[tuple[int, str]],
+    MutableSequence[TransitionMeta],
 ]:
     """Load transitions and metadata from parsed data"""
     first_utoff, _, first_abbrind = types[0]
@@ -490,8 +500,8 @@ def _load_transitions(
     offsets: list[tuple[EpochSecs, Offset]] = [
         (EPOCH_SECS_MIN, first_utoff),
     ]
-    meta: list[tuple[int, str]] = [
-        (0, _abbrev_at(abbrev_data, first_abbrind)),
+    meta: list[TransitionMeta] = [
+        (0, first_abbrind, _abbrev_at(abbrev_data, first_abbrind)),
     ]
 
     for idx, epoch in zip(indices, transition_times):
@@ -502,7 +512,9 @@ def _load_transitions(
         if not isdst:
             last_std_offset = utoff
 
-        meta.append((dst_saving, _abbrev_at(abbrev_data, abbrind)))
+        meta.append(
+            (dst_saving, abbrind, _abbrev_at(abbrev_data, abbrind))
+        )
 
     return offsets, meta
 
