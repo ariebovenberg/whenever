@@ -18,7 +18,8 @@ This section contains API documentation for miscellaneous functions and data
 Context managers
 ----------------
 
-.. autoclass:: patch_current_time
+.. autofunction:: patch_current_time
+
 .. autoclass:: TimePatch
    :members:
 

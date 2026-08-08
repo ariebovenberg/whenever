@@ -5,7 +5,8 @@ from __future__ import annotations
 import os.path  # NOTE: we don't use pathlib here to keep our imports light
 from contextlib import contextmanager
 from functools import partial
-from typing import Any, Iterable, Iterator, no_type_check
+from threading import RLock
+from typing import Any, Iterable, Iterator, Protocol, no_type_check
 
 from ._core import (
     Instant,
@@ -40,7 +41,17 @@ __all__ = [
 get_tzpath = _get_tzpath
 
 
-class TimePatch:
+class TimePatch(Protocol):  # pragma: no cover
+    def shift(self, *args: Any, **kwargs: Any) -> None: ...
+
+    def move_to(
+        self,
+        value: Instant | OffsetDateTime | ZonedDateTime,
+        /,
+    ) -> None: ...
+
+
+class _TimePatch:
     _pin: Instant
     _keep_ticking: bool
     _active: bool
@@ -67,9 +78,10 @@ class TimePatch:
 
     def shift(self, *args: Any, **kwargs: Any) -> None:
         """Move the patched clock by an exact elapsed-time amount."""
-        self._check_active()
-        current = Instant.now() if self._keep_ticking else self._pin
-        self._apply(current.add(*args, **kwargs))
+        with _patch_lock:
+            self._check_active()
+            current = Instant.now() if self._keep_ticking else self._pin
+            self._apply(current.add(*args, **kwargs))
 
     def move_to(
         self,
@@ -77,15 +89,17 @@ class TimePatch:
         /,
     ) -> None:
         """Move the patched clock to an exact time."""
-        self._check_active()
-        if not isinstance(value, (Instant, OffsetDateTime, ZonedDateTime)):
-            raise TypeError("move_to() argument must be an exact time")
-        self._apply(
-            value if isinstance(value, Instant) else value.to_instant()
-        )
+        with _patch_lock:
+            self._check_active()
+            if not isinstance(value, (Instant, OffsetDateTime, ZonedDateTime)):
+                raise TypeError("move_to() argument must be an exact time")
+            self._apply(
+                value if isinstance(value, Instant) else value.to_instant()
+            )
 
 
-_active_patch: TimePatch | None = None
+_active_patch: _TimePatch | None = None
+_patch_lock = RLock()
 
 
 @contextmanager
@@ -128,23 +142,24 @@ def patch_current_time(
     """
     global _active_patch
 
-    if _active_patch is not None:
-        raise RuntimeError("a time patch is already active")
-    instant = dt if isinstance(dt, Instant) else dt.to_instant()
-    if keep_ticking:
-        _patch_time_keep_ticking(instant)
-    else:
-        _patch_time_frozen(instant)
-
-    patch = _active_patch = TimePatch(instant, keep_ticking)
+    with _patch_lock:
+        if _active_patch is not None:
+            raise RuntimeError("a time patch is already active")
+        instant = dt if isinstance(dt, Instant) else dt.to_instant()
+        if keep_ticking:
+            _patch_time_keep_ticking(instant)
+        else:
+            _patch_time_frozen(instant)
+        patch = _active_patch = _TimePatch(instant, keep_ticking)
     try:
         yield patch
     finally:
-        try:
-            _unpatch_time()
-        finally:
-            patch._active = False
-            _active_patch = None
+        with _patch_lock:
+            try:
+                _unpatch_time()
+            finally:
+                patch._active = False
+                _active_patch = None
 
 
 def reset_tzpath(
