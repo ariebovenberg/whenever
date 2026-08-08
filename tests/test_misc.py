@@ -409,6 +409,37 @@ def test_time_patch_lifetime_and_overlap():
         handle.move_to(i)
 
 
+def test_ticking_time_patch_before_epoch():
+    i = Instant.from_utc(1960, 3, 2, hour=2)
+    with patch_current_time(i, keep_ticking=True):
+        assert i <= Instant.now() < i.add(seconds=1)
+
+
+def test_time_patch_shift_out_of_range():
+    with patch_current_time(Instant.MAX, keep_ticking=False) as p:
+        with pytest.raises((OSError, ValueError), match="out of range"):
+            p.shift(seconds=1)
+
+
+def test_time_patch_ticks_out_of_range():
+    with patch_current_time(Instant.MAX, keep_ticking=True) as p:
+        with pytest.raises((OSError, ValueError), match="out of range"):
+            Instant.now()
+
+
+@system_tz_ams()
+@pytest.mark.parametrize(
+    ("method", "value"),
+    [
+        (ZonedDateTime.from_timestamp, 0),
+        (ZonedDateTime.from_timestamp_millis, 0),
+        (ZonedDateTime.from_timestamp_nanos, 0),
+    ],
+)
+def test_deprecated_timestamp_factories_accept_system_tz(method, value):
+    assert method(value, tz=SYSTEM_TZ).tz_id == "Europe/Amsterdam"
+
+
 def test_time_patch_is_not_constructable():
     with pytest.raises(TypeError, match="Protocols cannot be instantiated"):
         TimePatch()  # type: ignore[misc]

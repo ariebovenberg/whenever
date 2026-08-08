@@ -1,5 +1,10 @@
 //! Functionality related to patching the current time
-use crate::{classes::instant::Instant, domain::scalar::*, py::*, pymodule::State};
+use crate::{
+    classes::instant::Instant,
+    domain::{scalar::*, time_delta::TimeDelta},
+    py::*,
+    pymodule::State,
+};
 use std::time::SystemTime;
 
 pub(crate) fn _patch_time_frozen(state: &State, arg: PyObj) -> PyReturn {
@@ -15,19 +20,12 @@ pub(crate) fn _patch_time(state: &State, arg: PyObj, freeze: bool) -> PyReturn {
         return raise_type_err("expected an Instant")?;
     };
 
-    let pos_epoch = u64::try_from(inst.epoch.get())
-        .ok()
-        .ok_or_type_err("can only set time after 1970")?;
-
     let patch_state = if freeze {
         PatchState::Frozen(inst)
     } else {
         PatchState::KeepTicking {
-            pin: std::time::Duration::new(pos_epoch, inst.subsec.get() as _),
-            at: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .ok()
-                .ok_or_type_err("system time before 1970")?,
+            pin: inst,
+            at: SystemTime::now(),
         }
     };
     state
@@ -76,8 +74,8 @@ pub(crate) enum PatchState {
     Unset,
     Frozen(Instant),
     KeepTicking {
-        pin: std::time::Duration,
-        at: std::time::Duration,
+        pin: Instant,
+        at: SystemTime,
     },
 }
 
@@ -114,14 +112,15 @@ impl State {
             }
             PatchState::Frozen(e) => Ok(e),
             PatchState::KeepTicking { pin, at } => {
-                let dur = pin
-                    + SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .ok()
-                        .ok_or_raise(exc_os_error(), "System time out of range")?
-                    - at;
-                Instant::from_duration_since_epoch(dur)
-                    .ok_or_raise(exc_os_error(), "System time out of range")
+                let elapsed = match SystemTime::now().duration_since(at) {
+                    Ok(d) => d.as_nanos() as i128,
+                    Err(e) => -(e.duration().as_nanos() as i128),
+                };
+                pin.shift(
+                    TimeDelta::from_nanos(elapsed)
+                        .ok_or_raise(exc_os_error(), "System time out of range")?,
+                )
+                .ok_or_raise(exc_os_error(), "System time out of range")
             }
         }
     }
