@@ -503,10 +503,6 @@ fn is_pending_char(ch: u8) -> bool {
     ch == b'.' || ch == b':'
 }
 
-fn is_optional_second_separator(ch: u8) -> bool {
-    is_literal_char(ch) || is_pending_char(ch)
-}
-
 fn is_reserved_char(ch: u8) -> bool {
     matches!(ch, b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'#')
 }
@@ -515,6 +511,12 @@ fn is_reserved_char(ch: u8) -> bool {
 
 /// Compile a pattern string into a list of elements.
 fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
+    if let Some(i) = pattern.iter().position(|b| !b.is_ascii()) {
+        return Err(format!(
+            "Non-ASCII character at position {}. Patterns must be ASCII-only.",
+            i
+        ));
+    }
     if pattern.len() > 1000 {
         return Err("Pattern string too long (max 1000 characters)".to_string());
     }
@@ -528,13 +530,6 @@ fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
 
     while i < n {
         let ch = pattern[i];
-
-        if !ch.is_ascii() {
-            return Err(format!(
-                "Non-ASCII character at position {}. Patterns must be ASCII-only.",
-                i
-            ));
-        }
 
         // Quoted literal — flush pending first (never consumed by a quoted literal)
         if ch == b'\'' {
@@ -698,14 +693,11 @@ fn compile_optional_seconds(pattern: &[u8], start: usize) -> Result<(usize, Elem
 
     let (separator, suffix) = if contents.starts_with(b"ss") {
         (None, &contents[2..])
-    } else if contents.len() >= 3
-        && is_optional_second_separator(contents[0])
-        && &contents[1..3] == b"ss"
-    {
-        (Some(contents[0]), &contents[3..])
+    } else if contents.starts_with(b":ss") {
+        (Some(b':'), &contents[3..])
     } else {
         return Err(format!(
-            "optional group at position {} must contain an optional unquoted literal followed by 'ss'",
+            "optional group at position {} must start with 'ss' or ':ss'",
             start
         ));
     };
@@ -872,13 +864,45 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
     let mut has_ampm = false;
     let mut seen_keys: [Option<StateFieldName>; 12] = [None; 12];
 
-    for el in elements {
+    for (i, el) in elements.iter().enumerate() {
         let field = match el {
             Element::Field(f) => *f,
             Element::OptionalSeconds {
                 separator,
                 fraction,
             } => {
+                let name = optional_seconds_name(*separator, *fraction);
+                if i == 0 || !matches!(elements[i - 1], Element::Field(Field::Minute)) {
+                    return Err(format!(
+                        "optional seconds group {} must immediately follow fixed-width 'mm'",
+                        name
+                    ));
+                }
+                if let Some(follower) = elements.get(i + 1) {
+                    if element_can_be_empty(follower) {
+                        return Err(format!(
+                            "optional seconds group {} cannot be followed by an optional field",
+                            name
+                        ));
+                    }
+                    if separator.is_none() && element_can_start_with_digit(follower) {
+                        return Err(
+                            "separator-free optional seconds cannot be followed by an element that starts with a digit".into(),
+                        );
+                    }
+                    if *separator == Some(b':') && element_can_start_with_colon(follower) {
+                        return Err(
+                            "colon-prefixed optional seconds cannot be followed by an element that starts with ':'".into(),
+                        );
+                    }
+                    if matches!(fraction, OptionalFraction::Trimmed(_))
+                        && element_can_start_with_dot(follower)
+                    {
+                        return Err(
+                            "trimmed optional seconds cannot be followed by an element that starts with '.'".into(),
+                        );
+                    }
+                }
                 let name = StateFieldName::OptionalSeconds {
                     separator: *separator,
                     fraction: *fraction,
@@ -914,6 +938,63 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
     // 12h without AM/PM: we return Ok but the Python side emits a warning.
     // The warning is handled by the caller since we don't have Python API access here.
     Ok(())
+}
+
+fn element_can_be_empty(element: &Element<'_>) -> bool {
+    matches!(
+        element,
+        Element::OptionalSeconds { .. }
+            | Element::Field(
+                Field::SecondOpt | Field::ColonSec | Field::FracTrim(_) | Field::DotFrac(_)
+            )
+    )
+}
+
+fn element_can_start_with_digit(element: &Element<'_>) -> bool {
+    match element {
+        Element::Literal(s) => s[0].is_ascii_digit(),
+        Element::OptionalSeconds { separator, .. } => separator.is_none(),
+        Element::Field(field) => matches!(
+            field,
+            Field::Year4
+                | Field::Year2
+                | Field::MonthNum
+                | Field::MonthNumUnpadded
+                | Field::Day
+                | Field::DayUnpadded
+                | Field::Hour24
+                | Field::Hour24Unpadded
+                | Field::Hour24Legacy
+                | Field::Hour24UnpaddedLegacy
+                | Field::Hour12
+                | Field::Hour12Unpadded
+                | Field::Minute
+                | Field::MinuteUnpadded
+                | Field::Second
+                | Field::SecondUnpadded
+                | Field::SecondOpt
+                | Field::FracExact(_)
+                | Field::FracTrim(_)
+                | Field::TzId
+                | Field::TzAbbrev
+        ),
+    }
+}
+
+fn element_can_start_with_colon(element: &Element<'_>) -> bool {
+    match element {
+        Element::Literal(s) => s[0] == b':',
+        Element::OptionalSeconds { separator, .. } => *separator == Some(b':'),
+        Element::Field(field) => matches!(field, Field::ColonSec),
+    }
+}
+
+fn element_can_start_with_dot(element: &Element<'_>) -> bool {
+    match element {
+        Element::Literal(s) => s[0] == b'.',
+        Element::OptionalSeconds { .. } => false,
+        Element::Field(field) => matches!(field, Field::DotFrac(_) | Field::TzId | Field::TzAbbrev),
+    }
 }
 
 fn register_state_key(
@@ -1501,7 +1582,7 @@ fn parse_dot_frac(
     width: usize,
     state: &mut ParseState,
 ) -> Result<usize, String> {
-    if pos < s.len() && s[pos] == b'.' {
+    if pos + 1 < s.len() && s[pos] == b'.' && s[pos + 1].is_ascii_digit() {
         let pos = pos + 1; // consume the dot
         let start = pos;
         let mut end = pos;
@@ -1913,60 +1994,69 @@ mod tests {
     }
 
     #[test]
-    fn optional_seconds_compile_with_unquoted_separators() {
-        for (p, s) in [
-            (&b"[ss]"[..], None),
-            (&b"[:ss]"[..], Some(b':')),
-            (&b"[-ss]"[..], Some(b'-')),
-            (&b"[/ss]"[..], Some(b'/')),
-            (&b"[ ss]"[..], Some(b' ')),
-            (&b"[.ss]"[..], Some(b'.')),
-        ] {
+    fn optional_seconds_compile_with_supported_separators() {
+        for (p, s) in [(&b"mm[ss]"[..], None), (&b"mm[:ss]"[..], Some(b':'))] {
             let e = compile(p).unwrap();
             assert!(matches!(
                 e.as_slice(),
-                [Element::OptionalSeconds {
-                    separator,
-                    fraction: OptionalFraction::None,
-                }] if *separator == s
+                [
+                    Element::Field(Field::Minute),
+                    Element::OptionalSeconds {
+                        separator,
+                        fraction: OptionalFraction::None,
+                    }
+                ] if *separator == s
             ));
+        }
+        for p in [b"mm[-ss]", b"mm[/ss]", b"mm[ ss]", b"mm[.ss]"] {
+            assert!(
+                compile(p)
+                    .unwrap_err()
+                    .contains("must start with 'ss' or ':ss'")
+            );
         }
     }
 
     #[test]
     fn optional_seconds_fraction_widths_compile() {
         for w in 1..=9 {
-            let p = format!("[:ss.{}]", "f".repeat(w));
+            let p = format!("mm[:ss.{}]", "f".repeat(w));
             let e = compile(p.as_bytes()).unwrap();
             assert!(matches!(
                 e.as_slice(),
-                [Element::OptionalSeconds {
-                    separator: Some(b':'),
-                    fraction: OptionalFraction::Exact(n),
-                }] if *n == w as u8
+                [
+                    Element::Field(Field::Minute),
+                    Element::OptionalSeconds {
+                        separator: Some(b':'),
+                        fraction: OptionalFraction::Exact(n),
+                    }
+                ] if *n == w as u8
             ));
 
-            let p = format!("[:ss.{}]", "F".repeat(w));
+            let p = format!("mm[:ss.{}]", "F".repeat(w));
             let e = compile(p.as_bytes()).unwrap();
             assert!(matches!(
                 e.as_slice(),
-                [Element::OptionalSeconds {
-                    separator: Some(b':'),
-                    fraction: OptionalFraction::Trimmed(n),
-                }] if *n == w as u8
+                [
+                    Element::Field(Field::Minute),
+                    Element::OptionalSeconds {
+                        separator: Some(b':'),
+                        fraction: OptionalFraction::Trimmed(n),
+                    }
+                ] if *n == w as u8
             ));
         }
     }
 
     #[test]
     fn optional_seconds_format_and_parse() {
-        let e = compile(b"HH:mm[-ss.FFF]").unwrap();
+        let e = compile(b"HH:mm[:ss.FFF]").unwrap();
         let t = Time::new(14, 30, 5, SubSecNanos::new(120_000_000).unwrap()).unwrap();
         let mut s = VecSink::default();
         format_elements(&e, &t.pattern_values(), &mut s).unwrap();
-        assert_eq!(s.0, b"14:30-05.12");
+        assert_eq!(s.0, b"14:30:05.12");
 
-        let p = parse_to_state(&e, b"14:30-05.12").unwrap();
+        let p = parse_to_state(&e, b"14:30:05.12").unwrap();
         assert_eq!(p.hour, Some(14));
         assert_eq!(p.minute, Some(30));
         assert_eq!(p.second, Some(5));
@@ -1983,7 +2073,7 @@ mod tests {
             ("[:ss", "missing closing ']'"),
             ("[[:ss]]", "nested optional groups"),
             ("[]", "empty optional group"),
-            ("[:s]", "optional unquoted literal followed by 'ss'"),
+            ("[:s]", "must start with 'ss' or ':ss'"),
             ("[:ss.]", "fraction is missing"),
             ("[:ss.fF]", "must use only 'f' or only 'F'"),
         ] {
@@ -1994,9 +2084,28 @@ mod tests {
     #[test]
     fn optional_seconds_claim_fraction_state() {
         assert!(
-            compile(b"fff[:ss.fff]")
+            compile(b"HH:mm[:ss.fff]fff")
                 .unwrap_err()
-                .contains("Duplicate field: [:ss.fff] conflicts with fff (both set nanos)")
+                .contains("Duplicate field: fff conflicts with [:ss.fff] (both set nanos)")
         );
+    }
+
+    #[test]
+    fn optional_seconds_placement_is_restricted() {
+        for (p, m) in [
+            (
+                &b"HH:m[:ss]"[..],
+                "must immediately follow fixed-width 'mm'",
+            ),
+            (&b"HH:mm[ss]00"[..], "starts with a digit"),
+            (&b"HH:mm[:ss]:"[..], "starts with ':'"),
+            (
+                &b"HH:mm[:ss]FFF"[..],
+                "cannot be followed by an optional field",
+            ),
+            (&b"HH:mm[:ss.FFF]."[..], "starts with '.'"),
+        ] {
+            assert!(compile(p).unwrap_err().contains(m));
+        }
     }
 }

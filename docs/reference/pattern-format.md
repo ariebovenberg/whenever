@@ -76,9 +76,10 @@ letters fail instead of silently acquiring a different meaning.
 :::{admonition} Optional seconds
 :class: hint
 
-Brackets have one limited use: an optional unquoted literal
-separator, followed by `ss`, followed optionally by `.` and 1–9 `f` or `F`
-characters. They are not general-purpose optional groups.
+Brackets have one limited use immediately after fixed-width `mm`: optional
+seconds written as `[ss]` or `[:ss]`, followed optionally by `.` and 1–9 `f`
+or `F` characters. They are not general-purpose optional groups, and the
+colon is the only supported separator.
 
 The whole tail is omitted when both seconds and nanoseconds are zero. Otherwise,
 the separator and two zero-padded second digits are emitted. Lowercase `f`
@@ -97,11 +98,16 @@ zeroes and omits the decimal point when the fraction is empty.
 '14:30'
 >>> Time(14, 30, 0, nanosecond=500_000_000).format("HH:mm[:ss.FFF]")
 '14:30:00.5'
->>> Time(14, 30, 5).format("HH:mm[-ss]")
-'14:30-05'
 >>> Time(14, 30, 5).format("HH:mm[ss]")
 '14:3005'
 ```
+
+The group boundary must remain unambiguous without backtracking.
+Separator-free `[ss...]` therefore cannot be followed by an element that
+starts with a digit, and `[:ss...]` cannot be followed by another colon.
+Fields that may be empty are also rejected as followers when they make the
+boundary ambiguous. A trimmed optional fraction cannot be followed by a
+literal period.
 
 :::
 

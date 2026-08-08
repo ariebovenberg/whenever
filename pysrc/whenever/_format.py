@@ -212,10 +212,20 @@ class _ParseState:
 
 
 class _Literal:
-    __slots__ = ("text",)
+    __slots__ = (
+        "text",
+        "can_start_with_digit",
+        "can_start_with_colon",
+        "can_start_with_dot",
+    )
+
+    can_be_empty = False
 
     def __init__(self, text: str):
         self.text = text
+        self.can_start_with_digit = text[0].isdigit()
+        self.can_start_with_colon = text.startswith(":")
+        self.can_start_with_dot = text.startswith(".")
 
     def __repr__(self) -> str:
         return f"Literal({self.text!r})"
@@ -236,6 +246,10 @@ class _Field:
     category: str
     state_field: str
     format_only: bool = False
+    can_be_empty = False
+    can_start_with_digit = False
+    can_start_with_colon = False
+    can_start_with_dot = False
 
     def format_value(self, v: _FormatValues) -> str:
         raise NotImplementedError
@@ -257,13 +271,17 @@ class _Field:
         return letter * count
 
 
+class _DigitField(_Field):
+    can_start_with_digit = True
+
+
 _Element = _Literal | _Field
 
 
 # --- Concrete field types ---
 
 
-class _Year4(_Field):
+class _Year4(_DigitField):
     pattern = ("Y", 4)
     category = "date"
     state_field = "year"
@@ -276,7 +294,7 @@ class _Year4(_Field):
         return pos
 
 
-class _Year2(_Field):
+class _Year2(_DigitField):
     pattern = ("Y", 2)
     category = "date"
     state_field = "year"
@@ -286,7 +304,7 @@ class _Year2(_Field):
         return f"{v.year % 100:02d}"
 
 
-class _MonthNum(_Field):
+class _MonthNum(_DigitField):
     pattern = ("M", 2)
     category = "date"
     state_field = "month"
@@ -299,7 +317,7 @@ class _MonthNum(_Field):
         return pos
 
 
-class _MonthNumUnpadded(_Field):
+class _MonthNumUnpadded(_DigitField):
     pattern = ("M", 1)
     category = "date"
     state_field = "month"
@@ -342,7 +360,7 @@ class _MonthFull(_Field):
         return pos
 
 
-class _Day(_Field):
+class _Day(_DigitField):
     pattern = ("D", 2)
     category = "date"
     state_field = "day"
@@ -355,7 +373,7 @@ class _Day(_Field):
         return pos
 
 
-class _DayUnpadded(_Field):
+class _DayUnpadded(_DigitField):
     pattern = ("D", 1)
     category = "date"
     state_field = "day"
@@ -398,7 +416,7 @@ class _WeekdayFull(_Field):
         return pos
 
 
-class _Hour24(_Field):
+class _Hour24(_DigitField):
     pattern = ("H", 2)
     category = "time"
     state_field = "hour"
@@ -411,7 +429,7 @@ class _Hour24(_Field):
         return pos
 
 
-class _Hour24Unpadded(_Field):
+class _Hour24Unpadded(_DigitField):
     pattern = ("H", 1)
     category = "time"
     state_field = "hour"
@@ -432,7 +450,7 @@ class _Hour24UnpaddedLegacy(_Hour24Unpadded):
     pattern = ("h", 1)
 
 
-class _Hour12(_Field):
+class _Hour12(_DigitField):
     pattern = ("i", 2)
     category = "time"
     state_field = "hour"
@@ -452,7 +470,7 @@ class _Hour12(_Field):
         return pos
 
 
-class _Hour12Unpadded(_Field):
+class _Hour12Unpadded(_DigitField):
     pattern = ("i", 1)
     category = "time"
     state_field = "hour"
@@ -470,7 +488,7 @@ class _Hour12Unpadded(_Field):
         return pos
 
 
-class _Minute(_Field):
+class _Minute(_DigitField):
     pattern = ("m", 2)
     category = "time"
     state_field = "minute"
@@ -483,7 +501,7 @@ class _Minute(_Field):
         return pos
 
 
-class _MinuteUnpadded(_Field):
+class _MinuteUnpadded(_DigitField):
     pattern = ("m", 1)
     category = "time"
     state_field = "minute"
@@ -496,7 +514,7 @@ class _MinuteUnpadded(_Field):
         return pos
 
 
-class _Second(_Field):
+class _Second(_DigitField):
     pattern = ("s", 2)
     category = "time"
     state_field = "second"
@@ -511,7 +529,7 @@ class _Second(_Field):
         return pos
 
 
-class _SecondUnpadded(_Field):
+class _SecondUnpadded(_DigitField):
     pattern = ("s", 1)
     category = "time"
     state_field = "second"
@@ -526,10 +544,11 @@ class _SecondUnpadded(_Field):
         return pos
 
 
-class _SecondOpt(_Field):
+class _SecondOpt(_DigitField):
     pattern = ("S", 2)
     category = "time"
     state_field = "second"
+    can_be_empty = True
 
     def format_value(self, v: _FormatValues) -> str:
         return f"{v.second:02d}" if (v.second or v.nanos) else ""
@@ -558,6 +577,8 @@ class _ColonSec(_Field):
 
     category = "time"
     state_field = "second"
+    can_be_empty = True
+    can_start_with_colon = True
 
     def format_value(self, v: _FormatValues) -> str:
         return f":{v.second:02d}" if (v.second or v.nanos) else ""
@@ -579,6 +600,7 @@ class _OptionalSeconds(_Field):
 
     category = "time"
     state_field = "second"
+    can_be_empty = True
 
     def __init__(
         self,
@@ -589,6 +611,8 @@ class _OptionalSeconds(_Field):
         self.separator = separator
         self.fraction_kind = fraction_kind
         self.width = width
+        self.can_start_with_digit = not separator
+        self.can_start_with_colon = separator == ":"
 
     def format_value(self, v: _FormatValues) -> str:
         if not (v.second or v.nanos):
@@ -622,7 +646,12 @@ class _OptionalSeconds(_Field):
                 raise ValueError(f"expected '.' at position {pos}")
             value, pos = _parse_digits(s, pos + 1, self.width)
             state.nanos = value * (10 ** (9 - self.width))
-        elif self.fraction_kind == "trimmed" and pos < len(s) and s[pos] == ".":
+        elif (
+            self.fraction_kind == "trimmed"
+            and pos + 1 < len(s)
+            and s[pos] == "."
+            and s[pos + 1].isdigit()
+        ):
             pos += 1
             count = 0
             while (
@@ -631,10 +660,9 @@ class _OptionalSeconds(_Field):
                 and s[pos + count].isdigit()
             ):
                 count += 1
-            if count:
-                value = int(s[pos : pos + count])
-                state.nanos = value * (10 ** (9 - count))
-                pos += count
+            value = int(s[pos : pos + count])
+            state.nanos = value * (10 ** (9 - count))
+            pos += count
         return pos
 
     def __repr__(self) -> str:
@@ -644,7 +672,7 @@ class _OptionalSeconds(_Field):
         return f"[{self.separator}ss.{letter * self.width}]"
 
 
-class _FracExact(_Field):
+class _FracExact(_DigitField):
     """Fixed-width fractional seconds (e.g. ``fff`` = 3 digits)."""
 
     category = "time"
@@ -665,11 +693,12 @@ class _FracExact(_Field):
         return "f" * self.width
 
 
-class _FracTrim(_Field):
+class _FracTrim(_DigitField):
     """Trimmed fractional seconds (e.g. ``FFF`` = up to 3 digits)."""
 
     category = "time"
     state_field = "nanos"
+    can_be_empty = True
 
     def __init__(self, width: int):
         self.width = width
@@ -714,6 +743,8 @@ class _DotFrac(_Field):
 
     category = "time"
     state_field = "nanos"
+    can_be_empty = True
+    can_start_with_dot = True
 
     def __init__(self, width: int):
         self.width = width
@@ -723,7 +754,12 @@ class _DotFrac(_Field):
         return f".{trimmed}" if trimmed else ""
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        if state.second_absent or pos >= len(s) or s[pos] != ".":
+        if (
+            state.second_absent
+            or pos + 1 >= len(s)
+            or s[pos] != "."
+            or not s[pos + 1].isdigit()
+        ):
             state.nanos = 0
             return pos
         pos += 1  # consume the dot
@@ -734,11 +770,8 @@ class _DotFrac(_Field):
             and s[pos + count].isdigit()
         ):
             count += 1
-        if count == 0:
-            state.nanos = 0
-        else:
-            val = int(s[pos : pos + count])
-            state.nanos = val * (10 ** (9 - count))
+        val = int(s[pos : pos + count])
+        state.nanos = val * (10 ** (9 - count))
         return pos + count
 
     def __repr__(self) -> str:
@@ -920,6 +953,8 @@ class _TzId(_Field):
     pattern = ("V", 2)
     category = "tz"
     state_field = "tz_id"
+    can_start_with_digit = True
+    can_start_with_dot = True
 
     def format_value(self, v: _FormatValues) -> str:
         if v.tz_id is None:
@@ -945,6 +980,8 @@ class _TzAbbrev(_Field):
     category = "tz"
     state_field = "tz_abbrev"
     format_only = True
+    can_start_with_digit = True
+    can_start_with_dot = True
 
     def format_value(self, v: _FormatValues) -> str:
         if v.tz_abbrev is None:
@@ -1008,14 +1045,46 @@ _SPEC_CHARS = frozenset(_FIXED_SPEC) | frozenset(_VARIABLE_SPEC)
 
 def _validate_cross_fields(elements: Iterable[_Element]) -> None:
     """Check for invalid field combinations and duplicates."""
+    elements = tuple(elements)
     has_24h = False
     has_12h = False
     has_ampm = False
     seen_state_fields: dict[str, _Field] = {}
 
-    for el in elements:
+    for i, el in enumerate(elements):
         if not isinstance(el, _Field):
             continue
+        if isinstance(el, _OptionalSeconds):
+            if i == 0 or not isinstance(elements[i - 1], _Minute):
+                raise ValueError(
+                    f"optional seconds group {el!r} must immediately "
+                    "follow fixed-width 'mm'"
+                )
+            if i + 1 < len(elements):
+                follower = elements[i + 1]
+                if follower.can_be_empty:
+                    raise ValueError(
+                        f"optional seconds group {el!r} cannot be followed "
+                        f"by optional field {follower!r}"
+                    )
+                if not el.separator and follower.can_start_with_digit:
+                    raise ValueError(
+                        "separator-free optional seconds cannot be followed "
+                        "by an element that starts with a digit"
+                    )
+                if el.separator == ":" and follower.can_start_with_colon:
+                    raise ValueError(
+                        "colon-prefixed optional seconds cannot be followed "
+                        "by an element that starts with ':'"
+                    )
+                if (
+                    el.fraction_kind == "trimmed"
+                    and follower.can_start_with_dot
+                ):
+                    raise ValueError(
+                        "trimmed optional seconds cannot be followed by an "
+                        "element that starts with '.'"
+                    )
         if isinstance(el, (_Hour24, _Hour24Unpadded)):
             has_24h = True
         elif isinstance(el, (_Hour12, _Hour12Unpadded)):
@@ -1046,8 +1115,6 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
 # '.' and ':' are handled separately as potential compound-token prefixes.
 _LITERAL_CHARS = frozenset(' \t\n0123456789-/,;_()+@!~*&%$^|\\=?`"')
 _PENDING_CHARS = frozenset(".:")
-_OPTIONAL_SECOND_SEPARATORS = _LITERAL_CHARS | _PENDING_CHARS
-
 _RESERVED_CHARS = frozenset("<>[]{}#")
 
 
@@ -1120,17 +1187,12 @@ def _compile_optional_seconds(
     if contents.startswith("ss"):
         separator = ""
         suffix = contents[2:]
-    elif (
-        len(contents) >= 3
-        and contents[0] in _OPTIONAL_SECOND_SEPARATORS
-        and contents[1:3] == "ss"
-    ):
-        separator = contents[0]
+    elif contents.startswith(":ss"):
+        separator = ":"
         suffix = contents[3:]
     else:
         raise ValueError(
-            f"optional group at position {i} must contain an optional "
-            "unquoted literal followed by 'ss'"
+            f"optional group at position {i} must start with 'ss' or ':ss'"
         )
     if not suffix:
         return end + 1, _OptionalSeconds(separator, "none", 0)
@@ -1159,6 +1221,12 @@ def _compile_optional_seconds(
 @lru_cache(maxsize=64)
 def compile_pattern(pattern: str) -> tuple[_Element, ...]:
     """Compile a pattern string into a tuple of elements."""
+    for i, ch in enumerate(pattern):
+        if not ch.isascii():
+            raise ValueError(
+                f"Non-ASCII character {ch!r} at position {i}. "
+                f"Patterns must be ASCII-only."
+            )
     if len(pattern) > 1000:
         raise ValueError("Pattern string too long (max 1000 characters)")
     elements: list[_Element] = []
@@ -1171,12 +1239,6 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
 
     while i < n:
         ch = pattern[i]
-
-        if not ch.isascii():
-            raise ValueError(
-                f"Non-ASCII character {ch!r} at position {i}. "
-                f"Patterns must be ASCII-only."
-            )
 
         # Quoted literal — pending is never consumed by a quoted literal
         if ch == "'":
