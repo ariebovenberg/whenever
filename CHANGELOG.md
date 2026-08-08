@@ -72,9 +72,10 @@ deprecated interfaces are removed.
   whose rounded offsets still contain minutes. Formatting `VV` without an IANA
   timezone ID now consistently raises an error.
 
-- Fixed-offset arguments now accept `TimeDelta`. Compatibility with integer
-  offsets is deprecated. Use `hours(2)`—short for
-  `TimeDelta(hours=2)`—instead of `2`.
+- Ticking time patches support pre-1970 instants
+
+- Fixed-offset arguments now no longer accept bare integers
+  Use `hours(2)`—short for `TimeDelta(hours=2)`—instead of `2`.
 
   **Rationale**: the unit of a bare integer is implicit, which makes offset
   values easy to misread or misuse.

@@ -1025,7 +1025,7 @@ fn check_from_timestamp_args_return_tz(
     match (args, kwargs.next()) {
         (&[_], Some((key, value))) if kwargs.original_len() == 1 => {
             if unicode_eq(key, *state.str_tz) {
-                state.tz_store.obj_get(value)
+                state.load_tz(value)
             } else {
                 raise_unexpected_kwarg(fname, key)
             }
