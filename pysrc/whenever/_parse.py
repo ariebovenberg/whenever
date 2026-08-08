@@ -17,6 +17,7 @@ from ._common import (
     Nanos,
     check_utc_bounds,
     mk_fixed_tzinfo,
+    round_offset_to_minute,
 )
 
 if TYPE_CHECKING:
@@ -131,11 +132,6 @@ def offset_dt_from_iso(s: str) -> tuple[_datetime, Nanos]:
         _parse_err(s)
 
 
-def _round_offset_to_minute(offset: int, /) -> int:
-    sign = 1 if offset >= 0 else -1
-    return sign * ((abs(offset) + 30) // 60 * 60)
-
-
 def matching_local_offset(
     local: _datetime,
     tz: TimeZone,
@@ -155,7 +151,7 @@ def matching_local_offset(
             candidate_offsets = ()
 
     for offset in candidate_offsets:
-        comparable = offset if exact else _round_offset_to_minute(offset)
+        comparable = offset if exact else round_offset_to_minute(offset)
         if comparable == parsed_offset:
             return check_utc_bounds(
                 local.replace(tzinfo=mk_fixed_tzinfo(offset))

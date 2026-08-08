@@ -67,6 +67,11 @@ deprecated interfaces are removed.
   **Rationale**: `H`/`HH` is the near-universal spelling for 24-hour fields,
   while brackets make the optional separator and seconds tail explicit.
 
+- Pattern offsets without seconds now round timezone offset seconds to the
+  nearest minute, matching Temporal. Hour-only `x`/`X` patterns reject values
+  whose rounded offsets still contain minutes. Formatting `VV` without an IANA
+  timezone ID now consistently raises an error.
+
 - Fixed-offset arguments now accept `TimeDelta`. Compatibility with integer
   offsets is deprecated. Use `hours(2)`—short for
   `TimeDelta(hours=2)`—instead of `2`.

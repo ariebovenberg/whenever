@@ -88,3 +88,4 @@ However there are some limitations of such instances of {class}`~whenever.ZonedD
    identifier by default; `tz_id_display="never"` or `"auto"` produces only the
    local fields and current offset.
 4. The result of `to_stdlib()` will have a fixed offset, not a `ZoneInfo` object.
+5. Formatting with `VV` raises {class}`ValueError`.

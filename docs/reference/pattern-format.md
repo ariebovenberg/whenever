@@ -117,10 +117,23 @@ See {ref}`timezones-explained` for background on timezones, offsets, and abbrevi
 
 | Symbol  | Meaning                    | Pattern | Example output |
 |:---------|:---------------------------|:---------------|:--------------|
-| `x` | Offset hours and minutes | `x` <br/> `xx` <br/> `xxx` <br/> `xxxx` <br/> `xxxxx` | `+02` <br/> `+0230` <br/> `+02:30` <br/> `+023045` <br/> `+02:30:45` |
-| `X` | Offset hours and minutes, with `Z` for zero offset | `X` <br/> `XX` <br/> `XXX` <br/> `XXXX` <br/> `XXXXX` | `+02` <br/> `+0230` <br/> `+02:30` <br/> `+023045` <br/> `+02:30:45` or `Z` when zero |
+| `x` | Numeric offset; precision depends on width | `x` <br/> `xx` <br/> `xxx` <br/> `xxxx` <br/> `xxxxx` | `+02` <br/> `+0230` <br/> `+02:30` <br/> `+023045` <br/> `+02:30:45` |
+| `X` | Numeric offset, with `Z` for zero offset; precision depends on width | `X` <br/> `XX` <br/> `XXX` <br/> `XXXX` <br/> `XXXXX` | `+02` <br/> `+0230` <br/> `+02:30` <br/> `+023045` <br/> `+02:30:45` or `Z` when zero |
 | `V` | IANA timezone ID | `VV` | `Europe/Paris` |
 | `z` | Timezone abbreviation [^6] | `zz` | `CET`, `CEST` |
+
+For `x` and `X`, widths `xx` and `xxx` round offset seconds to the nearest
+minute, with half values rounded away from zero. Widths `x` and `X` apply the
+same rounding but require the result to be a whole number of hours; otherwise
+formatting raises {class}`ValueError`. Widths `xxxx` and `xxxxx` include offset
+seconds when nonzero and therefore preserve them exactly.
+
+When parsing a {class}`ZonedDateTime`, an offset without seconds is matched
+against the timezone offset rounded in the same way. An offset that includes
+seconds, and `Z`, must match exactly.
+
+`VV` requires an IANA timezone ID. Formatting a timezone without one raises
+{class}`ValueError`.
 
 ```{admonition} Choosing between x and X
 :class: hint

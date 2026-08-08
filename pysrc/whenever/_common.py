@@ -106,6 +106,11 @@ def mk_fixed_tzinfo(secs: int, /) -> _timezone:
     return _timezone(_timedelta(seconds=secs))
 
 
+def round_offset_to_minute(offset: int, /) -> int:
+    sign = 1 if offset >= 0 else -1
+    return sign * ((abs(offset) + 30) // 60 * 60)
+
+
 def check_utc_bounds(dt: _datetime) -> _datetime:
     try:
         dt.astimezone(UTC)
