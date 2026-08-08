@@ -199,6 +199,7 @@ class TimeZone:
                 and self._local_epochs == other._local_epochs
                 and self._local_values == other._local_values
                 and self._end == other._end
+                and self._meta_by_utc == other._meta_by_utc
             )
         return NotImplemented  # pragma: no cover
 
