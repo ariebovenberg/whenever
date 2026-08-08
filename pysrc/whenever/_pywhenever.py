@@ -5273,7 +5273,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         else:
             tz = _load_tz(tzid)
             # Don't attempt to preserve offset when changing tz
-            preserve_offset = tz is self._tz
+            preserve_offset = tz == self._tz
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
 
         naive = self._py_dt.replace(**kwargs, tzinfo=None)
