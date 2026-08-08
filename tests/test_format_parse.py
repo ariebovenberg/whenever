@@ -119,8 +119,9 @@ class TestCompilePattern:
 
     def test_24h_with_ampm_raises(self):
         t = Time(14, 30)
-        with pytest.raises(ValueError, match="24-hour.*cannot.*AM/PM"):
-            t.format("HH:mm aa")
+        for pattern in ("HH:mm aa", "hh:mm aa", "H:mm aa", "h:mm aa"):
+            with pytest.raises(ValueError, match="24-hour.*cannot.*AM/PM"):
+                t.format(pattern)
 
     def test_12h_without_ampm_warns(self):
         t = Time(14, 30)
@@ -180,6 +181,54 @@ class TestCompilePattern:
         """ASCII control characters are not in the literal allowlist."""
         with pytest.raises(ValueError, match="Unexpected"):
             Date(2024, 1, 1).format("YYYY\x00MM")
+
+    @pytest.mark.parametrize(
+        "pattern",
+        [
+            "MDD",
+            "DMM",
+            "Hmm",
+            "imm",
+            "mss",
+            "sDD",
+            "FFF0",
+            ".FFF0",
+            ".FFF'.'",
+            ".FFF.0",
+            ".FFF'.0'",
+            ".FFFVV",
+            "xxxxYYYY",
+            "xxxxx':'",
+        ],
+    )
+    def test_ambiguous_variable_width_boundary_rejected(self, pattern):
+        with pytest.raises(ValueError, match="cannot be followed"):
+            compile_pattern(pattern)
+
+    @pytest.mark.parametrize("pattern", ["VVYYYY", "VV'Europe/Paris'"])
+    def test_timezone_id_requires_safe_delimiter(self, pattern):
+        with pytest.raises(ValueError, match="literal delimiter"):
+            compile_pattern(pattern)
+
+    @pytest.mark.parametrize("pattern", ["VV", "VV' '", "VV':'"])
+    def test_timezone_id_safe_delimiter(self, pattern):
+        compile_pattern(pattern)
+
+
+@pytest.mark.parametrize(
+    "cls, value, pattern",
+    [
+        (Date, "٢٠٢٤-03-15", "YYYY-MM-DD"),
+        (Date, "2024-٠٣-15", "YYYY-MM-DD"),
+        (Date, "2024-03-١٥", "YYYY-MM-DD"),
+        (Time, "14:٣٠", "HH:mm"),
+        (Time, "14:30:٠٥", "HH:mm[:ss]"),
+        (Time, "14:30:05.١", "HH:mm:ss.F"),
+    ],
+)
+def test_parse_rejects_non_ascii_input(cls, value, pattern):
+    with pytest.raises(ValueError, match="Input string must be ASCII-only"):
+        cls.parse(value, pattern=pattern)
 
 
 class TestOptionalSecondsPattern:
@@ -811,9 +860,8 @@ class TestTimeParse:
         assert Time(14, 30, 5).format("HH:mm:ss.FFF") == "14:30:05"
         with pytest.raises(ValueError, match="trailing"):
             Time.parse("14:30:05.", pattern="HH:mm:ss.FFF")
-        assert Time.parse("14:30:05.", pattern="HH:mm:ss.FFF'.'") == Time(
-            14, 30, 5
-        )
+        with pytest.raises(ValueError, match="cannot be followed"):
+            Time.parse("14:30:05.", pattern="HH:mm:ss.FFF'.'")
 
     def test_fractional_nanos(self):
         t = Time.parse("14:30:05.123456789", pattern="HH:mm:ss.fffffffff")
@@ -972,6 +1020,19 @@ class TestOffsetDateTimeFormat:
         odt = OffsetDateTime(2024, 3, 15, 14, 30, offset=seconds(29))
         assert odt.format("X") == "Z"
 
+    @pytest.mark.parametrize("pattern", ["x", "xx", "xxx", "X", "XX", "XXX"])
+    def test_minute_rounding_cannot_produce_24_hour_offset(self, pattern):
+        odt = OffsetDateTime(
+            2024,
+            3,
+            15,
+            14,
+            30,
+            offset=hours(23) + minutes(59) + seconds(30),
+        )
+        with pytest.raises(ValueError, match="rounded offset is out of range"):
+            odt.format(pattern)
+
     def test_uppercase_x_zero_offset(self):
         """X uses Z for zero offset."""
         odt = OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(0))
@@ -1001,6 +1062,23 @@ class TestOffsetDateTimeParse:
         with pytest.raises(ValueError, match="offset.*x/X"):
             OffsetDateTime.parse(
                 "2024-03-15 14:30", pattern="YYYY-MM-DD HH:mm"
+            )
+
+    @pytest.mark.parametrize(
+        ("pattern", "offset"),
+        [
+            ("x", "+24"),
+            ("xx", "+2400"),
+            ("xxx", "+24:00"),
+            ("xxxx", "+2400"),
+            ("xxxxx", "+24:00"),
+        ],
+    )
+    def test_offset_hours_out_of_range(self, pattern, offset):
+        with pytest.raises(ValueError, match="offset hours must be 0..23"):
+            OffsetDateTime.parse(
+                f"2024-03-15 14:30{offset}",
+                pattern=f"YYYY-MM-DD HH:mm{pattern}",
             )
 
     def test_missing_date_fields(self):
@@ -1064,15 +1142,17 @@ class TestZonedDateTimeParse:
 
     @pytest.mark.parametrize("char", ["Ĕ", "é", "界", "𝟙", "Ⅷ", "①"])
     @pytest.mark.parametrize(
-        ("prefix", "suffix", "match"),
+        ("prefix", "suffix"),
         [
-            ("", "urope/Paris", r"Expected timezone ID at position 23"),
-            ("Europe/Par", "is", r"Expected .* at position 33"),
-            ("Europe/Paris", "", r"Expected .* at position 35"),
+            ("", "urope/Paris"),
+            ("Europe/Par", "is"),
+            ("Europe/Paris", ""),
         ],
     )
-    def test_non_ascii_tz_id(self, char, prefix, suffix, match):
-        with pytest.raises(ValueError, match=match):
+    def test_non_ascii_tz_id(self, char, prefix, suffix):
+        with pytest.raises(
+            ValueError, match="Input string must be ASCII-only"
+        ):
             ZonedDateTime.parse(
                 f"2024-03-15 14:30+01:00[{prefix}{char}{suffix}]",
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
@@ -1679,9 +1759,9 @@ class TestFormatFieldsInternal:
 
     def test_frac_trim_at_start_of_pattern(self):
         """FFF at the start of a pattern (no preceding literal) works correctly."""
-        els = compile_pattern("FFFHH")
+        els = compile_pattern("FFF'|'HH")
         result = format_fields(els, hour=14, nanos=100_000_000)
-        assert result == "114"
+        assert result == "1|14"
 
     def test_frac_trim_dot_in_multichar_literal(self):
         """Trailing dot in a multi-char unquoted literal is trimmed when FFF is empty."""

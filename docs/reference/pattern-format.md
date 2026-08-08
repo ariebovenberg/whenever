@@ -206,6 +206,15 @@ To include a literal single quote, use `''`:
 
 ## Parsing requirements
 
+Parsed input strings must contain only ASCII characters.
+
+Variable-width numeric fields must be separated from following digits. The
+same rule applies to fields that omit optional digits, such as trimmed
+fractions and the seconds component of `xxxx`/`xxxxx` offsets. `VV` must be
+the final field or be followed by a literal delimiter that cannot occur in an
+IANA timezone ID. A dotted trimmed fraction cannot be followed by another
+dot. Ambiguous patterns raise {class}`ValueError` when compiled.
+
 Some types require specific fields in the parse pattern:
 
 - {meth}`OffsetDateTime.parse() <OffsetDateTime.parse>` requires an offset (`x`/`X`)
