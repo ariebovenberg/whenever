@@ -469,7 +469,8 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
             result.time,
             result.offset,
         ))
-        .unwrap();
+        .ok()
+        .ok_or_raise(exc_runtime_error(), "failed to construct warning message")?;
         warn_with_class(*state.warn_pickle_offset_mismatch, &message, 1)?;
     }
     result.to_obj(*state.zoned_datetime_type)

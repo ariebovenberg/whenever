@@ -9,6 +9,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterable
 from functools import lru_cache
+from itertools import pairwise
 from typing import TYPE_CHECKING, Literal
 
 from ._common import (
@@ -254,6 +255,9 @@ class _Field:
     can_start_with_digit = False
     can_start_with_colon = False
     can_start_with_dot = False
+    needs_digit_terminator = False
+    needs_colon_terminator = False
+    needs_dot_terminator = False
 
     def format_value(self, v: _FormatValues) -> str:
         raise NotImplementedError
@@ -277,6 +281,10 @@ class _Field:
 
 class _DigitField(_Field):
     can_start_with_digit = True
+
+
+class _UnpaddedDigitField(_DigitField):
+    needs_digit_terminator = True
 
 
 _Element = _Literal | _Field
@@ -321,7 +329,7 @@ class _MonthNum(_DigitField):
         return pos
 
 
-class _MonthNumUnpadded(_DigitField):
+class _MonthNumUnpadded(_UnpaddedDigitField):
     pattern = ("M", 1)
     category = "date"
     state_field = "month"
@@ -377,7 +385,7 @@ class _Day(_DigitField):
         return pos
 
 
-class _DayUnpadded(_DigitField):
+class _DayUnpadded(_UnpaddedDigitField):
     pattern = ("D", 1)
     category = "date"
     state_field = "day"
@@ -433,7 +441,7 @@ class _Hour24(_DigitField):
         return pos
 
 
-class _Hour24Unpadded(_DigitField):
+class _Hour24Unpadded(_UnpaddedDigitField):
     pattern = ("H", 1)
     category = "time"
     state_field = "hour"
@@ -474,7 +482,7 @@ class _Hour12(_DigitField):
         return pos
 
 
-class _Hour12Unpadded(_DigitField):
+class _Hour12Unpadded(_UnpaddedDigitField):
     pattern = ("i", 1)
     category = "time"
     state_field = "hour"
@@ -505,7 +513,7 @@ class _Minute(_DigitField):
         return pos
 
 
-class _MinuteUnpadded(_DigitField):
+class _MinuteUnpadded(_UnpaddedDigitField):
     pattern = ("m", 1)
     category = "time"
     state_field = "minute"
@@ -533,7 +541,7 @@ class _Second(_DigitField):
         return pos
 
 
-class _SecondUnpadded(_DigitField):
+class _SecondUnpadded(_UnpaddedDigitField):
     pattern = ("s", 1)
     category = "time"
     state_field = "second"
@@ -553,6 +561,7 @@ class _SecondOpt(_DigitField):
     category = "time"
     state_field = "second"
     can_be_empty = True
+    needs_digit_terminator = True
 
     def format_value(self, v: _FormatValues) -> str:
         return f"{v.second:02d}" if (v.second or v.nanos) else ""
@@ -583,6 +592,7 @@ class _ColonSec(_Field):
     state_field = "second"
     can_be_empty = True
     can_start_with_colon = True
+    needs_colon_terminator = True
 
     def format_value(self, v: _FormatValues) -> str:
         return f":{v.second:02d}" if (v.second or v.nanos) else ""
@@ -703,6 +713,7 @@ class _FracTrim(_DigitField):
     category = "time"
     state_field = "nanos"
     can_be_empty = True
+    needs_digit_terminator = True
 
     def __init__(self, width: int):
         self.width = width
@@ -749,6 +760,8 @@ class _DotFrac(_Field):
     state_field = "nanos"
     can_be_empty = True
     can_start_with_dot = True
+    needs_digit_terminator = True
+    needs_dot_terminator = True
 
     def __init__(self, width: int):
         self.width = width
@@ -826,6 +839,8 @@ def _format_offset_value(offset_secs: int, width: int, use_z: bool) -> str:
     """Format an offset value according to width and z-substitution rules."""
     if width <= 3:
         offset_secs = round_offset_to_minute(offset_secs)
+        if abs(offset_secs) >= 24 * 3600:
+            raise ValueError("rounded offset is out of range")
         if width == 1 and offset_secs % 3600:
             raise ValueError(
                 "offset cannot be formatted with x/X: rounded offset has "
@@ -866,6 +881,8 @@ def _parse_offset_value(
     sign = 1 if s[pos] == "+" else -1
     pos += 1
     oh, pos = _parse_digits(s, pos, 2)
+    if oh >= 24:
+        raise ValueError("offset hours must be 0..23")
     if width == 1:
         return sign * oh * 3600, pos, False, False
     if width in (2, 4):
@@ -906,6 +923,8 @@ class _OffsetLower(_Field):
 
     def __init__(self, width: int):
         self.width = width
+        self.needs_digit_terminator = width == 4
+        self.needs_colon_terminator = width == 5
 
     def format_value(self, v: _FormatValues) -> str:
         if v.offset_secs is None:
@@ -937,6 +956,8 @@ class _OffsetUpper(_Field):
 
     def __init__(self, width: int):
         self.width = width
+        self.needs_digit_terminator = width == 4
+        self.needs_colon_terminator = width == 5
 
     def format_value(self, v: _FormatValues) -> str:
         if v.offset_secs is None:
@@ -1058,7 +1079,6 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
     """Check for invalid field combinations and duplicates."""
     elements = tuple(elements)
     has_24h = False
-    has_12h = False
     has_ampm = False
     seen_state_fields: dict[str, _Field] = {}
 
@@ -1096,10 +1116,16 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
                         "trimmed optional seconds cannot be followed by an "
                         "element that starts with '.'"
                     )
-        if isinstance(el, (_Hour24, _Hour24Unpadded)):
+        if isinstance(
+            el,
+            (
+                _Hour24,
+                _Hour24Unpadded,
+                _Hour24Legacy,
+                _Hour24UnpaddedLegacy,
+            ),
+        ):
             has_24h = True
-        elif isinstance(el, (_Hour12, _Hour12Unpadded)):
-            has_12h = True
         elif isinstance(el, (_AmPmShort, _AmPmFull)):
             has_ampm = True
 
@@ -1119,6 +1145,46 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
             "24-hour format (H/HH) cannot be combined with "
             "AM/PM (a/aa). Use 12-hour format (i/ii) instead."
         )
+
+    for el, follower in pairwise(elements):
+        if not isinstance(el, _Field):
+            continue
+        if (
+            el.needs_digit_terminator
+            and follower.can_start_with_digit
+            and not (
+                isinstance(el, _SecondOpt)
+                and isinstance(follower, _FracTrim)
+            )
+        ):
+            raise ValueError(
+                f"pattern field {el!r} cannot be followed by an element "
+                "that starts with a digit"
+            )
+        if el.needs_colon_terminator and follower.can_start_with_colon:
+            raise ValueError(
+                f"pattern field {el!r} cannot be followed by an element "
+                "that starts with ':'"
+            )
+        if el.needs_dot_terminator and follower.can_start_with_dot:
+            raise ValueError(
+                f"pattern field {el!r} cannot be followed by an element "
+                "that starts with '.'"
+            )
+        if isinstance(el, _TzId) and (
+            not isinstance(follower, _Literal)
+            or (
+                follower.text[0].isascii()
+                and (
+                    follower.text[0].isalnum()
+                    or follower.text[0] in "/_-+."
+                )
+            )
+        ):
+            raise ValueError(
+                "timezone ID field VV must be followed by a literal "
+                "delimiter that is not valid in a timezone ID"
+            )
 
 
 # Characters allowed as unquoted literals in patterns.
@@ -1443,6 +1509,8 @@ def parse_fields(
     s: str,
 ) -> _ParseState:
     """Parse a string using compiled pattern elements."""
+    if not s.isascii():
+        raise ValueError("Input string must be ASCII-only")
     if len(s) > 1000:
         raise ValueError("Input string too long (max 1000 characters)")
     state = _ParseState()

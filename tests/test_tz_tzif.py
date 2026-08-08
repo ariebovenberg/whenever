@@ -50,6 +50,22 @@ def ambiguity(tz: TimeZone, local_epoch: int):
     return tz.ambiguity_for_local(dt)
 
 
+def simple_tz(
+    meta_by_utc: tuple[tuple[int, int | None, str], ...],
+    abbrev_data: bytes,
+) -> TimeZone:
+    return TimeZone(
+        key="Test/Zone",
+        _utc_epochs=(EPOCH_SECS_MIN,),
+        _utc_offsets=(0,),
+        _local_epochs=(),
+        _local_values=(),
+        _end=None,
+        _meta_by_utc=meta_by_utc,
+        _abbrev_data=abbrev_data,
+    )
+
+
 class TestBasicParsing:
     """Test basic parsing functionality"""
 
@@ -89,6 +105,19 @@ class TestBasicParsing:
 
         # empty case
         assert bisect([], 25) is None
+
+    def test_equality_includes_raw_abbreviation_data(self):
+        assert simple_tz(((0, 0, "UTC"),), b"UTC\0") == simple_tz(
+            ((0, 0, "UTC"),), b"UTC\0"
+        )
+        assert simple_tz(((0, 0, "UTC"),), b"UTC\0") != simple_tz(
+            ((0, 0, "UTC"),), b"UTC\0unused\0"
+        )
+
+    def test_equality_includes_raw_abbreviation_indices(self):
+        assert simple_tz(((0, 0, "UTC"),), b"UTC\0UTC\0") != simple_tz(
+            ((0, 4, "UTC"),), b"UTC\0UTC\0"
+        )
 
 
 AMS = TimeZone.parse_tzif((TZIF_DIR / "Amsterdam.tzif").read_bytes())
