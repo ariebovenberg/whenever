@@ -59,8 +59,10 @@ deprecated interfaces are removed.
 - Custom format and parse patterns now use `H`/`HH` for the 24-hour clock.
   The previous `h`/`hh` spellings are deprecated. Optional seconds use a
   limited bracketed tail such as `[:ss]`, `[:ss.fff]`, or `[:ss.FFF]`;
-  separator-free optional seconds use `[ss]`. The previous `SS` forms remain
-  available with deprecation warnings through 0.11.
+  separator-free optional seconds use `[ss]`. These groups must immediately
+  follow fixed-width `mm`; only the optional colon or no separator is
+  supported. The previous `SS` forms remain available with deprecation
+  warnings through 0.11.
 
   **Rationale**: `H`/`HH` is the near-universal spelling for 24-hour fields,
   while brackets make the optional separator and seconds tail explicit.
