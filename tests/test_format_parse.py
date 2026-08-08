@@ -19,6 +19,7 @@ from whenever import (
     ZonedDateTime,
     hours,
     minutes,
+    seconds,
 )
 from whenever._format import compile_pattern, format_fields
 
@@ -931,6 +932,46 @@ class TestOffsetDateTimeFormat:
         )
         assert odt.format("HH:mmxxxxx") == "14:30+05:30"
 
+    @pytest.mark.parametrize(
+        ("offset", "compact", "colon"),
+        [
+            (
+                hours(5) + minutes(30) + seconds(30),
+                "+0531",
+                "+05:31",
+            ),
+            (
+                -hours(5) - minutes(30) - seconds(30),
+                "-0531",
+                "-05:31",
+            ),
+        ],
+    )
+    def test_minute_offset_widths_round_seconds(self, offset, compact, colon):
+        odt = OffsetDateTime(2024, 3, 15, 14, 30, offset=offset)
+        assert odt.format("xx") == compact
+        assert odt.format("xxx") == colon
+
+    def test_hour_offset_width_rounds_before_checking_minutes(self):
+        odt = OffsetDateTime(
+            2024, 3, 15, 14, 30, offset=hours(2) + minutes(59) + seconds(30)
+        )
+        assert odt.format("x") == "+03"
+
+    @pytest.mark.parametrize("pattern", ["x", "X"])
+    def test_hour_offset_width_rejects_nonzero_rounded_minutes(self, pattern):
+        odt = OffsetDateTime(
+            2024, 3, 15, 14, 30, offset=hours(2) + minutes(29) + seconds(30)
+        )
+        with pytest.raises(
+            ValueError, match="rounded offset has nonzero minutes"
+        ):
+            odt.format(pattern)
+
+    def test_uppercase_hour_offset_width_uses_rounded_zero(self):
+        odt = OffsetDateTime(2024, 3, 15, 14, 30, offset=seconds(29))
+        assert odt.format("X") == "Z"
+
     def test_uppercase_x_zero_offset(self):
         """X uses Z for zero offset."""
         odt = OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(0))
@@ -1068,6 +1109,19 @@ class TestZonedDateTimeParse:
             ZonedDateTime.parse(
                 "2024-03-15 14:30+05:00[Europe/Paris]",
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+            )
+
+    def test_minute_precision_offset_matching(self):
+        result = ZonedDateTime.parse(
+            "1900-01-01 00:00-00:25[Europe/Dublin]",
+            pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+        )
+        assert result.offset == TimeDelta(seconds=-(25 * 60 + 21))
+
+        with pytest.raises(InvalidOffsetError):
+            ZonedDateTime.parse(
+                "1900-01-01 00:00-00:25:00[Europe/Dublin]",
+                pattern="YYYY-MM-DD HH:mmxxxxx'['VV']'",
             )
 
     def test_keep_instant_on_offset_mismatch(self):

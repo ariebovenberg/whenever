@@ -11,7 +11,11 @@ from collections.abc import Iterable
 from functools import lru_cache
 from typing import TYPE_CHECKING, Literal
 
-from ._common import WheneverDeprecationWarning, WheneverWarning
+from ._common import (
+    WheneverDeprecationWarning,
+    WheneverWarning,
+    round_offset_to_minute,
+)
 
 if TYPE_CHECKING:
     from typing import Sequence
@@ -820,6 +824,13 @@ class _AmPmFull(_Field):
 
 def _format_offset_value(offset_secs: int, width: int, use_z: bool) -> str:
     """Format an offset value according to width and z-substitution rules."""
+    if width <= 3:
+        offset_secs = round_offset_to_minute(offset_secs)
+        if width == 1 and offset_secs % 3600:
+            raise ValueError(
+                "offset cannot be formatted with x/X: rounded offset has "
+                "nonzero minutes"
+            )
     if offset_secs == 0 and use_z:
         return "Z"
     sign = "+" if offset_secs >= 0 else "-"
