@@ -111,8 +111,8 @@ impl<'a> PatternValues<'a> {
         self
     }
 
-    pub(crate) fn with_timezone(mut self, id: &'a str, abbreviation: &'a str) -> Self {
-        self.tz_id = Some(id);
+    pub(crate) fn with_timezone(mut self, id: Option<&'a str>, abbreviation: &'a str) -> Self {
+        self.tz_id = id;
         self.tz_abbrev = Some(abbreviation);
         self
     }
@@ -1122,10 +1122,18 @@ fn frac_trim_is_empty(nanos: SubSecNanos, width: usize) -> bool {
     (nanos.get() as u32) < 10u32.pow((9 - width) as u32)
 }
 
-fn write_offset(secs: i32, width: u8, use_z: bool, sink: &mut impl Sink) {
+fn write_offset(mut secs: i32, width: u8, use_z: bool, sink: &mut impl Sink) -> Result<(), String> {
+    if width <= 3 {
+        secs = secs.signum() * ((secs.abs() + 30) / 60 * 60);
+        if width == 1 && secs % 3600 != 0 {
+            return Err(
+                "offset cannot be formatted with x/X: rounded offset has nonzero minutes".into(),
+            );
+        }
+    }
     if secs == 0 && use_z {
         sink.write_byte(b'Z');
-        return;
+        return Ok(());
     }
     let sign = if secs >= 0 { b'+' } else { b'-' };
     let total = secs.unsigned_abs();
@@ -1161,6 +1169,7 @@ fn write_offset(secs: i32, width: u8, use_z: bool, sink: &mut impl Sink) {
             }
         }
     }
+    Ok(())
 }
 
 fn write_field<S: Sink>(field: Field, vals: &PatternValues, sink: &mut S) -> Result<(), String> {
@@ -1244,13 +1253,13 @@ fn write_field<S: Sink>(field: Field, vals: &PatternValues, sink: &mut S) -> Res
             let offset = vals
                 .offset_secs
                 .ok_or("Cannot format offset: not available for this type")?;
-            write_offset(offset.get(), w, false, sink);
+            write_offset(offset.get(), w, false, sink)?;
         }
         Field::OffsetUpper(w) => {
             let offset = vals
                 .offset_secs
                 .ok_or("Cannot format offset: not available for this type")?;
-            write_offset(offset.get(), w, true, sink);
+            write_offset(offset.get(), w, true, sink)?;
         }
         Field::TzId => {
             let id = vals
@@ -2107,5 +2116,31 @@ mod tests {
         ] {
             assert!(compile(p).unwrap_err().contains(m));
         }
+    }
+
+    #[test]
+    fn minute_precision_offsets_round_seconds() {
+        let mut s = VecSink::default();
+        write_offset(19_830, 2, false, &mut s).unwrap();
+        assert_eq!(s.0, b"+0531");
+
+        let mut s = VecSink::default();
+        write_offset(-19_830, 3, false, &mut s).unwrap();
+        assert_eq!(s.0, b"-05:31");
+
+        let mut s = VecSink::default();
+        write_offset(10_770, 1, false, &mut s).unwrap();
+        assert_eq!(s.0, b"+03");
+
+        let mut s = VecSink::default();
+        assert!(
+            write_offset(8_970, 1, false, &mut s)
+                .unwrap_err()
+                .contains("rounded offset has nonzero minutes")
+        );
+
+        let mut s = VecSink::default();
+        write_offset(29, 1, true, &mut s).unwrap();
+        assert_eq!(s.0, b"Z");
     }
 }

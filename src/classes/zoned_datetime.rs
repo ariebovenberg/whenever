@@ -1373,12 +1373,11 @@ fn format(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) 
     let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
     // SAFETY: TzAbbrev always contains valid ASCII bytes
     let abbrev_str = unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) };
-    let tz_key = slf.tz.key.as_deref().unwrap_or("");
     pattern.format(
         &slf.to_plain()
             .pattern_values()
             .with_offset(slf.offset)
-            .with_timezone(tz_key, abbrev_str),
+            .with_timezone(slf.tz.key.as_deref(), abbrev_str),
     )
 }
 

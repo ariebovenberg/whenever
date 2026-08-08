@@ -3334,6 +3334,12 @@ def test_repr(d: ZonedDateTime, expect: str):
     assert repr(d) == expect
 
 
+def test_format_tz_id_without_id():
+    d = create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_POSIX)
+    with pytest.raises(ValueError, match="timezone ID"):
+        d.format("VV")
+
+
 class TestComparison:
     @pytest.mark.parametrize(
         "tz",
