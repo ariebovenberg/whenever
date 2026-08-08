@@ -162,9 +162,13 @@ class TestCompilePattern:
             with pytest.raises(ValueError, match="reserved"):
                 Date(2024, 1, 1).format(f"YYYY{ch}MM")
 
-    def test_non_ascii_error(self):
+    @pytest.mark.parametrize(
+        "pattern",
+        ["YYYY\u2013MM", "YYYY'é'", "YYYY'😀'", "YYYY[:ssé]"],
+    )
+    def test_non_ascii_error(self, pattern):
         with pytest.raises(ValueError, match="Non-ASCII"):
-            Date(2024, 1, 1).format("YYYY\u2013MM\u2013DD")
+            Date(2024, 1, 1).format(pattern)
 
     def test_literal_digits(self):
         """Digits are valid as unquoted literals."""
@@ -183,14 +187,19 @@ class TestOptionalSecondsPattern:
         assert Time(14, 30, 5).format("HH:mm[:ss]") == "14:30:05"
         assert Time(14, 30, nanosecond=1).format("HH:mm[:ss]") == "14:30:00"
 
-    @pytest.mark.parametrize("separator", ["", ":", "-", "/", " ", "."])
-    def test_unquoted_literal_separator(self, separator):
+    @pytest.mark.parametrize("separator", ["", ":"])
+    def test_supported_separator(self, separator):
         pattern = f"HH:mm[{separator}ss]"
         present = f"14:30{separator}05"
         assert Time(14, 30).format(pattern) == "14:30"
         assert Time(14, 30, 5).format(pattern) == present
         assert Time.parse("14:30", pattern=pattern) == Time(14, 30)
         assert Time.parse(present, pattern=pattern) == Time(14, 30, 5)
+
+    @pytest.mark.parametrize("separator", ["-", "/", " ", ".", "0"])
+    def test_other_separators_rejected(self, separator):
+        with pytest.raises(ValueError, match="start with 'ss' or ':ss'"):
+            Time(14, 30).format(f"HH:mm[{separator}ss]")
 
     @pytest.mark.parametrize("width", range(1, 10))
     def test_exact_fraction_each_width(self, width):
@@ -238,9 +247,8 @@ class TestOptionalSecondsPattern:
         assert Time.parse("14:30:05", pattern="HH:mm[:ss.FFF]") == Time(
             14, 30, 5
         )
-        assert Time.parse("14:30:05.", pattern="HH:mm[:ss.FFF]") == Time(
-            14, 30, 5
-        )
+        with pytest.raises(ValueError, match="trailing"):
+            Time.parse("14:30:05.", pattern="HH:mm[:ss.FFF]")
 
     @pytest.mark.parametrize(
         "pattern, match",
@@ -248,8 +256,8 @@ class TestOptionalSecondsPattern:
             ("HH:mm[:ss", "missing closing"),
             ("HH:mm[[:ss]]", "nested"),
             ("HH:mm[]", "empty"),
-            ("HH:mm[:s]", "literal followed by 'ss'"),
-            ("HH:mm[:SS]", "literal followed by 'ss'"),
+            ("HH:mm[:s]", "start with 'ss' or ':ss'"),
+            ("HH:mm[:SS]", "start with 'ss' or ':ss'"),
             ("HH:mm[:ss.fF]", "only 'f'.*only 'F'"),
             ("HH:mm[:ss.x]", "only 'f'.*only 'F'"),
             ("HH:mm[:ss.foo]", "only 'f'.*only 'F'"),
@@ -267,19 +275,49 @@ class TestOptionalSecondsPattern:
             Time.parse("14:30x", pattern="HH:mm[:ss]")
 
     def test_pending_literal_before_group(self):
-        assert Time(14, 30).format("HH:mm.[:ss]") == "14:30."
-        assert Time(14, 30, 5).format("HH:mm.[:ss]") == "14:30.:05"
+        with pytest.raises(ValueError, match="immediately follow.*'mm'"):
+            Time(14, 30).format("HH:mm.[:ss]")
+
+    @pytest.mark.parametrize(
+        "pattern, match",
+        [
+            ("HH:m[:ss]", "immediately follow.*'mm'"),
+            ("HH:mm[ss]00", "starts with a digit"),
+            ("HH:mm[ss]YYYY", "starts with a digit"),
+            ("HH:mm[:ss]:", "starts with ':'"),
+            ("HH:mm[:ss]FFF", "optional field"),
+            ("HH:mm[:ss.FFF].", "starts with '\\.'"),
+            ("HH:mm[:ss.FFF]VV", "starts with '\\.'"),
+            ("HH:mm[:ss.FFF]zz", "starts with '\\.'"),
+        ],
+    )
+    def test_ambiguous_placement_rejected(self, pattern, match):
+        with pytest.raises(ValueError, match=match):
+            Time(14, 30).format(pattern)
+
+    @pytest.mark.parametrize(
+        ("pattern", "without_seconds", "with_seconds"),
+        [
+            ("HH:mm[ss]'x'", "14:30x", "14:3005x"),
+            ("HH:mm[:ss]00", "14:3000", "14:30:0500"),
+        ],
+    )
+    def test_unambiguous_follower_allowed(
+        self, pattern, without_seconds, with_seconds
+    ):
+        assert Time(14, 30).format(pattern) == without_seconds
+        assert Time(14, 30, 5).format(pattern) == with_seconds
+        assert Time.parse(without_seconds, pattern=pattern) == Time(14, 30)
+        assert Time.parse(with_seconds, pattern=pattern) == Time(14, 30, 5)
 
     def test_duplicate_fields(self):
         with pytest.raises(ValueError, match="Duplicate.*second"):
-            Time(1, 2, 3).format("ss[:ss]")
+            Time(1, 2, 3).format("HH:mm[:ss]ss")
         with pytest.raises(ValueError, match="Duplicate.*nanos"):
-            Time(1, 2, 3).format("fff[:ss.fff]")
+            Time(1, 2, 3).format("HH:mm[:ss.fff]fff")
 
     def test_brackets_invalid_for_date(self):
-        with pytest.raises(
-            ValueError, match=r"Date does not support.*\[:ss\]"
-        ):
+        with pytest.raises(ValueError, match="immediately follow.*'mm'"):
             Date(2024, 3, 15).format("YYYY-MM-DD[:ss]")
 
     def test_quoted_reserved_characters_are_literals(self):
@@ -770,6 +808,11 @@ class TestTimeParse:
         # No fractional digits: the dot is consumed as literal,
         # then FFF parses zero digits
         assert Time(14, 30, 5).format("HH:mm:ss.FFF") == "14:30:05"
+        with pytest.raises(ValueError, match="trailing"):
+            Time.parse("14:30:05.", pattern="HH:mm:ss.FFF")
+        assert Time.parse("14:30:05.", pattern="HH:mm:ss.FFF'.'") == Time(
+            14, 30, 5
+        )
 
     def test_fractional_nanos(self):
         t = Time.parse("14:30:05.123456789", pattern="HH:mm:ss.fffffffff")
@@ -1424,10 +1467,9 @@ class TestParseEdgeCases:
         t = Time.parse("14:30:05.1", pattern="HH:mm:ss.FFF")
         assert t == Time(14, 30, 5, nanosecond=100_000_000)
 
-    def test_frac_trim_parse_empty(self):
-        """FFF with trailing dot but no digits sets nanos to 0."""
-        t = Time.parse("14:30:05.", pattern="HH:mm:ss.FFF")
-        assert t == Time(14, 30, 5)
+    def test_frac_trim_parse_dangling_dot(self):
+        with pytest.raises(ValueError, match="trailing"):
+            Time.parse("14:30:05.", pattern="HH:mm:ss.FFF")
 
     def test_offset_parse_without_colon(self):
         """Offset parsing accepts compact format like +0530 with xx."""
