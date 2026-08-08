@@ -424,6 +424,7 @@ def test_time_patch_shift_out_of_range():
 def test_time_patch_ticks_out_of_range():
     with patch_current_time(Instant.MAX, keep_ticking=True):
         with pytest.raises((OSError, ValueError)):
+            sleep(1e-6)
             Instant.now()
 
 
