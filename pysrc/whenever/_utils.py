@@ -42,13 +42,17 @@ get_tzpath = _get_tzpath
 
 
 class TimePatch(Protocol):  # pragma: no cover
-    def shift(self, *args: Any, **kwargs: Any) -> None: ...
+    def shift(self, *args: Any, **kwargs: Any) -> None:
+        """Move the patched clock by an exact elapsed-time amount."""
+        ...
 
     def move_to(
         self,
         value: Instant | OffsetDateTime | ZonedDateTime,
         /,
-    ) -> None: ...
+    ) -> None:
+        """Move the patched clock to an exact time."""
+        ...
 
 
 class _TimePatch:
