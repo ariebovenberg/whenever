@@ -353,7 +353,8 @@ def test_patch_time():
 
     # simplest case: freeze time at fixed UTC
     with patch_current_time(i, keep_ticking=False) as p:
-        assert isinstance(p, TimePatch)
+        assert callable(p.shift)
+        assert callable(p.move_to)
         assert Instant.now() == i
         assert Date.today_in_system_tz() == i.to_system_tz().date()
         assert Date.today(SYSTEM_TZ) == i.to_tz(SYSTEM_TZ).date()
@@ -406,6 +407,11 @@ def test_time_patch_lifetime_and_overlap():
         handle.shift(hours(1))
     with pytest.raises(RuntimeError, match="no longer active"):
         handle.move_to(i)
+
+
+def test_time_patch_is_not_constructable():
+    with pytest.raises(TypeError, match="Protocols cannot be instantiated"):
+        TimePatch()  # type: ignore[misc]
 
 
 def test_time_patch_move_to_rejects_non_exact_time():
