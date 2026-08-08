@@ -21,6 +21,7 @@ from typing import (
     ContextManager,
     Iterable,
     Literal,
+    Protocol,
     Sequence,
     TypeAlias,
     final,
@@ -2528,7 +2529,7 @@ def milliseconds(i: float, /) -> TimeDelta: ...
 def microseconds(i: float, /) -> TimeDelta: ...
 def nanoseconds(i: int, /) -> TimeDelta: ...
 
-class TimePatch:
+class TimePatch(Protocol):
     @overload
     def shift(self, delta: TimeDelta, /) -> None: ...
     @overload
