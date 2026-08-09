@@ -4,7 +4,11 @@ pub(crate) use crate::domain::itemized_date_delta::ItemizedDateDelta;
 
 impl ItemizedDateDelta {
     pub(crate) fn extract(obj: PyObj, state: &State) -> PyResult<Option<Self>> {
-        if obj.type_().as_py_obj() != state.itemized_date_delta_type.get()? {
+        if !obj
+            .type_()
+            .as_py_obj()
+            .ptr_eq(state.itemized_date_delta_type.get()?)
+        {
             return Ok(None);
         }
         let tup = obj.getattr(c"_to_tuple")?.call0()?.to_tuple()?;

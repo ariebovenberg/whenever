@@ -2,7 +2,7 @@
 use super::{base::*, exc::*, refs::*};
 use pyo3_ffi::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct PyTuple {
     obj: PyObj,
 }
