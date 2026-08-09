@@ -19,7 +19,7 @@ from datetime import (
     timezone as _timezone,
 )
 from struct import pack, unpack
-from time import time_ns
+from time import time_ns as _physical_time_ns
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -193,6 +193,7 @@ _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
+time_ns = _physical_time_ns
 IMPLICIT_DISAMBIGUATION_MSG = (
     "resolving a local datetime that is repeated or skipped by a timezone "
     "transition without an explicit disambiguation policy can silently select "
@@ -7724,17 +7725,16 @@ def _patch_time_frozen(inst: Instant) -> None:
 def _patch_time_keep_ticking(inst: Instant) -> None:
     global time_ns
 
-    _patched_at = time_ns()
-    _time_ns = time_ns
+    patched_at = _physical_time_ns()
 
     def time_ns() -> int:
-        return inst.timestamp(unit="nanosecond") + _time_ns() - _patched_at
+        return inst.timestamp(unit="nanosecond") + _physical_time_ns() - patched_at
 
 
 def _unpatch_time() -> None:
     global time_ns
 
-    from time import time_ns
+    time_ns = _physical_time_ns
 
 
 # This alias exists because we don't want to expose the _ExactTime abstract class
