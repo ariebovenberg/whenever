@@ -4,12 +4,14 @@ import pickle
 import subprocess
 import sys
 import warnings
+from collections.abc import Callable
 from contextlib import nullcontext
 from copy import copy, deepcopy
 from time import sleep
 from unittest.mock import patch
 
 import pytest
+from typing_extensions import assert_type
 from whenever import (
     _EXTENSION_LOADED,
     SYSTEM_TZ,
@@ -467,11 +469,15 @@ def test_time_patch_rejects_invalid_shift_arguments():
 def test_patch_current_time_decorator_does_not_inject_handle():
     i = Instant.from_utc(1980, 3, 2, hour=2)
 
-    @patch_current_time(i, keep_ticking=False)  # type: ignore[operator]
-    def decorated() -> Instant:
+    @patch_current_time(i, keep_ticking=False)
+    def decorated(value: Instant, /) -> Instant:
         return Instant.now()
 
-    assert decorated() == i
+    assert_type(decorated, Callable[[Instant], Instant])
+    assert_type(decorated(i), Instant)
+    with pytest.raises(TypeError):
+        decorated()  # type: ignore[call-arg]
+    assert decorated(i) == i
 
 
 def test_system_tz_sentinel():

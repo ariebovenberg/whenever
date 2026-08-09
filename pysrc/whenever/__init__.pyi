@@ -17,13 +17,16 @@ from datetime import (
 )
 from os import PathLike
 from typing import (
+    Callable,
     ClassVar,
     ContextManager,
     Iterable,
     Literal,
+    ParamSpec,
     Protocol,
     Sequence,
     TypeAlias,
+    TypeVar,
     final,
     overload,
     type_check_only,
@@ -89,6 +92,9 @@ __all__ = [
 
 _EXTENSION_LOADED: bool
 __version__: str
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 # We expose these, but we don't use them in this file. This is because
 # in some popular IDEs, using aliases for literal types causes the signature to be displayed as the alias name,
@@ -2550,9 +2556,12 @@ class TimePatch(Protocol):
         self, value: Instant | OffsetDateTime | ZonedDateTime, /
     ) -> None: ...
 
+class _TimePatchContextManager(ContextManager[TimePatch], Protocol):
+    def __call__(self, f: Callable[_P, _R], /) -> Callable[_P, _R]: ...
+
 def patch_current_time(
     i: Instant | OffsetDateTime | ZonedDateTime, /, *, keep_ticking: bool
-) -> ContextManager[TimePatch]: ...
+) -> _TimePatchContextManager: ...
 
 # Deprecated: use get_tzpath().
 TZPATH: tuple[str, ...]
