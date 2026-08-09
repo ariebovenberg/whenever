@@ -3,7 +3,7 @@ use super::{base::*, exc::*};
 use core::{ffi::CStr, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct PyDict {
     obj: PyObj,
 }

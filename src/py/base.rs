@@ -19,7 +19,7 @@ pub(crate) trait PyStaticType: PyBase {
 /// A minimal wrapper for the PyObject pointer.
 /// Transparent to PyObject to allow casting to/from PyObject.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct PyObj {
     inner: NonNull<PyObject>,
 }
@@ -61,13 +61,15 @@ impl PyObj {
     }
 
     pub(crate) fn extract_ref<T: PyPayload>(&self, t: PyClass<T>) -> Option<&T> {
-        (self.type_() == t.as_type())
+        self.type_()
+            .ptr_eq(t.as_type())
             // SAFETY: we've just checked the type, so this is safe
             .then(|| unsafe { self.data_ref::<T>() })
     }
 
     pub(crate) fn extract<T: PyPayload + Copy>(&self, t: PyClass<T>) -> Option<T> {
-        (self.type_() == t.as_type())
+        self.type_()
+            .ptr_eq(t.as_type())
             // SAFETY: we've just checked the type, so this is safe
             .then(|| *unsafe { self.data_ref::<T>() })
     }
@@ -220,7 +222,7 @@ pub(crate) trait PyBase: FromPy {
         .own()
     }
 
-    fn is(&self, other: impl PyBase) -> bool {
+    fn ptr_eq(&self, other: impl PyBase) -> bool {
         self.as_ptr() == other.as_ptr()
     }
 

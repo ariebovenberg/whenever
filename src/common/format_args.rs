@@ -151,33 +151,36 @@ pub(crate) fn format_datetime_iso(
         Ok(true)
     })?;
 
-    let tz_id_display = match display_arg.finish(
-        state,
-        "format_iso",
-        "tz_id_display",
-        "tz",
-        c"'tz' is deprecated; use 'tz_id_display' instead",
-        1,
-    )? {
-        None => TzDisplay::Required,
-        Some(value) if value.is(*state.str_always) => {
-            warn_deprecated(
-                state,
-                c"tz_id_display='always' is deprecated; use 'required' instead",
-                1,
-            )?;
-            TzDisplay::Required
-        }
-        Some(value) => match_interned_str(
+    let (tz_id_display, warn_always) = display_arg
+        .finish(
+            state,
+            "format_iso",
             "tz_id_display",
-            value,
-            &[
-                (*state.str_auto, TzDisplay::Auto),
-                (*state.str_never, TzDisplay::Never),
-                (*state.str_required, TzDisplay::Required),
-            ],
-        )?,
-    };
+            "tz",
+            c"'tz' is deprecated; use 'tz_id_display' instead",
+            1,
+        )?
+        .map(|v| {
+            match_interned_str(
+                "tz_id_display",
+                v,
+                &[
+                    (*state.str_auto, (TzDisplay::Auto, false)),
+                    (*state.str_never, (TzDisplay::Never, false)),
+                    (*state.str_required, (TzDisplay::Required, false)),
+                    (*state.str_always, (TzDisplay::Required, true)),
+                ],
+            )
+        })
+        .transpose()?
+        .unwrap_or((TzDisplay::Required, false));
+    if warn_always {
+        warn_deprecated(
+            state,
+            c"tz_id_display='always' is deprecated; use 'required' instead",
+            1,
+        )?;
+    }
 
     let suffix = match suffix {
         Suffix::Absent => SuffixFormat::Absent,

@@ -9,7 +9,7 @@ use pyo3_ffi::*;
 
 /// Wrapper around PyTypeObject.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct PyType {
     obj: PyObj,
 }
@@ -95,7 +95,7 @@ fn binary_call<'a, T: PyPayload>(
     type_a: PyType,
     type_b: PyType,
 ) -> BinaryCall<'a, T> {
-    if type_a == type_b {
+    if type_a.ptr_eq(type_b) {
         // SAFETY: binary_operation's type parameter matches the slot's left type,
         // and equal types mean the right operand has the same representation.
         return BinaryCall::SameType {
@@ -107,7 +107,7 @@ fn binary_call<'a, T: PyPayload>(
     let (Some(module_a), Some(module_b)) = (type_a.get_module(), type_b.get_module()) else {
         return BinaryCall::OtherTypes;
     };
-    if module_a.is(module_b) {
+    if module_a.ptr_eq(module_b) {
         // SAFETY: whenever binary slots never return NotImplemented for two extension types,
         // so equal modules imply that the left operand is this slot's declared type.
         let cls: PyClass<T> = unsafe { type_a.assume_class() };
@@ -214,7 +214,7 @@ impl std::fmt::Display for PyType {
 /// `#[repr(transparent)]` so that `*mut PyClass<T>` can be cast to
 /// `*mut *mut PyObject` in `module_clear` (same as PyType → PyObj chain).
 #[repr(transparent)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct PyClass<T: PyPayload> {
     py_type: PyType,
     type_rust: std::marker::PhantomData<T>,

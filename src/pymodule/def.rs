@@ -889,7 +889,7 @@ pub(crate) struct State {
 
 impl State {
     pub(crate) fn load_tz(&self, obj: PyObj) -> PyResult<Arc<TimeZone>> {
-        if obj.is(*self.system_tz_sentinel) {
+        if obj.ptr_eq(*self.system_tz_sentinel) {
             self.tz_store.get_system_tz()
         } else {
             self.tz_store.obj_get(obj)
