@@ -6,7 +6,7 @@ use pyo3_ffi::*;
 /// Whether CPython's native `l` integer parser writes a 64-bit value on this platform.
 pub(crate) const IS_LP64: bool = cfg!(all(target_pointer_width = "64", not(windows)));
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct PyInt {
     obj: PyObj,
 }
@@ -110,7 +110,7 @@ impl PyObj {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct PyFloat {
     obj: PyObj,
 }

@@ -339,7 +339,7 @@ fn extract_weekday(state: &State, arg: PyObj) -> PyResult<Weekday> {
         .weekday_enum_members
         .get()?
         .iter()
-        .position(|m| m.eq(&arg))
+        .position(|m| m.ptr_eq(arg))
         // SAFETY: weekday_enum_members contains exactly seven entries.
         .map(|i| unsafe { Weekday::from_iso_unchecked(i as u8 + 1) })
         .ok_or_type_err("weekday must be a Weekday enum member")
