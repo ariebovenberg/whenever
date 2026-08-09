@@ -43,25 +43,12 @@ CI runs this coverage check on Python 3.14.
 
 ## Development philosophy
 
-- Rust binary slots that assume the first operand is their own type must not
-  return `NotImplemented` for another whenever class. We control all supported
-  combinations, so unsupported combinations should raise directly. This
-  guarantees that those slots are never called reflexively with whenever
-  operands. Implement commutative combinations explicitly in the left
-  operand's operator. Pure-Python itemized deltas own all of their
-  datetime operator interoperability through reflected methods; Rust slots
-  return `NotImplemented` for them. Consequently, equal owning modules in a
-  Rust binary slot are sufficient proof that both operands are whenever
-  extension types and that the left operand has the slot's declared type.
-  Use `binary_operation()` for Rust binary
-  slots that assume the first operand is their own type, so same-type operands,
-  whenever extension types, unsupported combinations, and reflected calls from
-  external types are handled consistently. Symmetric scalar slots such as
-  `__mul__`, which explicitly inspect both operand orders, don't need this
-  helper.
+- Use `binary_operation()` for Rust binary slots whose left operand is the
+  declared whenever type; pure-Python itemized deltas own reflected datetime
+  interoperability, and explicitly symmetric scalar slots are the exception.
 - **Remove redundant checks**: if a condition is guaranteed by earlier logic, don't re-check it.
   Add a debug assert and/or a comment explaining why it's safe instead.
-- **Error message capitalization**: use lowercase or error messages.
+- **Error message capitalization**: use lowercase error messages.
 - Only comment code that needs clarification. Do not comment otherwise.
 
 ## Tests
