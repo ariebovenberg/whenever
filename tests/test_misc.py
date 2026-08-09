@@ -417,6 +417,14 @@ def test_ticking_time_patch_before_epoch():
         assert i <= Instant.now() < i.add(seconds=1)
 
 
+def test_ticking_time_patch_allows_backward_movement():
+    i = Instant.from_utc(1960, 3, 2, hour=2)
+    with patch_current_time(i, keep_ticking=True) as p:
+        for n in range(2_000):
+            p.shift(seconds=-1 if n % 2 == 0 else 1)
+        assert i <= Instant.now() < i.add(seconds=1)
+
+
 def test_time_patch_shift_out_of_range():
     with patch_current_time(Instant.MAX, keep_ticking=False) as p:
         with pytest.raises(ValueError, match="out of range"):
