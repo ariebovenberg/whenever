@@ -49,7 +49,7 @@ CI runs this coverage check on Python 3.14.
 - **Remove redundant checks**: if a condition is guaranteed by earlier logic, don't re-check it.
   Add a debug assert and/or a comment explaining why it's safe instead.
 - **Error message capitalization**: use lowercase error messages.
-- Only comment code that needs clarification. Do not comment otherwise.
+- Only comment code where names and types are insufficient to explain the logic. Avoid redundant comments.
 
 ## Tests
 
