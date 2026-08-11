@@ -42,11 +42,11 @@ source_suffix = {
     ".rst": "restructuredtext",
 }
 redirects = {
-    "api": "reference/datetime",
-    "benchmarks": "performance",
-    "deltas": "reference/deltas",
-    "overview": "guide/index",
-    "reference/deprecated": "changelog",
+    "api": "reference/datetime.html",
+    "benchmarks": "performance.html",
+    "deltas": "reference/deltas.html",
+    "overview": "guide/index.html",
+    "reference/deprecated": "changelog.html",
 }
 html_static_path = ["_static"]
 html_title = "Whenever"
