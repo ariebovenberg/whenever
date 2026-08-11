@@ -30,6 +30,7 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
+    "sphinx_llm.txt",
     "sphinx_copybutton",
     "sphinx_design",
     "myst_parser",
@@ -58,6 +59,11 @@ autodoc_default_options = {
 }
 autodoc_member_order = "groupwise"
 html_theme = "furo"
+llms_txt_description = (
+    "A type-safe Python datetime library with DST-correct arithmetic and "
+    "distinct instant, zoned, offset, and plain datetime types."
+)
+llms_txt_suffix_mode = "replace"
 highlight_language = "python3"
 pygments_style = "default"
 pygments_dark_style = "lightbulb"

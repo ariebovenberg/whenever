@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add LLM-friendly Markdown documentation, including `llms.txt` and
+  `llms-full.txt`.
+
 ## 0.10.5 (2026-08-07)
 
 - Add binary wheels for Python 3.15.
