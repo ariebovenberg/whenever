@@ -91,6 +91,9 @@ deprecated interfaces are removed.
 
 **Added and improved**
 
+- IANA timezone identifiers now accept ASCII letter casing case-insensitively. Successful
+  lookup uses the database spelling in timezone attributes, representations, ISO output, and
+  pickles while preserving aliases such as `US/Eastern`.
 - Added `ImplicitDisambiguationWarning` when a repeated or skipped local time
   is resolved without an explicit `disambiguation=` policy.
 - Added `offset_mismatch=` to `ZonedDateTime` parsing. A numeric offset is

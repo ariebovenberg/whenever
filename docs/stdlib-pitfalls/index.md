@@ -105,6 +105,7 @@ of the places where the design makes certain mistakes easy to make.
    Silent ambiguity <silent-ambiguity>
    broken-equality
    timezone-classes
+   zoneinfo-casing
    Quietly uses the system zone <system-timezone>
    Broken date inheritance <date-inheritance>
    timedelta-seconds
