@@ -112,6 +112,27 @@ combine-as-imports = true
 
 [tool.ruff.format]
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:dateutil.*",
+    # Don't add `whenever` warnings: it would affect coverage through imports.
+]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+fail_under = 100
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "def __repr__",
+    "@overload",
+    "^\\s+\\.\\.\\.",
+    "if TYPE_CHECKING.*:",
+]
+
 [tool.mypy]
 warn_unused_ignores = true
 strict = true
