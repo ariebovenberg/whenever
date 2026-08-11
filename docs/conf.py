@@ -30,6 +30,7 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
+    "sphinx_reredirects",
     "sphinx_llm.txt",
     "sphinx_copybutton",
     "sphinx_design",
@@ -39,6 +40,13 @@ templates_path = ["_templates"]
 source_suffix = {
     ".md": "markdown",
     ".rst": "restructuredtext",
+}
+redirects = {
+    "api": "reference/datetime",
+    "benchmarks": "performance",
+    "deltas": "reference/deltas",
+    "overview": "guide/index",
+    "reference/deprecated": "changelog",
 }
 html_static_path = ["_static"]
 html_title = "Whenever"

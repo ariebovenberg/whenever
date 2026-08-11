@@ -471,7 +471,7 @@ the groundwork for the eventual 1.0 release.
   due to a new implementation replacing the use of the standard library
   `zoneinfo` module. (#202)
 - The `parse_common_iso()` methods support a wider range of ISO 8601
-  formats. See the [updated documentation](https://whenever.readthedocs.io/en/latest/overview.html#iso-8601) for details.
+  formats. See the [updated documentation](https://whenever.readthedocs.io/en/latest/reference/iso8601.html) for details.
   (#204)
 - Added an "examples" page to the documentation with practical snippets. (#198)
 - RFC2822 parsing is now more robust and faster. (#200)

@@ -2377,6 +2377,18 @@ wheels = [
 ]
 
 [[package]]
+name = "sphinx-reredirects"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sphinx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1b/8d/0e39fe2740d7d71417edf9a6424aa80ca2c27c17fc21282cdc39f90d5a40/sphinx_reredirects-1.1.0.tar.gz", hash = "sha256:fb9b195335ab14b43f8273287d0c7eeb637ba6c56c66581c11b47202f6718b29", size = 614624, upload-time = "2025-12-22T08:28:02.792Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/81/b5dd07067f3daac6d23687ec737b2d593740671ebcd145830c8f92d381c5/sphinx_reredirects-1.1.0-py3-none-any.whl", hash = "sha256:4b5692273c72cd2d4d917f4c6f87d5919e4d6114a752d4be033f7f5f6310efd9", size = 6351, upload-time = "2025-12-22T08:27:59.724Z" },
+]
+
+[[package]]
 name = "sphinxcontrib-applehelp"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2669,6 +2681,7 @@ docs = [
     { name = "sphinx-copybutton", marker = "python_full_version >= '3.13'" },
     { name = "sphinx-design", marker = "python_full_version >= '3.13'" },
     { name = "sphinx-llm", marker = "python_full_version >= '3.13'" },
+    { name = "sphinx-reredirects", marker = "python_full_version >= '3.13'" },
 ]
 integrations = [
     { name = "pydantic" },
@@ -2716,6 +2729,7 @@ docs = [
     { name = "sphinx-copybutton", marker = "python_full_version >= '3.13'", specifier = "~=0.5" },
     { name = "sphinx-design", marker = "python_full_version >= '3.13'", specifier = ">=0.7,<0.8" },
     { name = "sphinx-llm", marker = "python_full_version >= '3.13'", specifier = ">=0.4.1,<0.5" },
+    { name = "sphinx-reredirects", marker = "python_full_version >= '3.13'", specifier = ">=1.1,<2" },
 ]
 integrations = [
     { name = "pydantic", specifier = ">=2.10,<3" },
