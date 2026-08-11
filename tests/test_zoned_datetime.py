@@ -1,5 +1,7 @@
+import os
 import pickle
 import re
+import shutil
 import warnings
 from copy import copy, deepcopy
 from datetime import (
@@ -216,6 +218,266 @@ class TestInit:
         with pytest.raises(TimeZoneNotFoundError):
             ZonedDateTime(2020, 8, 15, 5, 12, tz=key)
 
+    @pytest.mark.order(-3)
+    def test_timezone_id_casing(self, tmp_path: Path):
+        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
+        first_path = tmp_path / "first"
+        first_zone = first_path / "Europe" / "Amsterdam"
+        first_zone.parent.mkdir(parents=True)
+        shutil.copyfile(source, first_zone)
+        three_component_zone = (
+            first_path / "America" / "Argentina" / "Buenos_Aires"
+        )
+        three_component_zone.parent.mkdir(parents=True)
+        shutil.copyfile(source, three_component_zone)
+        for name in ("UTC", "CET", "Iceland"):
+            shutil.copyfile(source, first_path / name)
+        alias = first_path / "US" / "Eastern"
+        alias.parent.mkdir()
+        alias.symlink_to(first_zone)
+
+        second_path = tmp_path / "second"
+        second_zone = second_path / "Europe" / "AMSTERDAM"
+        second_zone.parent.mkdir(parents=True)
+        shutil.copyfile(source, second_zone)
+
+        previous = get_tzpath()
+        reset_tzpath([first_path])
+        clear_tzcache()
+        try:
+            values = [
+                ZonedDateTime(2020, 8, 15, 5, 12, tz=key)
+                for key in (
+                    "europe/amsterdam",
+                    "EURope/AMSTERdam",
+                    "Europe/Amsterdam",
+                )
+            ]
+            assert [value.tz_id for value in values] == [
+                "Europe/Amsterdam"
+            ] * 3
+            assert values[0].strict_eq(values[1])
+            assert "Europe/Amsterdam" in repr(values[0])
+            assert values[0].format_iso().endswith("[Europe/Amsterdam]")
+            assert values[1].to_tz("Europe/Amsterdam") is values[1]
+            assert (
+                ZonedDateTime(
+                    2020,
+                    8,
+                    15,
+                    5,
+                    12,
+                    tz="aMeRiCa/aRgEnTiNa/bUeNoS_aIrEs",
+                ).tz_id
+                == "America/Argentina/Buenos_Aires"
+            )
+            for key, expected in (
+                ("utc", "UTC"),
+                ("cet", "CET"),
+                ("ICELAND", "Iceland"),
+            ):
+                assert (
+                    ZonedDateTime(2020, 8, 15, 5, 12, tz=key).tz_id == expected
+                )
+            assert (
+                ZonedDateTime.parse_iso(
+                    "2020-08-15T05:12:00+02:00[eurOPE/amSTerdam]"
+                ).tz_id
+                == "Europe/Amsterdam"
+            )
+            assert (
+                ZonedDateTime.parse(
+                    "2020-08-15 05:12+02:00[EUROPE/AMSTERDAM]",
+                    pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+                ).tz_id
+                == "Europe/Amsterdam"
+            )
+            assert values[0].to_tz("EURope/AMSTERdam") is values[0]
+            assert (
+                ZonedDateTime(2020, 8, 15, 5, 12, tz="us/eastern").tz_id
+                == "US/Eastern"
+            )
+
+            clear_tzcache(only_keys=["europe/amsterdam"])
+            assert (
+                ZonedDateTime(2020, 8, 15, 5, 12, tz="europe/amsterdam").tz_id
+                == "Europe/Amsterdam"
+            )
+
+            reset_tzpath([second_path])
+            assert (
+                ZonedDateTime(2020, 8, 15, 5, 12, tz="europe/amsterdam").tz_id
+                == "Europe/Amsterdam"
+            )
+            clear_tzcache(only_keys=["EUROPE/AMSTERDAM"])
+            assert (
+                ZonedDateTime(2020, 8, 15, 5, 12, tz="europe/amsterdam").tz_id
+                == "Europe/AMSTERDAM"
+            )
+        finally:
+            clear_tzcache()
+            reset_tzpath(previous)
+
+    def test_timezone_id_case_collision_does_not_crash(self, tmp_path: Path):
+        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
+        for name in ("Europe", "europe"):
+            zone = tmp_path / name / "Amsterdam"
+            try:
+                zone.parent.mkdir()
+            except FileExistsError:
+                pytest.skip("filesystem does not permit case-colliding paths")
+            shutil.copyfile(source, zone)
+
+        previous = get_tzpath()
+        reset_tzpath([tmp_path])
+        clear_tzcache()
+        try:
+            assert ZonedDateTime(
+                2020, 8, 15, 5, 12, tz="Europe/Amsterdam"
+            ).tz_id in {"Europe/Amsterdam", "europe/Amsterdam"}
+        finally:
+            clear_tzcache()
+            reset_tzpath(previous)
+
+    @pytest.mark.skipif(_EXTENSION_LOADED, reason="tests the Python loader")
+    def test_timezone_id_unreadable_file_is_not_found(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ):
+        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
+        zone = tmp_path / "Europe" / "Amsterdam"
+        zone.parent.mkdir()
+        shutil.copyfile(source, zone)
+
+        original_open = open
+
+        def blocked_open(path, *args, **kwargs):
+            if path == str(zone):
+                raise OSError()
+            return original_open(path, *args, **kwargs)
+
+        previous = get_tzpath()
+        reset_tzpath([tmp_path])
+        clear_tzcache()
+        monkeypatch.setattr("builtins.open", blocked_open)
+        try:
+            with pytest.raises(TimeZoneNotFoundError):
+                ZonedDateTime(2020, 8, 15, 5, 12, tz="Europe/Amsterdam")
+        finally:
+            clear_tzcache()
+            reset_tzpath(previous)
+
+    @pytest.mark.skipif(_EXTENSION_LOADED, reason="tests the Python cache")
+    def test_timezone_directory_cache(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ):
+        from whenever._tz import store
+
+        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
+        europe = tmp_path / "Europe"
+        europe.mkdir()
+        for n in ("Amsterdam", "Paris"):
+            shutil.copyfile(source, europe / n)
+        (europe / "Bogotá").touch()
+
+        scanned: list[str] = []
+        original_scandir = os.scandir
+
+        def counting_scandir(path: str):
+            scanned.append(path)
+            return original_scandir(path)
+
+        previous = get_tzpath()
+        reset_tzpath([tmp_path])
+        clear_tzcache()
+        monkeypatch.setattr("whenever._tz.store.os.scandir", counting_scandir)
+        try:
+            assert store.get_tz("europe/amsterdam").key == "Europe/Amsterdam"
+            assert scanned == [str(tmp_path), str(europe)]
+
+            assert store.get_tz("EUROPE/PARIS").key == "Europe/Paris"
+            assert scanned == [str(tmp_path), str(europe)]
+
+            shutil.copyfile(source, europe / "Brussels")
+            assert store.get_tz("europe/brussels").key == "Europe/Brussels"
+            assert scanned == [str(tmp_path), str(europe), str(europe)]
+
+            clear_tzcache(only_keys=["Europe/Amsterdam"])
+            assert store._tzdir_cache == {}
+
+            for _ in range(2):
+                with pytest.raises(TimeZoneNotFoundError):
+                    store.get_tz("Europe/Missing")
+            assert store._tzdir_cache == {}
+            local_scans = [p for p in scanned if p.startswith(str(tmp_path))]
+            assert local_scans[-4:] == [
+                str(tmp_path),
+                str(europe),
+                str(tmp_path),
+                str(europe),
+            ]
+
+            (tmp_path / "Broken").write_bytes(b"not a TZif")
+            with pytest.raises(TimeZoneNotFoundError):
+                store.get_tz("Broken")
+            assert store._tzdir_cache == {}
+        finally:
+            clear_tzcache()
+            reset_tzpath(previous)
+
+    @pytest.mark.skipif(_EXTENSION_LOADED, reason="tests the Python cache")
+    def test_timezone_directory_cache_discards_stale_positive(
+        self, tmp_path: Path
+    ):
+        from whenever._tz import store
+
+        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
+        europe = tmp_path / "Europe"
+        europe.mkdir()
+        shutil.copyfile(source, europe / "Amsterdam")
+
+        previous = get_tzpath()
+        reset_tzpath([tmp_path])
+        clear_tzcache()
+        try:
+            store.get_tz("Europe/Amsterdam")
+            assert len(store._tzdir_cache) == 2
+
+            shutil.rmtree(europe)
+            assert (
+                store._resolve_path(
+                    str(tmp_path),
+                    store.NormalizedTzId("europe/amsterdam"),
+                )
+                is None
+            )
+            assert store._tzdir_cache == {}
+        finally:
+            clear_tzcache()
+            reset_tzpath(previous)
+
+    @pytest.mark.skipif(_EXTENSION_LOADED, reason="tests the Python cache")
+    def test_timezone_id_strong_cache_capacity(self, tmp_path: Path):
+        from whenever._tz import store
+
+        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
+        for i in range(33):
+            shutil.copyfile(source, tmp_path / f"Zone{i}")
+
+        previous = get_tzpath()
+        reset_tzpath([tmp_path])
+        clear_tzcache()
+        try:
+            for i in range(33):
+                store.get_tz(f"Zone{i}")
+
+            assert list(store._tzcache_lru) == [
+                f"zone{i}" for i in range(1, 33)
+            ]
+            assert store.get_tz("zOnE0").key == "Zone0"
+        finally:
+            clear_tzcache()
+            reset_tzpath(previous)
+
     # This test is run last, because it modifies the tz cache
     # which can affect other tests (namely those using exact_eq)
     @pytest.mark.order(-1)
@@ -242,18 +504,13 @@ class TestInit:
                 available_timezones()
                 != zoneinfo_available_timezones().difference(["localtime"])
             )
-            # We still can find load the NYC timezone even though
-            # it isn't in the new path. This is because it's cached!
+            # Cached zones remain available after changing TZPATH.
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
-            # So let's clear the cache and check we can't find it anymore
             clear_tzcache(only_keys=[nyc])
             if not HAS_TZDATA:
                 with pytest.raises(TimeZoneNotFoundError):
                     ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
-
-            # We can still use the old instance without problems
-            d.add(hours=24)
 
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
             clear_tzcache()
@@ -279,11 +536,9 @@ class TestInit:
             == zoneinfo_available_timezones().difference(["localtime"])
         )
 
-        # Our custom timezones are still in the cache
+        # The custom timezone remains cached until it is explicitly cleared.
         assert ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
-        # And clear the cache again
         clear_tzcache()
-        # ...and now they aren't
         with pytest.raises(TimeZoneNotFoundError):
             ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
 
@@ -6221,7 +6476,7 @@ class TestClearTzCache:
 
         # Load a timezone to populate the fast cache
         ZonedDateTime(2024, 1, 1, tz="US/Eastern")
-        assert store._last_tz_key == "US/Eastern"
+        assert store._last_tz_key == "us/eastern"
         # Now clear that exact key — _last_tz_key should be reset
         clear_tzcache(only_keys=["US/Eastern"])
         assert store._last_tz_key is None

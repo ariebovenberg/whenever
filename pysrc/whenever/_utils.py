@@ -178,10 +178,9 @@ def reset_tzpath(
 
     Note
     ----
-    Due to caching, you may find that looking up a timezone after setting the tzpath
-    doesn't load the timezone data from the new path. You may need to call
-    :func:`clear_tzcache` if you want to force loading *all* timezones from the new path.
-    Note that clearing the cache may have unexpected side effects, however.
+    Due to caching, looking up a timezone after changing the search path may
+    continue to use the already loaded definition. Call :func:`clear_tzcache`
+    to make subsequent lookups load from the new path.
 
     Behaves similarly to :func:`zoneinfo.reset_tzpath`
     """

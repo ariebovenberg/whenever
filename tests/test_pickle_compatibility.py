@@ -348,3 +348,14 @@ def initialized_pure_tz_store() -> Iterator[None]:
     finally:
         py._clear_tz_cache()
         py._set_tzpath(previous)
+
+
+def test_zoned_unpickle_canonicalizes_timezone_casing(
+    initialized_pure_tz_store: None,
+):
+    data = struct.pack("<HBBBBBil", 2024, 2, 29, 3, 4, 5, 0, 3_600)
+    rust_value = getattr(w, "_unpkl_zoned")(data, "europe/amsterdam")
+    python_value = py._unpkl_zoned(data, "europe/amsterdam")
+
+    assert rust_value.tz_id == python_value.tz_id == "Europe/Amsterdam"
+    assert str(rust_value) == str(python_value)
