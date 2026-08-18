@@ -36,12 +36,12 @@ from .common import (
     system_tz_ams,
 )
 
-pytestmark = [
-    pytest.mark.filterwarnings("ignore::whenever.WheneverDeprecationWarning"),
-    pytest.mark.filterwarnings(
-        "ignore::whenever.ImplicitDisambiguationWarning"
-    ),
-]
+# Only deprecation warnings may be silenced module-wide. Anything that flags a
+# potential DST bug—ImplicitDisambiguationWarning in particular—must be
+# asserted or suppressed at the test that triggers it.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::whenever.WheneverDeprecationWarning"
+)
 
 
 class TestInit:

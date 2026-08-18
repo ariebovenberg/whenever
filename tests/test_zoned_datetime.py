@@ -67,12 +67,12 @@ else:
 
 TEST_DIR = Path(__file__).parent
 
-pytestmark = [
-    pytest.mark.filterwarnings("ignore::whenever.WheneverDeprecationWarning"),
-    pytest.mark.filterwarnings(
-        "ignore::whenever.ImplicitDisambiguationWarning"
-    ),
-]
+# Only deprecation warnings may be silenced module-wide. Anything that flags a
+# potential DST bug—ImplicitDisambiguationWarning in particular—must be
+# asserted or suppressed at the test that triggers it.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::whenever.WheneverDeprecationWarning"
+)
 
 
 class TestInit:
@@ -145,9 +145,10 @@ class TestInit:
             tz="Europe/Amsterdam",
         )
 
-        assert ZonedDateTime(**kwargs).strict_eq(
-            ZonedDateTime(**kwargs, disambiguation="compatible")
-        )
+        with pytest.warns(ImplicitDisambiguationWarning):
+            assert ZonedDateTime(**kwargs).strict_eq(
+                ZonedDateTime(**kwargs, disambiguation="compatible")
+            )
 
         with pytest.raises(
             RepeatedTime,
@@ -627,9 +628,10 @@ class TestInit:
             tz="Europe/Amsterdam",
         )
 
-        assert ZonedDateTime(**kwargs).strict_eq(
-            ZonedDateTime(**kwargs, disambiguation="compatible")
-        )
+        with pytest.warns(ImplicitDisambiguationWarning):
+            assert ZonedDateTime(**kwargs).strict_eq(
+                ZonedDateTime(**kwargs, disambiguation="compatible")
+            )
 
         with pytest.raises(
             SkippedTime,
@@ -912,9 +914,12 @@ class TestReplaceDate:
         with pytest.raises(SkippedTime):
             assert d.replace_date(date, disambiguation="raise")
 
-        assert d.replace_date(date).strict_eq(
-            d.replace(year=2023, month=3, day=26)
-        )
+        # A gap can't be resolved by preserving the offset, so an omitted
+        # disambiguation is implicit here.
+        with pytest.warns(ImplicitDisambiguationWarning):
+            assert d.replace_date(date).strict_eq(
+                d.replace(year=2023, month=3, day=26)
+            )
         assert d.replace_date(date, disambiguation="earlier").strict_eq(
             d.replace(year=2023, month=3, day=26, disambiguation="earlier")
         )
@@ -1021,9 +1026,12 @@ class TestReplaceTime:
         with pytest.raises(SkippedTime):
             assert d.replace_time(time, disambiguation="raise")
 
-        assert d.replace_time(time).strict_eq(
-            d.replace(hour=2, minute=15, second=0)
-        )
+        # A gap can't be resolved by preserving the offset, so an omitted
+        # disambiguation is implicit here.
+        with pytest.warns(ImplicitDisambiguationWarning):
+            assert d.replace_time(time).strict_eq(
+                d.replace(hour=2, minute=15, second=0)
+            )
         assert d.replace_time(time, disambiguation="earlier").strict_eq(
             d.replace(hour=2, minute=15, disambiguation="earlier")
         )
@@ -2895,20 +2903,6 @@ class TestParseIso:
                 "2023-08-25T12:15:30[Europe/Amsterdam]",
                 ZonedDateTime(2023, 8, 25, 12, 15, 30, tz="Europe/Amsterdam"),
             ),
-            # no offset for skipped time
-            (
-                "2023-03-26T02:15:30[Europe/Amsterdam]",
-                ZonedDateTime(
-                    2023,
-                    3,
-                    26,
-                    2,
-                    15,
-                    30,
-                    tz="Europe/Amsterdam",
-                    disambiguation="compatible",
-                ),
-            ),
             # Alternate formats
             (
                 "20200815 12:08:30+02:00[Europe/Amsterdam]",
@@ -2973,6 +2967,24 @@ class TestParseIso:
     )
     def test_valid(self, s, expect):
         assert ZonedDateTime.parse_iso(s).strict_eq(expect)
+
+    def test_no_offset_for_skipped_time(self):
+        with pytest.warns(ImplicitDisambiguationWarning):
+            parsed = ZonedDateTime.parse_iso(
+                "2023-03-26T02:15:30[Europe/Amsterdam]"
+            )
+        assert parsed.strict_eq(
+            ZonedDateTime(
+                2023,
+                3,
+                26,
+                2,
+                15,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguation="compatible",
+            )
+        )
 
     def test_minute_precision_offset_matching(self):
         result = ZonedDateTime.parse_iso(
@@ -4316,57 +4328,34 @@ class TestReplace:
             assert d_later.replace(minute=30, tz=tz).strict_eq(
                 d_later.replace(minute=30)
             )
-        assert not d_later.replace(minute=30, tz="Europe/Paris").strict_eq(
-            d_later.replace(minute=30)
-        )
+        # Changing tz drops the offset, making the disambiguation implicit
+        with pytest.warns(ImplicitDisambiguationWarning):
+            paris = d_later.replace(minute=30, tz="Europe/Paris")
+        assert not paris.strict_eq(d_later.replace(minute=30))
 
-        # don't reuse offset per se when changing timezone
-        assert d.replace(hour=3, tz="Europe/Athens").strict_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                3,
-                15,
-                30,
-                tz="Europe/Athens",
-                disambiguation="earlier",
+        # don't reuse offset per se when changing timezone. The target local
+        # time is repeated in the new timezone too, so each of these resolves
+        # implicitly and warns.
+        for original, hour, new_tz in [
+            (d, 3, "Europe/Athens"),
+            (d_later, 1, "Europe/London"),
+            (d, 1, "Europe/London"),
+            (d_later, 3, "Europe/Athens"),
+        ]:
+            with pytest.warns(ImplicitDisambiguationWarning):
+                result = original.replace(hour=hour, tz=new_tz)
+            assert result.strict_eq(
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    hour,
+                    15,
+                    30,
+                    tz=new_tz,
+                    disambiguation="compatible",
+                )
             )
-        )
-        assert d_later.replace(hour=1, tz="Europe/London").strict_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                1,
-                15,
-                30,
-                tz="Europe/London",
-                disambiguation="earlier",
-            )
-        )
-        assert d.replace(hour=1, tz="Europe/London").strict_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                1,
-                15,
-                30,
-                tz="Europe/London",
-            )
-        )
-        assert d_later.replace(hour=3, tz="Europe/Athens").strict_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                3,
-                15,
-                30,
-                tz="Europe/Athens",
-            )
-        )
 
     @pytest.mark.parametrize(
         "tz",
@@ -4384,7 +4373,9 @@ class TestReplace:
         # default behavior without explicit disambiguation. Unlike in folds,
         # we *don't* reuse the offset here, since the time doesn't exist at all.
         # Instead, we go to the later time (same as disambiguation="compatible").
-        assert d.replace(hour=2).strict_eq(d_later)
+        # Since the offset can't decide the matter, this warns.
+        with pytest.warns(ImplicitDisambiguationWarning):
+            assert d.replace(hour=2).strict_eq(d_later)
 
         # Disambiguation may differ depending on whether we change tz.
         # Note that only a named tz is relevant here
@@ -4392,7 +4383,9 @@ class TestReplace:
             assert d.replace(
                 hour=2, disambiguation="earlier", tz=tz
             ).strict_eq(d)
-        assert not d.replace(hour=2, tz="Europe/Paris").strict_eq(d)
+        with pytest.warns(ImplicitDisambiguationWarning):
+            paris = d.replace(hour=2, tz="Europe/Paris")
+        assert not paris.strict_eq(d)
 
         assert d.replace(hour=2, disambiguation="earlier").strict_eq(
             create_zdt(
@@ -4432,52 +4425,25 @@ class TestReplace:
                 disambiguation="compatible",
             )
         )
-        # Don't per se reuse the offset when changing timezone
-        assert d.replace(tz="Europe/London").strict_eq(
-            ZonedDateTime(
-                2023,
-                3,
-                26,
-                1,
-                15,
-                30,
-                tz="Europe/London",
-                disambiguation="later",
+        # Don't per se reuse the offset when changing timezone. The target
+        # local time is skipped in the new timezone too, so each of these
+        # resolves implicitly and warns.
+        for original, hour, expect_hour, new_tz in [
+            (d, 1, 2, "Europe/London"),
+            (d_later, 3, 4, "Europe/Athens"),
+            (d, 3, 4, "Europe/Athens"),
+            (d_later, 1, 2, "Europe/London"),
+        ]:
+            with pytest.warns(ImplicitDisambiguationWarning):
+                result = original.replace(hour=hour, tz=new_tz)
+            assert result.strict_eq(
+                ZonedDateTime(2023, 3, 26, expect_hour, 15, 30, tz=new_tz)
             )
-        )
-        assert d_later.replace(tz="Europe/Athens").strict_eq(
-            ZonedDateTime(
-                2023,
-                3,
-                26,
-                4,
-                15,
-                30,
-                tz="Europe/Athens",
-            )
-        )
-        # can't reuse offset
-        assert d.replace(hour=3, tz="Europe/Athens").strict_eq(
-            ZonedDateTime(
-                2023,
-                3,
-                26,
-                4,
-                15,
-                30,
-                tz="Europe/Athens",
-            )
-        )
-        assert d_later.replace(hour=1, tz="Europe/London").strict_eq(
-            ZonedDateTime(
-                2023,
-                3,
-                26,
-                2,
-                15,
-                30,
-                tz="Europe/London",
-            )
+        # ...also when only the tz is replaced
+        with pytest.warns(ImplicitDisambiguationWarning):
+            result = d.replace(tz="Europe/London")
+        assert result.strict_eq(
+            ZonedDateTime(2023, 3, 26, 2, 15, 30, tz="Europe/London")
         )
 
     def test_out_of_range(self):
@@ -4642,7 +4608,10 @@ class TestAddSubtractCalendarUnits:
 
     def test_skipped_day(self):
         zdt = ZonedDateTime("2011-12-29T12-10:00[Pacific/Apia]")
-        assert zdt.add(days=1).strict_eq(
+        # Samoa skipped 2011-12-30 entirely, so the result lands in a gap
+        with pytest.warns(ImplicitDisambiguationWarning):
+            result = zdt.add(days=1)
+        assert result.strict_eq(
             ZonedDateTime("2011-12-31 12:00:00+14:00[Pacific/Apia]")
         )
 
@@ -5322,6 +5291,36 @@ class TestSince:
         expect: ItemizedDelta,
     ):
         assert a.since(b, in_units=units, **kwargs).strict_eq(expect)
+
+    @pytest.mark.parametrize(
+        "a, b",
+        [
+            # spanning a gap
+            (
+                ZonedDateTime(2023, 3, 27, 2, 30, tz="Europe/Amsterdam"),
+                ZonedDateTime(2023, 3, 25, 2, 30, tz="Europe/Amsterdam"),
+            ),
+            # spanning a fold
+            (
+                ZonedDateTime(2023, 10, 30, 2, 30, tz="Europe/Amsterdam"),
+                ZonedDateTime(2023, 10, 28, 2, 30, tz="Europe/Amsterdam"),
+            ),
+            # spanning a skipped day
+            (
+                ZonedDateTime(2012, 1, 3, 12, tz="Pacific/Apia"),
+                ZonedDateTime(2011, 12, 28, 12, tz="Pacific/Apia"),
+            ),
+        ],
+    )
+    def test_no_implicit_disambiguation_warning(self, a, b):
+        # The intermediate values of a difference calculation aren't local
+        # times the caller asked us to resolve, so they mustn't warn.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ImplicitDisambiguationWarning)
+            a.since(b, in_units=["months", "days", "hours", "minutes"])
+            b.since(a, in_units=["months", "days", "hours", "minutes"])
+            a.until(b, in_units=["days", "hours"])
+            b.until(a, in_units=["days", "hours"])
 
     def test_cal_units_with_different_tz_not_supported(self):
         with pytest.raises(ValueError, match="same timezone"):
@@ -6480,3 +6479,75 @@ class TestClearTzCache:
         # Now clear that exact key — _last_tz_key should be reset
         clear_tzcache(only_keys=["US/Eastern"])
         assert store._last_tz_key is None
+
+
+# --- Fixtures for TestImplicitDisambiguationWarning ---
+_AMS = "Europe/Amsterdam"
+# In a fold, so its offset settles which occurrence is meant
+_IN_FOLD = ZonedDateTime(
+    2023, 10, 29, 2, 30, tz=_AMS, disambiguation="earlier"
+)
+# Amsterdam was at UTC+0 back then: an offset matching neither side of the fold
+_ANCIENT = ZonedDateTime(1900, 6, 1, 2, 30, tz=_AMS)
+_BEFORE_GAP = ZonedDateTime(2023, 3, 25, 2, 30, tz=_AMS)
+_AFTER_GAP = ZonedDateTime(2023, 3, 27, 2, 30, tz=_AMS)
+_BEFORE_FOLD = ZonedDateTime(2023, 10, 28, 2, 30, tz=_AMS)
+_FOLD_DAY_NOON = ZonedDateTime(2023, 10, 29, 12, tz=_AMS)
+_GAP_DAY_NOON = ZonedDateTime(2023, 3, 26, 12, tz=_AMS)
+_FOLD_DATE = Date(2023, 10, 29)
+_GAP_DATE = Date(2023, 3, 26)
+
+
+class TestImplicitDisambiguationWarning:
+    """The cross-method contract: an omitted ``disambiguation`` warns exactly
+    when neither an explicit policy nor the previous offset settles the matter.
+    """
+
+    @pytest.mark.parametrize(
+        "func",
+        [
+            # A gap can never be resolved by preserving the offset
+            lambda: _BEFORE_GAP.add(days=1),
+            lambda: _AFTER_GAP.subtract(days=1),
+            lambda: _BEFORE_GAP.replace_date(_GAP_DATE),
+            lambda: _GAP_DAY_NOON.replace_time(Time(2, 30)),
+            lambda: _BEFORE_GAP.replace(day=26),
+            # A fold whose offset matches neither side
+            lambda: _ANCIENT.replace_date(_FOLD_DATE),
+            lambda: _ANCIENT.replace(year=2023, month=10, day=29),
+            # Changing tz discards the offset entirely
+            lambda: _IN_FOLD.replace(tz="Europe/Paris"),
+        ],
+    )
+    def test_warns(self, func):
+        with pytest.warns(ImplicitDisambiguationWarning) as caught:
+            func()
+        assert len(caught) == 1
+
+    @pytest.mark.parametrize(
+        "func",
+        [
+            # The previous offset settles which occurrence of the fold is meant
+            lambda: _BEFORE_FOLD.add(days=1),
+            lambda: _BEFORE_FOLD.replace_date(_FOLD_DATE),
+            lambda: _FOLD_DAY_NOON.replace_time(Time(2, 30)),
+            lambda: _FOLD_DAY_NOON.replace(hour=2, minute=30),
+            # Setting the same tz doesn't count as a tz change
+            lambda: _IN_FOLD.replace(tz=_AMS),
+            # An explicit policy never warns
+            lambda: _BEFORE_GAP.add(days=1, disambiguation="later"),
+            lambda: _BEFORE_GAP.replace_date(
+                _GAP_DATE, disambiguation="compatible"
+            ),
+            lambda: _IN_FOLD.replace(
+                tz="Europe/Paris", disambiguation="compatible"
+            ),
+            # Unambiguous local times never warn
+            lambda: _IN_FOLD.add(days=2),
+            lambda: _IN_FOLD.replace(hour=12),
+        ],
+    )
+    def test_does_not_warn(self, func):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ImplicitDisambiguationWarning)
+            func()

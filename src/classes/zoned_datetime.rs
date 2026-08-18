@@ -57,14 +57,7 @@ impl ZonedDateTime {
                 .shift_by(calendar)
                 .ok_or_range_err()?
                 .at(self.time)
-                .resolve_or_raise(
-                    &self.tz,
-                    dis.map_or(
-                        ResolvePolicy::PreserveOffset(self.offset),
-                        ResolvePolicy::Disambiguate,
-                    ),
-                    state,
-                )?
+                .resolve_with_disambiguation_or_offset(&self.tz, dis, self.offset, state)?
         } else {
             self.to_fixed_offset()
         };
@@ -122,6 +115,37 @@ impl PlainDateTime {
             tz,
             state,
         )
+    }
+
+    /// Resolve using an explicit disambiguation, or—if omitted—by preferring
+    /// the given offset. Warns if the offset can't decide the matter either:
+    /// in a gap it is never applicable, and in a fold it may match neither side.
+    pub(crate) fn resolve_with_disambiguation_or_offset(
+        self,
+        tz: &TimeZone,
+        disambiguation: Option<Disambiguation>,
+        offset: Offset,
+        state: &State,
+    ) -> PyResult<OffsetDateTime> {
+        let mapping = tz.mapping_for_local(self.local_seconds());
+        let policy = match disambiguation {
+            Some(d) => ResolvePolicy::Disambiguate(d),
+            None => {
+                if match mapping {
+                    LocalMapping::Unique { .. } => false,
+                    LocalMapping::Gap { .. } => true,
+                    LocalMapping::Fold { before, after, .. } => offset != before && offset != after,
+                } {
+                    warn_with_class(
+                        *state.warn_implicit_disambiguation,
+                        doc::IMPLICIT_DISAMBIGUATION_MSG,
+                        1,
+                    )?;
+                }
+                ResolvePolicy::PreserveOffset(offset)
+            }
+        };
+        self.resolve_mapping_or_raise(mapping, policy, tz, state)
     }
 
     pub(crate) fn resolve_or_raise(
@@ -647,14 +671,7 @@ fn replace_date(
     arg.extract(*state.date_type)
         .ok_or_type_err("date must be a whenever.Date")?
         .at(time)
-        .resolve_or_raise(
-            tz,
-            dis.map_or(
-                ResolvePolicy::PreserveOffset(offset),
-                ResolvePolicy::Disambiguate,
-            ),
-            state,
-        )?
+        .resolve_with_disambiguation_or_offset(tz, dis, offset, state)?
         .into_zoned_obj_unchecked(tz.clone(), cls)
 }
 
@@ -677,14 +694,7 @@ fn replace_time(
     arg.extract(*state.time_type)
         .ok_or_type_err("time must be a whenever.Time instance")?
         .on(date)
-        .resolve_or_raise(
-            tz,
-            dis.map_or(
-                ResolvePolicy::PreserveOffset(offset),
-                ResolvePolicy::Disambiguate,
-            ),
-            state,
-        )?
+        .resolve_with_disambiguation_or_offset(tz, dis, offset, state)?
         .into_zoned_obj_unchecked(tz.clone(), cls)
 }
 
@@ -836,20 +846,16 @@ fn replace(
     })?;
 
     let tz = tz_new.unwrap_or_else(|| tz.clone());
-    let dis = dis_arg
-        .finish("replace", state)?
-        .or(tz_changed.then_some(Disambiguation::Compatible));
-    components
-        .into_plain()?
-        .resolve_or_raise(
-            &tz,
-            dis.map_or(
-                ResolvePolicy::PreserveOffset(offset),
-                ResolvePolicy::Disambiguate,
-            ),
-            state,
-        )?
-        .into_zoned_obj_unchecked(tz, cls)
+    let dis = dis_arg.finish("replace", state)?;
+    let local = components.into_plain()?;
+    if tz_changed {
+        // The old offset says nothing about the new timezone, so an omitted
+        // disambiguation is genuinely implicit here.
+        local.resolve_with_disambiguation(&tz, dis, state)?
+    } else {
+        local.resolve_with_disambiguation_or_offset(&tz, dis, offset, state)?
+    }
+    .into_zoned_obj_unchecked(tz, cls)
 }
 
 fn now(cls: PyClass<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
