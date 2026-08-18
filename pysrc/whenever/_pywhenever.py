@@ -7556,12 +7556,14 @@ def _zoned_since(
     # Adjust target_date so the exact remainder has the same sign
     # as the overall difference. The while loop handles the rare case
     # of a 24h+ gap, e.g. Samoa in 2011.
+    # NOTE: warn_level=0 throughout: these are intermediate values of a
+    # difference calculation, not local times the caller asked us to resolve.
     target_date = a.date()
     if sign == 1:
-        while b.replace_date(target_date) > a:
+        while b._replace_date(target_date, UNSET, warn_level=0) > a:
             target_date = target_date.subtract(days=1)
     else:
-        while b.replace_date(target_date) < a:
+        while b._replace_date(target_date, UNSET, warn_level=0) < a:
             target_date = target_date.add(days=1)
     cal_results, trunc_date, expand_date = date_diff(
         target_date._py_date,
@@ -7572,11 +7574,15 @@ def _zoned_since(
         cal_units,
         sign,
     )
-    trunc = b.replace_date(
+    trunc = b._replace_date(
         Date._from_py_unchecked(resolve_leap_day(trunc_date)),
+        UNSET,
+        warn_level=0,
     )
-    expand = b.replace_date(
+    expand = b._replace_date(
         Date._from_py_unchecked(resolve_leap_day(expand_date)),
+        UNSET,
+        warn_level=0,
     )
 
     # Rounding is very different for exact units than calendar units
