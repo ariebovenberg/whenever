@@ -1,52 +1,38 @@
 //! Functions for manipulating Python dictionaries.
-use super::{base::*, exc::*};
+use super::{base::*, exc::*, typed::*};
 use core::{ffi::CStr, ptr::null_mut as NULL};
 use pyo3_ffi::*;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PyDict {
-    obj: PyObj,
-}
+pub(crate) struct DictTag;
 
-impl PyBase for PyDict {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyDict {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyDict {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+impl TypeTag for DictTag {
+    fn check_exact(obj: PyObj) -> bool {
         unsafe { PyDict_CheckExact(obj.as_ptr()) != 0 }
     }
 
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn check(obj: PyObj) -> bool {
         unsafe { PyDict_Check(obj.as_ptr()) != 0 }
     }
 }
 
-impl PyDict {
+pub(crate) type PyDict = Typed<DictTag>;
+
+impl Typed<DictTag> {
     pub(crate) fn set_item_str(&self, key: &CStr, value: PyObj) -> PyResult<()> {
-        if unsafe { PyDict_SetItemString(self.obj.as_ptr(), key.as_ptr(), value.as_ptr()) } == -1 {
+        if unsafe { PyDict_SetItemString(self.as_ptr(), key.as_ptr(), value.as_ptr()) } == -1 {
             return Err(PyErrMarker);
         }
         Ok(())
     }
 
     pub(crate) fn len(&self) -> Py_ssize_t {
-        unsafe { PyDict_Size(self.obj.as_ptr()) }
+        unsafe { PyDict_Size(self.as_ptr()) }
     }
 
     pub(crate) fn iteritems(&self) -> PyDictIterItems {
         PyDictIterItems {
-            obj: self.obj.as_ptr(),
+            obj: self.as_ptr(),
             pos: 0,
         }
     }

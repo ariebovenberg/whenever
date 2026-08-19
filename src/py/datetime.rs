@@ -1,5 +1,5 @@
 //! Functionality for working with Python's datetime module.
-use super::{base::*, exc::*, refs::*};
+use super::{base::*, exc::*, refs::*, typed::*};
 use crate::domain::{
     plain_datetime::PlainDateTime,
     scalar::{DeltaSeconds, NS_PER_MICROSEC, Offset, S_PER_DAY, SubSecNanos},
@@ -76,40 +76,10 @@ impl PyDateTimeApiExt for PyDateTime_CAPI {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PyDate {
-    obj: PyObj,
-}
+pub(crate) struct DateTag;
 
-impl PyDate {
-    pub fn year(&self) -> i32 {
-        unsafe { PyDateTime_GET_YEAR(self.obj.as_ptr()) }
-    }
-
-    pub fn month(&self) -> i32 {
-        unsafe { PyDateTime_GET_MONTH(self.obj.as_ptr()) }
-    }
-
-    pub fn day(&self) -> i32 {
-        unsafe { PyDateTime_GET_DAY(self.obj.as_ptr()) }
-    }
-}
-
-impl PyBase for PyDate {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyDate {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyDate {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+impl TypeTag for DateTag {
+    fn check_exact(obj: PyObj) -> bool {
         unsafe {
             if PyDateTimeAPI().is_null() {
                 PyDateTime_IMPORT();
@@ -118,7 +88,7 @@ impl PyStaticType for PyDate {
         }
     }
 
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn check(obj: PyObj) -> bool {
         unsafe {
             if PyDateTimeAPI().is_null() {
                 PyDateTime_IMPORT();
@@ -128,47 +98,77 @@ impl PyStaticType for PyDate {
     }
 }
 
-impl std::fmt::Display for PyDate {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.write_repr(f)
+pub(crate) type PyDate = Typed<DateTag>;
+
+impl Typed<DateTag> {
+    pub fn year(&self) -> i32 {
+        unsafe { PyDateTime_GET_YEAR(self.as_ptr()) }
+    }
+
+    pub fn month(&self) -> i32 {
+        unsafe { PyDateTime_GET_MONTH(self.as_ptr()) }
+    }
+
+    pub fn day(&self) -> i32 {
+        unsafe { PyDateTime_GET_DAY(self.as_ptr()) }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PyDateTime {
-    obj: PyObj,
+pub(crate) struct DateTimeTag;
+
+impl TypeTag for DateTimeTag {
+    fn check_exact(obj: PyObj) -> bool {
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyDateTime_CheckExact(obj.as_ptr()) != 0
+        }
+    }
+
+    fn check(obj: PyObj) -> bool {
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyDateTime_Check(obj.as_ptr()) != 0
+        }
+    }
 }
 
-impl PyDateTime {
+pub(crate) type PyDateTime = Typed<DateTimeTag>;
+
+impl Typed<DateTimeTag> {
     #[allow(dead_code)]
     pub(crate) fn year(&self) -> i32 {
-        unsafe { PyDateTime_GET_YEAR(self.obj.as_ptr()) }
+        unsafe { PyDateTime_GET_YEAR(self.as_ptr()) }
     }
 
     #[allow(dead_code)]
     pub(crate) fn month(&self) -> i32 {
-        unsafe { PyDateTime_GET_MONTH(self.obj.as_ptr()) }
+        unsafe { PyDateTime_GET_MONTH(self.as_ptr()) }
     }
 
     #[allow(dead_code)]
     pub(crate) fn day(&self) -> i32 {
-        unsafe { PyDateTime_GET_DAY(self.obj.as_ptr()) }
+        unsafe { PyDateTime_GET_DAY(self.as_ptr()) }
     }
 
     pub(crate) fn hour(&self) -> i32 {
-        unsafe { PyDateTime_DATE_GET_HOUR(self.obj.as_ptr()) }
+        unsafe { PyDateTime_DATE_GET_HOUR(self.as_ptr()) }
     }
 
     pub(crate) fn minute(&self) -> i32 {
-        unsafe { PyDateTime_DATE_GET_MINUTE(self.obj.as_ptr()) }
+        unsafe { PyDateTime_DATE_GET_MINUTE(self.as_ptr()) }
     }
 
     pub(crate) fn second(&self) -> i32 {
-        unsafe { PyDateTime_DATE_GET_SECOND(self.obj.as_ptr()) }
+        unsafe { PyDateTime_DATE_GET_SECOND(self.as_ptr()) }
     }
 
     pub(crate) fn microsecond(&self) -> i32 {
-        unsafe { PyDateTime_DATE_GET_MICROSECOND(self.obj.as_ptr()) }
+        unsafe { PyDateTime_DATE_GET_MICROSECOND(self.as_ptr()) }
     }
 
     /// Get a borrowed reference to the tzinfo object. Only valid so
@@ -180,7 +180,7 @@ impl PyDateTime {
 
     pub(crate) fn date(&self) -> PyDate {
         // SAFETY: Date has the same layout
-        unsafe { PyDate::from_ptr_unchecked(self.obj.as_ptr()) }
+        unsafe { PyDate::from_ptr_unchecked(self.as_ptr()) }
     }
 
     pub(crate) fn utcoffset(&self) -> PyReturn {
@@ -188,62 +188,42 @@ impl PyDateTime {
     }
 }
 
-impl PyBase for PyDateTime {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyDateTime {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyDateTime {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
-        unsafe {
-            if PyDateTimeAPI().is_null() {
-                PyDateTime_IMPORT();
-            }
-            PyDateTime_CheckExact(obj.as_ptr()) != 0
-        }
-    }
-
-    fn isinstance(obj: impl PyBase) -> bool {
-        unsafe {
-            if PyDateTimeAPI().is_null() {
-                PyDateTime_IMPORT();
-            }
-            PyDateTime_Check(obj.as_ptr()) != 0
-        }
-    }
-}
-
-impl std::fmt::Display for PyDateTime {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.write_repr(f)
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PyTimeDelta {
-    obj: PyObj,
+pub(crate) struct TimeDeltaTag;
+
+impl TypeTag for TimeDeltaTag {
+    fn check_exact(obj: PyObj) -> bool {
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyDelta_CheckExact(obj.as_ptr()) != 0
+        }
+    }
+
+    fn check(obj: PyObj) -> bool {
+        unsafe {
+            if PyDateTimeAPI().is_null() {
+                PyDateTime_IMPORT();
+            }
+            PyDelta_Check(obj.as_ptr()) != 0
+        }
+    }
 }
 
-impl PyTimeDelta {
+pub(crate) type PyTimeDelta = Typed<TimeDeltaTag>;
+
+impl Typed<TimeDeltaTag> {
     pub(crate) fn days_component(&self) -> i32 {
-        unsafe { PyDateTime_DELTA_GET_DAYS(self.obj.as_ptr()) }
+        unsafe { PyDateTime_DELTA_GET_DAYS(self.as_ptr()) }
     }
 
     pub(crate) fn seconds_component(&self) -> i32 {
-        unsafe { PyDateTime_DELTA_GET_SECONDS(self.obj.as_ptr()) }
+        unsafe { PyDateTime_DELTA_GET_SECONDS(self.as_ptr()) }
     }
 
     pub(crate) fn microseconds_component(&self) -> i32 {
-        unsafe { PyDateTime_DELTA_GET_MICROSECONDS(self.obj.as_ptr()) }
+        unsafe { PyDateTime_DELTA_GET_MICROSECONDS(self.as_ptr()) }
     }
 
     pub(crate) fn whole_seconds(self) -> Option<DeltaSeconds> {
@@ -259,85 +239,11 @@ impl PyTimeDelta {
     }
 }
 
-impl PyBase for PyTimeDelta {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyTimeDelta {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyTimeDelta {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
-        unsafe {
-            if PyDateTimeAPI().is_null() {
-                PyDateTime_IMPORT();
-            }
-            PyDelta_CheckExact(obj.as_ptr()) != 0
-        }
-    }
-
-    fn isinstance(obj: impl PyBase) -> bool {
-        unsafe {
-            if PyDateTimeAPI().is_null() {
-                PyDateTime_IMPORT();
-            }
-            PyDelta_Check(obj.as_ptr()) != 0
-        }
-    }
-}
-
-impl std::fmt::Display for PyTimeDelta {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.write_repr(f)
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PyTime {
-    obj: PyObj,
-}
+pub(crate) struct TimeTag;
 
-impl PyTime {
-    pub(crate) fn hour(&self) -> i32 {
-        unsafe { PyDateTime_TIME_GET_HOUR(self.obj.as_ptr()) }
-    }
-
-    pub(crate) fn minute(&self) -> i32 {
-        unsafe { PyDateTime_TIME_GET_MINUTE(self.obj.as_ptr()) }
-    }
-
-    pub(crate) fn second(&self) -> i32 {
-        unsafe { PyDateTime_TIME_GET_SECOND(self.obj.as_ptr()) }
-    }
-
-    pub(crate) fn microsecond(&self) -> i32 {
-        unsafe { PyDateTime_TIME_GET_MICROSECOND(self.obj.as_ptr()) }
-    }
-}
-
-impl PyBase for PyTime {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyTime {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyTime {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+impl TypeTag for TimeTag {
+    fn check_exact(obj: PyObj) -> bool {
         unsafe {
             if PyDateTimeAPI().is_null() {
                 PyDateTime_IMPORT();
@@ -346,7 +252,7 @@ impl PyStaticType for PyTime {
         }
     }
 
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn check(obj: PyObj) -> bool {
         unsafe {
             if PyDateTimeAPI().is_null() {
                 PyDateTime_IMPORT();
@@ -356,8 +262,22 @@ impl PyStaticType for PyTime {
     }
 }
 
-impl std::fmt::Display for PyTime {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.write_repr(f)
+pub(crate) type PyTime = Typed<TimeTag>;
+
+impl Typed<TimeTag> {
+    pub(crate) fn hour(&self) -> i32 {
+        unsafe { PyDateTime_TIME_GET_HOUR(self.as_ptr()) }
+    }
+
+    pub(crate) fn minute(&self) -> i32 {
+        unsafe { PyDateTime_TIME_GET_MINUTE(self.as_ptr()) }
+    }
+
+    pub(crate) fn second(&self) -> i32 {
+        unsafe { PyDateTime_TIME_GET_SECOND(self.as_ptr()) }
+    }
+
+    pub(crate) fn microsecond(&self) -> i32 {
+        unsafe { PyDateTime_TIME_GET_MICROSECOND(self.as_ptr()) }
     }
 }
