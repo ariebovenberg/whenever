@@ -35,8 +35,8 @@ impl<T> PyDefSlice<T> {
 #[repr(transparent)]
 pub(crate) struct PyDefCell<T>(UnsafeCell<T>);
 
-// SAFETY: the contents are only accessed by CPython, during module
-// initialization and type creation, under its own synchronization.
+// SAFETY: only accessed under CPython's own synchronization (module-init
+// exclusivity: module initialization and type creation).
 unsafe impl<T> Sync for PyDefCell<T> {}
 
 impl<T> PyDefCell<T> {

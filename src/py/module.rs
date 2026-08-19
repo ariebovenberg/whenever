@@ -34,8 +34,9 @@ impl Typed<ModuleTag> {
     /// Mutably borrow the module-state slot during a module lifecycle transition.
     ///
     /// # Safety
-    /// This may only be called during module initialization or teardown, while CPython prevents
-    /// simultaneous access to the active module state.
+    /// This may only be called during module initialization or teardown, where the module
+    /// state is only accessed under CPython's own synchronization (module-init exclusivity
+    /// on the way in, the GC pause on the way out).
     pub(crate) unsafe fn state_mut(&mut self) -> &mut MaybeUninit<Option<State>> {
         // SAFETY: calling CPython API with valid arguments
         unsafe {

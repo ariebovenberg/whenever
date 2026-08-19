@@ -263,7 +263,7 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
     // Initialize state to None to get it out of uninitialized state ASAP,
     // as any further calls could trigger a GC cycle which would retrieve
     // the state.
-    // SAFETY: module_exec has exclusive access while initializing the module state.
+    // SAFETY: only accessed under CPython's own synchronization (module-init exclusivity).
     unsafe { module.state_mut() }.write(None);
     let module_name = "whenever".to_py()?;
 
@@ -456,7 +456,7 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
         time_patch,
         tz_store,
     };
-    // SAFETY: module_exec exclusively owns the module-state lifecycle transition.
+    // SAFETY: only accessed under CPython's own synchronization (module-init exclusivity).
     unsafe { module.state_mut().assume_init_mut() }.replace(state);
 
     Ok(())
