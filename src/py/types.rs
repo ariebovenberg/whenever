@@ -1,5 +1,7 @@
 //! Functionality related to Python type objects
-use super::{base::*, dict::PyDict, exc::*, misc::not_implemented, module::*, refs::*};
+use super::{
+    base::*, defs::PyDefSlice, dict::PyDict, exc::*, misc::not_implemented, module::*, refs::*,
+};
 use crate::pymodule::State;
 use core::{
     ffi::{CStr, c_int},
@@ -372,7 +374,7 @@ pub(crate) struct PyObjectLayout<T: PyPayload> {
 
 pub(crate) const fn type_spec<T: PyPayload>(
     name: &CStr,
-    slots: &'static [PyType_Slot],
+    slots: &'static PyDefSlice<PyType_Slot>,
 ) -> PyType_Spec {
     PyType_Spec {
         name: name.as_ptr().cast(),
@@ -382,7 +384,7 @@ pub(crate) const fn type_spec<T: PyPayload>(
         // between the class and the instance.
         // This allows us to keep our types GC-free.
         flags: (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_IMMUTABLETYPE) as _,
-        slots: slots.as_ptr().cast_mut(),
+        slots: slots.as_mut_ptr(),
     }
 }
 

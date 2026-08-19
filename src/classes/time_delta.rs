@@ -500,8 +500,7 @@ fn __abs__(cls: PyClass<TimeDelta>, slf: PyRef<'_, TimeDelta>) -> PyReturn {
     }
 }
 
-#[allow(static_mut_refs)]
-static mut SLOTS: &[PyType_Slot] = &[
+static SLOTS: PyDefSlice<PyType_Slot> = PyDefSlice::new(&[
     slotmethod!(TimeDelta, Py_tp_new, __new__),
     slotmethod!(TimeDelta, Py_tp_richcompare, __richcmp__),
     slotmethod!(TimeDelta, Py_nb_negative, __neg__, 1),
@@ -521,7 +520,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_methods,
-        pfunc: unsafe { METHODS.as_ptr() as *mut c_void },
+        pfunc: METHODS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_hash,
@@ -539,7 +538,7 @@ static mut SLOTS: &[PyType_Slot] = &[
         slot: 0,
         pfunc: NULL(),
     },
-];
+]);
 
 fn __reduce__(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     let data = pickle::encode_time_delta(slf);
@@ -831,7 +830,7 @@ pub(crate) fn total_calendar(
     (trunc_amount as f64 + r.to_nanos_f64() / e.to_nanos_f64()).to_py()
 }
 
-static mut METHODS: &[PyMethodDef] = &[
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(TimeDelta, __reduce__, c""),
@@ -849,10 +848,10 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::PYDANTIC_SCHEMA
     ),
     PyMethodDef::zeroed(),
-];
+]);
 
-pub(crate) static mut SPEC: PyType_Spec =
-    type_spec::<TimeDelta>(c"whenever.TimeDelta", unsafe { SLOTS });
+pub(crate) static SPEC: PyDefCell<PyType_Spec> =
+    PyDefCell::new(type_spec::<TimeDelta>(c"whenever.TimeDelta", &SLOTS));
 
 #[cfg(test)]
 mod tests {
