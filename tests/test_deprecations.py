@@ -21,7 +21,10 @@ from whenever import (
     patch_current_time,
 )
 
-from .common import system_tz_ams
+from .common import (
+    system_tz_ams,
+    warns_here,
+)
 
 
 def deprecated(call: Callable[[], Any], /, *, match: str) -> Any:
@@ -201,7 +204,7 @@ def test_instant_timestamp_factory_wrappers(method, value, unit):
     "method", ["from_timestamp_millis", "from_timestamp_nanos"]
 )
 def test_instant_timestamp_factory_wrappers_keep_integer_requirement(method):
-    with pytest.warns(WheneverDeprecationWarning) as caught:
+    with warns_here(WheneverDeprecationWarning) as caught:
         with pytest.raises(TypeError, match="requires an integer"):
             getattr(Instant, method)(1.5)
     assert caught[0].filename == __file__
@@ -232,7 +235,7 @@ def test_offset_timestamp_factory_wrappers(method, value, unit):
     "method", ["from_timestamp_millis", "from_timestamp_nanos"]
 )
 def test_offset_timestamp_factory_wrappers_keep_integer_requirement(method):
-    with pytest.warns(WheneverDeprecationWarning) as caught:
+    with warns_here(WheneverDeprecationWarning) as caught:
         with pytest.raises(TypeError, match="requires an integer"):
             getattr(OffsetDateTime, method)(
                 1.5,

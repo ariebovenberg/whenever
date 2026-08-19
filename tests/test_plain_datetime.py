@@ -34,6 +34,7 @@ from .common import (
     suppress,
     system_tz,
     system_tz_ams,
+    warns_here,
 )
 
 # Only deprecation warnings may be silenced module-wide. Anything that flags a
@@ -754,12 +755,12 @@ class TestShiftOperators:
             ) == d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
 
         # operators trigger warning (exactly one warning each)
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             d + TimeDelta(hours=48, seconds=5, nanoseconds=3)
         assert len(w) == 1
 
         # operators trigger warning (exactly one warning each)
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
         assert len(w) == 1
 
@@ -788,7 +789,7 @@ class TestDifference:
             assert d - d == hours(0)
             assert d - other == hours(24) + seconds(5) - nanoseconds(321)
 
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             d - other
         assert len(w) == 1
 
@@ -1308,21 +1309,21 @@ class TestSince:
         b = PlainDateTime(2021, 7, 3, hour=1)
 
         # exact output units trigger the warning
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.since(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.until(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
         # mixed calendar+exact output also triggers (has exact)
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.since(b, in_units=["days", "hours"])
         assert len(w) == 1
 
         # total with exact unit triggers the warning
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.since(b, total="hours")
         assert len(w) == 1
 

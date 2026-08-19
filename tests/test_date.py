@@ -24,6 +24,7 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
+    warns_here,
 )
 
 MAX_I64 = 1 << 63
@@ -156,9 +157,8 @@ def test_to_stdlib():
 
 
 def test_today_in_system_tz():
-    with pytest.warns(WheneverDeprecationWarning) as caught:
+    with warns_here(WheneverDeprecationWarning):
         d = Date.today_in_system_tz()
-    assert caught[0].filename == __file__
     # NOTE: this may fail if the test is run *exactly* at midnight.
     # Mocking this out would make things more complicated than it's worth.
     assert d == Date(py_date.today())
