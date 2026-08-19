@@ -117,7 +117,11 @@ impl Time {
     }
 }
 
-impl PyPayload for Time {}
+impl PyPayload for Time {
+    fn class(state: &State) -> PyClass<Self> {
+        *state.time_type
+    }
+}
 
 pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
     (c"MIN", Time::MIN),

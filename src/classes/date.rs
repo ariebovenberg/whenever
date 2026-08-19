@@ -102,7 +102,11 @@ impl DateBoundaryUnit {
     }
 }
 
-impl PyPayload for Date {}
+impl PyPayload for Date {
+    fn class(state: &State) -> PyClass<Self> {
+        *state.date_type
+    }
+}
 
 fn __new__(cls: PyClass<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
