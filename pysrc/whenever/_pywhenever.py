@@ -1674,6 +1674,26 @@ Time.NOON = Time(12)
 Time.MAX = Time(23, 59, 59, nanosecond=_MAX_SUBSEC_NANOS)
 
 
+def _timedelta_from_shift_kwargs(
+    kwargs: dict[str, Any], /, *, warn_level: int
+) -> TimeDelta:
+    """Build the TimeDelta for ``TimeDelta.add()``/``subtract()`` keywords.
+
+    Constructing it in those methods would attribute the days-are-24-hours
+    warning to their own frame, so emit it here at ``warn_level`` and let the
+    constructor stay quiet.
+    """
+    if (kwargs.get("weeks") or kwargs.get("days")) and not kwargs.get(
+        "days_assumed_24h_ok"
+    ):
+        warn(
+            DAYS_NOT_ALWAYS_24H_MSG,
+            DaysAssumed24HoursWarning,
+            stacklevel=warn_level,
+        )
+    return TimeDelta(**{**kwargs, "days_assumed_24h_ok": True})
+
+
 @final
 class TimeDelta(_Base):
     """A duration consisting of a precise time: hours, minutes, (nano)seconds.
@@ -2231,7 +2251,7 @@ class TimeDelta(_Base):
         if kwargs:
             if arg is not UNSET:
                 raise TypeError("Cannot mix positional and keyword arguments")
-            return self + TimeDelta(**kwargs)
+            return self + _timedelta_from_shift_kwargs(kwargs, warn_level=3)
         elif arg is not UNSET:
             return self + arg
         else:
@@ -2263,7 +2283,7 @@ class TimeDelta(_Base):
         if kwargs:
             if arg is not UNSET:
                 raise TypeError("Cannot mix positional and keyword arguments")
-            return self - TimeDelta(**kwargs)
+            return self - _timedelta_from_shift_kwargs(kwargs, warn_level=3)
         elif arg is not UNSET:
             return self - arg
         else:
@@ -4453,10 +4473,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                 f"but offset {offset_expected} was expected"
             )
         else:  # offset_mismatch == "keep_local":
-            return self.to_plain().assume_tz(
-                tz,
-                disambiguation=disambiguation,
-            )
+            return self.to_plain()._assume_tz(tz, disambiguation, warn_level=4)
 
     @overload
     def since(
@@ -5158,7 +5175,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             warning_stacklevel=4,
         )
         check_no_kwargs(kwargs, "replace_date")
-        return self._replace_date(date, disambiguation, warn_level=3)
+        return self._replace_date(date, disambiguation, warn_level=4)
 
     def _replace_date(
         self,
@@ -5168,6 +5185,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         *,
         warn_level: int,
     ) -> ZonedDateTime:
+        """``warn_level`` counts frames from ``_resolve_with_previous_offset``,
+        so that the warning lands on the user's call site. Pass 0 for
+        intermediate values the caller never asked us to resolve.
+        """
         naive = _datetime.combine(date._py_date, self._py_dt.time())
         if disambiguation is UNSET:
             resolved = _resolve_with_previous_offset(
@@ -5453,29 +5474,39 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguation: DisambiguationStr = UNSET,
         **kwargs,
     ) -> ZonedDateTime:
+        # Undocumented: lets a Python-level shim (the itemized-delta operators
+        # in `_ideltas.py`) move our warnings up to its own caller.
+        extra = kwargs.pop("_warn_stacklevel", 1) - 1
         disambiguation = _normalize_disambiguation(
             disambiguation,
             kwargs,
             function_name="add" if sign == 1 else "subtract",
-            warning_stacklevel=5,
+            warning_stacklevel=5 + extra,
         )
         if kwargs:
             if delta is UNSET:
                 return self._shift_kwargs(
-                    sign, disambiguation=disambiguation, **kwargs
+                    sign,
+                    disambiguation=disambiguation,
+                    warn_level=6 + extra,
+                    **kwargs,
                 )
             raise TypeError("Cannot mix positional and keyword arguments")
         elif delta is UNSET:
             return self
         elif isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
             return self._shift_kwargs(
-                sign, **delta, disambiguation=disambiguation
+                sign,
+                **delta,
+                disambiguation=disambiguation,
+                warn_level=6 + extra,
             )
         elif isinstance(delta, TimeDelta):
             return self._shift_kwargs(
                 sign,
                 nanoseconds=delta._total_ns,
                 disambiguation=disambiguation,
+                warn_level=6 + extra,
             )
         else:
             raise TypeError(f"argument must be a delta, got {delta!r}")
@@ -5495,13 +5526,15 @@ class ZonedDateTime(_ExactAndLocalTime):
         microseconds: float = 0,
         nanoseconds: int = 0,
         disambiguation: DisambiguationStr = UNSET,
+        warn_level: int,
     ) -> ZonedDateTime:
         months_total = sign * (years * 12 + months)
         days_total = sign * (weeks * 7 + days)
         if months_total or days_total:
-            self = self.replace_date(
+            self = self._replace_date(
                 self.date()._add_months(months_total)._add_days(days_total),
-                disambiguation=disambiguation,
+                disambiguation,
+                warn_level=warn_level,
             )
         delta_ns = _time_units_to_nanos(
             sign,
@@ -6791,12 +6824,25 @@ class PlainDateTime(_LocalTime):
             warning_stacklevel=4,
         )
         check_no_kwargs(kwargs, "assume_tz")
+        return self._assume_tz(tz, disambiguation, warn_level=4)
+
+    def _assume_tz(
+        self,
+        tz: str | _SystemTZ,
+        disambiguation: Any,
+        /,
+        *,
+        warn_level: int,
+    ) -> ZonedDateTime:
+        """``warn_level`` counts frames from ``_resolve_disambiguation``,
+        so that the warning lands on the user's call site.
+        """
         return ZonedDateTime._from_py_unchecked(
             _resolve_disambiguation(
                 self._py_dt,
                 _tz := _load_tz(tz),
                 disambiguation,
-                warning_stacklevel=3,
+                warning_stacklevel=warn_level,
             ),
             self._nanos,
             _tz,

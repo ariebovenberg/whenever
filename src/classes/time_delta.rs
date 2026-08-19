@@ -474,6 +474,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                             Ok(Some(zdt.shift(
                                 slf.to_shift(),
                                 None,
+                                1,
                                 state,
                                 *state.zoned_datetime_type,
                             )?))

@@ -40,6 +40,7 @@ from .common import (
     suppress,
     system_tz_ams,
     system_tz_nyc,
+    warns_here,
 )
 
 pytestmark = pytest.mark.filterwarnings(
@@ -62,7 +63,7 @@ class TestInit:
         assert d.offset == hours(5)
 
     def test_int_offset(self):
-        with pytest.warns(WheneverDeprecationWarning):
+        with warns_here(WheneverDeprecationWarning):
             d = OffsetDateTime(
                 2020, 8, 15, 5, 12, 30, nanosecond=450, offset=-5
             )
@@ -73,7 +74,7 @@ class TestInit:
             OffsetDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)  # type: ignore[call-overload]
 
     def test_invalid_offset_int(self):
-        with pytest.warns(WheneverDeprecationWarning):
+        with warns_here(WheneverDeprecationWarning):
             with pytest.raises(ValueError, match="offset.*24.*hours"):
                 OffsetDateTime(2020, 8, 15, 5, 12, offset=34)
 
@@ -1085,7 +1086,7 @@ class TestAddSubtractOperators:
             nanosecond=987_654,
             offset=hours(5),
         )
-        with pytest.warns(StaleOffsetWarning) as w:
+        with warns_here(StaleOffsetWarning) as w:
             d + hours(4)
         assert len(w) == 1
         assert "usually an observation, not a timezone rule" in str(
@@ -1099,7 +1100,7 @@ class TestAddSubtractOperators:
             w[0].message
         )
 
-        with pytest.warns(StaleOffsetWarning) as w:
+        with warns_here(StaleOffsetWarning) as w:
             d - hours(4)
         assert len(w) == 1
 
@@ -1364,7 +1365,7 @@ class TestAssumeTz:
         ],
     )
     def test_keep_local_implicit_disambiguation_warns(self, value):
-        with pytest.warns(ImplicitDisambiguationWarning):
+        with warns_here(ImplicitDisambiguationWarning):
             OffsetDateTime(value).assume_tz(
                 "Europe/Paris", offset_mismatch="keep_local"
             )
@@ -2675,7 +2676,7 @@ class TestStartOf:
 
     def test_emits_stale_offset_warning(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             odt.start_of("day")
 
     def test_stale_offset_ok_suppresses_warning(self):
@@ -2932,7 +2933,7 @@ class TestEndOf:
 
     def test_emits_stale_offset_warning(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             odt.end_of("day")
 
     def test_stale_offset_ok_suppresses_warning(self):
@@ -3026,7 +3027,7 @@ class TestStaleOffsetOkKwarg:
     )
     def test_replace_emits_warning(self, replace):
         d = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             replace(d)
 
     def test_round(self):

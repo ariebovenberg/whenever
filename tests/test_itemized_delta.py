@@ -20,7 +20,13 @@ from whenever import (
     hours,
 )
 
-from .common import INVALID_DDELTAS, AlwaysEqual, NeverEqual, suppress
+from .common import (
+    INVALID_DDELTAS,
+    AlwaysEqual,
+    NeverEqual,
+    suppress,
+    warns_here,
+)
 from .test_time_delta import INVALID_TDELTAS
 
 UNITS = cast(
@@ -705,7 +711,7 @@ class TestInUnitsRelativeToNonZoned:
         # calendar delta + exact output → warns (output has exact)
         d = ItemizedDelta(months=1)
         ref = PlainDateTime(2020, 1, 1)
-        with pytest.warns(NaiveArithmeticWarning):
+        with warns_here(NaiveArithmeticWarning):
             result = d.in_units(["days", "hours"], relative_to=ref)
         assert result == ItemizedDelta(days=31)
 
@@ -713,7 +719,7 @@ class TestInUnitsRelativeToNonZoned:
         # mixed delta + mixed output → warns
         d = ItemizedDelta(months=1, hours=5)
         ref = PlainDateTime(2020, 1, 1)
-        with pytest.warns(NaiveArithmeticWarning):
+        with warns_here(NaiveArithmeticWarning):
             result = d.in_units(["days", "hours"], relative_to=ref)
         assert result == ItemizedDelta(days=31, hours=5)
 
@@ -732,7 +738,7 @@ class TestInUnitsRelativeToNonZoned:
         # calendar delta + calendar output → warns (offset, calendar both sides)
         d = ItemizedDelta(months=1, days=5)
         ref = OffsetDateTime(2020, 1, 1, offset=hours(3))
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             result = d.in_units(["weeks", "days"], relative_to=ref)
         assert result == ItemizedDelta(weeks=5, days=1)
 
@@ -740,7 +746,7 @@ class TestInUnitsRelativeToNonZoned:
         # exact delta + calendar output → warns (output has calendar)
         d = ItemizedDelta(hours=50)
         ref = OffsetDateTime(2020, 1, 1, offset=hours(3))
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             result = d.in_units(["days", "hours"], relative_to=ref)
         assert result == ItemizedDelta(days=2, hours=2)
 
@@ -748,7 +754,7 @@ class TestInUnitsRelativeToNonZoned:
         # mixed delta + mixed output → warns
         d = ItemizedDelta(months=1, hours=5)
         ref = OffsetDateTime(2020, 1, 1, offset=hours(3))
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             result = d.in_units(["days", "hours"], relative_to=ref)
         assert result == ItemizedDelta(days=31, hours=5)
 
@@ -1034,7 +1040,7 @@ class TestAddSub:
         )
 
     def test_without_relative_to(self):
-        with pytest.warns(CalendarUnitCompositionWarning) as caught:
+        with warns_here(CalendarUnitCompositionWarning) as caught:
             result = ItemizedDelta(hours=1).add(days=2, minutes=3)
         assert result.strict_eq(ItemizedDelta(days=2, hours=1, minutes=3))
         message = str(caught[0].message)
@@ -1045,7 +1051,7 @@ class TestAddSub:
         assert "cal_unit_composition_ok=True" in message
         assert "guide/warnings.html" in message
 
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             result = ItemizedDelta(days=2).subtract(ItemizedDateDelta(days=1))
         assert result.strict_eq(ItemizedDelta(days=1))
 
@@ -1075,11 +1081,11 @@ class TestAddSub:
             result = ItemizedDelta(months=0, hours=1).add(minutes=2)
         assert result.strict_eq(ItemizedDelta(months=0, hours=1, minutes=2))
 
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             result = ItemizedDelta(days=2) + ItemizedDelta(hours=1)
         assert result.strict_eq(ItemizedDelta(days=2, hours=1))
 
-        with pytest.warns(CalendarUnitCompositionWarning) as caught:
+        with warns_here(CalendarUnitCompositionWarning) as caught:
             result = ItemizedDateDelta(days=2) + ItemizedDelta(hours=1)
         assert result.strict_eq(ItemizedDelta(days=2, hours=1))
         message = str(caught[0].message)
@@ -1087,11 +1093,11 @@ class TestAddSub:
         assert "cal_unit_composition_ok=True" in message
         assert "guide/warnings.html" in message
 
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             result = ItemizedDelta(days=2) - ItemizedDateDelta(days=1)
         assert result.strict_eq(ItemizedDelta(days=1))
 
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=2) - ItemizedDelta(days=1)
         assert result.strict_eq(ItemizedDelta(days=1))
 
@@ -1361,16 +1367,16 @@ class TestTotal:
         assert result == pytest.approx(10.5)
 
         # exact delta + calendar unit → warns (crosses boundary)
-        with pytest.warns(NaiveArithmeticWarning):
+        with warns_here(NaiveArithmeticWarning):
             d_exact.total("days", relative_to=PlainDateTime(2020, 1, 1))
 
         # calendar delta + exact unit → warns (crosses boundary)
-        with pytest.warns(NaiveArithmeticWarning):
+        with warns_here(NaiveArithmeticWarning):
             d_cal.total("hours", relative_to=PlainDateTime(2020, 1, 1))
 
         # nanoseconds result is int; uses mixed delta to trigger warning
         d_ns_mixed = ItemizedDelta(months=1, nanoseconds=500_000_000)
-        with pytest.warns(NaiveArithmeticWarning):
+        with warns_here(NaiveArithmeticWarning):
             result = d_ns_mixed.total(
                 "nanoseconds", relative_to=PlainDateTime(2020, 1, 1)
             )
@@ -1383,7 +1389,7 @@ class TestTotal:
 
         # calendar delta + calendar unit → warns
         d_cal = ItemizedDelta(months=1)
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             result = d_cal.total(
                 "days",
                 relative_to=OffsetDateTime(2020, 1, 1, offset=hours(2)),
@@ -1403,14 +1409,14 @@ class TestTotal:
         assert result == pytest.approx(10.5)
 
         # calendar delta + exact unit → warns (delta has calendar)
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             d_cal.total(
                 "hours",
                 relative_to=OffsetDateTime(2020, 1, 1, offset=hours(2)),
             )
 
         # exact delta + calendar unit → warns (unit is calendar)
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             d_exact.total(
                 "days",
                 relative_to=OffsetDateTime(2020, 1, 1, offset=hours(3)),

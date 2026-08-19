@@ -48,6 +48,7 @@ impl ZonedDateTime {
         &self,
         shift: DateTimeShift,
         dis: Option<Disambiguation>,
+        warn_stacklevel: isize,
         state: &State,
         cls: PyClass<Self>,
     ) -> PyReturn {
@@ -57,7 +58,13 @@ impl ZonedDateTime {
                 .shift_by(calendar)
                 .ok_or_range_err()?
                 .at(self.time)
-                .resolve_with_disambiguation_or_offset(&self.tz, dis, self.offset, state)?
+                .resolve_with_disambiguation_or_offset(
+                    &self.tz,
+                    dis,
+                    self.offset,
+                    warn_stacklevel,
+                    state,
+                )?
         } else {
             self.to_fixed_offset()
         };
@@ -125,6 +132,7 @@ impl PlainDateTime {
         tz: &TimeZone,
         disambiguation: Option<Disambiguation>,
         offset: Offset,
+        warn_stacklevel: isize,
         state: &State,
     ) -> PyResult<OffsetDateTime> {
         let mapping = tz.mapping_for_local(self.local_seconds());
@@ -139,7 +147,7 @@ impl PlainDateTime {
                     warn_with_class(
                         *state.warn_implicit_disambiguation,
                         doc::IMPLICIT_DISAMBIGUATION_MSG,
-                        1,
+                        warn_stacklevel,
                     )?;
                 }
                 ResolvePolicy::PreserveOffset(offset)
@@ -408,6 +416,7 @@ fn shift_operator(
     Ok(Some(slf.shift(
         shift.negate_if(negate),
         None,
+        1,
         state,
         cls,
     )?))
@@ -671,7 +680,7 @@ fn replace_date(
     arg.extract(*state.date_type)
         .ok_or_type_err("date must be a whenever.Date")?
         .at(time)
-        .resolve_with_disambiguation_or_offset(tz, dis, offset, state)?
+        .resolve_with_disambiguation_or_offset(tz, dis, offset, 1, state)?
         .into_zoned_obj_unchecked(tz.clone(), cls)
 }
 
@@ -694,7 +703,7 @@ fn replace_time(
     arg.extract(*state.time_type)
         .ok_or_type_err("time must be a whenever.Time instance")?
         .on(date)
-        .resolve_with_disambiguation_or_offset(tz, dis, offset, state)?
+        .resolve_with_disambiguation_or_offset(tz, dis, offset, 1, state)?
         .into_zoned_obj_unchecked(tz.clone(), cls)
 }
 
@@ -853,7 +862,7 @@ fn replace(
         // disambiguation is genuinely implicit here.
         local.resolve_with_disambiguation(&tz, dis, state)?
     } else {
-        local.resolve_with_disambiguation_or_offset(&tz, dis, offset, state)?
+        local.resolve_with_disambiguation_or_offset(&tz, dis, offset, 1, state)?
     }
     .into_zoned_obj_unchecked(tz, cls)
 }
@@ -1168,22 +1177,29 @@ fn shift_method(
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
     let mut dis_arg = DisambiguationArg::default();
+    // Undocumented: lets a Python-level shim (the itemized-delta operators in
+    // `_ideltas.py`) move our warnings up to its own caller.
+    let mut warn_stacklevel = 1;
+    let mut handle = |k: PyObj, v: PyObj, eq: StrEqFn| -> PyResult<bool> {
+        if eq(k, *state.str_warn_stacklevel) {
+            warn_stacklevel = v.expect_int("_warn_stacklevel")?.to_i64()? as isize;
+            Ok(true)
+        } else {
+            Ok(dis_arg.handle_kwarg(k, v, eq, state))
+        }
+    };
 
     let shift = match handle_opt_arg(fname, args)? {
         Some(arg) => {
-            handle_kwargs(fname, kwargs, |k, v, eq| {
-                Ok(dis_arg.handle_kwarg(k, v, eq, state))
-            })?;
+            handle_kwargs(fname, kwargs, &mut handle)?;
             parse_datetime_shift_arg(fname, arg, state)?
         }
-        None => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
-            Ok(dis_arg.handle_kwarg(k, v, eq, state))
-        })?,
+        None => parse_datetime_shift_kwargs(fname, kwargs, state, &mut handle)?,
     };
 
     let dis = dis_arg.finish(fname, state)?;
 
-    slf.shift(shift.negate_if(negate), dis, state, cls)
+    slf.shift(shift.negate_if(negate), dis, warn_stacklevel, state, cls)
 }
 
 fn difference(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, arg: PyObj) -> PyReturn {

@@ -76,9 +76,11 @@ def _shift_datetime_operator(
         PlainDateTime,
         StaleOffsetWarning,
         TimeDelta,
+        ZonedDateTime,
     )
 
     operand = cast(Any, datetime)
+    kwargs: dict[str, Any]
     if isinstance(datetime, PlainDateTime):
         if (
             isinstance(delta, TimeDelta)
@@ -98,6 +100,10 @@ def _shift_datetime_operator(
             stacklevel=warn_stacklevel,
         )
         kwargs = {"stale_offset_ok": True}
+    elif isinstance(datetime, ZonedDateTime):
+        # add()/subtract() would attribute their warnings to this frame, so
+        # tell them to point further up, at the operator's own caller.
+        kwargs = {"_warn_stacklevel": warn_stacklevel}
     else:
         kwargs = {}
     operation = operand.subtract if subtract else operand.add
@@ -1066,6 +1072,34 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         when nonzero calendar units are involved. The warning can be suppressed
         with `cal_unit_composition_ok=True`.
         """
+        return self._add(
+            arg,
+            relative_to=relative_to,
+            in_units=in_units,
+            round_mode=round_mode,
+            round_increment=round_increment,
+            cal_unit_composition_ok=cal_unit_composition_ok,
+            warn_level=3,
+            **kwargs,
+        )
+
+    def _add(
+        self,
+        arg: ItemizedDelta | ItemizedDateDelta,
+        /,
+        *,
+        relative_to: _whenever.ZonedDateTime,
+        in_units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr,
+        round_increment: int,
+        cal_unit_composition_ok: bool,
+        warn_level: int,
+        **kwargs: int,
+    ) -> ItemizedDelta:
+        """``warn_level`` counts frames from here, so that the composition
+        warning lands on the user's call site rather than on whichever public
+        method delegated to us.
+        """
 
         # Normalize the input into a single unit->value mapping
         other: Mapping[str, int]
@@ -1110,7 +1144,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 warn(
                     CALENDAR_UNIT_METHOD_COMPOSITION_MSG,
                     CalendarUnitCompositionWarning,
-                    stacklevel=2,
+                    stacklevel=warn_level,
                 )
             return ItemizedDelta(**_items_add(self, other))
 
@@ -1222,13 +1256,14 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             kwargs = {k: -v for k, v in kwargs.items()}
         if arg:
             arg = -arg
-        return self.add(  # type: ignore[no-any-return,call-overload]
+        return self._add(
             arg,
             relative_to=relative_to,
             in_units=in_units,
             round_mode=round_mode,
             round_increment=round_increment,
             cal_unit_composition_ok=cal_unit_composition_ok,
+            warn_level=3,
             **kwargs,
         )
 
@@ -2166,6 +2201,37 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         **kwargs: int,
     ) -> ItemizedDateDelta | ItemizedDelta:
         """Add time to this delta, returning a new delta."""
+        return self._add(
+            arg,
+            relative_to=relative_to,
+            in_units=in_units,
+            round_mode=round_mode,
+            round_increment=round_increment,
+            cal_unit_composition_ok=cal_unit_composition_ok,
+            warn_level=3,
+            **kwargs,
+        )
+
+    def _add(
+        self,
+        arg: ItemizedDateDelta | ItemizedDelta,
+        /,
+        *,
+        relative_to: _whenever.Date
+        | _whenever.ZonedDateTime
+        | _whenever.PlainDateTime
+        | _whenever.OffsetDateTime,
+        in_units: Sequence[DeltaUnitStr],
+        round_mode: RoundModeStr,
+        round_increment: int,
+        cal_unit_composition_ok: bool,
+        warn_level: int,
+        **kwargs: int,
+    ) -> ItemizedDateDelta | ItemizedDelta:
+        """``warn_level`` counts frames from here, so that the composition
+        warning lands on the user's call site rather than on whichever public
+        method delegated to us.
+        """
         other: Mapping[str, int]
         if kwargs:
             if arg is not UNSET:
@@ -2207,7 +2273,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 warn(
                     CALENDAR_UNIT_METHOD_COMPOSITION_MSG,
                     CalendarUnitCompositionWarning,
-                    stacklevel=2,
+                    stacklevel=warn_level,
                 )
             if isinstance(arg, ItemizedDelta):
                 return ItemizedDelta(**_items_add(self, other))
@@ -2332,13 +2398,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             kwargs = {k: -v for k, v in kwargs.items()}
         if arg:
             arg = -arg
-        return self.add(  # type: ignore[no-any-return,call-overload]
+        return self._add(
             arg,
             relative_to=relative_to,
             in_units=in_units,
             round_mode=round_mode,
             round_increment=round_increment,
             cal_unit_composition_ok=cal_unit_composition_ok,
+            warn_level=3,
             **kwargs,
         )
 

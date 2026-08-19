@@ -23,6 +23,8 @@ from whenever import (
 )
 from whenever._format import compile_pattern, format_fields
 
+from .common import warns_here
+
 
 class TestCompilePattern:
     """Tests for pattern compilation edge cases."""
@@ -381,7 +383,7 @@ class TestPatternDeprecations:
         "pattern, replacement", [("h", "`H`"), ("hh", "`HH`")]
     )
     def test_legacy_hour_format(self, pattern, replacement):
-        with pytest.warns(WheneverDeprecationWarning) as w:
+        with warns_here(WheneverDeprecationWarning) as w:
             Time(13).format(pattern)
         assert len(w) == 1
         assert f"use {replacement} instead" in str(w[0].message)
@@ -396,7 +398,7 @@ class TestPatternDeprecations:
         ],
     )
     def test_legacy_prefixed_optional_seconds(self, pattern, replacement):
-        with pytest.warns(WheneverDeprecationWarning) as w:
+        with warns_here(WheneverDeprecationWarning) as w:
             Time(13).format(pattern)
         assert len(w) == 1
         assert f"use {replacement} instead" in str(w[0].message)
@@ -414,7 +416,7 @@ class TestPatternDeprecations:
     def test_legacy_separator_free_optional_seconds(
         self, pattern, replacement
     ):
-        with pytest.warns(WheneverDeprecationWarning) as w:
+        with warns_here(WheneverDeprecationWarning) as w:
             Time(13).format(pattern)
         assert len(w) == 1
         assert f"use {replacement} instead" in str(w[0].message)
@@ -1314,7 +1316,7 @@ class TestZonedDateTimeParse:
         ],
     )
     def test_keep_local_implicit_disambiguation_warns(self, value):
-        with pytest.warns(ImplicitDisambiguationWarning):
+        with warns_here(ImplicitDisambiguationWarning):
             ZonedDateTime.parse(
                 value,
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",

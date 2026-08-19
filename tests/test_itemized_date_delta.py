@@ -12,7 +12,12 @@ from whenever import (
     ZonedDateTime,
 )
 
-from .common import INVALID_DDELTAS, AlwaysEqual, NeverEqual
+from .common import (
+    INVALID_DDELTAS,
+    AlwaysEqual,
+    NeverEqual,
+    warns_here,
+)
 
 UNITS = cast(
     Sequence[Literal["years", "months", "weeks", "days"]],
@@ -682,30 +687,30 @@ class TestAddSub:
             )
 
     def test_reference_free_add_and_subtract(self):
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=1).add(ItemizedDateDelta(days=0))
         assert result.strict_eq(ItemizedDateDelta(days=1))
 
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=1).add(days=2)
         assert result.strict_eq(ItemizedDateDelta(days=3))
 
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             full_result = ItemizedDateDelta(days=2).subtract(
                 ItemizedDelta(days=1)
             )
         assert full_result.strict_eq(ItemizedDelta(days=1))
 
     def test_operator_composition(self):
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=1) + ItemizedDateDelta(months=2)
         assert result.strict_eq(ItemizedDateDelta(months=2, days=1))
 
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             full_result = ItemizedDateDelta(days=2) + ItemizedDelta(days=3)
         assert full_result.strict_eq(ItemizedDelta(days=5))
 
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             full_result = ItemizedDateDelta(days=2) - ItemizedDelta(days=1)
         assert full_result.strict_eq(ItemizedDelta(days=1))
 
@@ -779,12 +784,12 @@ class TestAddSub:
     def test_subtract_no_op_and_date_result(self):
         delta = ItemizedDateDelta(days=1)
         assert delta.subtract() is delta
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             result = delta.subtract(ItemizedDateDelta(days=1))
         assert result.strict_eq(ItemizedDateDelta(days=0))
 
     def test_full_delta_add_and_suppressed_subtract_warning(self):
-        with pytest.warns(CalendarUnitCompositionWarning):
+        with warns_here(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=1).add(ItemizedDelta(hours=1))
         assert result.strict_eq(ItemizedDelta(days=1, hours=1))
 
