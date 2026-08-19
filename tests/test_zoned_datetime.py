@@ -3293,6 +3293,20 @@ class TestParseIso:
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             ZonedDateTime.parse_iso(s)
 
+    def test_offset_timezone_mismatch_message(self):
+        # The message must actually say something: it was empty in the pure
+        # Python backend, which no bare `pytest.raises` could catch.
+        with pytest.raises(
+            InvalidOffsetError, match="invalid offset for Europe/Amsterdam"
+        ):
+            ZonedDateTime.parse_iso("2023-05-01T12:00+03:00[Europe/Amsterdam]")
+
+        # the ID is echoed back as written, not canonicalized
+        with pytest.raises(
+            InvalidOffsetError, match="invalid offset for europe/amsterdam"
+        ):
+            ZonedDateTime.parse_iso("2023-05-01T12:00+03:00[europe/amsterdam]")
+
     def test_offset_timezone_mismatch(self):
         with pytest.raises(InvalidOffsetError):
             # at the exact DST transition

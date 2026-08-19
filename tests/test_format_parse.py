@@ -1187,7 +1187,10 @@ class TestZonedDateTimeParse:
 
     def test_offset_mismatch(self):
         """Offset doesn't match timezone: should raise."""
-        with pytest.raises(InvalidOffsetError, match="does not match"):
+        with pytest.raises(
+            InvalidOffsetError,
+            match=r"Offset -?\d+s does not match timezone 'Europe/Paris'",
+        ):
             ZonedDateTime.parse(
                 "2024-03-15 14:30+05:00[Europe/Paris]",
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",

@@ -1275,6 +1275,15 @@ class TestAssumeTz:
                 "America/New_York"
             )
 
+    def test_invalid_offset_message_uses_canonical_tz_id(self):
+        # not the spelling that was passed in
+        with pytest.raises(
+            InvalidOffsetError, match="timezone 'America/New_York'"
+        ):
+            OffsetDateTime("2023-05-01 12:30:00-09:00").assume_tz(
+                "america/new_york"
+            )
+
     @pytest.mark.parametrize(
         "offset_mismatch", ["raise", "keep_instant", "keep_local"]
     )

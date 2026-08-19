@@ -5,7 +5,7 @@ from datetime import (
     timedelta as _timedelta,
 )
 
-from .._common import UTC, mk_fixed_tzinfo
+from .._common import UTC, check_utc_bounds, mk_fixed_tzinfo
 from .._typing import DisambiguationStr
 from .common import Fold, Gap, LocalMapping, Unique
 from .tzif import TimeZone
@@ -78,11 +78,9 @@ def _resolve_ambiguity_from_mapping(
             # shift the datetime out of the gap
             dt += _timedelta(seconds=shift)
 
-    resolved = dt.replace(tzinfo=mk_fixed_tzinfo(offset))
     # This ensures we raise an exception if the instant is out of range,
     # even if the local time is valid.
-    resolved.astimezone(UTC)
-    return resolved
+    return check_utc_bounds(dt.replace(tzinfo=mk_fixed_tzinfo(offset)))
 
 
 def resolve_ambiguity_using_prev_offset(
