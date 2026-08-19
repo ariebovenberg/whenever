@@ -378,13 +378,12 @@ pub(crate) const fn type_spec<T: PyPayload>(
     }
 }
 
-pub(crate) extern "C" fn generic_dealloc(slf: PyObj) {
+pub(crate) extern "C" fn generic_dealloc<T: PyPayload>(slf: PyObj) {
     let cls = slf.type_().as_ptr().cast::<PyTypeObject>();
+    // Run the payload's destructor before freeing. Compiles to nothing for Copy payloads.
+    unsafe { core::ptr::drop_in_place(&raw mut (*slf.as_ptr().cast::<PyObjectLayout<T>>()).data) };
     unsafe {
-        let tp_free = PyType_GetSlot(cls, Py_tp_free);
-        debug_assert_ne!(tp_free, core::ptr::null_mut());
-        let tp_free: freefunc = std::mem::transmute(tp_free);
-        tp_free(slf.as_ptr().cast());
+        (*cls).tp_free.unwrap()(slf.as_ptr().cast());
         Py_DECREF(cls.cast());
     }
 }
