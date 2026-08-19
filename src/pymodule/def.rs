@@ -293,10 +293,7 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
         .setattr(c"__module__", *module_name)?;
 
     unsafe { PyDateTime_IMPORT() };
-    match unsafe { PyDateTimeAPI().as_ref() } {
-        Some(_) => {}
-        None => Err(PyErrMarker)?,
-    };
+    unsafe { PyDateTimeAPI().as_ref() }.ok_or(PyErrMarker)?;
 
     let exc_repeated = new_exception(
         module,
