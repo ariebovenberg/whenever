@@ -36,19 +36,19 @@ mod gil_enabled {
         /// Access the inner value immutably.
         #[inline]
         pub(crate) fn with<R, F: FnOnce(&T) -> R>(&self, f: F) -> R {
-            // SAFETY: GIL guarantees single-threaded access
+            // SAFETY: only accessed under CPython's own synchronization (the GIL)
             f(unsafe { &*self.0.get() })
         }
 
         /// Access the inner value mutably.
         #[inline]
         pub(crate) fn with_mut<R, F: FnOnce(&mut T) -> R>(&self, f: F) -> R {
-            // SAFETY: GIL guarantees single-threaded access
+            // SAFETY: only accessed under CPython's own synchronization (the GIL)
             f(unsafe { &mut *self.0.get() })
         }
     }
 
-    // SAFETY: With GIL enabled, Python ensures single-threaded access
+    // SAFETY: only accessed under CPython's own synchronization (the GIL)
     unsafe impl<T> Sync for SyncCell<T> {}
 
     /// A cell for `Option<NonNull<T>>` optimized for read-heavy, write-rare patterns.
@@ -64,14 +64,14 @@ mod gil_enabled {
         /// Read the pointer. Lock-free (no-op with GIL).
         #[inline]
         pub(crate) fn load(&self) -> Option<NonNull<T>> {
-            // SAFETY: GIL guarantees single-threaded access
+            // SAFETY: only accessed under CPython's own synchronization (the GIL)
             unsafe { *self.0.get() }
         }
 
         /// Replace the pointer, returning the old one.
         #[inline]
         pub(crate) fn swap(&self, new: Option<NonNull<T>>) -> Option<NonNull<T>> {
-            // SAFETY: GIL guarantees single-threaded access
+            // SAFETY: only accessed under CPython's own synchronization (the GIL)
             std::mem::replace(unsafe { &mut *self.0.get() }, new)
         }
 
@@ -79,7 +79,7 @@ mod gil_enabled {
         /// Returns Ok(()) on success, Err(existing) if already set.
         #[inline]
         pub(crate) fn try_init(&self, value: NonNull<T>) -> Result<(), NonNull<T>> {
-            // SAFETY: GIL guarantees single-threaded access
+            // SAFETY: only accessed under CPython's own synchronization (the GIL)
             let current = unsafe { *self.0.get() };
             match current {
                 None => {
@@ -91,7 +91,7 @@ mod gil_enabled {
         }
     }
 
-    // SAFETY: With GIL enabled, Python ensures single-threaded access
+    // SAFETY: only accessed under CPython's own synchronization (the GIL)
     unsafe impl<T> Sync for SwapPtr<T> {}
 
     /// A cell that computes its value on first access (fallible).
@@ -113,7 +113,7 @@ mod gil_enabled {
         /// Get the value, initializing on first call.
         #[inline]
         pub(crate) fn get(&self) -> PyResult<Arc<T>> {
-            // SAFETY: GIL guarantees single-threaded access
+            // SAFETY: only accessed under CPython's own synchronization (the GIL)
             let slot = unsafe { &mut *self.value.get() };
             if slot.is_none() {
                 *slot = Some(Arc::new((self.init)()?));
@@ -125,14 +125,14 @@ mod gil_enabled {
         /// Get the value if already initialized (e.g. for GC traverse).
         #[inline]
         pub(crate) fn get_if_init(&self) -> Option<Arc<T>> {
-            // SAFETY: GIL guarantees single-threaded access
+            // SAFETY: only accessed under CPython's own synchronization (the GIL)
             unsafe { (*self.value.get()).as_ref() }.map(Arc::clone)
         }
 
         /// Override the stored value, replacing any existing one (or bypassing lazy init).
         #[inline]
         pub(crate) fn set(&self, value: T) {
-            // SAFETY: GIL guarantees single-threaded access
+            // SAFETY: only accessed under CPython's own synchronization (the GIL)
             *unsafe { &mut *self.value.get() } = Some(Arc::new(value));
         }
     }
@@ -145,7 +145,7 @@ mod gil_enabled {
         }
     }
 
-    // SAFETY: With GIL enabled, Python ensures single-threaded access
+    // SAFETY: only accessed under CPython's own synchronization (the GIL)
     unsafe impl<T> Sync for OncePyCell<T> {}
 }
 
