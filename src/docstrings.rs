@@ -1971,6 +1971,32 @@ until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=.
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
+pub(crate) const TIME_ADD: &CStr = c"\
+add($self, *args, **kwargs)
+--
+
+Add a time amount to this time of day.
+
+Since a :class:`Time` has no date, adding an amount that would move
+past midnight (in either direction) is ambiguous. The ``overflow``
+argument determines what happens in that case:
+
+- ``\"raise\"`` (the default) raises :exc:`ValueError`
+- ``\"wrap\"`` wraps around the clock, dropping the day rollover
+- ``\"cap\"`` clamps the result to :attr:`MIN` or :attr:`MAX`
+
+Only sub-day units (``hours`` down to ``nanoseconds``) are accepted as
+keyword arguments, since a :class:`Time` has no date component.
+
+>>> Time(11, 30).add(hours=1)
+Time(\"12:30:00\")
+>>> Time(23, 0).add(hours=2, overflow=\"wrap\")
+Time(\"01:00:00\")
+>>> Time(23, 0).add(hours=2)
+Traceback (most recent call last):
+  ...
+ValueError: Resulting time is out of range
+";
 pub(crate) const TIME_FORMAT: &CStr = c"\
 Format as a custom pattern string.
 
@@ -2094,6 +2120,20 @@ pub(crate) const TIME_SECOND: &CStr = c"\
 The second component of the time
 >>> Time(12, 30, 0).second
 0
+";
+pub(crate) const TIME_SUBTRACT: &CStr = c"\
+subtract($self, *args, **kwargs)
+--
+
+Subtract a time amount from this time of day.
+
+Like :meth:`add`, but subtracting instead of adding. See :meth:`add`
+for the meaning of the ``overflow`` argument.
+
+>>> Time(12, 30).subtract(hours=1)
+Time(\"11:30:00\")
+>>> Time(0, 30).subtract(hours=1, overflow=\"wrap\")
+Time(\"23:30:00\")
 ";
 pub(crate) const TIME_TO_STDLIB: &CStr = c"\
 Convert to a standard library :class:`~datetime.time`

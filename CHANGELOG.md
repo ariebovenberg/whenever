@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `Time.add()` and `Time.subtract()` for time-of-day arithmetic.
+  Since a `Time` has no date, the `overflow` argument controls what happens
+  when the result crosses midnight: `"raise"` (the default), `"wrap"`, or
+  `"cap"` (see #375).
 - Add LLM-friendly Markdown documentation, including `llms.txt` and
   `llms-full.txt`.
 
