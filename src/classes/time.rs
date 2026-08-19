@@ -3,7 +3,7 @@ use crate::common::{fmt::Sink, parse::Scan};
 use crate::{
     common::{fmt, format_args, pattern, pickle, round_args as round},
     docstrings as doc,
-    domain::scalar::*,
+    domain::{difference::ExactUnit, scalar::*, time_delta::TimeDelta},
     py::*,
     pymodule::State,
 };
@@ -352,6 +352,114 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
     pattern.parse(s).into_value_err()?.time()?.to_obj(cls)
 }
 
+/// How to handle a result that falls outside a single day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Overflow {
+    Raise,
+    Wrap,
+    Cap,
+}
+
+impl Overflow {
+    fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
+        match_interned_str(
+            "overflow",
+            obj,
+            &[
+                (*state.str_raise, Overflow::Raise),
+                (*state.str_wrap, Overflow::Wrap),
+                (*state.str_cap, Overflow::Cap),
+            ],
+        )
+    }
+}
+
+fn add(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    shift_method(cls, slf, args, kwargs, false)
+}
+
+fn subtract(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    shift_method(cls, slf, args, kwargs, true)
+}
+
+#[inline(never)]
+fn shift_method(
+    cls: PyClass<Time>,
+    slf: Time,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+    negate: bool,
+) -> PyReturn {
+    let fname = if negate { "subtract" } else { "add" };
+    let state = cls.state();
+    let mut overflow = Overflow::Raise;
+
+    let delta = match handle_opt_arg(fname, args)? {
+        Some(arg) => {
+            // Only `overflow` is accepted as a keyword argument alongside a
+            // positional TimeDelta.
+            handle_kwargs(fname, kwargs, |key, value, eq| {
+                if eq(key, *state.str_overflow) {
+                    overflow = Overflow::from_py(value, state)?;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            })?;
+            match arg.extract(*state.time_delta_type) {
+                Some(d) => d,
+                None => raise_type_err(format!("{fname}() argument must be a TimeDelta"))?,
+            }
+        }
+        None => {
+            // A Time has no date, so only sub-day units are accepted.
+            let mut delta = TimeDelta::ZERO;
+            handle_kwargs(fname, kwargs, |key, value, eq| {
+                if eq(key, *state.str_overflow) {
+                    overflow = Overflow::from_py(value, state)?;
+                    return Ok(true);
+                }
+                let unit = if eq(key, *state.str_hours) {
+                    ExactUnit::Hours
+                } else if eq(key, *state.str_minutes) {
+                    ExactUnit::Minutes
+                } else if eq(key, *state.str_seconds) {
+                    ExactUnit::Seconds
+                } else if eq(key, *state.str_milliseconds) {
+                    ExactUnit::Milliseconds
+                } else if eq(key, *state.str_microseconds) {
+                    ExactUnit::Microseconds
+                } else if eq(key, *state.str_nanoseconds) {
+                    ExactUnit::Nanoseconds
+                } else {
+                    return Ok(false);
+                };
+                delta = delta.add(unit.parse_py_number(value)?).ok_or_range_err()?;
+                Ok(true)
+            })?;
+            delta
+        }
+    };
+
+    let delta_ns = if negate {
+        -delta.total_nanos()
+    } else {
+        delta.total_nanos()
+    };
+    let total = slf.total_nanos() as i128 + delta_ns;
+    let result_ns: u64 = match overflow {
+        Overflow::Wrap => total.rem_euclid(NS_PER_DAY as i128) as u64,
+        Overflow::Raise => {
+            if !(0..NS_PER_DAY as i128).contains(&total) {
+                raise_value_err("Resulting time is out of range")?;
+            }
+            total as u64
+        }
+        Overflow::Cap => total.clamp(0, NS_PER_DAY as i128 - 1) as u64,
+    };
+    Time::from_total_nanos_unchecked(result_ns).to_obj(cls)
+}
+
 static mut METHODS: &[PyMethodDef] = &[
     COPY_METHOD,
     DEEPCOPY_METHOD,
@@ -359,6 +467,8 @@ static mut METHODS: &[PyMethodDef] = &[
     method0!(Time, to_stdlib, doc::TIME_TO_STDLIB),
     method0!(Time, py_time, doc::TIME_PY_TIME),
     method_kwargs!(Time, replace, doc::TIME_REPLACE),
+    method_kwargs!(Time, add, doc::TIME_ADD),
+    method_kwargs!(Time, subtract, doc::TIME_SUBTRACT),
     method_kwargs!(Time, format_iso, doc::TIME_FORMAT_ISO),
     classmethod1!(Time, parse_iso, doc::TIME_PARSE_ISO),
     classmethod1!(Time, from_py_time, doc::TIME_FROM_PY_TIME),

@@ -617,6 +617,114 @@ class TestRound:
             Time(12, 0).round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
 
 
+MAX = Time(23, 59, 59, nanosecond=999_999_999)
+
+
+class TestAdd:
+    def test_within_day_kwargs(self):
+        assert Time(11, 30).add(hours=1) == Time(12, 30)
+        assert Time(11, 30).add(minutes=45) == Time(12, 15)
+        assert Time(11, 30, 20).add(seconds=25) == Time(11, 30, 45)
+        assert Time(11, 30).add(
+            milliseconds=500, microseconds=250, nanoseconds=3
+        ) == Time(11, 30, 0, nanosecond=500_250_003)
+
+    def test_within_day_timedelta(self):
+        assert Time(11, 30).add(TimeDelta(hours=1, minutes=15)) == Time(12, 45)
+
+    def test_no_argument_is_noop(self):
+        assert Time(11, 30).add() == Time(11, 30)
+        assert Time(11, 30).add(overflow="wrap") == Time(11, 30)
+
+    def test_zero_delta(self):
+        assert Time(11, 30).add(hours=0) == Time(11, 30)
+        assert Time(11, 30).add(TimeDelta.ZERO) == Time(11, 30)
+
+    def test_default_overflow_raises(self):
+        with pytest.raises(ValueError, match="out of range"):
+            Time(23, 0).add(hours=2)
+        with pytest.raises(ValueError, match="out of range"):
+            Time(1, 0).add(hours=-2)
+        with pytest.raises(ValueError, match="out of range"):
+            Time(23, 0).add(TimeDelta(hours=2))
+
+    def test_exactly_midnight_still_raises(self):
+        # 23:00 + 1h lands exactly on the next midnight, which is out of range
+        with pytest.raises(ValueError, match="out of range"):
+            Time(23, 0).add(hours=1)
+
+    @pytest.mark.parametrize(
+        "start, kwargs, expect",
+        [
+            (Time(23, 0), dict(hours=2), Time(1, 0)),
+            (Time(23, 0), dict(hours=1), Time.MIDNIGHT),
+            (Time(1, 0), dict(hours=-2), Time(23, 0)),
+            (Time(0, 0), dict(nanoseconds=-1), MAX),
+            (Time(12, 0), dict(hours=48), Time(12, 0)),
+            (Time(12, 0), dict(hours=-48), Time(12, 0)),
+        ],
+    )
+    def test_wrap(self, start, kwargs, expect):
+        assert start.add(overflow="wrap", **kwargs) == expect
+
+    def test_cap(self):
+        assert Time(23, 0).add(hours=2, overflow="cap") == MAX
+        assert Time(23, 0).add(TimeDelta(hours=5), overflow="cap") == MAX
+        assert Time(1, 0).add(hours=-5, overflow="cap") == Time.MIDNIGHT
+        # a result that fits is unaffected by capping
+        assert Time(11, 30).add(hours=1, overflow="cap") == Time(12, 30)
+
+    def test_invalid_overflow(self):
+        with pytest.raises(ValueError, match="overflow"):
+            Time(1, 0).add(hours=1, overflow="nonsense")  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize("unit", ["days", "weeks", "months", "years"])
+    def test_rejects_non_subday_units(self, unit):
+        with pytest.raises(TypeError):
+            Time(1, 0).add(**{unit: 1})  # type: ignore[call-overload]
+
+    def test_cannot_mix_positional_and_keyword(self):
+        with pytest.raises(TypeError):
+            Time(1, 0).add(TimeDelta(hours=1), hours=2)  # type: ignore[call-overload]
+
+    def test_invalid_positional_type(self):
+        with pytest.raises(TypeError):
+            Time(1, 0).add("foo")  # type: ignore[call-overload]
+        with pytest.raises((TypeError, ValueError)):
+            Time(1, 0).add(Date(2020, 1, 1))  # type: ignore[call-overload]
+
+
+class TestSubtract:
+    def test_within_day(self):
+        assert Time(12, 30).subtract(hours=1) == Time(11, 30)
+        assert Time(12, 30).subtract(TimeDelta(minutes=45)) == Time(11, 45)
+
+    def test_default_overflow_raises(self):
+        with pytest.raises(ValueError, match="out of range"):
+            Time(1, 0).subtract(hours=2)
+        with pytest.raises(ValueError, match="out of range"):
+            Time(23, 0).subtract(hours=-2)
+
+    @pytest.mark.parametrize(
+        "start, kwargs, expect",
+        [
+            (Time(0, 30), dict(hours=1), Time(23, 30)),
+            (Time(0, 0), dict(nanoseconds=1), MAX),
+            (Time(23, 0), dict(hours=-2), Time(1, 0)),
+        ],
+    )
+    def test_wrap(self, start, kwargs, expect):
+        assert start.subtract(overflow="wrap", **kwargs) == expect
+
+    def test_cap(self):
+        assert Time(1, 0).subtract(hours=2, overflow="cap") == Time.MIDNIGHT
+        assert Time(23, 0).subtract(hours=-5, overflow="cap") == MAX
+
+    def test_add_subtract_roundtrip(self):
+        t = Time(8, 15, 30, nanosecond=123_456_789)
+        assert t.add(hours=3, minutes=20).subtract(hours=3, minutes=20) == t
+
+
 def test_pickling():
     t = Time(1, 2, 3, nanosecond=4_000)
     dumped = pickle.dumps(t)

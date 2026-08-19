@@ -1598,6 +1598,118 @@ class Time(_Base):
         seconds, ns = divmod(ns, 1_000_000_000)
         return cls._from_py_unchecked(_time(hours, minutes, seconds), ns)
 
+    if not TYPE_CHECKING:  # for a nicer autodoc
+
+        @overload
+        def add(
+            self,
+            delta: TimeDelta,
+            /,
+            *,
+            overflow: Literal["raise", "wrap", "cap"] = "raise",
+        ) -> Time: ...
+
+        @overload
+        def add(
+            self,
+            *,
+            hours: float = 0,
+            minutes: float = 0,
+            seconds: float = 0,
+            milliseconds: float = 0,
+            microseconds: float = 0,
+            nanoseconds: int = 0,
+            overflow: Literal["raise", "wrap", "cap"] = "raise",
+        ) -> Time: ...
+
+    @no_type_check
+    def add(self, *args, **kwargs) -> Time:
+        """Add a time amount to this time of day.
+
+        Since a :class:`Time` has no date, adding an amount that would move
+        past midnight (in either direction) is ambiguous. The ``overflow``
+        argument determines what happens in that case:
+
+        - ``"raise"`` (the default) raises :exc:`ValueError`
+        - ``"wrap"`` wraps around the clock, dropping the day rollover
+        - ``"cap"`` clamps the result to :attr:`MIN` or :attr:`MAX`
+
+        Only sub-day units (``hours`` down to ``nanoseconds``) are accepted as
+        keyword arguments, since a :class:`Time` has no date component.
+
+        >>> Time(11, 30).add(hours=1)
+        Time("12:30:00")
+        >>> Time(23, 0).add(hours=2, overflow="wrap")
+        Time("01:00:00")
+        >>> Time(23, 0).add(hours=2)
+        Traceback (most recent call last):
+          ...
+        ValueError: Resulting time is out of range
+        """
+        return self._shift(1, *args, **kwargs)
+
+    @no_type_check
+    def subtract(self, *args, **kwargs) -> Time:
+        """Subtract a time amount from this time of day.
+
+        Like :meth:`add`, but subtracting instead of adding. See :meth:`add`
+        for the meaning of the ``overflow`` argument.
+
+        >>> Time(12, 30).subtract(hours=1)
+        Time("11:30:00")
+        >>> Time(0, 30).subtract(hours=1, overflow="wrap")
+        Time("23:30:00")
+        """
+        return self._shift(-1, *args, **kwargs)
+
+    @no_type_check
+    def _shift(self, sign, arg=UNSET, /, *, overflow="raise", **kwargs):
+        if kwargs:
+            if arg is not UNSET:
+                raise TypeError("Cannot mix positional and keyword arguments")
+            return self._shift_kwargs(sign, overflow, **kwargs)
+        elif arg is not UNSET:
+            if not isinstance(arg, TimeDelta):
+                raise TypeError(f"argument must be a TimeDelta, got {arg!r}")
+            return self._shift_ns(sign * arg._total_ns, overflow)
+        else:
+            return self._shift_ns(0, overflow)
+
+    def _shift_kwargs(
+        self,
+        sign: int,
+        overflow: str,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+    ) -> Time:
+        delta_ns = sign * (
+            int(hours * 3_600_000_000_000)
+            + int(minutes * 60_000_000_000)
+            + int(seconds * 1_000_000_000)
+            + int(milliseconds * 1_000_000)
+            + int(microseconds * 1_000)
+            + nanoseconds
+        )
+        return self._shift_ns(delta_ns, overflow)
+
+    def _shift_ns(self, delta_ns: int, overflow: str) -> Time:
+        total = self._to_ns_since_midnight() + delta_ns
+        if overflow == "wrap":
+            total %= 86_400_000_000_000
+        elif overflow == "raise":
+            if not 0 <= total < 86_400_000_000_000:
+                raise ValueError("Resulting time is out of range")
+        elif overflow == "cap":
+            total = min(max(total, 0), 86_400_000_000_000 - 1)
+        else:
+            raise ValueError(f"Invalid value for overflow: {overflow!r}")
+        return Time._from_ns_since_midnight(total)
+
     def round(
         self,
         unit: (
