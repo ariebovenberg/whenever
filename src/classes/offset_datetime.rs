@@ -81,7 +81,11 @@ impl Offset {
     }
 }
 
-impl PyPayload for OffsetDateTime {}
+impl PyPayload for OffsetDateTime {
+    fn class(state: &State) -> PyClass<Self> {
+        *state.offset_datetime_type
+    }
+}
 
 fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {

@@ -134,7 +134,11 @@ fn from_utc(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyR
         .to_obj(cls)
 }
 
-impl PyPayload for Instant {}
+impl PyPayload for Instant {
+    fn class(state: &State) -> PyClass<Self> {
+        *state.instant_type
+    }
+}
 
 fn __repr__(_: PyType, i: Instant) -> PyReturn {
     let PlainDateTime { date, time } = i.to_utc_plain();

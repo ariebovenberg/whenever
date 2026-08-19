@@ -108,9 +108,14 @@ fn binary_call<'a, T: PyPayload>(
         return BinaryCall::OtherTypes;
     };
     if module_a.ptr_eq(module_b) {
-        // SAFETY: whenever binary slots never return NotImplemented for two extension types,
-        // so equal modules imply that the left operand is this slot's declared type.
+        // SAFETY: `state()` only requires the type to belong to our module—just verified—
+        // not that its instances actually embed `T`. No payload data is touched before
+        // the class check below rules out a mismatch.
         let cls: PyClass<T> = unsafe { type_a.assume_class() };
+        if !cls.as_type().ptr_eq(T::class(cls.state()).as_type()) {
+            return BinaryCall::OtherTypes;
+        }
+        // SAFETY: the left operand's type is this slot's declared class.
         let slf = unsafe { PyRef::from_obj_unchecked(a) };
         BinaryCall::ExtTypes { cls, slf, other: b }
     } else {
@@ -272,6 +277,9 @@ impl<T: PyPayload> From<PyClass<T>> for PyType {
 
 /// A trait for Rust structs that can be embedded in a Python heap object.
 pub(crate) trait PyPayload: Sized {
+    /// The class in this module whose instances embed `Self`.
+    fn class(state: &State) -> PyClass<Self>;
+
     /// Allocate a new Python object wrapping this data.
     #[inline]
     fn to_obj(self, cls: PyClass<Self>) -> PyReturn {

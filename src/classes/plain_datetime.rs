@@ -77,7 +77,11 @@ impl PlainDateTime {
     }
 }
 
-impl PyPayload for PlainDateTime {}
+impl PyPayload for PlainDateTime {
+    fn class(state: &State) -> PyClass<Self> {
+        *state.plain_datetime_type
+    }
+}
 
 #[inline(never)]
 fn __new__(cls: PyClass<PlainDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
