@@ -202,7 +202,11 @@ impl PlainDateTime {
     }
 }
 
-impl PyPayload for ZonedDateTime {}
+impl PyPayload for ZonedDateTime {
+    fn class(state: &State) -> PyClass<Self> {
+        *state.zoned_datetime_type
+    }
+}
 
 impl Instant {
     /// Convert an instant to a zoned datetime, ready to be returned to Python.

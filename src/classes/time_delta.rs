@@ -58,7 +58,11 @@ impl TimeDelta {
     }
 }
 
-impl PyPayload for TimeDelta {}
+impl PyPayload for TimeDelta {
+    fn class(state: &State) -> PyClass<Self> {
+        *state.time_delta_type
+    }
+}
 
 pub(crate) const MAX_SECS: u64 = (Year::MAX.get() as u64) * 366 * 24 * S_PER_HOUR as u64;
 pub(crate) const MAX_HOURS: u64 = MAX_SECS / S_PER_HOUR as u64;
