@@ -77,14 +77,12 @@ impl PyObj {
     /// Downcast to a specific type *exactly*. Cannot be used for heap types,
     /// use `extract` instead.
     pub(crate) fn cast_exact<T: PyStaticType>(self) -> Option<T> {
-        T::isinstance_exact(self)
-            .then_some(unsafe { T::from_ptr_unchecked(self.as_py_obj().inner.as_ptr()) })
+        T::isinstance_exact(self).then_some(unsafe { T::from_ptr_unchecked(self.as_ptr()) })
     }
 
     /// Like `cast`, but allows subclasses.
     pub(crate) fn cast_allow_subclass<T: PyStaticType>(self) -> Option<T> {
-        T::isinstance(self)
-            .then_some(unsafe { T::from_ptr_unchecked(self.as_py_obj().inner.as_ptr()) })
+        T::isinstance(self).then_some(unsafe { T::from_ptr_unchecked(self.as_ptr()) })
     }
 
     /// Like `cast`, but does not check the type.
@@ -127,9 +125,8 @@ impl FromPy for PyObj {
             !ptr.is_null(),
             "from_ptr_unchecked called with null pointer"
         );
-        Self {
-            inner: unsafe { NonNull::new_unchecked(ptr) },
-        }
+        // SAFETY: caller guarantees `ptr` is non-null.
+        Self::new(unsafe { NonNull::new_unchecked(ptr) })
     }
 }
 
