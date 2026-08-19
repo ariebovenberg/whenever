@@ -620,7 +620,7 @@ class Date(_Base):
         >>> Date(2021, 1, 2).next_day()
         Date("2021-01-03")
         """
-        return Date._from_py_unchecked(self._py_date + _timedelta(days=1))
+        return self._add_days(1)
 
     def prev_day(self) -> Date:
         """The date immediately preceding
@@ -628,7 +628,7 @@ class Date(_Base):
         >>> Date(2021, 1, 2).prev_day()
         Date("2021-01-01")
         """
-        return Date._from_py_unchecked(self._py_date - _timedelta(days=1))
+        return self._add_days(-1)
 
     def start_of(
         self, unit: Literal["year", "month", "week_mon", "week_sun"], /
@@ -981,9 +981,8 @@ class Date(_Base):
         weeks: int = 0,
         days: int = 0,
     ) -> Date:
-        return Date._from_py_unchecked(
-            self._add_months(sign * (years * 12 + months))._py_date
-            + _timedelta(weeks * 7 + days) * sign
+        return self._add_months(sign * (years * 12 + months))._add_days(
+            (weeks * 7 + days) * sign
         )
 
     @overload
@@ -1160,7 +1159,11 @@ class Date(_Base):
         )
 
     def _add_days(self, days: int) -> Date:
-        return Date._from_py_unchecked(self._py_date + _timedelta(days))
+        try:
+            shifted = self._py_date + _timedelta(days)
+        except OverflowError:
+            raise ValueError("Instant out of range") from None
+        return Date._from_py_unchecked(shifted)
 
     __str__ = format_iso
 
@@ -2764,15 +2767,17 @@ class _ExactTime(_BasicConversions):
 
         If no offset is given, the offset is taken from the original datetime.
         """
-        return OffsetDateTime._from_py_unchecked(
-            self._py_dt.astimezone(
-                # mypy doesn't know that offset is never None
-                _timezone(self._py_dt.utcoffset())  # type: ignore[arg-type]
-                if offset is UNSET
-                else _load_offset(offset, warning_stacklevel=3)
-            ),
-            self._nanos,
+        tzinfo = (
+            # mypy doesn't know that offset is never None
+            _timezone(self._py_dt.utcoffset())  # type: ignore[arg-type]
+            if offset is UNSET
+            else _load_offset(offset, warning_stacklevel=3)
         )
+        try:
+            shifted = self._py_dt.astimezone(tzinfo)
+        except OverflowError:
+            raise ValueError("Instant out of range") from None
+        return OffsetDateTime._from_py_unchecked(shifted, self._nanos)
 
     def to_tz(self, tz: str | _SystemTZ, /) -> ZonedDateTime:
         """Convert to a ZonedDateTime that represents the same moment in time.
@@ -3427,10 +3432,11 @@ class Instant(_ExactTime):
         if abs(delta_ns) > _MAX_DELTA_NANOS:
             raise ValueError("TimeDelta out of range")
         delta_secs, nanos = divmod(self._nanos + delta_ns, 1_000_000_000)
-        return self._from_py_unchecked(
-            self._py_dt + _timedelta(seconds=delta_secs),
-            nanos,
-        )
+        try:
+            shifted = self._py_dt + _timedelta(seconds=delta_secs)
+        except OverflowError:
+            raise ValueError("Instant out of range") from None
+        return self._from_py_unchecked(shifted, nanos)
 
     def round(
         self,
@@ -3478,12 +3484,12 @@ class Instant(_ExactTime):
             mode,
             86_400_000_000_000,
         )
+        try:
+            rounded_date = self._py_dt.date() + _timedelta(days=next_day)
+        except OverflowError:
+            raise ValueError("Instant out of range") from None
         return self._from_py_unchecked(
-            _datetime.combine(
-                self._py_dt.date() + _timedelta(days=next_day),
-                rounded_time._py,
-                tzinfo=_UTC,
-            ),
+            _datetime.combine(rounded_date, rounded_time._py, tzinfo=_UTC),
             rounded_time._nanos,
         )
 
@@ -4469,7 +4475,8 @@ class OffsetDateTime(_ExactAndLocalTime):
                 basic=False,
             )
             raise InvalidOffsetError(
-                f"Offset mismatch: timezone {tz!r} has offset {offset_actual}, "
+                f"Offset mismatch: timezone '{result.tz_id or '(unknown)'}' "
+                f"has offset {offset_actual}, "
                 f"but offset {offset_expected} was expected"
             )
         else:  # offset_mismatch == "keep_local":
@@ -5045,7 +5052,12 @@ class ZonedDateTime(_ExactAndLocalTime):
                 expected_offset = tz.offset_for_instant(
                     int(parsed.timestamp())
                 )
-                resolved = parsed.astimezone(mk_fixed_tzinfo(expected_offset))
+                try:
+                    resolved = parsed.astimezone(
+                        mk_fixed_tzinfo(expected_offset)
+                    )
+                except OverflowError:
+                    raise ValueError("Instant out of range") from None
             else:
                 resolved = _resolve_disambiguation(
                     dt,
@@ -5752,8 +5764,12 @@ class ZonedDateTime(_ExactAndLocalTime):
             self._tz,
             "compatible",
         )
+        try:
+            next_midnight_naive = midnight_naive + _timedelta(days=1)
+        except OverflowError:
+            raise ValueError("Instant out of range") from None
         next_midnight = resolve_ambiguity(
-            midnight_naive + _timedelta(days=1),
+            next_midnight_naive,
             self._tz,
             "compatible",
         )
@@ -6100,7 +6116,7 @@ class PlainDateTime(_LocalTime):
     >>> dt = PlainDateTime(2024, 3, 10, 15, 30)
     >>> dt.assume_tz("Europe/Amsterdam")
     ZonedDateTime("2024-03-10 15:30:00+01:00[Europe/Amsterdam]")
-    >>> dt.assume_fixed_offset(5)
+    >>> dt.assume_fixed_offset(hours(5))
     OffsetDateTime("2024-03-10 15:30:00+05:00")
 
     When to use this type:
@@ -6784,7 +6800,7 @@ class PlainDateTime(_LocalTime):
     ) -> OffsetDateTime:
         """Assume the datetime has the given offset, creating an ``OffsetDateTime``.
 
-        >>> PlainDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(+2)
+        >>> PlainDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(hours(2))
         OffsetDateTime("2020-08-15 23:12:00+02:00")
         """
         return OffsetDateTime._from_py_unchecked(
@@ -7213,9 +7229,12 @@ DAYS_NOT_ALWAYS_24H_MSG = (
 
 
 def _to_tz(dt: _datetime, tz: TimeZone) -> _datetime:
-    return dt.astimezone(
-        mk_fixed_tzinfo(tz.offset_for_instant(int(dt.timestamp())))
-    )
+    try:
+        return dt.astimezone(
+            mk_fixed_tzinfo(tz.offset_for_instant(int(dt.timestamp())))
+        )
+    except OverflowError:
+        raise ValueError("Instant out of range") from None
 
 
 _MAX_ORDINAL = _date.max.toordinal()

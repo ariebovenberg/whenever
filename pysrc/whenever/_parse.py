@@ -189,11 +189,13 @@ def zdt_from_iso(
     if offset is None:
         dt = resolve_local(local, tz, disambiguation)
     elif offset == "Z":
-        dt = local.replace(tzinfo=UTC)
-        # Raise an exception if instant is out of range
-        dt.astimezone(UTC)
+        # Raises if the instant is out of range
+        dt = check_utc_bounds(local.replace(tzinfo=UTC))
         expected_offset = tz.offset_for_instant(int(dt.timestamp()))
-        dt = dt.astimezone(mk_fixed_tzinfo(expected_offset))
+        try:
+            dt = dt.astimezone(mk_fixed_tzinfo(expected_offset))
+        except OverflowError:
+            raise ValueError("Instant out of range") from None
     else:
         assert isinstance(offset, _timezone)
         parsed_offset = int(offset.utcoffset(None).total_seconds())
@@ -203,12 +205,14 @@ def zdt_from_iso(
         if matching is not None:
             dt = matching
         elif offset_mismatch == "raise":
-            raise InvalidOffsetError()
+            raise InvalidOffsetError(f"invalid offset for {tzid}")
         elif offset_mismatch == "keep_instant":
-            dt = local.replace(tzinfo=offset)
-            dt.astimezone(UTC)
+            dt = check_utc_bounds(local.replace(tzinfo=offset))
             expected_offset = tz.offset_for_instant(int(dt.timestamp()))
-            dt = dt.astimezone(mk_fixed_tzinfo(expected_offset))
+            try:
+                dt = dt.astimezone(mk_fixed_tzinfo(expected_offset))
+            except OverflowError:
+                raise ValueError("Instant out of range") from None
         else:
             dt = resolve_local(local, tz, disambiguation)
 

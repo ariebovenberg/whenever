@@ -372,7 +372,7 @@ Convert to an exact time type by supplying a timezone or offset:
 >>> dt = PlainDateTime(2024, 3, 10, 15, 30)
 >>> dt.assume_tz(\"Europe/Amsterdam\")
 ZonedDateTime(\"2024-03-10 15:30:00+01:00[Europe/Amsterdam]\")
->>> dt.assume_fixed_offset(5)
+>>> dt.assume_fixed_offset(hours(5))
 OffsetDateTime(\"2024-03-10 15:30:00+05:00\")
 
 When to use this type:
@@ -1575,7 +1575,7 @@ Python's standard warning filters also apply.
 pub(crate) const PLAINDATETIME_ASSUME_FIXED_OFFSET: &CStr = c"\
 Assume the datetime has the given offset, creating an ``OffsetDateTime``.
 
->>> PlainDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(+2)
+>>> PlainDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(hours(2))
 OffsetDateTime(\"2020-08-15 23:12:00+02:00\")
 ";
 pub(crate) const PLAINDATETIME_ASSUME_SYSTEM_TZ: &CStr = c"\
