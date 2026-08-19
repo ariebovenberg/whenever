@@ -47,9 +47,9 @@ impl RenamedKeyword {
 pub(crate) fn parse_pattern_keyword(kwargs: &mut IterKwargs, state: &State) -> PyResult<PyObj> {
     let mut value = RenamedKeyword::default();
     handle_kwargs("parse", kwargs, |k, v, eq| {
-        if eq(k, *state.str_pattern) {
+        if eq(k, *state.strs.pattern) {
             value.set_new(v);
-        } else if eq(k, *state.str_format) {
+        } else if eq(k, *state.strs.format) {
             value.set_old(v);
         } else {
             return Ok(false);

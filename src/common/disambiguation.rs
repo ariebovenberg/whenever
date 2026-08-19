@@ -15,9 +15,9 @@ impl DisambiguationArg {
     }
 
     pub(crate) fn handle_kwarg(&mut self, k: PyObj, v: PyObj, eq: StrEqFn, state: &State) -> bool {
-        if eq(k, *state.str_disambiguation) {
+        if eq(k, *state.strs.disambiguation) {
             self.set_new(v);
-        } else if eq(k, *state.str_disambiguate) {
+        } else if eq(k, *state.strs.disambiguate) {
             self.set_old(v);
         } else {
             return false;
@@ -58,10 +58,10 @@ impl Disambiguation {
             "disambiguation",
             obj,
             &[
-                (*state.str_compatible, Disambiguation::Compatible),
-                (*state.str_raise, Disambiguation::Reject),
-                (*state.str_earlier, Disambiguation::Earlier),
-                (*state.str_later, Disambiguation::Later),
+                (*state.strs.compatible, Disambiguation::Compatible),
+                (*state.strs.raise, Disambiguation::Reject),
+                (*state.strs.earlier, Disambiguation::Earlier),
+                (*state.strs.later, Disambiguation::Later),
             ],
         )
     }

@@ -21,9 +21,9 @@ impl TimeBoundaryUnit {
         find_interned_by(
             obj,
             &[
-                (*state.str_hour, Self::Hour),
-                (*state.str_minute, Self::Minute),
-                (*state.str_second, Self::Second),
+                (*state.strs.hour, Self::Hour),
+                (*state.strs.minute, Self::Minute),
+                (*state.strs.second, Self::Second),
             ],
             eq,
         )
@@ -264,13 +264,13 @@ fn replace(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwarg
     let mut second = slf.second.into();
     let mut nanos = slf.subsec.get() as _;
     handle_kwargs("replace", kwargs, |k, v, eq| {
-        if eq(k, *state.str_hour) {
+        if eq(k, *state.strs.hour) {
             hour = v.expect_int("hour")?.to_i64()?;
-        } else if eq(k, *state.str_minute) {
+        } else if eq(k, *state.strs.minute) {
             minute = v.expect_int("minute")?.to_i64()?;
-        } else if eq(k, *state.str_second) {
+        } else if eq(k, *state.strs.second) {
             second = v.expect_int("second")?.to_i64()?;
-        } else if eq(k, *state.str_nanosecond) {
+        } else if eq(k, *state.strs.nanosecond) {
             nanos = v.expect_int("nanosecond")?.to_i64()?;
         } else {
             return Ok(false);

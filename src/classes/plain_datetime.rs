@@ -42,11 +42,11 @@ impl DateTimeBoundaryUnit {
             Some(Ok(
                 if let Some(unit) = date::DateBoundaryUnit::match_interned(v, state, eq) {
                     Self::Date(unit)
-                } else if eq(v, *state.str_day) {
+                } else if eq(v, *state.strs.day) {
                     Self::Day
                 } else if let Some(unit) = time::TimeBoundaryUnit::match_interned(v, state, eq) {
                     Self::Time(unit)
-                } else if eq(v, *state.str_week) {
+                } else if eq(v, *state.strs.week) {
                     return Some(raise_value_err(
                         "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
                     ));
@@ -292,19 +292,19 @@ impl DateTimeComponents {
         state: &State,
         eq: StrEqFn,
     ) -> PyResult<bool> {
-        if eq(key, *state.str_year) {
+        if eq(key, *state.strs.year) {
             self.year = value.expect_int("year")?.to_i64()?;
-        } else if eq(key, *state.str_month) {
+        } else if eq(key, *state.strs.month) {
             self.month = value.expect_int("month")?.to_i64()?;
-        } else if eq(key, *state.str_day) {
+        } else if eq(key, *state.strs.day) {
             self.day = value.expect_int("day")?.to_i64()?;
-        } else if eq(key, *state.str_hour) {
+        } else if eq(key, *state.strs.hour) {
             self.hour = value.expect_int("hour")?.to_i64()?;
-        } else if eq(key, *state.str_minute) {
+        } else if eq(key, *state.strs.minute) {
             self.minute = value.expect_int("minute")?.to_i64()?;
-        } else if eq(key, *state.str_second) {
+        } else if eq(key, *state.strs.second) {
             self.second = value.expect_int("second")?.to_i64()?;
-        } else if eq(key, *state.str_nanosecond) {
+        } else if eq(key, *state.strs.nanosecond) {
             self.nanosecond = value.expect_int("nanosecond")?.to_i64()?;
         } else {
             return Ok(false);
@@ -370,7 +370,7 @@ fn shift_method(
     let shift = match handle_opt_arg(fname, args)? {
         Some(arg) => {
             for (key, value) in kwargs.by_ref() {
-                if unicode_eq(key, *state.str_naive_arithmetic_ok) {
+                if unicode_eq(key, *state.strs.naive_arithmetic_ok) {
                     suppress_unaware = value.is_truthy()?;
                 } else {
                     raise_mixed_args(fname)?;
@@ -379,7 +379,7 @@ fn shift_method(
             parse_datetime_shift_arg(fname, arg, state)?
         }
         None => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
-            if eq(k, *state.str_naive_arithmetic_ok) {
+            if eq(k, *state.strs.naive_arithmetic_ok) {
                 suppress_unaware = v.is_truthy()?;
                 Ok(true)
             } else {
@@ -409,7 +409,7 @@ fn difference(
     let state = cls.state();
     let mut suppress_unaware = false;
     for (key, value) in kwargs.by_ref() {
-        if unicode_eq(key, *state.str_naive_arithmetic_ok) {
+        if unicode_eq(key, *state.strs.naive_arithmetic_ok) {
             suppress_unaware = value.is_truthy()?;
         } else {
             raise_unexpected_kwarg("difference", key)?;
@@ -523,7 +523,7 @@ fn assume_system_tz(
     )?;
     handle_no_args("assume_system_tz", args)?;
 
-    let dis = handle_one_kwarg("assume_system_tz", *state.str_disambiguate, kwargs)?
+    let dis = handle_one_kwarg("assume_system_tz", *state.strs.disambiguate, kwargs)?
         .map(|value| Disambiguation::from_py(value, state))
         .transpose()?
         .unwrap_or(Disambiguation::Compatible);
@@ -581,7 +581,7 @@ fn plain_since(
 
     let mut suppress_unaware = false;
     let since_kwargs = DifferenceSpec::parse_with(fname, kwargs, state, |key, value, eq| {
-        if eq(key, *state.str_naive_arithmetic_ok) {
+        if eq(key, *state.strs.naive_arithmetic_ok) {
             suppress_unaware = value.is_truthy()?;
             Ok(true)
         } else {

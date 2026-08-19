@@ -76,10 +76,10 @@ impl DateBoundaryUnit {
         find_interned_by(
             obj,
             &[
-                (*state.str_year, Self::Year),
-                (*state.str_month, Self::Month),
-                (*state.str_week_mon, Self::WeekMon),
-                (*state.str_week_sun, Self::WeekSun),
+                (*state.strs.year, Self::Year),
+                (*state.strs.month, Self::Month),
+                (*state.strs.week_mon, Self::WeekMon),
+                (*state.strs.week_sun, Self::WeekSun),
             ],
             eq,
         )
@@ -89,7 +89,7 @@ impl DateBoundaryUnit {
         find_interned_with(obj, |v, eq| {
             Some(Ok(if let Some(unit) = Self::match_interned(v, state, eq) {
                 unit
-            } else if eq(v, *state.str_week) {
+            } else if eq(v, *state.strs.week) {
                 return Some(raise_value_err(
                     "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
                 ));
@@ -413,25 +413,24 @@ fn since_inner(
     let mut round_increment = difference::CalendarIncrement::MIN;
     let mut round_was_set = false;
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, *state.str_total) {
+        if eq(key, *state.strs.total) {
             if units.is_some() {
                 return raise_type_err("cannot specify both 'total' and 'in_units'");
             }
             units = Some(DateDifferenceUnits::Total(CalendarUnit::from_py(
                 value, state,
             )?));
-        } else if eq(key, *state.str_in_units) {
+        } else if eq(key, *state.strs.in_units) {
             if units.is_some() {
                 return raise_type_err("cannot specify both 'total' and 'in_units'");
             }
             units = Some(DateDifferenceUnits::InUnits(CalendarUnitSet::from_py(
                 value, state,
             )?));
-        } else if eq(key, *state.str_round_mode) {
-            round_mode =
-                round::Mode::from_py_named("round_mode", value, &state.round_mode_strs)?.into();
+        } else if eq(key, *state.strs.round_mode) {
+            round_mode = round::Mode::from_py_named("round_mode", value, &state.strs)?.into();
             round_was_set = true;
-        } else if eq(key, *state.str_round_increment) {
+        } else if eq(key, *state.strs.round_increment) {
             round_increment = CalendarIncrement::from_py(value)?;
             round_was_set = true;
         } else {
@@ -509,11 +508,11 @@ fn replace(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwarg
     let mut month = slf.month.get().into();
     let mut day = slf.day.into();
     handle_kwargs("replace", kwargs, |k, v, eq| {
-        if eq(k, *state.str_year) {
+        if eq(k, *state.strs.year) {
             year = v.expect_int("year")?.to_i64()?;
-        } else if eq(k, *state.str_month) {
+        } else if eq(k, *state.strs.month) {
             month = v.expect_int("month")?.to_i64()?;
-        } else if eq(k, *state.str_day) {
+        } else if eq(k, *state.strs.day) {
             day = v.expect_int("day")?.to_i64()?;
         } else {
             return Ok(false);
