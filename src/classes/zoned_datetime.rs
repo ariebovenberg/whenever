@@ -300,16 +300,6 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
         .into_zoned_obj_unchecked(tz, cls)
 }
 
-extern "C" fn dealloc(arg: PyObj) {
-    // SAFETY: in dealloc we have exclusive access. We must drop the Arc<TimeZone>
-    // before freeing the memory, since generic_dealloc won't run Rust destructors.
-    unsafe {
-        let ptr = &raw mut (*(arg.as_ptr() as *mut PyObjectLayout<ZonedDateTime>)).data;
-        std::ptr::drop_in_place(ptr);
-    }
-    generic_dealloc(arg)
-}
-
 fn __repr__(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     let ZonedDateTime {
         date,
@@ -448,7 +438,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
-        pfunc: dealloc as *mut c_void,
+        pfunc: generic_dealloc::<ZonedDateTime> as *mut c_void,
     },
     PyType_Slot {
         slot: 0,

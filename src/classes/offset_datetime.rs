@@ -239,7 +239,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
-        pfunc: generic_dealloc as *mut c_void,
+        pfunc: generic_dealloc::<OffsetDateTime> as *mut c_void,
     },
     PyType_Slot {
         slot: 0,
