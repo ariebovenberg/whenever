@@ -290,7 +290,7 @@ fn timestamp(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     handle_no_args("timestamp", args)?;
-    let unit = handle_one_kwarg("timestamp", *cls.state().str_unit, kwargs)?
+    let unit = handle_one_kwarg("timestamp", *cls.state().strs.unit, kwargs)?
         .map(|value| TimestampUnit::from_py(value, cls.state()))
         .transpose()?
         .unwrap_or(TimestampUnit::Second);
@@ -317,7 +317,7 @@ fn timestamp_nanos(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
 
 fn from_timestamp(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let value = handle_one_arg("from_timestamp", args)?;
-    let unit = handle_one_kwarg("from_timestamp", *cls.state().str_unit, kwargs)?
+    let unit = handle_one_kwarg("from_timestamp", *cls.state().strs.unit, kwargs)?
         .map(|value| TimestampUnit::from_py(value, cls.state()))
         .transpose()?
         .unwrap_or(TimestampUnit::Second);

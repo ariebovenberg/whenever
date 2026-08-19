@@ -67,13 +67,13 @@ pub(crate) fn parse_precision(obj: PyObj, state: &State) -> PyResult<Precision> 
         "unit",
         obj,
         &[
-            (*state.str_millisecond, Precision::Millisecond),
-            (*state.str_hour, Precision::Hour),
-            (*state.str_minute, Precision::Minute),
-            (*state.str_second, Precision::Second),
-            (*state.str_microsecond, Precision::Microsecond),
-            (*state.str_nanosecond, Precision::Nanosecond),
-            (*state.str_auto, Precision::Auto),
+            (*state.strs.millisecond, Precision::Millisecond),
+            (*state.strs.hour, Precision::Hour),
+            (*state.strs.minute, Precision::Minute),
+            (*state.strs.second, Precision::Second),
+            (*state.strs.microsecond, Precision::Microsecond),
+            (*state.strs.nanosecond, Precision::Nanosecond),
+            (*state.strs.auto, Precision::Auto),
         ],
     )
 }
@@ -87,7 +87,7 @@ pub(crate) fn format_date_iso(
     handle_no_args("format_iso", args)?;
     let mut basic = false;
     handle_kwargs("format_iso", kwargs, |k, v, eq| {
-        if eq(k, *state.str_basic) {
+        if eq(k, *state.strs.basic) {
             basic = v.expect_bool("basic")?;
         } else {
             return Ok(false);
@@ -107,9 +107,9 @@ pub(crate) fn format_time_iso(
     let mut unit = Precision::Auto;
     let mut basic = false;
     handle_kwargs("format_iso", kwargs, |k, v, eq| {
-        if eq(k, *state.str_unit) {
+        if eq(k, *state.strs.unit) {
             unit = parse_precision(v, state)?;
-        } else if eq(k, *state.str_basic) {
+        } else if eq(k, *state.strs.basic) {
             basic = v.expect_bool("basic")?;
         } else {
             return Ok(false);
@@ -135,15 +135,19 @@ pub(crate) fn format_datetime_iso(
     let mut basic = false;
     let mut display_arg = RenamedKeyword::default();
     handle_kwargs("format_iso", kwargs, |k, v, eq| {
-        if eq(k, *state.str_sep) {
-            sep = match_interned_str("sep", v, &[(*state.str_space, b' '), (*state.str_t, b'T')])?;
-        } else if eq(k, *state.str_unit) {
+        if eq(k, *state.strs.sep) {
+            sep = match_interned_str(
+                "sep",
+                v,
+                &[(*state.strs.space, b' '), (*state.strs.t, b'T')],
+            )?;
+        } else if eq(k, *state.strs.unit) {
             unit = parse_precision(v, state)?;
-        } else if eq(k, *state.str_basic) {
+        } else if eq(k, *state.strs.basic) {
             basic = v.expect_bool("basic")?;
-        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.str_tz_id_display) {
+        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.strs.tz_id_display) {
             display_arg.set_new(v);
-        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.str_tz) {
+        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.strs.tz) {
             display_arg.set_old(v);
         } else {
             return Ok(false);
@@ -165,10 +169,10 @@ pub(crate) fn format_datetime_iso(
                 "tz_id_display",
                 v,
                 &[
-                    (*state.str_auto, (TzDisplay::Auto, false)),
-                    (*state.str_never, (TzDisplay::Never, false)),
-                    (*state.str_required, (TzDisplay::Required, false)),
-                    (*state.str_always, (TzDisplay::Required, true)),
+                    (*state.strs.auto, (TzDisplay::Auto, false)),
+                    (*state.strs.never, (TzDisplay::Never, false)),
+                    (*state.strs.required, (TzDisplay::Required, false)),
+                    (*state.strs.always, (TzDisplay::Required, true)),
                 ],
             )
         })
