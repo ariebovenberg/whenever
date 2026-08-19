@@ -2,9 +2,11 @@ import os
 import warnings
 from contextlib import contextmanager
 from pathlib import Path
+from sys import _getframe
 from typing import Literal
 from unittest.mock import patch
 
+import pytest
 from whenever import (
     SYSTEM_TZ,
     PlainDateTime,
@@ -48,6 +50,32 @@ INVALID_DDELTAS = [
     "P8",
     "P8M3",
 ]
+
+
+@contextmanager
+def warns_here(warning_class):
+    """Like ``pytest.warns``, but also assert the warning points at this very
+    ``with`` block instead of at whenever's own internals.
+
+    ``pytest.warns`` matches only the category and the message, so it happily
+    accepts a warning whose ``stacklevel`` is off—even though the file and line
+    are the only part a user actually sees. Use this wherever the call site
+    attribution matters, i.e. nearly everywhere::
+
+        with warns_here(ImplicitDisambiguationWarning):
+            ZonedDateTime(2023, 10, 29, 2, 30, tz="Europe/Amsterdam")
+
+    Must be used directly in a test function: 2 frames up is this generator,
+    then contextlib's __enter__, then the caller.
+    """
+    caller_file = _getframe(2).f_code.co_filename
+    with pytest.warns(warning_class) as caught:
+        yield caught
+    for w in caught:
+        assert w.filename == caller_file, (
+            f"{warning_class.__name__} has a wrong stacklevel: it points at "
+            f"{w.filename}:{w.lineno}, not at the caller in {caller_file}"
+        )
 
 
 @contextmanager

@@ -7,6 +7,8 @@ import pytest
 import whenever as w
 from whenever import _pywhenever as py
 
+from .common import warns_here
+
 _ReduceResult = tuple[Callable[..., object], tuple[object, ...]]
 
 
@@ -205,13 +207,12 @@ def test_rust_unpicklers_require_exact_bytes(
 
 
 def test_zoned_pickle_reconciles_changed_offset_rules():
-    with pytest.warns(w.PickleOffsetMismatchWarning) as caught:
+    with warns_here(w.PickleOffsetMismatchWarning) as caught:
         value = getattr(w, "_unpkl_zoned")(
             struct.pack("<HBBBBBil", 2023, 7, 1, 12, 0, 0, 0, 3_600),
             "Europe/Amsterdam",
         )
 
-    assert caught[0].filename == __file__
     assert value.to_instant() == w.Instant.from_utc(2023, 7, 1, 11)
     assert value.to_plain() == w.PlainDateTime(2023, 7, 1, 13)
     assert value.offset == w.TimeDelta(hours=2)

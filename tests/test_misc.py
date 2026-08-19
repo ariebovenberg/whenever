@@ -36,7 +36,7 @@ from whenever import (
 )
 from whenever._tz.system import _tzid_from_path, get_tz
 
-from .common import system_tz_ams
+from .common import system_tz_ams, warns_here
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore::whenever.WheneverDeprecationWarning"
@@ -92,9 +92,8 @@ def test_itemized_delta_datetime_operators(dt, delta, expected):
 @pytest.mark.parametrize("delta", [ItemizedDelta(hours=1), hours(1)])
 def test_datetime_operator_warning_location(operation, delta):
     dt = PlainDateTime(2021, 1, 31)
-    with pytest.warns(Warning) as caught:
+    with warns_here(Warning):
         operation(dt, delta)
-    assert all("_ideltas.py" not in warning.filename for warning in caught)
 
 
 @pytest.mark.parametrize(

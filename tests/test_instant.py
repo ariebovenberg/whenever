@@ -31,6 +31,7 @@ from .common import (
     suppress,
     system_tz_ams,
     system_tz_nyc,
+    warns_here,
 )
 from .test_offset_datetime import (
     INVALID_ISO_STRINGS,
@@ -726,9 +727,9 @@ class TestAddMethod:
 
     def test_days_weeks(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             assert d.add(days=1) == d + hours(24)
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             assert d.add(weeks=1) == d + hours(24 * 7)
         # suppressed
         assert d.add(days=1, days_assumed_24h_ok=True) == d + hours(24)
@@ -777,7 +778,7 @@ class TestSubtractMethod:
 
     def test_days_weeks(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             assert d.subtract(days=1) == d - hours(24)
         # suppressed
         assert d.subtract(days=1, days_assumed_24h_ok=True) == d - hours(24)

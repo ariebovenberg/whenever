@@ -30,6 +30,7 @@ from .common import (
     AlwaysSmaller,
     NeverEqual,
     suppress,
+    warns_here,
 )
 
 MAX_HOURS = 9999 * 366 * 24
@@ -172,12 +173,12 @@ class TestInit:
         )
 
     def test_weeks_and_days(self):
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             week = TimeDelta(weeks=1)
 
         assert week == TimeDelta(hours=7 * 24)
 
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             day = TimeDelta(days=1)
 
         assert day == hours(24)
@@ -288,7 +289,7 @@ class TestTotal:
     def test_days_and_weeks(self):
         d = TimeDelta(hours=1, minutes=2, seconds=0.003, nanoseconds=4)
 
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             assert d.total("days") == approx(d.total("hours") / 24)
 
         # Silencing the warnings
@@ -352,7 +353,7 @@ class TestTotal:
     def test_weeks(self):
         d = hours(2000)
 
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             assert d.total("weeks") == approx(d.total("hours") / (24 * 7))
 
         # Silencing the warnings
@@ -563,7 +564,7 @@ class TestTotal:
     def test_relative_to_plain_datetime(self):
         td = hours(360)  # 15 days
         pdt = PlainDateTime(2023, 3, 1, 2)
-        with pytest.warns(NaiveArithmeticWarning):
+        with warns_here(NaiveArithmeticWarning):
             result = td.total("months", relative_to=pdt)
         assert result == approx(15 / 31)
 
@@ -592,7 +593,7 @@ class TestTotal:
         # the *local* datetime (offset stripped) is used as the calendar anchor.
         td = hours(360)  # 15 days
         odt = OffsetDateTime(2023, 3, 1, 2, offset=hours(5))
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             result = td.total("months", relative_to=odt)
         # same reference date as PlainDateTime(2023, 3, 1, 2)
         assert result == approx(15 / 31)
@@ -866,10 +867,10 @@ class TestAddSubtract:
 
     def test_days_and_weeks(self):
         d = TimeDelta(seconds=1.5)
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             assert d.add(weeks=4) == d.add(hours=4 * 7 * 24)
 
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             assert d.add(days=-9) == d.add(hours=-9 * 24)
 
     def test_out_of_range(self):
@@ -1357,10 +1358,10 @@ class TestRound:
 
     def test_24h_day_warning(self):
         t = TimeDelta.ZERO
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             t.round("day")
 
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             t.round("week")
 
     def test_extremes(self):
@@ -1720,10 +1721,10 @@ class TestInUnits:
 
     def test_24h_days_warning(self):
         d = hours(49)
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             d.in_units(["days", "hours"])
 
-        with pytest.warns(DaysAssumed24HoursWarning):
+        with warns_here(DaysAssumed24HoursWarning):
             d.in_units(["weeks", "hours"])
 
         # test warnings suppression
@@ -1771,7 +1772,7 @@ class TestInUnits:
         # 140 days from 2024-02-29 = 4 months + 20 days
         d = hours(3360)
         ref = PlainDateTime(2024, 2, 29, 12, 1)
-        with pytest.warns(NaiveArithmeticWarning):
+        with warns_here(NaiveArithmeticWarning):
             result = d.in_units(["months", "days"], relative_to=ref)
         assert result["months"] == 4
 
@@ -1779,7 +1780,7 @@ class TestInUnits:
         # Same arithmetic as plain, but uses OffsetDateTime
         d = hours(3360)
         ref = OffsetDateTime(2024, 2, 29, 12, 1, offset=hours(2))
-        with pytest.warns(StaleOffsetWarning):
+        with warns_here(StaleOffsetWarning):
             result = d.in_units(["months", "days"], relative_to=ref)
         assert result["months"] == 4
 
