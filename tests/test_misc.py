@@ -28,6 +28,7 @@ from whenever import (
     TimePatch,
     YearMonth,
     ZonedDateTime,
+    clear_tzcache,
     get_tzpath,
     hours,
     patch_current_time,
@@ -555,3 +556,73 @@ def test_reset_system_tz():
 )
 def test_tzid_from_path(path, expect):
     assert _tzid_from_path(path) == expect
+
+
+class TestOutOfRangeIsValueError:
+    """A result that falls outside the supported range must raise
+    ``ValueError``, never a bare ``OverflowError`` from the stdlib.
+
+    ``TimeZoneNotFoundError`` is a ``ValueError`` for the same reason: callers
+    should be able to catch everything parsing and conversion can raise with a
+    single ``except ValueError``.
+    """
+
+    KIRITIMATI = "Pacific/Kiritimati"  # UTC+14
+    MIDWAY = "Pacific/Midway"  # UTC-11
+
+    @pytest.mark.parametrize(
+        "func",
+        [
+            # parsing
+            lambda: ZonedDateTime.parse_iso(
+                "9999-12-31T23:59:59Z[Pacific/Kiritimati]"
+            ),
+            lambda: ZonedDateTime("9999-12-31T23:59:59Z[Pacific/Kiritimati]"),
+            lambda: ZonedDateTime.parse_iso(
+                "9999-12-31T23:59:59+00:00[Pacific/Kiritimati]",
+                offset_mismatch="keep_instant",
+            ),
+            lambda: ZonedDateTime.parse(
+                "9999-12-31 23:59+00:00[Pacific/Kiritimati]",
+                pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+                offset_mismatch="keep_instant",
+            ),
+            # conversion
+            lambda: Instant.MAX.to_tz("Pacific/Kiritimati"),
+            lambda: Instant.MAX.to_fixed_offset(hours(14)),
+            lambda: Instant.MIN.to_fixed_offset(hours(-14)),
+            # arithmetic and derived values
+            lambda: Instant.MAX.add(seconds=1),
+            lambda: Instant.MAX.round(),
+            lambda: Date.MAX.next_day(),
+            lambda: Date.MIN.prev_day(),
+            lambda: Date.MAX.add(days=1),
+            lambda: ZonedDateTime(
+                9999, 12, 31, tz="Europe/Amsterdam"
+            ).day_length(),
+            lambda: ZonedDateTime(9999, 12, 31, tz="UTC").add(days=1),
+            lambda: ZonedDateTime(
+                9999, 12, 31, 23, tz="Pacific/Midway"
+            ).end_of("day"),
+            lambda: ZonedDateTime(
+                9999, 12, 31, 23, 59, tz="Europe/Amsterdam"
+            ).round("hour", mode="ceil"),
+        ],
+    )
+    def test_raises_value_error(self, func):
+        with pytest.raises(ValueError):
+            func()
+
+    @pytest.mark.parametrize("bad", [3, None, b"UTC", 3.5, ["UTC"]])
+    def test_non_string_tz_is_type_error(self, bad):
+        # was a leaked AttributeError in the pure Python backend
+        with pytest.raises(TypeError, match="tz must be a string"):
+            ZonedDateTime(2020, 1, 1, tz=bad)
+        with pytest.raises(TypeError, match="key must be a string"):
+            clear_tzcache(only_keys=[bad])
+
+    def test_oversized_int_is_still_overflow_error(self):
+        # Distinct from the above: an *input* that doesn't fit a machine
+        # integer is an OverflowError in both backends, and stays that way.
+        with pytest.raises(OverflowError):
+            Instant.from_timestamp(10**30)

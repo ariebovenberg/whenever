@@ -91,6 +91,9 @@ def _clear_tz_cache() -> None:
 
 def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
     global _last_tz_key, _last_tz_val
+    for k in keys:
+        if not isinstance(k, str):
+            raise TypeError("key must be a string")
     normalized_keys = tuple(k.lower() for k in keys)
     if _last_tz_key in normalized_keys:
         _last_tz_key = None
@@ -150,6 +153,11 @@ def _is_valid_tzid(key: str) -> bool:
 
 
 def _normalize_tzid(key: str) -> NormalizedTzId:
+    # Not a redundant check on an annotated argument: this is the boundary
+    # where untyped callers arrive, and without it the validation below
+    # fails with a leaked AttributeError (or, for bytes, passes silently).
+    if not isinstance(key, str):
+        raise TypeError("tz must be a string")
     if not _is_valid_tzid(key):
         raise TimeZoneNotFoundError.for_key(key)
     return NormalizedTzId(key.lower())

@@ -85,10 +85,7 @@ class _TimePatch:
         with _patch_lock:
             self._check_active()
             current = Instant.now() if self._keep_ticking else self._pin
-            try:
-                self._apply(current.add(*args, **kwargs))
-            except OverflowError:
-                raise ValueError("Instant out of range") from None
+            self._apply(current.add(*args, **kwargs))
 
     def move_to(
         self,
