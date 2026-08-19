@@ -168,10 +168,10 @@ impl FromPy for PyType {
 }
 
 impl PyStaticType for PyType {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+    fn isinstance_exact(obj: PyObj) -> bool {
         unsafe { PyType_CheckExact(obj.as_ptr()) != 0 }
     }
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn isinstance(obj: PyObj) -> bool {
         unsafe { PyType_Check(obj.as_ptr()) != 0 }
     }
 }

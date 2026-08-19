@@ -11,6 +11,7 @@ pub mod num;
 pub mod refs;
 pub mod string;
 pub mod tuple;
+pub mod typed;
 pub mod types;
 
 pub(crate) use args::*;
