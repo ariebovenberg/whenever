@@ -19,5 +19,5 @@ use crate::pymodule::def::MODULE_DEF;
 #[unsafe(no_mangle)]
 #[cold]
 pub unsafe extern "C" fn PyInit__whenever() -> *mut PyObject {
-    unsafe { PyModuleDef_Init(&raw mut MODULE_DEF) }
+    unsafe { PyModuleDef_Init(MODULE_DEF.get()) }
 }

@@ -23,10 +23,10 @@ pub(crate) fn new_exception(
 pub(crate) fn new_class<T: PyPayload>(
     module: PyModule,
     module_nameobj: PyObj,
-    spec: &mut PyType_Spec,
+    spec: &'static PyDefCell<PyType_Spec>,
     unpickle_name: &CStr,
 ) -> PyResult<(Owned<PyClass<T>>, Owned<PyObj>)> {
-    let cls = unsafe { PyType_FromModuleAndSpec(module.as_ptr(), spec, NULL()) }
+    let cls = unsafe { PyType_FromModuleAndSpec(module.as_ptr(), spec.get(), NULL()) }
         .own()?
         .cast_allow_subclass::<PyType>()
         .unwrap();

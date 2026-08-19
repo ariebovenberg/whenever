@@ -230,8 +230,7 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
     })
 }
 
-#[allow(static_mut_refs)]
-static mut SLOTS: &[PyType_Slot] = &[
+static SLOTS: PyDefSlice<PyType_Slot> = PyDefSlice::new(&[
     slotmethod!(PlainDateTime, Py_tp_new, __new__),
     slotmethod!(PlainDateTime, Py_tp_repr, __repr__, 1),
     slotmethod!(PlainDateTime, Py_tp_str, __str__, 1),
@@ -248,11 +247,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_methods,
-        pfunc: unsafe { METHODS.as_ptr() as *mut c_void },
+        pfunc: METHODS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_getset,
-        pfunc: unsafe { GETSETTERS.as_ptr() as *mut c_void },
+        pfunc: GETSETTERS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
@@ -262,7 +261,7 @@ static mut SLOTS: &[PyType_Slot] = &[
         slot: 0,
         pfunc: NULL(),
     },
-];
+]);
 
 pub(crate) struct DateTimeComponents {
     year: i64,
@@ -847,7 +846,7 @@ fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     date.at(parsed.time()?).to_obj(cls)
 }
 
-static mut METHODS: &[PyMethodDef] = &[
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(PlainDateTime, __reduce__, c""),
@@ -892,7 +891,7 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::PYDANTIC_SCHEMA
     ),
     PyMethodDef::zeroed(),
-];
+]);
 
 fn year(_: PyType, slf: PlainDateTime) -> PyReturn {
     slf.date.year.get().to_py()
@@ -922,7 +921,7 @@ fn nanosecond(_: PyType, slf: PlainDateTime) -> PyReturn {
     slf.time.subsec.get().to_py()
 }
 
-static mut GETSETTERS: &[PyGetSetDef] = &[
+static GETSETTERS: PyDefSlice<PyGetSetDef> = PyDefSlice::new(&[
     getter!(PlainDateTime, year, doc::LOCALTIME_YEAR),
     getter!(PlainDateTime, month, doc::LOCALTIME_MONTH),
     getter!(PlainDateTime, day, doc::LOCALTIME_DAY),
@@ -937,10 +936,12 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
         doc: NULL(),
         closure: NULL(),
     },
-];
+]);
 
-pub(crate) static mut SPEC: PyType_Spec =
-    type_spec::<PlainDateTime>(c"whenever.PlainDateTime", unsafe { SLOTS });
+pub(crate) static SPEC: PyDefCell<PyType_Spec> = PyDefCell::new(type_spec::<PlainDateTime>(
+    c"whenever.PlainDateTime",
+    &SLOTS,
+));
 
 #[cfg(test)]
 mod tests {

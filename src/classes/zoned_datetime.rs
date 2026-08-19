@@ -416,8 +416,7 @@ fn shift_operator(
     )?))
 }
 
-#[allow(static_mut_refs)]
-static mut SLOTS: &[PyType_Slot] = &[
+static SLOTS: PyDefSlice<PyType_Slot> = PyDefSlice::new(&[
     slotmethod!(ZonedDateTime, Py_tp_new, __new__),
     slotmethod!(ZonedDateTime, Py_tp_str, __str__, 1),
     slotmethod!(ZonedDateTime, Py_tp_repr, __repr__, 1),
@@ -434,11 +433,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_methods,
-        pfunc: unsafe { METHODS.as_ptr() as *mut c_void },
+        pfunc: METHODS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_getset,
-        pfunc: unsafe { GETSETTERS.as_ptr() as *mut c_void },
+        pfunc: GETSETTERS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
@@ -448,7 +447,7 @@ static mut SLOTS: &[PyType_Slot] = &[
         slot: 0,
         pfunc: NULL(),
     },
-];
+]);
 
 fn strict_eq(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> PyReturn {
     if let Some(zdt) = obj_b.extract_ref(cls) {
@@ -1498,7 +1497,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     }
 }
 
-static mut METHODS: &[PyMethodDef] = &[
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(ZonedDateTime, __reduce__, c""),
@@ -1613,7 +1612,7 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::PYDANTIC_SCHEMA
     ),
     PyMethodDef::zeroed(),
-];
+]);
 
 fn year(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     slf.date.year.get().to_py()
@@ -1659,7 +1658,7 @@ fn offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     slf.offset.to_delta().to_obj(*cls.state().time_delta_type)
 }
 
-static mut GETSETTERS: &[PyGetSetDef] = &[
+static GETSETTERS: PyDefSlice<PyGetSetDef> = PyDefSlice::new(&[
     getter!(ZonedDateTime, year, doc::LOCALTIME_YEAR),
     getter!(ZonedDateTime, month, doc::LOCALTIME_MONTH),
     getter!(ZonedDateTime, day, doc::LOCALTIME_DAY),
@@ -1677,7 +1676,9 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
         doc: NULL(),
         closure: NULL(),
     },
-];
+]);
 
-pub(crate) static mut SPEC: PyType_Spec =
-    type_spec::<ZonedDateTime>(c"whenever.ZonedDateTime", unsafe { SLOTS });
+pub(crate) static SPEC: PyDefCell<PyType_Spec> = PyDefCell::new(type_spec::<ZonedDateTime>(
+    c"whenever.ZonedDateTime",
+    &SLOTS,
+));

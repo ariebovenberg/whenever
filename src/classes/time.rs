@@ -189,8 +189,7 @@ fn __repr__(_: PyType, slf: Time) -> PyReturn {
     ))
 }
 
-#[allow(static_mut_refs)]
-static mut SLOTS: &[PyType_Slot] = &[
+static SLOTS: PyDefSlice<PyType_Slot> = PyDefSlice::new(&[
     slotmethod!(Time, Py_tp_new, __new__),
     slotmethod!(Time, Py_tp_str, __str__, 1),
     slotmethod!(Time, Py_tp_repr, __repr__, 1),
@@ -201,11 +200,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_methods,
-        pfunc: unsafe { METHODS.as_ptr() as *mut c_void },
+        pfunc: METHODS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_getset,
-        pfunc: unsafe { GETSETTERS.as_ptr() as *mut c_void },
+        pfunc: GETSETTERS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_hash,
@@ -219,7 +218,7 @@ static mut SLOTS: &[PyType_Slot] = &[
         slot: 0,
         pfunc: NULL(),
     },
-];
+]);
 
 fn to_stdlib(cls: PyClass<Time>, slf: Time) -> PyReturn {
     slf.to_stdlib_time(cls.state().py_api()?)
@@ -343,7 +342,7 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
     pattern.parse(s).into_value_err()?.time()?.to_obj(cls)
 }
 
-static mut METHODS: &[PyMethodDef] = &[
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(Time, __reduce__, c""),
@@ -358,7 +357,7 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod_kwargs!(Time, parse, doc::TIME_PARSE),
     classmethod_kwargs!(Time, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
-];
+]);
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     pickle::decode_time(arg.expect_bytes()?)
@@ -382,7 +381,7 @@ fn nanosecond(_: PyType, slf: Time) -> PyReturn {
     slf.subsec.get().to_py()
 }
 
-static mut GETSETTERS: &[PyGetSetDef] = &[
+static GETSETTERS: PyDefSlice<PyGetSetDef> = PyDefSlice::new(&[
     getter!(Time, hour, doc::TIME_HOUR),
     getter!(Time, minute, doc::TIME_MINUTE),
     getter!(Time, second, doc::TIME_SECOND),
@@ -394,9 +393,10 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
         doc: NULL(),
         closure: NULL(),
     },
-];
+]);
 
-pub(crate) static mut SPEC: PyType_Spec = type_spec::<Time>(c"whenever.Time", unsafe { SLOTS });
+pub(crate) static SPEC: PyDefCell<PyType_Spec> =
+    PyDefCell::new(type_spec::<Time>(c"whenever.Time", &SLOTS));
 
 #[cfg(test)]
 mod tests {

@@ -2,6 +2,7 @@
 pub mod args;
 pub mod base;
 pub mod datetime;
+pub mod defs;
 pub mod dict;
 pub mod exc;
 pub mod methods;
@@ -17,6 +18,7 @@ pub mod types;
 pub(crate) use args::*;
 pub(crate) use base::*;
 pub(crate) use datetime::*;
+pub(crate) use defs::*;
 pub(crate) use dict::*;
 pub(crate) use exc::*;
 pub(crate) use methods::*;

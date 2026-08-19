@@ -218,8 +218,7 @@ fn shift_inner(
     Ok(Some(inst.shift(delta).ok_or_range_err()?.to_obj(cls)?))
 }
 
-#[allow(static_mut_refs)]
-static mut SLOTS: &[PyType_Slot] = &[
+static SLOTS: PyDefSlice<PyType_Slot> = PyDefSlice::new(&[
     slotmethod!(Instant, Py_tp_new, __new__),
     slotmethod!(Instant, Py_tp_repr, __repr__, 1),
     slotmethod!(Instant, Py_tp_str, __str__, 1),
@@ -236,7 +235,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_methods,
-        pfunc: unsafe { METHODS.as_ptr() as *mut c_void },
+        pfunc: METHODS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
@@ -246,7 +245,7 @@ static mut SLOTS: &[PyType_Slot] = &[
         slot: 0,
         pfunc: NULL(),
     },
-];
+]);
 
 fn strict_eq(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     if let Some(i) = obj_b.extract(cls) {
@@ -561,7 +560,7 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
         .to_obj(cls)
 }
 
-static mut METHODS: &[PyMethodDef] = &[
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(Instant, __reduce__, c""),
@@ -624,7 +623,7 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod_kwargs!(Instant, parse, doc::INSTANT_PARSE),
     classmethod_kwargs!(Instant, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
-];
+]);
 
-pub(crate) static mut SPEC: PyType_Spec =
-    type_spec::<Instant>(c"whenever.Instant", unsafe { SLOTS });
+pub(crate) static SPEC: PyDefCell<PyType_Spec> =
+    PyDefCell::new(type_spec::<Instant>(c"whenever.Instant", &SLOTS));

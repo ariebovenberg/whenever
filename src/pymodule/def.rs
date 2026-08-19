@@ -30,14 +30,13 @@ use core::{
 use pyo3_ffi::*;
 use std::sync::Arc;
 
-#[allow(static_mut_refs)]
-pub(crate) static mut MODULE_DEF: PyModuleDef = PyModuleDef {
+pub(crate) static MODULE_DEF: PyDefCell<PyModuleDef> = PyDefCell::new(PyModuleDef {
     m_base: PyModuleDef_HEAD_INIT,
     m_name: c"whenever".as_ptr(),
     m_doc: c"Modern datetime library for Python.\n\nItemizedDelta and ItemizedDateDelta are implemented in Python; the Rust extension only provides glue for extracting and constructing them from Rust-backed operations.".as_ptr(),
     m_size: mem::size_of::<MaybeUninit<Option<State>>>() as _,
-    m_methods: unsafe { METHODS.as_mut_ptr() },
-    m_slots: unsafe { MODULE_SLOTS.as_mut_ptr() },
+    m_methods: METHODS.as_mut_ptr(),
+    m_slots: MODULE_SLOTS.as_mut_ptr(),
     m_traverse: Some({
         unsafe extern "C" fn _wrap(
             module: *mut PyObject,
@@ -53,9 +52,9 @@ pub(crate) static mut MODULE_DEF: PyModuleDef = PyModuleDef {
     }),
     m_clear: Some(module_clear),
     m_free: Some(module_free),
-};
+});
 
-static mut METHODS: &mut [PyMethodDef] = &mut [
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     modmethod1!(_unpkl_date, c""),
     modmethod1!(_unpkl_time, c""),
     modmethod1!(_unpkl_tdelta, c""),
@@ -79,9 +78,9 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_clear_tz_cache_by_keys, c""),
     modmethod0!(reset_system_tz, doc::RESET_SYSTEM_TZ),
     PyMethodDef::zeroed(),
-];
+]);
 
-static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
+static MODULE_SLOTS: PyDefSlice<PyModuleDef_Slot> = PyDefSlice::new(&[
     PyModuleDef_Slot {
         slot: Py_mod_exec,
         value: {
@@ -112,7 +111,7 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
         slot: 0,
         value: NULL(),
     },
-];
+]);
 
 pub(crate) struct InternedStrings {
     pub(crate) years: Owned<PyObj>,
@@ -268,53 +267,27 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
     unsafe { module.state_mut() }.write(None);
     let module_name = "whenever".to_py()?;
 
-    let (date_type, unpickle_date) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { date::SPEC },
-        c"_unpkl_date",
-    )?;
+    let (date_type, unpickle_date) = new_class(module, *module_name, &date::SPEC, c"_unpkl_date")?;
     create_singletons(*date_type, date::SINGLETONS)?;
-    let (time_type, unpickle_time) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { time::SPEC },
-        c"_unpkl_time",
-    )?;
+    let (time_type, unpickle_time) = new_class(module, *module_name, &time::SPEC, c"_unpkl_time")?;
     create_singletons(*time_type, time::SINGLETONS)?;
-    let (time_delta_type, unpickle_time_delta) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { time_delta::SPEC },
-        c"_unpkl_tdelta",
-    )?;
+    let (time_delta_type, unpickle_time_delta) =
+        new_class(module, *module_name, &time_delta::SPEC, c"_unpkl_tdelta")?;
     create_singletons(*time_delta_type, time_delta::SINGLETONS)?;
-    let (plain_datetime_type, unpickle_plain_datetime) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { plain_datetime::SPEC },
-        c"_unpkl_local",
-    )?;
+    let (plain_datetime_type, unpickle_plain_datetime) =
+        new_class(module, *module_name, &plain_datetime::SPEC, c"_unpkl_local")?;
     create_singletons(*plain_datetime_type, plain_datetime::SINGLETONS)?;
-    let (instant_type, unpickle_instant) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { instant::SPEC },
-        c"_unpkl_inst",
-    )?;
+    let (instant_type, unpickle_instant) =
+        new_class(module, *module_name, &instant::SPEC, c"_unpkl_inst")?;
     create_singletons(*instant_type, instant::SINGLETONS)?;
     let (offset_datetime_type, unpickle_offset_datetime) = new_class(
         module,
         *module_name,
-        &mut unsafe { offset_datetime::SPEC },
+        &offset_datetime::SPEC,
         c"_unpkl_offset",
     )?;
-    let (zoned_datetime_type, unpickle_zoned_datetime) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { zoned_datetime::SPEC },
-        c"_unpkl_zoned",
-    )?;
+    let (zoned_datetime_type, unpickle_zoned_datetime) =
+        new_class(module, *module_name, &zoned_datetime::SPEC, c"_unpkl_zoned")?;
     module
         .getattr(c"_unpkl_utc")?
         .setattr(c"__module__", *module_name)?;
