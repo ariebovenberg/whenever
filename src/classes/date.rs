@@ -150,8 +150,7 @@ extern "C" fn __hash__(slf: PyObj) -> Py_hash_t {
     unsafe { slf.assume_heaptype::<Date>() }.1.python_hash() as Py_hash_t
 }
 
-#[allow(static_mut_refs)]
-static mut SLOTS: &[PyType_Slot] = &[
+static SLOTS: PyDefSlice<PyType_Slot> = PyDefSlice::new(&[
     slotmethod!(Date, Py_tp_new, __new__),
     slotmethod!(Date, Py_tp_str, __str__, 1),
     slotmethod!(Date, Py_tp_repr, __repr__, 1),
@@ -162,11 +161,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_methods,
-        pfunc: unsafe { METHODS.as_mut_ptr().cast() },
+        pfunc: METHODS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_getset,
-        pfunc: unsafe { GETSETTERS.as_mut_ptr().cast() },
+        pfunc: GETSETTERS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_hash,
@@ -180,7 +179,7 @@ static mut SLOTS: &[PyType_Slot] = &[
         slot: 0,
         pfunc: NULL(),
     },
-];
+]);
 
 fn to_stdlib(cls: PyClass<Date>, slf: Date) -> PyReturn {
     slf.to_stdlib_date(cls.state().py_api()?)
@@ -613,7 +612,7 @@ fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
     date.to_obj(cls)
 }
 
-static mut METHODS: &mut [PyMethodDef] = &mut [
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     method0!(Date, to_stdlib, doc::DATE_TO_STDLIB),
     method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
     classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
@@ -647,7 +646,7 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     classmethod_kwargs!(Date, parse, doc::DATE_PARSE),
     classmethod_kwargs!(Date, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
-];
+]);
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     pickle::decode_date(arg.expect_bytes()?)
@@ -667,7 +666,7 @@ fn day(_: PyType, slf: Date) -> PyReturn {
     slf.day.to_py()
 }
 
-static mut GETSETTERS: &mut [PyGetSetDef] = &mut [
+static GETSETTERS: PyDefSlice<PyGetSetDef> = PyDefSlice::new(&[
     getter!(Date, year, doc::DATE_YEAR),
     getter!(Date, month, doc::DATE_MONTH),
     getter!(Date, day, doc::DATE_DAY),
@@ -678,9 +677,10 @@ static mut GETSETTERS: &mut [PyGetSetDef] = &mut [
         doc: NULL(),
         closure: NULL(),
     },
-];
+]);
 
-pub(crate) static mut SPEC: PyType_Spec = type_spec::<Date>(c"whenever.Date", unsafe { SLOTS });
+pub(crate) static SPEC: PyDefCell<PyType_Spec> =
+    PyDefCell::new(type_spec::<Date>(c"whenever.Date", &SLOTS));
 
 #[cfg(test)]
 mod tests {
