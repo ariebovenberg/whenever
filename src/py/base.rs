@@ -12,8 +12,8 @@ pub(crate) trait ToPy: Sized {
 }
 
 pub(crate) trait PyStaticType: PyBase {
-    fn isinstance_exact(obj: impl PyBase) -> bool;
-    fn isinstance(obj: impl PyBase) -> bool;
+    fn isinstance_exact(obj: PyObj) -> bool;
+    fn isinstance(obj: PyObj) -> bool;
 }
 
 /// A minimal wrapper for the PyObject pointer.
@@ -134,11 +134,11 @@ impl FromPy for PyObj {
 }
 
 impl PyStaticType for PyObj {
-    fn isinstance_exact(_: impl PyBase) -> bool {
+    fn isinstance_exact(_: PyObj) -> bool {
         true
     }
 
-    fn isinstance(_: impl PyBase) -> bool {
+    fn isinstance(_: PyObj) -> bool {
         true
     }
 }

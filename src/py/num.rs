@@ -1,5 +1,5 @@
 //! Functionality for Python's int and float types
-use super::{base::*, exc::*, refs::*};
+use super::{base::*, exc::*, refs::*, typed::*};
 use core::mem;
 use pyo3_ffi::*;
 
@@ -7,35 +7,21 @@ use pyo3_ffi::*;
 pub(crate) const IS_LP64: bool = cfg!(all(target_pointer_width = "64", not(windows)));
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PyInt {
-    obj: PyObj,
-}
+pub(crate) struct IntTag;
 
-impl PyBase for PyInt {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyInt {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyInt {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+impl TypeTag for IntTag {
+    fn check_exact(obj: PyObj) -> bool {
         unsafe { PyLong_CheckExact(obj.as_ptr()) != 0 }
     }
 
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn check(obj: PyObj) -> bool {
         unsafe { PyLong_Check(obj.as_ptr()) != 0 }
     }
 }
 
-impl PyInt {
+pub(crate) type PyInt = Typed<IntTag>;
+
+impl Typed<IntTag> {
     pub(crate) fn to_i64(self) -> PyResult<i64> {
         // PyLong_AsLong is measurably faster on LP64, where its result is already 64 bits.
         let value = if IS_LP64 {
@@ -111,35 +97,21 @@ impl PyObj {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PyFloat {
-    obj: PyObj,
-}
+pub(crate) struct FloatTag;
 
-impl PyBase for PyFloat {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyFloat {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyFloat {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+impl TypeTag for FloatTag {
+    fn check_exact(obj: PyObj) -> bool {
         unsafe { PyFloat_CheckExact(obj.as_ptr()) != 0 }
     }
 
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn check(obj: PyObj) -> bool {
         unsafe { PyFloat_Check(obj.as_ptr()) != 0 }
     }
 }
 
-impl PyFloat {
+pub(crate) type PyFloat = Typed<FloatTag>;
+
+impl Typed<FloatTag> {
     pub(crate) fn to_f64(self) -> PyResult<f64> {
         match unsafe { PyFloat_AsDouble(self.as_ptr()) } {
             x if x != -1.0 || unsafe { PyErr_Occurred() }.is_null() => Ok(x),

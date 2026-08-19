@@ -2,16 +2,26 @@
 use crate::common::fmt;
 use core::ffi::CStr;
 
-use super::{base::*, exc::*, refs::*};
+use super::{base::*, exc::*, refs::*, typed::*};
 use pyo3_ffi::*;
 use std::{ffi::c_uint, ptr::copy_nonoverlapping};
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PyStr {
-    obj: PyObj,
+pub(crate) struct StrTag;
+
+impl TypeTag for StrTag {
+    fn check_exact(obj: PyObj) -> bool {
+        unsafe { PyUnicode_CheckExact(obj.as_ptr()) != 0 }
+    }
+
+    fn check(obj: PyObj) -> bool {
+        unsafe { PyUnicode_Check(obj.as_ptr()) != 0 }
+    }
 }
 
-impl PyStr {
+pub(crate) type PyStr = Typed<StrTag>;
+
+impl Typed<StrTag> {
     pub(crate) fn as_utf8(&self) -> PyResult<&[u8]> {
         let mut size = 0;
         let p = unsafe { PyUnicode_AsUTF8AndSize(self.as_ptr(), &mut size) };
@@ -22,38 +32,8 @@ impl PyStr {
     }
 
     pub(crate) fn as_str(&self) -> PyResult<&str> {
-        let mut size = 0;
-        let p = unsafe { PyUnicode_AsUTF8AndSize(self.as_ptr(), &mut size) };
-        if p.is_null() {
-            return Err(PyErrMarker);
-        };
-        Ok(unsafe {
-            std::str::from_utf8_unchecked(std::slice::from_raw_parts(p.cast::<u8>(), size as usize))
-        })
-    }
-}
-
-impl PyBase for PyStr {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyStr {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyStr {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
-        unsafe { PyUnicode_CheckExact(obj.as_ptr()) != 0 }
-    }
-
-    fn isinstance(obj: impl PyBase) -> bool {
-        unsafe { PyUnicode_Check(obj.as_ptr()) != 0 }
+        // SAFETY: Python emits valid UTF-8 strings
+        Ok(unsafe { std::str::from_utf8_unchecked(self.as_utf8()?) })
     }
 }
 
