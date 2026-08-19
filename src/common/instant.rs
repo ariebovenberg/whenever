@@ -13,10 +13,10 @@ impl TimestampUnit {
         find_interned(
             obj,
             &[
-                (*state.str_second, Self::Second),
-                (*state.str_millisecond, Self::Millisecond),
-                (*state.str_microsecond, Self::Microsecond),
-                (*state.str_nanosecond, Self::Nanosecond),
+                (*state.strs.second, Self::Second),
+                (*state.strs.millisecond, Self::Millisecond),
+                (*state.strs.microsecond, Self::Microsecond),
+                (*state.strs.nanosecond, Self::Nanosecond),
             ],
         )
         .ok_or_value_err("invalid timestamp unit")

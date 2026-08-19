@@ -102,21 +102,21 @@ pub(crate) fn set_timedelta_from_kwargs(
     eq: StrEqFn,
     state: &State,
 ) -> PyResult<bool> {
-    let unit = if eq(key, *state.str_weeks) {
+    let unit = if eq(key, *state.strs.weeks) {
         ExactUnit::Weeks
-    } else if eq(key, *state.str_days) {
+    } else if eq(key, *state.strs.days) {
         ExactUnit::Days
-    } else if eq(key, *state.str_hours) {
+    } else if eq(key, *state.strs.hours) {
         ExactUnit::Hours
-    } else if eq(key, *state.str_minutes) {
+    } else if eq(key, *state.strs.minutes) {
         ExactUnit::Minutes
-    } else if eq(key, *state.str_seconds) {
+    } else if eq(key, *state.strs.seconds) {
         ExactUnit::Seconds
-    } else if eq(key, *state.str_milliseconds) {
+    } else if eq(key, *state.strs.milliseconds) {
         ExactUnit::Milliseconds
-    } else if eq(key, *state.str_microseconds) {
+    } else if eq(key, *state.strs.microseconds) {
         ExactUnit::Microseconds
-    } else if eq(key, *state.str_nanoseconds) {
+    } else if eq(key, *state.strs.nanoseconds) {
         ExactUnit::Nanoseconds
     } else {
         return Ok(false);
@@ -139,7 +139,7 @@ where
     let mut units = ExactUnitSet::EMPTY;
 
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, *state.str_days_assumed_24h_ok) {
+        if eq(key, *state.strs.days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy()?;
             Ok(true)
         } else {
@@ -649,13 +649,13 @@ fn in_units(
     let mut suppress_24h_warning = false;
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
-        if eq(key, *state.str_round_mode) {
-            mode = round::Mode::from_py_named("rounding mode", value, &state.round_mode_strs)?;
-        } else if eq(key, *state.str_round_increment) {
+        if eq(key, *state.strs.round_mode) {
+            mode = round::Mode::from_py_named("rounding mode", value, &state.strs)?;
+        } else if eq(key, *state.strs.round_increment) {
             increment = difference::DifferenceIncrement::from_py(value)?;
-        } else if eq(key, *state.str_relative_to) {
+        } else if eq(key, *state.strs.relative_to) {
             relative_to_arg = Some(value);
-        } else if eq(key, *state.str_days_assumed_24h_ok) {
+        } else if eq(key, *state.strs.days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy()?;
         } else {
             return Ok(false);
@@ -734,9 +734,9 @@ fn total(
     let mut relative_to_arg = None;
     let mut suppress_24h_warning = false;
     handle_kwargs("total", kwargs, |key, value, eq| {
-        if eq(key, *state.str_relative_to) {
+        if eq(key, *state.strs.relative_to) {
             relative_to_arg = Some(value);
-        } else if eq(key, *state.str_days_assumed_24h_ok) {
+        } else if eq(key, *state.strs.days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy()?;
         } else {
             return Ok(false);

@@ -309,9 +309,9 @@ fn assume_tz(
     let mut mismatch_obj: Option<PyObj> = None;
     let mut dis_obj: Option<PyObj> = None;
     handle_kwargs("assume_tz", kwargs, |key, value, eq| {
-        if eq(key, *state.str_offset_mismatch) {
+        if eq(key, *state.strs.offset_mismatch) {
             mismatch_obj = Some(value);
-        } else if eq(key, *state.str_disambiguation) {
+        } else if eq(key, *state.strs.disambiguation) {
             dis_obj = Some(value);
         } else {
             return Ok(false);
@@ -368,9 +368,9 @@ impl OffsetMismatch {
             "offset_mismatch",
             obj,
             &[
-                (*state.str_raise, Self::Raise),
-                (*state.str_keep_instant, Self::KeepInstant),
-                (*state.str_keep_local, Self::KeepLocal),
+                (*state.strs.raise, Self::Raise),
+                (*state.strs.keep_instant, Self::KeepInstant),
+                (*state.strs.keep_local, Self::KeepLocal),
             ],
         )
     }
@@ -418,7 +418,7 @@ fn start_of(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let stale_offset_ok = handle_one_kwarg("start_of", *state.str_stale_offset_ok, kwargs)?;
+    let stale_offset_ok = handle_one_kwarg("start_of", *state.strs.stale_offset_ok, kwargs)?;
     if !match stale_offset_ok {
         Some(value) => value.is_truthy()?,
         None => false,
@@ -443,7 +443,7 @@ fn end_of(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let stale_offset_ok = handle_one_kwarg("end_of", *state.str_stale_offset_ok, kwargs)?;
+    let stale_offset_ok = handle_one_kwarg("end_of", *state.strs.stale_offset_ok, kwargs)?;
     if !match stale_offset_ok {
         Some(value) => value.is_truthy()?,
         None => false,
@@ -473,7 +473,7 @@ fn check_stale_offset(
 ) -> PyResult<()> {
     let mut suppress = false;
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, *state.str_stale_offset_ok) {
+        if eq(key, *state.strs.stale_offset_ok) {
             suppress = value.is_truthy()?;
         } else {
             return Ok(false);
@@ -565,9 +565,9 @@ fn replace(
     let mut suppress_stale = false;
 
     handle_kwargs("replace", kwargs, |k, v, eq| {
-        if eq(k, *state.str_stale_offset_ok) {
+        if eq(k, *state.strs.stale_offset_ok) {
             suppress_stale = v.is_truthy()?;
-        } else if eq(k, *state.str_offset) {
+        } else if eq(k, *state.strs.offset) {
             offset = Offset::from_py(v, state)?;
         } else {
             return components.set_from_kwarg(k, v, state, eq);
@@ -609,7 +609,7 @@ pub(crate) fn timestamp(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     handle_no_args("timestamp", args)?;
-    let unit = handle_one_kwarg("timestamp", *cls.state().str_unit, kwargs)?
+    let unit = handle_one_kwarg("timestamp", *cls.state().strs.unit, kwargs)?
         .map(|value| TimestampUnit::from_py(value, cls.state()))
         .transpose()?
         .unwrap_or(TimestampUnit::Second);
@@ -667,7 +667,7 @@ fn shift_method(
     let shift = match handle_opt_arg(fname, args)? {
         Some(arg) => {
             for (key, value) in kwargs.by_ref() {
-                if unicode_eq(key, *state.str_stale_offset_ok) {
+                if unicode_eq(key, *state.strs.stale_offset_ok) {
                     suppress_stale = value.is_truthy()?;
                 } else {
                     raise_mixed_args(fname)?;
@@ -676,7 +676,7 @@ fn shift_method(
             parse_datetime_shift_arg(fname, arg, state)?
         }
         None => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
-            if eq(k, *state.str_stale_offset_ok) {
+            if eq(k, *state.strs.stale_offset_ok) {
                 suppress_stale = v.is_truthy()?;
                 Ok(true)
             } else {
@@ -729,9 +729,9 @@ fn check_from_timestamp_args_return_offset(
     }
 
     handle_kwargs("from_timestamp", kwargs, |key, value, eq| {
-        if eq(key, *state.str_stale_offset_ok) {
+        if eq(key, *state.strs.stale_offset_ok) {
             suppress_stale = value.is_truthy()?;
-        } else if eq(key, *state.str_offset) {
+        } else if eq(key, *state.strs.offset) {
             offset = Some(Offset::from_py(value, state)?);
         } else {
             return Ok(false);

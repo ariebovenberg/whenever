@@ -731,13 +731,13 @@ where
     let mut dis_arg = DisambiguationArg::default();
     let mut mismatch = OffsetMismatch::Raise;
     handle_kwargs(fname, kwargs, |k, v, eq| {
-        if eq(k, *state.str_offset_mismatch) {
+        if eq(k, *state.strs.offset_mismatch) {
             mismatch = OffsetMismatch::from_py(v, state)?;
         } else if allow_deprecated {
             if !dis_arg.handle_kwarg(k, v, eq, state) {
                 return Ok(false);
             }
-        } else if eq(k, *state.str_disambiguation) {
+        } else if eq(k, *state.strs.disambiguation) {
             dis_arg.set_new(v);
         } else {
             return Ok(false);
@@ -830,7 +830,7 @@ fn replace(
     let mut tz_changed = false;
 
     handle_kwargs("replace", kwargs, |k, v, eq| {
-        if eq(k, *state.str_tz) {
+        if eq(k, *state.strs.tz) {
             let tz_arg = state.load_tz(v)?;
             // If we change timezones, forget about trying to preserve the offset.
             // Just use compatible disambiguation.
@@ -979,7 +979,7 @@ fn timestamp(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     handle_no_args("timestamp", args)?;
-    let unit = handle_one_kwarg("timestamp", *cls.state().str_unit, kwargs)?
+    let unit = handle_one_kwarg("timestamp", *cls.state().strs.unit, kwargs)?
         .map(|v| TimestampUnit::from_py(v, cls.state()))
         .transpose()?
         .unwrap_or(TimestampUnit::Second);
@@ -1030,7 +1030,7 @@ fn check_from_timestamp_args_return_tz(
 ) -> PyResult<Arc<TimeZone>> {
     match (args, kwargs.next()) {
         (&[_], Some((key, value))) if kwargs.original_len() == 1 => {
-            if unicode_eq(key, *state.str_tz) {
+            if unicode_eq(key, *state.strs.tz) {
                 state.load_tz(value)
             } else {
                 raise_unexpected_kwarg(fname, key)
@@ -1171,7 +1171,7 @@ fn shift_method(
     // `_ideltas.py`) move our warnings up to its own caller.
     let mut warn_stacklevel = 1;
     let mut handle = |k: PyObj, v: PyObj, eq: StrEqFn| -> PyResult<bool> {
-        if eq(k, *state.str_warn_stacklevel) {
+        if eq(k, *state.strs.warn_stacklevel) {
             warn_stacklevel = v.expect_int("_warn_stacklevel")?.to_i64()? as isize;
             Ok(true)
         } else {
@@ -1414,13 +1414,13 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let mut dis = None;
     let mut mismatch = OffsetMismatch::Raise;
     handle_kwargs("parse", kwargs, |k, v, eq| {
-        if eq(k, *state.str_pattern) {
+        if eq(k, *state.strs.pattern) {
             pattern_arg.set_new(v);
-        } else if eq(k, *state.str_format) {
+        } else if eq(k, *state.strs.format) {
             pattern_arg.set_old(v);
-        } else if eq(k, *state.str_disambiguation) {
+        } else if eq(k, *state.strs.disambiguation) {
             dis = Some(Disambiguation::from_py(v, state)?);
-        } else if eq(k, *state.str_offset_mismatch) {
+        } else if eq(k, *state.strs.offset_mismatch) {
             mismatch = OffsetMismatch::from_py(v, state)?;
         } else {
             return Ok(false);
