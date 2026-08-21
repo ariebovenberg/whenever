@@ -260,7 +260,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     ItemizedDelta("P2w3dT14h")
     >>> d = ItemizedDelta("P2w3dT14h")
     >>> str(d)
-    'P2w3dT14h'
+    'P2W3DT14H'
 
     It behaves like a mapping where the keys are
     the unit names and the values are the amounts.
@@ -299,7 +299,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     Empty durations are not allowed. At least one field must be set (but it can be zero):
 
     >>> ItemizedDelta()
-    ValueError: At least one field must be set
+    ValueError: at least one field must be set
     >>> ItemizedDelta(seconds=0)
     ItemizedDelta("PT0s")
 
@@ -308,7 +308,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     >>> d4 = ItemizedDelta(years=-1, weeks=-2, days=0)
     ItemizedDelta("-P1y2w0d")
     >>> ItemizedDelta(years=1, days=-3)
-    ValueError: All fields must have the same sign
+    ValueError: mixed sign in delta
 
     Note
     ----
@@ -695,8 +695,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
         Inverse of :meth:`format_iso`
 
-        >>> ItemizeDelta.parse_iso("-P1W11DT4H")
-        ItemizeDelta("-P1w11dT4h")
+        >>> ItemizedDelta.parse_iso("-P1W11DT4H")
+        ItemizedDelta("-P1w11dT4h")
         """
         exc = ValueError(f"Invalid format: {s!r}")
         prev_unit = ""
@@ -815,7 +815,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> date_part
         ItemizedDateDelta("P1y2m3w4d")
         >>> time_part
-        TimeDelta("P5h6m7.000000008s")
+        TimeDelta("PT5h6m7.000000008s")
         >>> ItemizedDelta(weeks=2).date_and_time_parts()
         (ItemizedDateDelta("P2w"), None)
 
@@ -1359,7 +1359,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
         >>> d = ItemizedDelta(years=1, months=8, minutes=1000)
         >>> d.in_units(["weeks", "hours"], relative_to=ZonedDateTime(2020, 6, 30, 12, tz="Asia/Tokyo"))
-        ItemizedDelta("P86w160h")
+        ItemizedDelta("P86wT160h")
 
         Parameters
         ----------
@@ -1594,9 +1594,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     It closely models the ISO 8601 duration format for date-only durations.
 
     >>> d = ItemizedDateDelta(years=2, weeks=3)
-    ItemizedDateDelta("P2Y3W")
-    >>> d = ItemizedDateDelta("P22W")
-    >>> str(d)
+    ItemizedDateDelta("P2y3w")
+    >>> str(ItemizedDateDelta("P22W"))
     'P22W'
 
     It behaves like a mapping where the keys are
@@ -1604,7 +1603,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     Items are ordered from largest to smallest unit.
 
     >>> d['weeks']
-    22
+    3
     >>> d.get('days')
     None
     >>> dict(d)
@@ -1636,7 +1635,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     Empty durations are not allowed. At least one field must be set (but it can be zero):
 
     >>> ItemizedDateDelta()
-    ValueError: At least one field must be set
+    ValueError: at least one field must be set
     >>> ItemizedDateDelta(days=0)
     ItemizedDateDelta("P0d")
 
@@ -1645,7 +1644,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     >>> d4 = ItemizedDateDelta(years=-1, weeks=-2, days=0)
     ItemizedDateDelta("-P1y2w0d")
     >>> ItemizedDateDelta(years=1, days=-3)
-    ValueError: All fields must have the same sign
+    ValueError: mixed sign in delta
 
     Note
     ----

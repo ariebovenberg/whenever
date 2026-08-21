@@ -1543,9 +1543,9 @@ class Time(_Base):
         or to a multiple of a :class:`TimeDelta`.
         Various rounding modes are available.
 
-        >>> Time(12, 39, 59).round("minute", 15)
+        >>> Time(12, 39, 59).round("minute", increment=15)
         Time("12:45:00")
-        >>> Time(8, 9, 13).round("second", 5, mode="floor")
+        >>> Time(8, 9, 13).round("second", increment=5, mode="floor")
         Time("08:09:10")
         >>> Time(12, 39, 59).round(TimeDelta(minutes=15))
         Time("12:45:00")
@@ -2628,16 +2628,17 @@ class _LocalTime(_BasicConversions):
     def date(self) -> Date:
         """The date part of the datetime
 
-        >>> d = PlaineDateTime("2020-01-02 03:04:05")
-        >>> d.date()
-        Date("2021-01-02")
+        >>> d = PlainDateTime("2020-01-02 03:04:05")
+        >>> date = d.date()
+        >>> date
+        Date("2020-01-02")
 
         To perform the inverse, use :meth:`Date.at` and a method
         like :meth:`~PlainDateTime.assume_utc` or
         :meth:`~PlainDateTime.assume_tz`:
 
-        >>> date.at(time).assume_tz("Europe/London")
-        ZonedDateTime("2021-01-02T03:04:05+00:00[Europe/London]")
+        >>> date.at(d.time()).assume_tz("Europe/London")
+        ZonedDateTime("2020-01-02 03:04:05+00:00[Europe/London]")
         """
         return Date._from_py_unchecked(self._py_dt.date())
 
@@ -2645,15 +2646,16 @@ class _LocalTime(_BasicConversions):
         """The time-of-day part of the datetime
 
         >>> d = ZonedDateTime("2021-01-02T03:04:05+01:00[Europe/Paris]")
-        >>> d.time()
+        >>> time = d.time()
+        >>> time
         Time("03:04:05")
 
         To perform the inverse, use :meth:`Time.on` and a method
         like :meth:`~PlainDateTime.assume_utc` or
         :meth:`~PlainDateTime.assume_tz`:
 
-        >>> time.on(date).assume_tz("Europe/Paris")
-        ZonedDateTime("2021-01-02T03:04:05+01:00[Europe/Paris]")
+        >>> time.on(d.date()).assume_tz("Europe/Paris")
+        ZonedDateTime("2021-01-02 03:04:05+01:00[Europe/Paris]")
         """
         return Time._from_py_unchecked(self._py_dt.time(), self._nanos)
 
@@ -3456,9 +3458,9 @@ class Instant(_ExactTime):
         or to a multiple of a :class:`TimeDelta`.
         Various rounding modes are available.
 
-        >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round("minute", 15)
+        >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round("minute", increment=15)
         Instant("2020-01-01 12:45:00Z")
-        >>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round("second", 5, mode="floor")
+        >>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round("second", increment=5, mode="floor")
         Instant("2020-01-01 08:09:10Z")
         >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(TimeDelta(minutes=15))
         Instant("2020-01-01 12:45:00Z")

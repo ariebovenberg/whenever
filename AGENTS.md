@@ -43,6 +43,12 @@ CI runs this coverage check on Python 3.14.
 - `pysrc/whenever/__init__.pyi` repeats literal types instead of using the
   aliases it exports: aliases render as the alias name in some IDEs, hiding the
   actual values. Don't "tidy" the repetition away.
+- Docstring `>>>` examples are illustrations, not literal transcripts, so they
+  aren't run by the test suite. When preparing a release, run
+  `make check-examples` and look for examples that **raise** or that print
+  something other than what's documented -- those are real defects. Failures
+  that are only about an assignment shown with its repr, omitted output, or
+  quoting style are the house style, not bugs.
 
 ## Development philosophy
 
