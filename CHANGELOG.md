@@ -123,6 +123,11 @@ deprecated interfaces are removed.
   instead of `AttributeError` — or, in `clear_tzcache()`, silent success.
 - `InvalidOffsetError` messages are now consistent between implementations.
   ISO parsing in pure Python previously raised it with no message at all.
+- The pure Python version no longer accepts arguments positionally (or by
+  keyword) where the Rust extension rejects them. Affects `assume_tz()`,
+  `assume_system_tz()`, `replace()`, `replace_date()`, and `replace_time()`.
+- `strict_eq()` now reports a type mismatch the same way everywhere; it
+  previously had three different messages depending on type and version.
 
 Migration summary:
 

@@ -1299,7 +1299,7 @@ for the fixed-offset arithmetic footgun. Pass
 ``stale_offset_ok=True`` when preserving the offset is intentional.
 ";
 pub(crate) const OFFSETDATETIME_ASSUME_TZ: &CStr = c"\
-assume_tz($self, tz, *, offset_mismatch='raise', disambiguation=...)
+assume_tz($self, tz, /, *, offset_mismatch='raise', disambiguation=...)
 --
 
 Associate this offset datetime with a timezone, returning a ZonedDateTime.
@@ -1579,7 +1579,7 @@ Assume the datetime has the given offset, creating an ``OffsetDateTime``.
 OffsetDateTime(\"2020-08-15 23:12:00+02:00\")
 ";
 pub(crate) const PLAINDATETIME_ASSUME_SYSTEM_TZ: &CStr = c"\
-assume_system_tz($self, disambiguate='compatible')
+assume_system_tz($self, *, disambiguate='compatible')
 --
 
 Assume the datetime is in the system timezone,
@@ -1603,7 +1603,7 @@ for more information.
 ZonedDateTime(\"2020-08-15 23:12:00-04:00[America/New_York]\")
 ";
 pub(crate) const PLAINDATETIME_ASSUME_TZ: &CStr = c"\
-assume_tz($self, tz, /, disambiguation=..., **kwargs)
+assume_tz($self, tz, /, *, disambiguation=..., **kwargs)
 --
 
 Assume the datetime is in the given timezone,
@@ -2263,7 +2263,7 @@ for more information.
 
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_DATE: &CStr = c"\
-replace_date($self, date, /, disambiguation=..., **kwargs)
+replace_date($self, date, /, *, disambiguation=..., **kwargs)
 --
 
 Construct a new instance with the date replaced.
@@ -2271,7 +2271,7 @@ Construct a new instance with the date replaced.
 See the ``replace()`` method for more information.
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_TIME: &CStr = c"\
-replace_time($self, time, /, disambiguation=..., **kwargs)
+replace_time($self, time, /, *, disambiguation=..., **kwargs)
 --
 
 Construct a new instance with the time replaced.
