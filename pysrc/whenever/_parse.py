@@ -173,7 +173,9 @@ def zdt_from_iso(
 
     try:
         rest, date = _split_iso_date_time(s)
-        time, nanos, offset, offset_exact, tzid = _time_offset_tz_from_iso(rest)
+        time, nanos, offset, offset_exact, tzid = _time_offset_tz_from_iso(
+            rest
+        )
     except ValueError:
         _parse_err(s)
 

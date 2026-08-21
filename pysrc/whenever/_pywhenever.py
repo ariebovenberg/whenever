@@ -2756,13 +2756,9 @@ class _ExactTime(_BasicConversions):
     def to_fixed_offset(self, /) -> OffsetDateTime: ...
 
     @overload
-    def to_fixed_offset(
-        self, offset: TimeDelta, /
-    ) -> OffsetDateTime: ...
+    def to_fixed_offset(self, offset: TimeDelta, /) -> OffsetDateTime: ...
 
-    def to_fixed_offset(
-        self, offset: TimeDelta = UNSET, /
-    ) -> OffsetDateTime:
+    def to_fixed_offset(self, offset: TimeDelta = UNSET, /) -> OffsetDateTime:
         """Convert to an OffsetDateTime that represents the same moment in time.
 
         If no offset is given, the offset is taken from the original datetime.
@@ -7799,7 +7795,11 @@ def _patch_time_keep_ticking(inst: Instant) -> None:
     patched_at = _physical_time_ns()
 
     def time_ns() -> int:
-        return inst.timestamp(unit="nanosecond") + _physical_time_ns() - patched_at
+        return (
+            inst.timestamp(unit="nanosecond")
+            + _physical_time_ns()
+            - patched_at
+        )
 
 
 def _unpatch_time() -> None:
