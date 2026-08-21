@@ -15,12 +15,6 @@ deprecated interfaces are removed.
   `Date.days_since()` and `Date.days_until()`, deprecated `Date` operators,
   `parse_strptime()`, `ZonedDateTime.start_of_day()`, `ignore_dst`, and
   `ImplicitlyIgnoringDST`.
-- Add LLM-friendly Markdown documentation, including `llms.txt` and
-  `llms-full.txt`.
-- **Fixed**: rounding with an odd `increment` rounded away from zero one step
-  early in the Rust extension. For example
-  `TimeDelta(nanoseconds=2).round("nanosecond", increment=5, mode="half_expand")`
-  returned 5ns instead of 0ns.
 
   See the 0.10.0 entry below for migration instructions.
 
@@ -74,8 +68,8 @@ deprecated interfaces are removed.
 
 - Formatting `VV` without an IANA timezone ID now consistently raises an error.
 
-- Fixed-offset arguments now no longer accept bare integers signifying hours.
-  Use `TimeDelta` or a factory like `hours()` instead.
+- Fixed-offset arguments passed as bare integers signifying hours are
+  deprecated. Use `TimeDelta` or a factory like `hours()` instead.
 
   **Rationale**: the unit of a bare integer is implicit, which makes offset
   values easy to misread or misuse.
@@ -108,14 +102,27 @@ deprecated interfaces are removed.
 - Stabilized `patch_current_time()` and exposed its `TimePatch` handle with
   `shift()` and `move_to()`.
 - `patch_current_time()` now supports pre-1970 instants.
+- Added LLM-friendly Markdown documentation, including `llms.txt` and
+  `llms-full.txt`.
 
 **Fixed**
 
-- Brought timezone equility in the Pure Python version on par with
-  the Rust extention. This affected rare cases where a timezone was reloaded
+- Rounding with an odd `increment` rounded away from zero one step early in
+  the Rust extension. For example
+  `TimeDelta(nanoseconds=2).round("nanosecond", increment=5, mode="half_expand")`
+  returned 5ns instead of 0ns.
+- Brought timezone equality in the pure Python version on par with
+  the Rust extension. This affected rare cases where a timezone was reloaded
   from disk.
 - Corrected a few warning stacklevels that were pointing to internal functions
   instead of the user call site.
+- Out-of-range results in the pure Python version now raise `ValueError`
+  instead of leaking `OverflowError`, so `except ValueError` catches them all.
+  Oversized integer arguments still raise `OverflowError`.
+- Non-string timezone IDs now raise `TypeError` in the pure Python version,
+  instead of `AttributeError` — or, in `clear_tzcache()`, silent success.
+- `InvalidOffsetError` messages are now consistent between implementations.
+  ISO parsing in pure Python previously raised it with no message at all.
 
 Migration summary:
 
@@ -127,7 +134,11 @@ Migration summary:
 | `timestamp_millis()` | `timestamp(unit="millisecond")` |
 | `timestamp_nanos()` | `timestamp(unit="nanosecond")` |
 | `ZonedDateTime.from_timestamp(v, tz=tz)` | `Instant.from_timestamp(v).to_tz(tz)` |
+| `ZonedDateTime.from_timestamp_millis(v, tz=tz)` | `Instant.from_timestamp(v, unit="millisecond").to_tz(tz)` |
+| `ZonedDateTime.from_timestamp_nanos(v, tz=tz)` | `Instant.from_timestamp(v, unit="nanosecond").to_tz(tz)` |
 | `OffsetDateTime.from_timestamp(v, offset=o)` | `Instant.from_timestamp(v).to_fixed_offset(o)` |
+| `OffsetDateTime.from_timestamp_millis(v, offset=o)` | `Instant.from_timestamp(v, unit="millisecond").to_fixed_offset(o)` |
+| `OffsetDateTime.from_timestamp_nanos(v, offset=o)` | `Instant.from_timestamp(v, unit="nanosecond").to_fixed_offset(o)` |
 | `format_iso(tz="never")` | `format_iso(tz_id_display="never")` |
 | `tz_id_display="always"` | `tz_id_display="required"` |
 | `to_system_tz()` | `to_tz(SYSTEM_TZ)` |
@@ -146,6 +157,9 @@ Migration summary:
 | `offset=2` | `offset=hours(2)` |
 | `MonthDay.is_leap()` | `MonthDay.is_leap_day()` |
 | `TZPATH` | `get_tzpath()` |
+
+`[:ss.fff]` isn't a pure rename of `:SS.fff`: with zero seconds and fraction,
+the old spelling emitted a dangling `12:00.000` instead of `12:00`.
 
 ## 0.10.5 (2026-08-07)
 
