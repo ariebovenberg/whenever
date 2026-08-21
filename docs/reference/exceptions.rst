@@ -1,3 +1,6 @@
+.. meta::
+   :description: Reference for whenever's exceptions and warnings, including RepeatedTime, SkippedTime, InvalidOffsetError, TimeZoneNotFoundError, and the WheneverWarning hierarchy.
+
 Exceptions and warnings
 =======================
 

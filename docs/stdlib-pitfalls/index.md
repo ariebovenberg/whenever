@@ -1,5 +1,10 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      Overview of the sharp edges in Python's standard datetime module, and how
+      whenever addresses each of them.
 ---
 
 (datetime-pitfalls)=

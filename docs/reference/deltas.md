@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      API reference for whenever's duration types: TimeDelta, ItemizedDelta, and
+      ItemizedDateDelta, and how to construct and operate on them.
+---
+
 (durations)=
 # Delta types
 

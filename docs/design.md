@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      The API design principles behind whenever: separate types for separate
+      meanings, footguns flagged rather than forbidden, and no implicit system
+      timezone.
+---
+
 (design)=
 # Design philosophy
 

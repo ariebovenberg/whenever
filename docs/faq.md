@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Answers to common questions about whenever's design and use: why Instant
+      exists, why there are three delta types, leap seconds, pure-Python
+      installs, SQLAlchemy, and free-threading.
+---
+
 ```{eval-rst}
 :tocdepth: 2
 ```

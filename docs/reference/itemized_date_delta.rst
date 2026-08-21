@@ -1,3 +1,6 @@
+.. meta::
+   :description: Complete API reference for ItemizedDateDelta, a calendar duration that preserves the exact fields it was created with.
+
 ``ItemizedDateDelta``
 =====================
 

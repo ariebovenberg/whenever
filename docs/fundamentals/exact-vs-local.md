@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      The core distinction between exact time, a moment on the global timeline,
+      and local time, a clock reading, and why conflating the two causes bugs.
+---
+
 (exact-vs-local)=
 # Exact time vs local time
 

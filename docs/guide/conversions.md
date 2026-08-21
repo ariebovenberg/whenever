@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Converting between whenever's types with to_instant(), to_tz(), to_plain(),
+      and the assume_*() methods, including how offset mismatches are handled.
+---
+
 # Converting between types
 
 ## Between exact types

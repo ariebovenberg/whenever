@@ -61,3 +61,6 @@ Below are some points to keep in mind when making changes to the codebase:
   importlib.resources) are not used, or imported lazily.
 - Docstrings are defined in the Python codebase, then copied to the Rust codebase using a helper script.
   Synchronization is checked in CI.
+- Each documentation page carries an `html_meta` description, which becomes its entry
+  in `llms.txt`. After changing a page, review its description and run
+  `make sync-llms-summaries`. Staleness is checked in CI.

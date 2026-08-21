@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      A point-by-point comparison with Pendulum: which datetime pitfalls it leaves
+      unaddressed, its maintenance status, UTC defaults, and performance.
+---
+
 # Why not pendulum?
 
 [**Pendulum**](https://pypi.org/project/pendulum/)

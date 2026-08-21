@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Copy-pasteable recipes for common tasks: current time, timezone conversion,
+      parsing ISO 8601, rounding, ages, countdowns, and DST-safe scheduling.
+---
+
 (examples)=
 # Examples
 

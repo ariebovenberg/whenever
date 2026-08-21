@@ -1,5 +1,11 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      Why the standard library's implicit conversion to the system timezone makes
+      code depend on machine configuration, and represents the result as a fixed
+      offset.
 ---
 
 (stdlib-system-tz)=

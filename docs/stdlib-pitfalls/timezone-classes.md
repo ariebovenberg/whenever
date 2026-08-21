@@ -1,5 +1,11 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      How to choose between datetime.timezone, pytz.timezone, and
+      zoneinfo.ZoneInfo, and why the standard library ended up with three
+      confusable options.
 ---
 
 # `timezone` isn't enough

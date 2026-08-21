@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Conceptual guide to whenever's three delta types: normalized versus itemized
+      durations, why calendar units need context, and how to balance units.
+---
+
 (guide-deltas)=
 # Working with deltas
 

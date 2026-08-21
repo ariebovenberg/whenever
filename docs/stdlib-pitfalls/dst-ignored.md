@@ -1,5 +1,10 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      Why arithmetic on aware datetime objects silently ignores DST transitions,
+      operating on local clock time instead of elapsed time.
 ---
 
 (datetime-ignores-dst)=

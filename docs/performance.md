@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Benchmarks comparing whenever against the standard library, Arrow, and
+      Pendulum on runtime speed, import time, and package size.
+---
+
 (benchmarks)=
 (performance)=
 # Performance

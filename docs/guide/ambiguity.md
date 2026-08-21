@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Handling ambiguous and skipped local times in whenever with the disambiguate
+      argument and the RepeatedTime and SkippedTime exceptions.
+---
+
 (ambiguity)=
 # Ambiguity in timezones
 

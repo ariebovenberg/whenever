@@ -1,5 +1,11 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      Why ambiguous and skipped local times pass silently in the standard library:
+      fold defaults to 0, there is no way to raise, and the parameter is hard to
+      discover.
 ---
 
 # Ambiguity passes silently

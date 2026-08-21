@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Converting between whenever types and their standard library equivalents
+      with to_stdlib() and the constructors, and which types have no stdlib
+      counterpart.
+---
+
 # Standard library conversions
 
 ```{eval-rst}

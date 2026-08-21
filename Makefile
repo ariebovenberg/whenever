@@ -87,11 +87,19 @@ test-cov: clean-ext
 test-rs:
 	RUST_BACKTRACE=1 cargo test $(CARGO_ARGS)
 
+.PHONY: sync-llms-summaries
+sync-llms-summaries:
+	uv $(UV_ARGS) run --no-sync python scripts/llms_summaries.py --update
+
+.PHONY: check-llms-summaries
+check-llms-summaries:
+	uv $(UV_ARGS) run --no-sync python scripts/llms_summaries.py
+
 .PHONY: test
 test: test-py test-rs
 
 .PHONY: ci-lint
-ci-lint: check-readme check-docstrings
+ci-lint: check-readme check-docstrings check-llms-summaries
 	uv $(UV_ARGS) lock --check
 	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) src/ tests/ scripts/
 	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check src/ tests/ scripts/

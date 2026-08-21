@@ -1,5 +1,10 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      Why timedelta.seconds is a remainder rather than a total, and how that
+      silently breaks for negative or multi-day durations.
 ---
 
 (timedelta-seconds)=

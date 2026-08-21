@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Rounding and truncating datetimes and TimeDeltas with round(): the available
+      rounding modes, supported units, and custom increments.
+---
+
 (rounding)=
 # Rounding
 

@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Testing code that uses whenever: patch_current_time, the time-machine
+      package, dependency injection instead of patching, and setting the system
+      timezone via TZ.
+---
+
 # Testing
 
 ## Patching the current time

@@ -1,3 +1,6 @@
+.. meta::
+   :description: Complete API reference for TimeDelta, whenever's exact duration type, plus the hours(), minutes(), and seconds() helpers.
+
 ``TimeDelta``
 =============
 
