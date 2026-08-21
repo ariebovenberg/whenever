@@ -128,6 +128,8 @@ deprecated interfaces are removed.
   `assume_system_tz()`, `replace()`, `replace_date()`, and `replace_time()`.
 - `strict_eq()` now reports a type mismatch the same way everywhere; it
   previously had three different messages depending on type and version.
+- `clear_tzcache(only_keys="...")` now raises `TypeError` instead of iterating
+  the string's characters and clearing nothing.
 
 Migration summary:
 
