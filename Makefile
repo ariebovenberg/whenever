@@ -51,6 +51,10 @@ sync-docstrings:
 	# --no-sync prevents rust rebuild, which fails on empty docstrings.rs
 	uv $(UV_ARGS) run --no-sync python scripts/generate_docstrings.py > src/docstrings.rs
 
+.PHONY: check-examples
+check-examples:
+	uv $(UV_ARGS) run --no-sync python scripts/check_docstring_examples.py
+
 .PHONY: check-docstrings
 check-docstrings:
 	uv $(UV_ARGS) run --no-sync python scripts/generate_docstrings.py | diff -u src/docstrings.rs - || { \

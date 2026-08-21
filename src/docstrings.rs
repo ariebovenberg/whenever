@@ -143,9 +143,8 @@ A date duration that preserves the exact fields it was created with.
 It closely models the ISO 8601 duration format for date-only durations.
 
 >>> d = ItemizedDateDelta(years=2, weeks=3)
-ItemizedDateDelta(\"P2Y3W\")
->>> d = ItemizedDateDelta(\"P22W\")
->>> str(d)
+ItemizedDateDelta(\"P2y3w\")
+>>> str(ItemizedDateDelta(\"P22W\"))
 'P22W'
 
 It behaves like a mapping where the keys are
@@ -153,7 +152,7 @@ the unit names and the values are the amounts.
 Items are ordered from largest to smallest unit.
 
 >>> d['weeks']
-22
+3
 >>> d.get('days')
 None
 >>> dict(d)
@@ -185,7 +184,7 @@ ItemizedDateDelta(\"P24m100d\")
 Empty durations are not allowed. At least one field must be set (but it can be zero):
 
 >>> ItemizedDateDelta()
-ValueError: At least one field must be set
+ValueError: at least one field must be set
 >>> ItemizedDateDelta(days=0)
 ItemizedDateDelta(\"P0d\")
 
@@ -194,7 +193,7 @@ Negative durations are supported, but all fields must have the same sign:
 >>> d4 = ItemizedDateDelta(years=-1, weeks=-2, days=0)
 ItemizedDateDelta(\"-P1y2w0d\")
 >>> ItemizedDateDelta(years=1, days=-3)
-ValueError: All fields must have the same sign
+ValueError: mixed sign in delta
 
 Note
 ----
@@ -212,7 +211,7 @@ It closely models the ISO 8601 duration format for durations.
 ItemizedDelta(\"P2w3dT14h\")
 >>> d = ItemizedDelta(\"P2w3dT14h\")
 >>> str(d)
-'P2w3dT14h'
+'P2W3DT14H'
 
 It behaves like a mapping where the keys are
 the unit names and the values are the amounts.
@@ -251,7 +250,7 @@ ItemizedDelta(\"P24mT90m\")
 Empty durations are not allowed. At least one field must be set (but it can be zero):
 
 >>> ItemizedDelta()
-ValueError: At least one field must be set
+ValueError: at least one field must be set
 >>> ItemizedDelta(seconds=0)
 ItemizedDelta(\"PT0s\")
 
@@ -260,7 +259,7 @@ Negative durations are supported, but all fields must have the same sign:
 >>> d4 = ItemizedDelta(years=-1, weeks=-2, days=0)
 ItemizedDelta(\"-P1y2w0d\")
 >>> ItemizedDelta(years=1, days=-3)
-ValueError: All fields must have the same sign
+ValueError: mixed sign in delta
 
 Note
 ----
@@ -1002,9 +1001,9 @@ Round the instant to the specified unit and increment,
 or to a multiple of a :class:`TimeDelta`.
 Various rounding modes are available.
 
->>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(\"minute\", 15)
+>>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(\"minute\", increment=15)
 Instant(\"2020-01-01 12:45:00Z\")
->>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round(\"second\", 5, mode=\"floor\")
+>>> Instant.from_utc(2020, 1, 1, 8, 9, 13).round(\"second\", increment=5, mode=\"floor\")
 Instant(\"2020-01-01 08:09:10Z\")
 >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(TimeDelta(minutes=15))
 Instant(\"2020-01-01 12:45:00Z\")
@@ -1159,7 +1158,7 @@ At least one part will be non-None, since at least one field must be set.
 >>> date_part
 ItemizedDateDelta(\"P1y2m3w4d\")
 >>> time_part
-TimeDelta(\"P5h6m7.000000008s\")
+TimeDelta(\"PT5h6m7.000000008s\")
 >>> ItemizedDelta(weeks=2).date_and_time_parts()
 (ItemizedDateDelta(\"P2w\"), None)
 
@@ -1205,7 +1204,7 @@ is required to resolve calendar units.
 
 >>> d = ItemizedDelta(years=1, months=8, minutes=1000)
 >>> d.in_units([\"weeks\", \"hours\"], relative_to=ZonedDateTime(2020, 6, 30, 12, tz=\"Asia/Tokyo\"))
-ItemizedDelta(\"P86w160h\")
+ItemizedDelta(\"P86wT160h\")
 
 Parameters
 ----------
@@ -1239,8 +1238,8 @@ See :ref:`here <iso8601-durations>` for more information.
 
 Inverse of :meth:`format_iso`
 
->>> ItemizeDelta.parse_iso(\"-P1W11DT4H\")
-ItemizeDelta(\"-P1w11dT4h\")
+>>> ItemizedDelta.parse_iso(\"-P1W11DT4H\")
+ItemizedDelta(\"-P1w11dT4h\")
 ";
 pub(crate) const ITEMIZEDDELTA_REPLACE: &CStr = c"\
 replace($self, **kwargs)
@@ -1849,9 +1848,9 @@ Round the time to the specified unit and increment,
 or to a multiple of a :class:`TimeDelta`.
 Various rounding modes are available.
 
->>> Time(12, 39, 59).round(\"minute\", 15)
+>>> Time(12, 39, 59).round(\"minute\", increment=15)
 Time(\"12:45:00\")
->>> Time(8, 9, 13).round(\"second\", 5, mode=\"floor\")
+>>> Time(8, 9, 13).round(\"second\", increment=5, mode=\"floor\")
 Time(\"08:09:10\")
 >>> Time(12, 39, 59).round(TimeDelta(minutes=15))
 Time(\"12:45:00\")
@@ -2492,16 +2491,17 @@ Raises
 pub(crate) const LOCALTIME_DATE: &CStr = c"\
 The date part of the datetime
 
->>> d = PlaineDateTime(\"2020-01-02 03:04:05\")
->>> d.date()
-Date(\"2021-01-02\")
+>>> d = PlainDateTime(\"2020-01-02 03:04:05\")
+>>> date = d.date()
+>>> date
+Date(\"2020-01-02\")
 
 To perform the inverse, use :meth:`Date.at` and a method
 like :meth:`~PlainDateTime.assume_utc` or
 :meth:`~PlainDateTime.assume_tz`:
 
->>> date.at(time).assume_tz(\"Europe/London\")
-ZonedDateTime(\"2021-01-02T03:04:05+00:00[Europe/London]\")
+>>> date.at(d.time()).assume_tz(\"Europe/London\")
+ZonedDateTime(\"2020-01-02 03:04:05+00:00[Europe/London]\")
 ";
 pub(crate) const LOCALTIME_DAY: &CStr = c"\
 The day component of the datetime";
@@ -2543,15 +2543,16 @@ pub(crate) const LOCALTIME_TIME: &CStr = c"\
 The time-of-day part of the datetime
 
 >>> d = ZonedDateTime(\"2021-01-02T03:04:05+01:00[Europe/Paris]\")
->>> d.time()
+>>> time = d.time()
+>>> time
 Time(\"03:04:05\")
 
 To perform the inverse, use :meth:`Time.on` and a method
 like :meth:`~PlainDateTime.assume_utc` or
 :meth:`~PlainDateTime.assume_tz`:
 
->>> time.on(date).assume_tz(\"Europe/Paris\")
-ZonedDateTime(\"2021-01-02T03:04:05+01:00[Europe/Paris]\")
+>>> time.on(d.date()).assume_tz(\"Europe/Paris\")
+ZonedDateTime(\"2021-01-02 03:04:05+01:00[Europe/Paris]\")
 ";
 pub(crate) const LOCALTIME_YEAR: &CStr = c"\
 The year component of the datetime";
