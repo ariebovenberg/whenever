@@ -2820,7 +2820,7 @@ class _ExactTime(_BasicConversions):
         ``a == b`` is also true, but the converse is not necessarily true.
         """
         if type(self) is not type(other):
-            raise TypeError("Cannot compare different types")
+            raise TypeError("strict_eq() requires same-type arguments")
         return (
             self._py_dt,
             self._py_dt.utcoffset(),
@@ -3885,6 +3885,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     def replace(
         self,
         /,
+        *,
         stale_offset_ok: bool = UNSET,
         **kwargs: Any,
     ) -> OffsetDateTime:
@@ -4439,6 +4440,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     def assume_tz(
         self,
         tz: str | _SystemTZ,
+        /,
         *,
         offset_mismatch: OffsetMismatchStr = "raise",
         disambiguation: DisambiguationStr = UNSET,
@@ -5169,6 +5171,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         self,
         date: Date,
         /,
+        *,
         disambiguation: DisambiguationStr = UNSET,
         **kwargs: Any,
     ) -> ZonedDateTime:
@@ -5217,6 +5220,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         self,
         time: Time,
         /,
+        *,
         disambiguation: DisambiguationStr = UNSET,
         **kwargs: Any,
     ) -> ZonedDateTime:
@@ -5267,6 +5271,7 @@ class ZonedDateTime(_ExactAndLocalTime):
     def replace(
         self,
         /,
+        *,
         disambiguation: DisambiguationStr = UNSET,
         **kwargs: Any,
     ) -> ZonedDateTime:
@@ -6810,6 +6815,7 @@ class PlainDateTime(_LocalTime):
         self,
         tz: str | _SystemTZ,
         /,
+        *,
         disambiguation: DisambiguationStr = UNSET,
         **kwargs: Any,
     ) -> ZonedDateTime:
@@ -6861,7 +6867,7 @@ class PlainDateTime(_LocalTime):
         )
 
     def assume_system_tz(
-        self, disambiguate: DisambiguateStr = "compatible"
+        self, *, disambiguate: DisambiguateStr = "compatible"
     ) -> ZonedDateTime:
         """Assume the datetime is in the system timezone,
         creating a ``ZonedDateTime``.
