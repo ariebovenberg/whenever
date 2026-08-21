@@ -251,7 +251,7 @@ fn strict_eq(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, obj_b: PyObj) ->
     if let Some(odt) = obj_b.extract(cls) {
         (slf == odt).to_py()
     } else {
-        raise_type_err("can't compare different types")?
+        raise_type_err("strict_eq() requires same-type arguments")?
     }
 }
 

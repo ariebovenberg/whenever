@@ -248,7 +248,7 @@ fn strict_eq(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     if let Some(i) = obj_b.extract(cls) {
         (slf == i).to_py()
     } else {
-        raise_type_err("can't compare different types")?
+        raise_type_err("strict_eq() requires same-type arguments")?
     }
 }
 
