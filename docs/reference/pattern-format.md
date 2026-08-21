@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Reference for custom format patterns: date, time, offset, and timezone
+      specifiers, literal text rules, parsing requirements, and how it differs
+      from strftime.
+---
+
 (pattern-format)=
 # Pattern format
 

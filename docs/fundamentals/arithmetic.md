@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Why exact units (hours, seconds) and calendar units (days, months, years)
+      behave differently in date-time arithmetic, and the conventions standards
+      like RFC 5545 converged on.
+---
+
 (arithmetic2)=
 # Arithmetic
 

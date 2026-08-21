@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Handling whenever's DST and footgun warnings: turning them into errors,
+      suppressing specific calls, pytest configuration, and choosing an approach.
+---
+
 (warnings)=
 # Handling warnings
 

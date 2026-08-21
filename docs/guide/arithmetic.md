@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Adding, subtracting, and diffing datetimes in whenever: the - operator
+      versus since() and until(), exact versus calendar units, and what each type
+      supports.
+---
+
 (arithmetic)=
 # Arithmetic
 

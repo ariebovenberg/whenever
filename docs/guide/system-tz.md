@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Using the system timezone via to_system_tz() and assume_system_tz(), how
+      whenever caches it, reset_system_tz(), and non-IANA system timezones.
+---
+
 (systemtime)=
 # The system timezone
 

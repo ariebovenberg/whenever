@@ -1,5 +1,11 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      Why equality between aware datetime objects is inconsistent: PEP 495's fold
+      is ignored in comparisons, so equal moments can compare unequal and vice
+      versa.
 ---
 
 # Equality edge cases

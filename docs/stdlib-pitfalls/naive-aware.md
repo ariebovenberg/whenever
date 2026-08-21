@@ -1,5 +1,10 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      Why using a single datetime type for both naive and aware values makes it
+      impossible to enforce the distinction with type annotations.
 ---
 
 # One type for everything

@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      How equality and ordering work in whenever: exact types compare by moment in
+      time, PlainDateTime never mixes with them, plus exact_eq() and nanosecond
+      precision caveats.
+---
+
 # Comparison and equality
 
 All types support equality and comparison.

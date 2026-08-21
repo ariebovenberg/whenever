@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Working with Date, Time, YearMonth, MonthDay, and IsoWeekDate: date
+      arithmetic and combining them into datetimes.
+---
+
 # Partial types
 
 Aside from the datetimes themselves, `whenever` also provides

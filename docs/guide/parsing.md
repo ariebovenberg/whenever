@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Formatting and parsing in whenever: ISO 8601 as the canonical
+      round-trippable format, RFC 2822, custom format patterns, and Pydantic
+      integration.
+---
+
 # Formatting and parsing
 
 `Whenever` supports formatting and parsing standardized formats

@@ -1,3 +1,6 @@
+.. meta::
+   :description: Deprecated components kept for backwards compatibility: DateDelta, DateTimeDelta, the years()/months()/weeks()/days() helpers, and ImplicitlyIgnoringDST.
+
 Deprecated components
 =====================
 

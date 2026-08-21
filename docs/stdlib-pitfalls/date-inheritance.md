@@ -1,5 +1,10 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      Why datetime subclassing date is a design flaw that violates the Liskov
+      substitution principle, and how whenever keeps the two types separate.
 ---
 
 # `datetime` inherits from `date`

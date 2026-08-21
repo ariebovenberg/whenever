@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      What 'timezone' actually means: UTC offsets, abbreviations, and IANA
+      timezones, what each can and cannot express, and when to use which.
+---
+
 (timezones-explained)=
 # Timezones
 

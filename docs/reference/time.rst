@@ -1,3 +1,6 @@
+.. meta::
+   :description: Complete API reference for the Time class, a time of day with nanosecond precision.
+
 ``Time``
 ========
 

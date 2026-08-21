@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Conceptual introduction to dates and times, independent of any library, and
+      why understanding the underlying model beats learning an API by trial and
+      error.
+---
+
 (fundamentals)=
 # The fundamentals of time
 

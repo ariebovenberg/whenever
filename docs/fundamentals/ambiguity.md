@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Why local times can be repeated or skipped when UTC offsets change, the
+      conventions for resolving that ambiguity, and how whenever exposes the
+      choice.
+---
+
 (ambiguity2)=
 # Ambiguity
 

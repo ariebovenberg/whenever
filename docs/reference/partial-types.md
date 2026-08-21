@@ -1,3 +1,11 @@
+---
+myst:
+  html_meta:
+    description: >-
+      API reference for Date, Time, YearMonth, MonthDay, and IsoWeekDate, and how
+      they combine into datetimes.
+---
+
 (partial-api)=
 # Partial types
 

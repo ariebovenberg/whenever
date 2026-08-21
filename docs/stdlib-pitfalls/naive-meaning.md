@@ -1,5 +1,11 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      Why 'naive' datetime means different things in different parts of the
+      standard library: sometimes the system timezone, sometimes UTC, sometimes
+      neither.
 ---
 
 # Inconsistent role of "naive"

@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      API reference for the four main types (Instant, ZonedDateTime,
+      OffsetDateTime, PlainDateTime), grouped into exact-time, local-time, and
+      shared methods.
+---
+
 (api)=
 # Main types
 

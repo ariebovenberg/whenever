@@ -1,5 +1,10 @@
 ---
 hide-toc: true
+myst:
+  html_meta:
+    description: >-
+      Entry point to the practical guide: choosing a type, arithmetic,
+      conversions, parsing, and ambiguity handling in whenever.
 ---
 
 (guide)=

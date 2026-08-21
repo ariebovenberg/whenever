@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Overview of whenever, a typesafe Python datetime library with separate
+      Instant, ZonedDateTime, OffsetDateTime, and PlainDateTime types, DST-safe
+      arithmetic, and a Rust-backed implementation.
+---
+
 # Welcome to Whenever
 
 **Whenever** is a Python library for working with dates and times.
