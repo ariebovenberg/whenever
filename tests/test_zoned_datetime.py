@@ -575,6 +575,8 @@ class TestInit:
         # check exception handling invalid arguments
         with pytest.raises(TypeError, match="iterable"):
             reset_tzpath("/usr/share/zoneinfo")  # must be a list!
+        with pytest.raises(TypeError, match="iterable"):
+            clear_tzcache(only_keys=nyc)  # must be a list!
         with pytest.raises(ValueError, match="absolute"):
             reset_tzpath(["../../share/zoneinfo"])
 

@@ -159,7 +159,7 @@ def _normalize_tzid(key: str) -> NormalizedTzId:
     if not isinstance(key, str):
         raise TypeError("tz must be a string")
     if not _is_valid_tzid(key):
-        raise TimeZoneNotFoundError.for_key(key)
+        raise TimeZoneNotFoundError._for_key(key)
     return NormalizedTzId(key.lower())
 
 
@@ -170,7 +170,7 @@ SafeTzId = NewType("SafeTzId", str)
 def validate_tzid(key: str) -> SafeTzId:
     if _is_valid_tzid(key):
         return SafeTzId(key)
-    raise TimeZoneNotFoundError.for_key(key)
+    raise TimeZoneNotFoundError._for_key(key)
 
 
 # A successful (path, database-spelled ID, pending directory indices) and
@@ -271,7 +271,7 @@ def _try_tzif_from_path(
             if (tzif := _read_tzif_from_path(search_path, key)) is not None:
                 return tzif
     except OSError:
-        raise TimeZoneNotFoundError.for_key(original_key) from None
+        raise TimeZoneNotFoundError._for_key(original_key) from None
     return None
 
 
@@ -290,7 +290,7 @@ def _tzif_from_tzdata(
         OSError,
         UnicodeEncodeError,
     ):
-        raise TimeZoneNotFoundError.for_key(original_key)
+        raise TimeZoneNotFoundError._for_key(original_key)
 
 
 def _load_tz(
@@ -302,7 +302,7 @@ def _load_tz(
     if not tzif[0].startswith(b"TZif"):
         # We've found a file, but doesn't look like a TZif file.
         # Stop here instead of getting a cryptic error later.
-        raise TimeZoneNotFoundError.for_key(original_key)
+        raise TimeZoneNotFoundError._for_key(original_key)
     return tzif
 
 
@@ -360,5 +360,5 @@ class TimeZoneNotFoundError(ValueError):
     """A timezone with the given ID was not found"""
 
     @classmethod
-    def for_key(cls, key: str) -> TimeZoneNotFoundError:
+    def _for_key(cls, key: str) -> TimeZoneNotFoundError:
         return cls(f"No time zone found for key: {key!r}")

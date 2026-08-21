@@ -214,6 +214,9 @@ def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
     if only_keys is None:
         _clear_tz_cache()
     else:
+        # This is such a common mistake, that we raise a descriptive error
+        if isinstance(only_keys, (str, bytes)):
+            raise TypeError("only_keys must be an iterable of timezone IDs")
         _clear_tz_cache_by_keys(tuple(only_keys))
 
 
