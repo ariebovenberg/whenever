@@ -5,7 +5,7 @@ from datetime import (
     timedelta as _timedelta,
 )
 
-from .._common import UTC, check_utc_bounds, mk_fixed_tzinfo
+from .._common import check_utc_bounds, mk_fixed_tzinfo
 from .._typing import DisambiguationStr
 from .common import Fold, Gap, LocalMapping, Unique
 from .tzif import TimeZone

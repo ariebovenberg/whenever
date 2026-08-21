@@ -1536,7 +1536,9 @@ class _ExactTime(ABC):
     def timestamp(
         self,
         *,
-        unit: Literal["second", "millisecond", "microsecond", "nanosecond"] = "second",
+        unit: Literal[
+            "second", "millisecond", "microsecond", "nanosecond"
+        ] = "second",
     ) -> int: ...
     @deprecated("use timestamp(unit='millisecond') instead")
     def timestamp_millis(self) -> int: ...
@@ -1545,9 +1547,10 @@ class _ExactTime(ABC):
     @overload
     def to_fixed_offset(self, /) -> OffsetDateTime: ...
     @overload
-    def to_fixed_offset(
-        self, offset: int | TimeDelta, /
-    ) -> OffsetDateTime: ...
+    def to_fixed_offset(self, offset: TimeDelta, /) -> OffsetDateTime: ...
+    @overload
+    @deprecated("use a TimeDelta, e.g. hours(2), instead of a bare int")
+    def to_fixed_offset(self, offset: int, /) -> OffsetDateTime: ...
     def to_tz(self, tz: str | SYSTEM_TZ, /) -> ZonedDateTime: ...  # type: ignore[valid-type]
     @deprecated("use to_tz(SYSTEM_TZ) instead")
     def to_system_tz(self) -> ZonedDateTime: ...
@@ -1732,6 +1735,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
     @overload
+    @overload
     def __init__(
         self,
         year: int,
@@ -1742,20 +1746,33 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        offset: int | TimeDelta,
+        offset: TimeDelta,
     ) -> None: ...
+    @overload
+    @deprecated("use a TimeDelta, e.g. hours(2), instead of a bare int")
+    def __init__(
+        self,
+        year: int,
+        month: int,
+        day: int,
+        hour: int = 0,
+        minute: int = 0,
+        second: int = 0,
+        *,
+        nanosecond: int = 0,
+        offset: int,
+    ) -> None: ...
+    @overload
     @classmethod
     def now(
-        cls,
-        offset: int | TimeDelta,
-        /,
-        *,
-        stale_offset_ok: bool = ...,
+        cls, offset: TimeDelta, /, *, stale_offset_ok: bool = ...
     ) -> Self: ...
+    @overload
+    @deprecated("use a TimeDelta, e.g. hours(2), instead of a bare int")
     @classmethod
-    @deprecated(
-        "use Instant.from_timestamp(...).to_fixed_offset(...) instead"
-    )
+    def now(cls, offset: int, /, *, stale_offset_ok: bool = ...) -> Self: ...
+    @classmethod
+    @deprecated("use Instant.from_timestamp(...).to_fixed_offset(...) instead")
     def from_timestamp(
         cls,
         i: int | float,
@@ -1800,6 +1817,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @classmethod
     @deprecated("use pattern= instead")
     def parse(cls, s: str, /, *, format: str) -> OffsetDateTime: ...
+    @overload
     def replace(
         self,
         *,
@@ -1810,7 +1828,22 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         minute: int = ...,
         second: int = ...,
         nanosecond: int = ...,
-        offset: int | TimeDelta = ...,
+        offset: TimeDelta = ...,
+        stale_offset_ok: bool = ...,
+    ) -> Self: ...
+    @overload
+    @deprecated("use a TimeDelta, e.g. hours(2), instead of a bare int")
+    def replace(
+        self,
+        *,
+        year: int = ...,
+        month: int = ...,
+        day: int = ...,
+        hour: int = ...,
+        minute: int = ...,
+        second: int = ...,
+        nanosecond: int = ...,
+        offset: int,
         stale_offset_ok: bool = ...,
     ) -> Self: ...
     def replace_date(
@@ -2008,9 +2041,21 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
-        disambiguate: Literal[
-            "compatible", "raise", "earlier", "later"
-        ] = ...,
+    ) -> None: ...
+    @overload
+    @deprecated("use disambiguation= instead")
+    def __init__(
+        self,
+        year: int,
+        month: int,
+        day: int,
+        hour: int = 0,
+        minute: int = 0,
+        second: int = 0,
+        *,
+        nanosecond: int = 0,
+        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> None: ...
     @property
     @deprecated("use tz_id instead")
@@ -2039,22 +2084,35 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @classmethod
     @deprecated("use Instant.from_timestamp(...).to_tz(...) instead")
     def from_timestamp(
-        cls, i: int | float, /, *, tz: str | SYSTEM_TZ  # type: ignore[valid-type]
+        cls,
+        i: int | float,
+        /,
+        *,
+        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
     ) -> Self: ...
     @classmethod
     @deprecated(
         "use Instant.from_timestamp(..., unit='millisecond').to_tz(...) instead"
     )
     def from_timestamp_millis(
-        cls, i: int, /, *, tz: str | SYSTEM_TZ  # type: ignore[valid-type]
+        cls,
+        i: int,
+        /,
+        *,
+        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
     ) -> Self: ...
     @classmethod
     @deprecated(
         "use Instant.from_timestamp(..., unit='nanosecond').to_tz(...) instead"
     )
     def from_timestamp_nanos(
-        cls, i: int, /, *, tz: str | SYSTEM_TZ  # type: ignore[valid-type]
+        cls,
+        i: int,
+        /,
+        *,
+        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
     ) -> Self: ...
+    @overload
     def replace(
         self,
         *,
@@ -2069,10 +2127,23 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
-        disambiguate: Literal[
-            "compatible", "raise", "earlier", "later"
-        ] = ...,
     ) -> Self: ...
+    @overload
+    @deprecated("use disambiguation= instead")
+    def replace(
+        self,
+        *,
+        year: int = ...,
+        month: int = ...,
+        day: int = ...,
+        hour: int = ...,
+        minute: int = ...,
+        second: int = ...,
+        nanosecond: int = ...,
+        tz: str | SYSTEM_TZ = ...,  # type: ignore[valid-type]
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
+    ) -> Self: ...
+    @overload
     def replace_date(
         self,
         d: Date,
@@ -2081,8 +2152,17 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
+    ) -> Self: ...
+    @overload
+    @deprecated("use disambiguation= instead")
+    def replace_date(
+        self,
+        d: Date,
+        /,
+        *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
+    @overload
     def replace_time(
         self,
         t: Time,
@@ -2091,6 +2171,14 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
+    ) -> Self: ...
+    @overload
+    @deprecated("use disambiguation= instead")
+    def replace_time(
+        self,
+        t: Time,
+        /,
+        *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
@@ -2110,6 +2198,22 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
+    ) -> Self: ...
+    @overload
+    @deprecated("use disambiguation= instead")
+    def add(
+        self,
+        *,
+        years: int = 0,
+        months: int = 0,
+        weeks: int = 0,
+        days: int = 0,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     # FUTURE: allow disambiguate here for API consistency
@@ -2124,6 +2228,14 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
+    ) -> Self: ...
+    @overload
+    @deprecated("use disambiguation= instead")
+    def add(
+        self,
+        d: ItemizedDelta | ItemizedDateDelta,
+        /,
+        *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
@@ -2143,6 +2255,22 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
+    ) -> Self: ...
+    @overload
+    @deprecated("use disambiguation= instead")
+    def subtract(
+        self,
+        *,
+        years: int = 0,
+        months: int = 0,
+        weeks: int = 0,
+        days: int = 0,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
@@ -2156,6 +2284,14 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
+    ) -> Self: ...
+    @overload
+    @deprecated("use disambiguation= instead")
+    def subtract(
+        self,
+        d: ItemizedDelta | ItemizedDateDelta,
+        /,
+        *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     def is_ambiguous(self) -> bool: ...
@@ -2164,6 +2300,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     def dst_offset(self) -> TimeDelta: ...
     def tz_abbrev(self) -> str: ...
     def day_length(self) -> TimeDelta: ...
+    @overload
     def format_iso(
         self,
         *,
@@ -2178,13 +2315,47 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         ] = "auto",
         basic: bool = False,
         sep: Literal["T", " "] = "T",
-        tz_id_display: Literal[
-            "required", "never", "auto", "always"
-        ] = "required",
-        tz: Literal["required", "always", "never", "auto"] = ...,
+        tz_id_display: Literal["required", "never", "auto"] = "required",
+    ) -> str: ...
+    @overload
+    @deprecated("use tz_id_display='required' instead")
+    def format_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+        tz_id_display: Literal["always"],
+    ) -> str: ...
+    @overload
+    @deprecated("use tz_id_display= instead")
+    def format_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+        tz: Literal["required", "always", "never", "auto"],
     ) -> str: ...
     def format(self, pattern: str, /) -> str: ...
     def __format__(self, spec: str, /) -> str: ...
+    @overload
     @classmethod
     def parse_iso(
         cls,
@@ -2197,9 +2368,19 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         offset_mismatch: Literal[
             "raise", "keep_instant", "keep_local"
         ] = "raise",
-        disambiguate: Literal[
-            "compatible", "raise", "earlier", "later"
-        ] = ...,
+    ) -> Self: ...
+    @overload
+    @deprecated("use disambiguation= instead")
+    @classmethod
+    def parse_iso(
+        cls,
+        s: str,
+        /,
+        *,
+        offset_mismatch: Literal[
+            "raise", "keep_instant", "keep_local"
+        ] = "raise",
+        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
     @classmethod
@@ -2264,9 +2445,12 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         nanosecond: int = 0,
     ) -> None: ...
     def assume_utc(self) -> Instant: ...
-    def assume_fixed_offset(
-        self, offset: int | TimeDelta, /
-    ) -> OffsetDateTime: ...
+    @overload
+    def assume_fixed_offset(self, offset: TimeDelta, /) -> OffsetDateTime: ...
+    @overload
+    @deprecated("use a TimeDelta, e.g. hours(2), instead of a bare int")
+    def assume_fixed_offset(self, offset: int, /) -> OffsetDateTime: ...
+    @overload
     def assume_tz(
         self,
         tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
@@ -2275,6 +2459,14 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
+    ) -> ZonedDateTime: ...
+    @overload
+    @deprecated("use disambiguation= instead")
+    def assume_tz(
+        self,
+        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
+        /,
+        *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
     @deprecated("use assume_tz(SYSTEM_TZ) instead")

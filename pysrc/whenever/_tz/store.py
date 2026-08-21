@@ -215,9 +215,7 @@ def _scan_tzdir(path: str) -> _TzDirIndex | None:
         return None
 
 
-def _resolve_path_once(
-    base: str, key: NormalizedTzId
-) -> _ResolveAttempt:
+def _resolve_path_once(base: str, key: NormalizedTzId) -> _ResolveAttempt:
     path = base
     updates: _TzDirCache = {}
     cached_paths: list[str] = []

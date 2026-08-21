@@ -40,6 +40,9 @@ CI runs this coverage check on Python 3.14.
 - Code coverage for Python code must be complete, with exceptions only for
   hard-to-test cases involving (for example) system configuration.
 - Don't put things in docstrings that are already described in the type annotations.
+- `pysrc/whenever/__init__.pyi` repeats literal types instead of using the
+  aliases it exports: aliases render as the alias name in some IDEs, hiding the
+  actual values. Don't "tidy" the repetition away.
 
 ## Development philosophy
 

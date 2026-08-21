@@ -566,9 +566,7 @@ class IsoWeekDate(_Base):
         def __init__(self, iso_string: str, /) -> None: ...
 
         @overload
-        def __init__(
-            self, year: int, week: int, weekday: Weekday
-        ) -> None: ...
+        def __init__(self, year: int, week: int, weekday: Weekday) -> None: ...
 
     def __init__(self, year: int, week: int, weekday: Weekday) -> None:
         if not isinstance(weekday, Weekday):
