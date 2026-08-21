@@ -939,9 +939,7 @@ class _OffsetLower(_Field):
             pos,
             state.offset_exact,
             state.offset_is_z,
-        ) = _parse_offset_value(
-            s, pos, self.width, accept_z=False
-        )
+        ) = _parse_offset_value(s, pos, self.width, accept_z=False)
         return pos
 
     def __repr__(self) -> str:
@@ -972,9 +970,7 @@ class _OffsetUpper(_Field):
             pos,
             state.offset_exact,
             state.offset_is_z,
-        ) = _parse_offset_value(
-            s, pos, self.width, accept_z=True
-        )
+        ) = _parse_offset_value(s, pos, self.width, accept_z=True)
         return pos
 
     def __repr__(self) -> str:
@@ -1153,8 +1149,7 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
             el.needs_digit_terminator
             and follower.can_start_with_digit
             and not (
-                isinstance(el, _SecondOpt)
-                and isinstance(follower, _FracTrim)
+                isinstance(el, _SecondOpt) and isinstance(follower, _FracTrim)
             )
         ):
             raise ValueError(
@@ -1175,10 +1170,7 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
             not isinstance(follower, _Literal)
             or (
                 follower.text[0].isascii()
-                and (
-                    follower.text[0].isalnum()
-                    or follower.text[0] in "/_-+."
-                )
+                and (follower.text[0].isalnum() or follower.text[0] in "/_-+.")
             )
         ):
             raise ValueError(

@@ -512,9 +512,7 @@ def _load_transitions(
         if not isdst:
             last_std_offset = utoff
 
-        meta.append(
-            (dst_saving, abbrind, _abbrev_at(abbrev_data, abbrind))
-        )
+        meta.append((dst_saving, abbrind, _abbrev_at(abbrev_data, abbrind)))
 
     return offsets, meta
 

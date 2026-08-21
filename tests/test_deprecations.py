@@ -80,7 +80,7 @@ def test_disambiguate_keyword(old, new):
 
 def test_both_disambiguation_keywords_rejected():
     with pytest.raises(TypeError, match="received both 'disambiguation'"):
-        ZonedDateTime(
+        ZonedDateTime(  # type: ignore[call-overload]
             2020,
             8,
             15,
