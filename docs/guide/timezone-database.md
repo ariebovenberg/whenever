@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      How whenever finds IANA timezone data: the TZPATH search order and tzdata
+      fallback, case-insensitive timezone IDs, reset_tzpath(), and the
+      definition cache with clear_tzcache().
+---
+
 (timezone-database)=
 # Working with the timezone database
 
