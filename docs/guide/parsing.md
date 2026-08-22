@@ -9,7 +9,9 @@ myst:
 
 # Formatting and parsing
 
-`Whenever` supports formatting and parsing standardized formats
+`whenever` reads and writes the standard formats: ISO 8601 as the canonical,
+round-trippable representation, plus RFC 2822 for email and HTTP, and custom
+patterns for everything else.
 
 ## ISO 8601
 

@@ -3,36 +3,63 @@ hide-toc: true
 myst:
   html_meta:
     description: >-
-      Entry point to the practical guide: choosing a type, arithmetic,
-      conversions, parsing, and ambiguity handling in whenever.
+      Entry point to the practical guide, grouped by task: choosing a type,
+      comparison and conversion, ambiguity, arithmetic and deltas, parsing,
+      standard library interop, and testing.
 ---
 
 (guide)=
 # Guide
 
-This page gives quick overview of the key concepts
-to help you get started with `whenever`.
+Everything you need to use `whenever` day to day, roughly in the order
+you'll run into it. Start with {ref}`choosing a type <choosing-a-type>`—the rest
+follows from that decision.
 
-For background on date and time in general, see the {ref}`concepts guide <fundamentals>`.
-For more details, see the {ref}`API reference <api>`.
+For background on dates and times in general, see the
+{ref}`fundamentals <fundamentals>`.
+For the details of a specific class or method, see the {ref}`API reference <api>`.
 
-## Contents
+## The essentials
 
 ```{eval-rst}
 .. toctree::
    :maxdepth: 1
 
    choosing-a-type
+   partial-types
    comparison
    conversions
    ambiguity
+```
+
+## Calculating with dates and times
+
+```{eval-rst}
+.. toctree::
+   :maxdepth: 1
+
    arithmetic
    deltas
    rounding
+```
+
+## Talking to the outside world
+
+```{eval-rst}
+.. toctree::
+   :maxdepth: 1
+
    parsing
    stdlib-convert
-   partial-types
    system-tz
+```
+
+## Keeping it reliable
+
+```{eval-rst}
+.. toctree::
+   :maxdepth: 1
+
    testing
    warnings
 ```

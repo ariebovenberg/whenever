@@ -13,8 +13,8 @@ myst:
 .. currentmodule:: whenever
 ```
 
-This page contains small, practical examples of using `whenever`.
-For more in-depth information, refer to the {ref}`guide`.
+Short, copy-pasteable recipes for the things you'll reach for most often.
+For the reasoning behind them, refer to the {ref}`guide`.
 
 ## Get the current time in UTC
 

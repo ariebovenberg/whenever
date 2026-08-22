@@ -28,9 +28,9 @@ are a few things to keep in mind.
 
 ## System timezone changes
 
-It's important to be aware that the system timezone can change.
-`whenever` caches the system timezone at time you access it first.
-This ensures predictable and fast behavior.
+The system timezone isn't necessarily fixed for the lifetime of a process.
+`whenever` caches it the first time you access it,
+which keeps behavior predictable and fast.
 
 In the rare case that you need to change the system timezone
 while your program is running, you can use the

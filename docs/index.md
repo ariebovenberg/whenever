@@ -7,57 +7,59 @@ myst:
       arithmetic, and a Rust-backed implementation.
 ---
 
-# Welcome to Whenever
+# Whenever
 
-**Whenever** is a Python library for working with dates and times.
+**Type-safe datetimes for Python that get DST right. Rust or pure Python—your choice.**
 
-Over two decades, Python's `datetime` has accumulated pitfalls that trip up even
-experienced developers: arithmetic that silently ignores DST, and a type system
-that can't distinguish between naive and aware datetimes.
-Popular alternatives like [Arrow](https://pypi.org/project/arrow/) and
-[Pendulum](https://pypi.org/project/pendulum/) don't fully address these issues either.
+Do you cross your fingers every time you work with Python's {mod}`datetime`—hoping
+that you didn't mix naive and aware, or run into one of its
+{ref}`other pitfalls <datetime-pitfalls>`?
 
-*Whenever* takes a different approach: a typesafe API built on well-established
-concepts from modern datetime libraries across languages—with exceptional
-performance via a Rust extension, and a pure Python option for environments
-that need it.
+```python
+bedtime = datetime(2023, 3, 25, 22, tzinfo=ZoneInfo("Europe/Paris"))
+full_rest = bedtime + timedelta(hours=8)
+# It returns 6am, but should be 7am—because we skipped an hour due to DST!
+```
 
-It's designed to be:
-
-**{octicon}`shield-check` Correct**
-: Handles DST correctly in all arithmetic and fixes the most common pitfalls
-  of Python's standard `datetime` module.
-
-**{octicon}`lock` Typesafe**
-: Separate types for "aware" and plain datetimes make it
-  impossible to accidentally mix them—modeled on proven concepts from
-  modern datetime libraries in other languages.
-
-**{octicon}`zap` Fast**
-: In common operations, whenever is 10-100× faster than Pendulum and 
-  Arrow---and 2-4× as fast as the standard library.
-
-A quick taste:
+*Whenever* takes the guesswork out, bringing **well-established concepts**
+from modern datetime libraries in other languages to Python.
+Mixing up naive and aware becomes a **type error** instead of a bug you find in
+production, and DST is handled correctly in **all** arithmetic:
 
 ```python
 >>> from whenever import Instant, ZonedDateTime, PlainDateTime
 
-# Identify a moment in time, without timezone/calendar complexity
->>> now = Instant.now()
-Instant("2024-07-04 10:36:56Z")
+# The same bedtime, DST-safe: you get your full eight hours
+>>> bedtime = ZonedDateTime(2023, 3, 25, 22, tz="Europe/Paris")
+>>> bedtime.add(hours=8)
+ZonedDateTime("2023-03-26 07:00:00+02:00[Europe/Paris]")
 
 # Explicit, type-safe conversions
->>> now.to_tz("Europe/Paris")
-ZonedDateTime("2024-07-04 12:36:56+02:00[Europe/Paris]")
+>>> bedtime.to_tz("America/New_York")
+ZonedDateTime("2023-03-25 17:00:00-04:00[America/New_York]")
 
-# DST-safe arithmetic; stdlib doesn't do this!
->>> zdt = ZonedDateTime("2023-10-28 22:00:00+02:00[Europe/Amsterdam]")
->>> zdt.add(hours=6)  # correctly accounts for the autumn clock change
-ZonedDateTime("2023-10-29 03:00:00+01:00[Europe/Amsterdam]")
+# A moment in time, without timezone or calendar complexity
+>>> Instant.now()
+Instant("2024-07-04 10:36:56Z")
 
 # Plain (naive) datetimes are a distinct type; impossible to mix with aware
->>> PlainDateTime("2024-07-04 15:30") < zdt  # caught by type checker!
+>>> PlainDateTime(2023, 3, 26, 7) < bedtime  # caught by your type checker!
 ```
+
+In short, it's designed to be:
+
+**{octicon}`shield-check` Correct**
+: Smooths over the {ref}`sharp edges <datetime-pitfalls>` of the standard
+  library---DST first among them, but far from the only one.
+
+**{octicon}`lock` Typesafe**
+: Distinct types for exact and local time mean your type checker catches
+  what would otherwise be a production bug.
+
+**{octicon}`zap` Fast**
+: In common operations, whenever is 10-100× faster than Pendulum and
+  Arrow---and 2-4× as fast as the standard library.
+  Rather not depend on a Rust extension? A pure Python version is available too.
 
 ---
 

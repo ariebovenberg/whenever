@@ -35,8 +35,8 @@ UserWarning (stdlib)
 
 ## Turn warnings into errors
 
-The most robust approach for production code is to **turn whenever warnings into
-exceptions** as early as possible — typically in your module's setup or at
+For production code, **turn whenever's warnings into exceptions** as early as
+possible — typically in your module's setup or at
 the top of your application entry point:
 
 ```python
