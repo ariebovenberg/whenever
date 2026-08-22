@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      Turning local fields into an instant in a named timezone: the
+      offset_mismatch policy for conflicting offsets, the disambiguation policy
+      for repeated and skipped times, and the order in which they apply.
+---
+
 (resolving-local-times)=
 # Resolving local times in a timezone
 

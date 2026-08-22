@@ -27,7 +27,7 @@ of the places where the design makes certain mistakes easy to make.
 
 ```{eval-rst}
 
-.. grid:: 1 2 2 3
+.. grid:: 1 2 2 2
    :margin: 4 4 0 0
    :gutter: 2
 
@@ -73,6 +73,13 @@ of the places where the design makes certain mistakes easy to make.
       :shadow: md
 
       Several timezone classes to choose from; the obvious one is wrong
+
+   .. grid-item-card:: :octicon:`file-directory` Casing depends on the filesystem
+      :link: zoneinfo-casing
+      :link-type: doc
+      :shadow: md
+
+      The same zone ID can load on your laptop and fail in production
 
    .. grid-item-card:: :octicon:`location` Quietly uses the system zone
       :link: system-timezone

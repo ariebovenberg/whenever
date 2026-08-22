@@ -3,7 +3,8 @@ myst:
   html_meta:
     description: >-
       How to choose between Instant, PlainDateTime, ZonedDateTime, and
-      OffsetDateTime, with the trade-offs and standard library analogue of each.
+      OffsetDateTime, with the trade-offs and standard library analogue of each,
+      plus why a fixed offset is sometimes unavoidable and how it goes stale.
 ---
 
 (choosing-a-type)=
