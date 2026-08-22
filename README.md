@@ -11,7 +11,7 @@
 **Type-safe datetimes for Python that get DST right. Rust or pure Python—your choice.**
 
 Do you cross your fingers every time you work with Python's datetime—hoping that you didn't
-mix naive and aware, or run into one of its [other pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/)?
+mix naive and aware, or run into one of its [other pitfalls](https://whenever.readthedocs.io/en/latest/stdlib-pitfalls/index.html)?
 
 *Whenever* takes the guesswork out, bringing **well-established concepts** from
 [modern libraries](#acknowledgements) in other languages to Python.
@@ -105,7 +105,7 @@ for typecheckers to catch mistakes.
 [**Pendulum**](https://pypi.org/project/pendulum/)
 arrived on the scene in 2016, promising better DST-handling,
 as well as improved performance.
-However, it only fixes [*some* DST-related pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/#datetime-library-scorecard),
+However, it only fixes [*some* DST-related pitfalls](https://whenever.readthedocs.io/en/latest/why-not-pendulum.html),
 and its performance has significantly [degraded over time](https://github.com/sdispater/pendulum/issues/818).
 Additionally, it's in a long maintenance slump with only two releases in the last four years,
 while many serious and long-standing issues remain unaddressed.
