@@ -77,7 +77,7 @@ docs = [
     "myst-parser>=5,<6",
     "sphinx-copybutton~=0.5",
     "sphinx-design>=0.7,<0.8",
-    "sphinx-llm>=0.4.1,<0.5",
+    "sphinx-llm>=1,<2",
     "sphinx-reredirects>=1.1,<2",
     "sphinx>=9,<10",
 ]
