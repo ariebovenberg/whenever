@@ -1,25 +1,24 @@
 # ⏰ Whenever
 
 [![](https://img.shields.io/pypi/v/whenever.svg?color=blue)](https://pypi.python.org/pypi/whenever)
-[![](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fariebovenberg%2Fwhenever%2Fmain%2Fpyproject.toml)](https://pypi.python.org/pypi/whenever)
+[![](https://img.shields.io/pypi/pyversions/whenever.svg)](https://pypi.python.org/pypi/whenever)
 [![](https://img.shields.io/pypi/l/whenever.svg?color=blue)](https://pypi.python.org/pypi/whenever)
 [![](https://img.shields.io/github/actions/workflow/status/ariebovenberg/whenever/checks.yml?branch=main)](https://github.com/ariebovenberg/whenever)
 [![](https://img.shields.io/readthedocs/whenever.svg)](http://whenever.readthedocs.io/)
 [![](https://img.shields.io/pypi/dm/whenever)](https://pypi.python.org/pypi/whenever)
 
 
-**Typed and DST-safe datetimes for Python, available in Rust or pure Python.**
+**Type-safe datetimes for Python that get DST right. Rust or pure Python—your choice.**
 
-Do you cross your fingers every time you work with Python's datetime—hoping that you didn't mix naive and aware?
-or that you avoided its [other pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/)?
-There’s no way to be sure...
+Do you cross your fingers every time you work with Python's datetime—hoping that you didn't
+mix naive and aware, or run into one of its [other pitfalls](https://dev.arie.bovenberg.net/blog/python-datetime-pitfalls/)?
 
-✨ Until now! ✨
-
-*Whenever* helps you write **correct** and **type checked** datetime code,
-using **well-established concepts** from [modern libraries](#acknowledgements) in other languages.
+*Whenever* takes the guesswork out, bringing **well-established concepts** from
+[modern libraries](#acknowledgements) in other languages to Python.
+Mixing up naive and aware becomes a **type error** instead of a bug you find in production,
+and DST is handled correctly in **all** arithmetic.
 It's also **way faster** than other third-party libraries, and usually the standard library as well.
-Don't buy the Rust hype?—don't worry: a **pure Python** version is available as well.
+Rather not depend on a Rust extension? A **pure Python** version is available too.
 
   <p align="center">
     <picture align="center">
