@@ -2545,6 +2545,18 @@ wheels = [
 ]
 
 [[package]]
+name = "sphinxext-opengraph"
+version = "0.13.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "sphinx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/c0/eb6838e3bae624ce6c8b90b245d17e84252863150e95efdb88f92c8aa3fb/sphinxext_opengraph-0.13.0.tar.gz", hash = "sha256:103335d08567ad8468faf1425f575e3b698e9621f9323949a6c8b96d9793e80b", size = 1026875, upload-time = "2025-08-29T12:20:31.066Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/a4/66c1fd4f8fab88faf71cee04a945f9806ba0fef753f2cfc8be6353f64508/sphinxext_opengraph-0.13.0-py3-none-any.whl", hash = "sha256:936c07828edc9ad9a7b07908b29596dc84ed0b3ceaa77acdf51282d232d4d80e", size = 1004152, upload-time = "2025-08-29T12:20:29.072Z" },
+]
+
+[[package]]
 name = "tabulate"
 version = "0.10.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2784,6 +2796,7 @@ docs = [
     { name = "sphinx-design", marker = "python_full_version >= '3.13'" },
     { name = "sphinx-llm", marker = "python_full_version >= '3.13'" },
     { name = "sphinx-reredirects", marker = "python_full_version >= '3.13'" },
+    { name = "sphinxext-opengraph", marker = "python_full_version >= '3.13'" },
 ]
 integrations = [
     { name = "pydantic" },
@@ -2832,6 +2845,7 @@ docs = [
     { name = "sphinx-design", marker = "python_full_version >= '3.13'", specifier = ">=0.7,<0.8" },
     { name = "sphinx-llm", marker = "python_full_version >= '3.13'", specifier = ">=1,<2" },
     { name = "sphinx-reredirects", marker = "python_full_version >= '3.13'", specifier = ">=1.1,<2" },
+    { name = "sphinxext-opengraph", marker = "python_full_version >= '3.13'", specifier = ">=0.13,<0.14" },
 ]
 integrations = [
     { name = "pydantic", specifier = ">=2.10,<3" },
