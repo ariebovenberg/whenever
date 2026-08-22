@@ -34,6 +34,7 @@ extensions = [
     "sphinx_llm.txt",
     "sphinx_copybutton",
     "sphinx_design",
+    "sphinxext.opengraph",
     "myst_parser",
 ]
 templates_path = ["_templates"]
@@ -50,6 +51,11 @@ redirects = {
 }
 html_static_path = ["_static"]
 html_title = "Whenever"
+# Used by _templates/base.html for the homepage <title> only.
+html_context = {"homepage_title": "Whenever — type-safe datetimes for Python"}
+# Point every version's canonical URL at latest, so that search engines don't
+# have to choose between the identical copies under /en/<version>/.
+html_baseurl = "https://whenever.readthedocs.io/en/latest/"
 
 master_doc = "index"
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
@@ -72,6 +78,10 @@ llms_txt_description = (
     "distinct instant, zoned, offset, and plain datetime types."
 )
 llms_txt_suffix_mode = "replace"
+# Open Graph tags, so links to the docs get a title and a summary when shared.
+ogp_site_url = html_baseurl
+ogp_site_name = "Whenever"
+ogp_social_cards = {"enable": False}  # would pull in matplotlib
 highlight_language = "python3"
 pygments_style = "default"
 pygments_dark_style = "lightbulb"

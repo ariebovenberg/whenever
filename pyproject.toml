@@ -80,6 +80,7 @@ docs = [
     "sphinx-llm>=1,<2",
     "sphinx-reredirects>=1.1,<2",
     "sphinx>=9,<10",
+    "sphinxext-opengraph>=0.13,<0.14",
 ]
 
 [tool.uv.dependency-groups]

@@ -1,0 +1,12 @@
+{% extends "!base.html" %}
+
+{#- Furo builds every <title> from html_title, which is also the sidebar brand,
+    so html_title has to stay short. The homepage <title> is the headline search
+    engines show for the site as a whole, so give that one the tagline. -#}
+{%- block htmltitle -%}
+  {%- if pagename == master_doc -%}
+    <title>{{ homepage_title|e }}</title>
+  {%- else -%}
+    <title>{{ title|striptags|e }} - {{ docstitle|striptags|e }}</title>
+  {%- endif -%}
+{%- endblock -%}
