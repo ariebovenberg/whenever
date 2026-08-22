@@ -1,3 +1,12 @@
+---
+myst:
+  html_meta:
+    description: >-
+      How a pickled ZonedDateTime behaves across a timezone-data update: the
+      instant is preserved, local fields and offset are recomputed, and
+      PickleOffsetMismatchWarning reports the difference.
+---
+
 (pickling)=
 # Pickling zoned datetimes
 

@@ -1,5 +1,5 @@
 .. meta::
-   :description: Reference for whenever's enums, unions, and string literal types, including Weekday, RoundModeStr, and DisambiguateStr.
+   :description: Reference for whenever's enums, unions, and string literal types, including Weekday, RoundModeStr, DisambiguationStr, and OffsetMismatchStr.
 
 Other types
 ===========

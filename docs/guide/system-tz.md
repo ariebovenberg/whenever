@@ -2,8 +2,9 @@
 myst:
   html_meta:
     description: >-
-      Using the system timezone via to_system_tz() and assume_system_tz(), how
-      whenever caches it, reset_system_tz(), and non-IANA system timezones.
+      Using the system timezone via the SYSTEM_TZ sentinel, how whenever caches
+      it, reset_system_tz(), and the limits of system timezones without an IANA
+      identifier.
 ---
 
 (systemtime)=

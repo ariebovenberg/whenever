@@ -3,8 +3,8 @@ myst:
   html_meta:
     description: >-
       Reference for custom format patterns: date, time, offset, and timezone
-      specifiers, literal text rules, parsing requirements, and how it differs
-      from strftime.
+      specifiers, literal text rules, parsing requirements, migrating patterns
+      in 0.11, and how it differs from strftime.
 ---
 
 (pattern-format)=

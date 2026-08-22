@@ -4,8 +4,8 @@ myst:
   html_meta:
     description: >-
       Entry point to the practical guide, grouped by task: choosing a type,
-      comparison and conversion, ambiguity, arithmetic and deltas, parsing,
-      standard library interop, and testing.
+      comparison and conversion, resolving local times, arithmetic and deltas,
+      parsing, standard library and timezone data, pickling, and testing.
 ---
 
 (guide)=

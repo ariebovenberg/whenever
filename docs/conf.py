@@ -47,8 +47,9 @@ redirects = {
     "api": "reference/datetime.html",
     "benchmarks": "performance.html",
     "deltas": "reference/deltas.html",
+    "guide/ambiguity": "resolving-local-times.html",
     "overview": "guide/index.html",
-    "reference/deprecated": "changelog.html",
+    "reference/deprecated": "../changelog.html",
 }
 html_static_path = ["_static"]
 html_title = "Whenever"
