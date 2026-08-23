@@ -9,7 +9,7 @@ myst:
 ---
 
 (stdlib-system-tz)=
-# Implicit system time zone
+# The system time zone is used implicitly
 
 In the standard library,
 converting to the system time zone is implicit--and often the default.

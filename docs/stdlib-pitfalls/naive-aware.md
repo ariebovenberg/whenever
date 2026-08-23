@@ -7,7 +7,7 @@ myst:
       impossible to enforce the distinction with type annotations.
 ---
 
-# One type for everything
+# One type for two incompatible concepts
 
 Python uses a single `datetime` type to represent two fundamentally different concepts:
 

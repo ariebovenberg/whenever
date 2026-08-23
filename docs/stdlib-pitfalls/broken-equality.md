@@ -8,7 +8,7 @@ myst:
       versa.
 ---
 
-# Equality edge cases
+# `==` ignores `fold`
 
 [PEP 495](https://peps.python.org/pep-0495/) introduced the `fold` attribute to
 disambiguate local times during daylight saving time (DST) transitions.

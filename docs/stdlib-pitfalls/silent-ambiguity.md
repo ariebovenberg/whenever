@@ -8,7 +8,7 @@ myst:
       discover.
 ---
 
-# Ambiguity passes silently
+# Ambiguity is resolved without a word
 
 When time zone offsets change—most commonly due to daylight saving time—a local
 clock time may occur **twice** or **not at all**.

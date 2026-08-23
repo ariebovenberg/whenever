@@ -8,7 +8,7 @@ myst:
       neither.
 ---
 
-# Inconsistent role of "naive"
+# "Naive" is interpreted differently in different places
 
 In various parts of the standard library, "naive" datetimes are interpreted differently.
 Ostensibly, "naive" means "detached from the real world",

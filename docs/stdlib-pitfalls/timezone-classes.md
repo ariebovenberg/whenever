@@ -8,7 +8,7 @@ myst:
       confusable options.
 ---
 
-# `timezone` isn't enough
+# `timezone` isn't a time zone
 
 Python offers multiple time zone-related classes, and choosing the right one is not obvious.
 

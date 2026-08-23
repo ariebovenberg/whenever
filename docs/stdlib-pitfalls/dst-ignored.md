@@ -8,7 +8,7 @@ myst:
 ---
 
 (datetime-ignores-dst)=
-# Operators ignore DST
+# `+` ignores DST
 
 Arithmetic with `datetime` usually ignores daylight saving time (DST) transitions,
 operating as if the local clock runs uniformly throughout the year.

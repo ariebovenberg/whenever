@@ -7,7 +7,7 @@ myst:
       substitution principle, and how whenever keeps the two types separate.
 ---
 
-# `datetime` inherits from `date`
+# `datetime` inherits from `date`—and it breaks
 
 You may be surprised to know that `datetime` is a subclass of `date`.
 This doesn't seem problematic at first, but it leads to odd behavior.
