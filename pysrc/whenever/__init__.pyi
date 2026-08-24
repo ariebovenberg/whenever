@@ -405,6 +405,46 @@ class Time(_DateOrTimeMixin):
         nanosecond: int = ...,
     ) -> Self: ...
     @overload
+    def add(
+        self,
+        delta: TimeDelta,
+        /,
+        *,
+        overflow: Literal["raise", "wrap", "cap"] = "raise",
+    ) -> Self: ...
+    @overload
+    def add(
+        self,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+        overflow: Literal["raise", "wrap", "cap"] = "raise",
+    ) -> Self: ...
+    @overload
+    def subtract(
+        self,
+        delta: TimeDelta,
+        /,
+        *,
+        overflow: Literal["raise", "wrap", "cap"] = "raise",
+    ) -> Self: ...
+    @overload
+    def subtract(
+        self,
+        *,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+        overflow: Literal["raise", "wrap", "cap"] = "raise",
+    ) -> Self: ...
+    @overload
     def round(
         self,
         delta: TimeDelta,
