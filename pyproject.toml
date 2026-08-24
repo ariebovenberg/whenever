@@ -54,7 +54,7 @@ typing = [
 integrations = [
     "time_machine>=3.2,<4; implementation_name == 'cpython'",
     "tzdata>=2020.1",
-    "pydantic>=2.10,<3",
+    "pydantic>=2.13.4,<3",
 ]
 dev-extra = [
     "ruff>=0.16,<0.17",
