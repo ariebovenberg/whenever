@@ -52,7 +52,7 @@ typing = [
     "mypy>=2.3,<2.4",
 ]
 integrations = [
-    "time_machine>=3.2,<4; implementation_name == 'cpython'",
+    "time_machine>=3.4.0,<4; implementation_name == 'cpython'",
     "tzdata>=2020.1",
     "pydantic>=2.10,<3",
 ]
