@@ -57,7 +57,7 @@ integrations = [
     "pydantic>=2.10,<3",
 ]
 dev-extra = [
-    "ruff>=0.16,<0.17",
+    "ruff>=0.16.4,<0.17",
     "slotscheck>=0.20,<0.21",
     "build",
     "packaging>=26.2",
