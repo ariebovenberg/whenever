@@ -46,7 +46,7 @@ test = [
     "pytest-cov>=7.1.0,<8",
     "pytest-order>=1.4.0,<2",
     "pytest>=9.0.3,<10",
-    "hypothesis>=6,<7",
+    "hypothesis>=6.165.10,<7",
 ]
 typing = [
     "mypy>=2.3,<2.4",
