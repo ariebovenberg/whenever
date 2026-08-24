@@ -60,7 +60,7 @@ dev-extra = [
     "ruff>=0.16,<0.17",
     "slotscheck>=0.20,<0.21",
     "build",
-    "packaging>=26.2",
+    "packaging>=26.3",
     "setuptools-rust",
     "twine>=7,<8",
 ]
