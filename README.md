@@ -95,20 +95,18 @@ address these issues. Here's how they compare to *whenever* and the standard lib
 </div>
 
 [**Arrow**](https://pypi.org/project/arrow/)
-is probably the most historically popular 3rd party datetime library.
-It attempts to provide a more "friendly" API than the standard library,
-but doesn't address the core issues:
-it keeps the same footguns, and its decision to reduce the number
-of types to just one (``arrow.Arrow``) means that it's even harder
-for typecheckers to catch mistakes.
+puts a friendlier API on top of the standard library's model — pitfalls
+included. Its single do-it-all type and anything-goes `arrow.get()`
+make mistakes *harder* for type checkers to catch, not easier.
+[Full comparison →](https://whenever.readthedocs.io/en/latest/why-not-arrow.html)
 
 [**Pendulum**](https://pypi.org/project/pendulum/)
-arrived on the scene in 2016, promising better DST-handling,
-as well as improved performance.
-However, it only fixes [*some* DST-related pitfalls](https://whenever.readthedocs.io/en/latest/why-not-pendulum.html),
-and its performance has significantly [degraded over time](https://github.com/sdispater/pendulum/issues/818).
-Additionally, it's in a long maintenance slump with only two releases in the last four years,
-while many serious and long-standing issues remain unaddressed.
+promised to fix `datetime` as a drop-in replacement — but a subclass
+can't change behavior *and* stay drop-in. The result is an API built on
+guesswork: `+` inspects the call stack to guess which semantics the caller
+expects, missing time zones become UTC, and incomplete input is completed
+from the clock. Bugs follow: `today()` can even return yesterday.
+[Full comparison →](https://whenever.readthedocs.io/en/latest/why-not-pendulum.html)
 
 ## Why use whenever?
 
