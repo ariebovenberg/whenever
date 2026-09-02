@@ -410,6 +410,7 @@ ItemizedDateDelta("P3y5m14d")
 
 See {ref}`design` for the full rationale.
 
+(faq-why-no-subclassing)=
 ## Why can't I subclass `whenever` classes?
 
 `whenever` classes are marked `final` and aren't designed for subclassing.
