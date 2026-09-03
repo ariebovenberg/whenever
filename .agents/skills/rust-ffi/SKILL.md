@@ -1,6 +1,6 @@
 ---
 name: rust-ffi
-description: "Instructions for using whenever's internal Rust FFI abstractions"
+description: "Rust FFI reference for whenever's `src/`: the `src/py/` safe wrappers (`PyObj`, `Owned`, `PyClass`, `PyReturn`), module `State`, method-registration macros, argument and kwarg parsing, binary slots and operator dispatch, error raising, and per-class gotchas. Use when writing or changing Rust code, adding a method or operator, or porting behavior from `_pywhenever.py`."
 ---
 
 # Rust FFI Instructions
@@ -75,6 +75,24 @@ The function signatures must match the macro used. For `method_kwargs!`:
 ```rust
 fn my_method(cls: PyClass<MyType>, slf: MyType, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn
 ```
+
+## Binary slots and operator dispatch
+
+Rust binary slots that assume the first operand is their own type must not return
+`NotImplemented` for another whenever class. We control all supported combinations, so
+unsupported combinations should raise directly. This guarantees that those slots are never
+called reflexively with whenever operands.
+
+- Implement commutative combinations explicitly in the left operand's operator.
+- Pure-Python itemized deltas own all of their datetime operator interoperability through
+  reflected methods; Rust slots return `NotImplemented` for them.
+- Consequently, equal owning modules in a Rust binary slot are sufficient proof that both
+  operands are whenever extension types and that the left operand has the slot's declared type.
+- Use `binary_operation()` for Rust binary slots that assume the first operand is their own
+  type, so same-type operands, whenever extension types, unsupported combinations, and
+  reflected calls from external types are handled consistently.
+- Symmetric scalar slots such as `__mul__`, which explicitly inspect both operand orders,
+  don't need this helper.
 
 ## Performance philosophy
 

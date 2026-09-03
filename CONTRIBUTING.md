@@ -33,9 +33,13 @@ make ci-lint  # various static checks
 make typecheck  # run mypy and typing tests
 ```
 
-## Maintainer's notes
+## Code conventions
 
-Below are some points to keep in mind when making changes to the codebase:
+Conventions for changing the code — build and test commands, test layout, docstrings, the
+changelog — live in [`AGENTS.md`](AGENTS.md). It's addressed to coding agents, but the rules
+are the same for people.
+
+## Why the codebase looks like this
 
 - I purposefully opted for ``pyo3_ffi`` over ``pyo3``. There are the main reasons:
 
@@ -57,10 +61,3 @@ Below are some points to keep in mind when making changes to the codebase:
 - The tests and documentation of the Rust code are sparse. This is because
   it has no public interface and is only used through its Python bindings.
   You can find comprehensive tests and documentation in the Python codebase.
-- To keep import time fast, some "obvious" Python modules (pathlib, re, dataclasses,
-  importlib.resources) are not used, or imported lazily.
-- Docstrings are defined in the Python codebase, then copied to the Rust codebase using a helper script.
-  Synchronization is checked in CI.
-- Each documentation page carries an `html_meta` description, which becomes its entry
-  in `llms.txt`. After changing a page, review its description and run
-  `make sync-llms-summaries`. Staleness is checked in CI.
