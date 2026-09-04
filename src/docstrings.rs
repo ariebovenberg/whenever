@@ -8,7 +8,7 @@ pub(crate) const PYDANTIC_SCHEMA: &CStr = c"__get_pydantic_core_schema__(source_
 pub(crate) const CALENDARUNITCOMPOSITIONWARNING: &CStr = c"\
 Warn when itemized deltas are composed field by field.
 
-Itemized deltas preserve the exact fields they were created with:
+Itemized deltas preserve the fields they were given:
 ``1 month`` remains ``1 month`` rather than being normalized to days.
 Composing two itemized deltas without a ``relative_to`` reference therefore
 performs literal field-wise arithmetic, such as
@@ -138,137 +138,6 @@ See the `FAQ <https://whenever.rtfd.io/en/latest/faq.html#why-doesn-t-instant-ha
 ";
 pub(crate) const INVALIDOFFSETERROR: &CStr = c"\
 A string has an invalid offset for the given zone";
-pub(crate) const ITEMIZEDDATEDELTA: &CStr = c"\
-A date duration that preserves the exact fields it was created with.
-It closely models the ISO 8601 duration format for date-only durations.
-
->>> d = ItemizedDateDelta(years=2, weeks=3)
-ItemizedDateDelta(\"P2y3w\")
->>> str(ItemizedDateDelta(\"P22W\"))
-'P22W'
-
-It behaves like a mapping where the keys are
-the unit names and the values are the amounts.
-Items are ordered from largest to smallest unit.
-
->>> d['weeks']
-3
->>> d.get('days')
-None
->>> dict(d)
-{\"years\": 2, \"weeks\": 3}
->>> list(d.keys())
-[\"years\", \"weeks\"]
->>> years, weeks = d.values()
-(2, 3)
-
-``ItemizedDateDelta`` also supports other dictionary-like operations:
-
->>> \"days\" in d  # check for presence of a field
-False
->>> len(d)  # number of fields set
-2
-
-Zero values are considered distinct from \"missing\" values:
-
->>> d2 = ItemizedDateDelta(years=2, weeks=3, days=0)
->>> dict(d2)
-{\"years\": 2, \"weeks\": 3, \"days\": 0}
-
-Additionally, no normalization is performed.
-Months are not rolled into years, weeks into days, etc.
-
->>> d3 = ItemizedDateDelta(months=24, days=100)
-ItemizedDateDelta(\"P24m100d\")
-
-Empty durations are not allowed. At least one field must be set (but it can be zero):
-
->>> ItemizedDateDelta()
-ValueError: at least one field must be set
->>> ItemizedDateDelta(days=0)
-ItemizedDateDelta(\"P0d\")
-
-Negative durations are supported, but all fields must have the same sign:
-
->>> d4 = ItemizedDateDelta(years=-1, weeks=-2, days=0)
-ItemizedDateDelta(\"-P1y2w0d\")
->>> ItemizedDateDelta(years=1, days=-3)
-ValueError: mixed sign in delta
-
-Note
-----
-``ItemizedDateDelta`` does not normalize its fields. This means that
-``ItemizedDateDelta(months=14)`` and
-``ItemizedDateDelta(years=1, months=2)`` are considered different values.
-To convert to a normalized form, use :meth:`in_units`.
-See also the `delta documentation <https://whenever.rtfd.io/en/latest/guide/deltas.html>`_.
-";
-pub(crate) const ITEMIZEDDELTA: &CStr = c"\
-A duration that preserves the exact fields it was created with.
-It closely models the ISO 8601 duration format for durations.
-
->>> d = ItemizedDelta(weeks=2, days=3, hours=14)
-ItemizedDelta(\"P2w3dT14h\")
->>> d = ItemizedDelta(\"P2w3dT14h\")
->>> str(d)
-'P2W3DT14H'
-
-It behaves like a mapping where the keys are
-the unit names and the values are the amounts.
-Items are ordered from largest to smallest unit.
-
->>> d['weeks']
-2
->>> d.get('minutes')
-None
->>> dict(d)
-{\"weeks\": 2, \"days\": 3, \"hours\": 14}
->>> list(d.keys())
-[\"weeks\", \"days\", \"hours\"]
->>> weeks, days, hours = d.values()
-(2, 3, 14)
-
-``ItemizedDelta`` also supports other dictionary-like operations:
-
->>> \"months\" in d  # check for presence of a field
-False
->>> len(d)  # number of fields set
-3
-
-Zero values are considered distinct from \"missing\" values:
-
->>> d2 = ItemizedDelta(years=2, weeks=3, hours=0)
->>> dict(d2)
-{\"years\": 2, \"weeks\": 3, \"hours\": 0}
-
-Additionally, no normalization is performed.
-Months are not rolled into years, minutes into hours, etc.
-
->>> d3 = ItemizedDelta(months=24, minutes=90)
-ItemizedDelta(\"P24mT90m\")
-
-Empty durations are not allowed. At least one field must be set (but it can be zero):
-
->>> ItemizedDelta()
-ValueError: at least one field must be set
->>> ItemizedDelta(seconds=0)
-ItemizedDelta(\"PT0s\")
-
-Negative durations are supported, but all fields must have the same sign:
-
->>> d4 = ItemizedDelta(years=-1, weeks=-2, days=0)
-ItemizedDelta(\"-P1y2w0d\")
->>> ItemizedDelta(years=1, days=-3)
-ValueError: mixed sign in delta
-
-Note
-----
-Unlike :class:`TimeDelta`, ``ItemizedDelta`` does not normalize
-its fields. This means that ``ItemizedDelta(hours=90)`` and
-``ItemizedDelta(days=3, hours=18)`` are considered different values.
-To convert to a normalized form, use :meth:`in_units`.
-See also the `delta documentation <https://whenever.rtfd.io/en/latest/guide/deltas.html>`_.
-";
 pub(crate) const NAIVEARITHMETICWARNING: &CStr = c"\
 Raised when exact-time arithmetic is performed on a
 :class:`~whenever.PlainDateTime` without timezone context.
@@ -1015,274 +884,6 @@ subtract($self, delta=None, /, *, hours=0, minutes=0, seconds=0, milliseconds=0,
 Subtract a time amount from this instant.
 
 See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
-";
-pub(crate) const ITEMIZEDDATEDELTA_ADD: &CStr = c"\
-add($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
---
-
-Add time to this delta, returning a new delta.";
-pub(crate) const ITEMIZEDDATEDELTA_EXACT_EQ: &CStr = c"\
-Deprecated alias for :meth:`strict_eq`.
-
-.. deprecated:: 0.11
-   Use :meth:`strict_eq` instead.
-";
-pub(crate) const ITEMIZEDDATEDELTA_FORMAT_ISO: &CStr = c"\
-format_iso($self, *, lowercase_units=False)
---
-
-Convert to the canionical ISO 8601 string representation:
-
-.. code-block:: text
-
-    P(nY)(nM)(nW)(nD)
-
-You can also use ``str(d)`` which is equivalent to ``d.format_iso()``.
-
-Inverse of :meth:`parse_iso`.
-
->>> d = ItemizedDateDelta(weeks=1, days=11)
->>> d.format_iso()
-'P1W11D'
-
-Note
-----
-Negative durations are prefixed with a minus sign,
-which is not part of the ISO 8601 standard, but is a common extension.
-See :ref:`here <iso8601-durations>` for more information.
-";
-pub(crate) const ITEMIZEDDATEDELTA_IN_UNITS: &CStr = c"\
-in_units($self, units, /, *, relative_to, round_mode='trunc', round_increment=1)
---
-
-Convert this delta into the specified units. A `relative_to` date
-is required to resolve variable-length units (years and months).
-
->>> d = ItemizedDateDelta(years=1, months=8)
->>> d.in_units([\"weeks\", \"days\"], relative_to=Date(2020, 6, 30))
-ItemizedDateDelta(\"P86w6d\")
-";
-pub(crate) const ITEMIZEDDATEDELTA_PARSE_ISO: &CStr = c"\
-Parse the *popular interpretation* of the ISO 8601 duration format.
-Inverse of :meth:`format_iso`
-
->>> ItemizedDateDelta.parse_iso(\"-P1W11D\")
-ItemizedDateDelta(\"-P1w11d\")
-
-You can also use the constructor ``ItemizedDateDelta(s)`` which is
-equivalent to ``ItemizedDateDelta.parse_iso(s)``.
-
-Note
-----
-Does not parse all possible ISO 8601 durations. In particular,
-it doesn't allow fractional values.
-See :ref:`here <iso8601-durations>` for more information.
-";
-pub(crate) const ITEMIZEDDATEDELTA_REPLACE: &CStr = c"\
-replace($self, **kwargs)
---
-
-Return a new delta with specific fields replaced.
-Fields set to ``None`` will be removed.
-
-All normal validation rules apply.
-
->>> d = ItemizedDateDelta(years=1, months=2, weeks=3)
->>> d.replace(months=None, weeks=4)
-ItemizedDateDelta(\"P1y4w\")
-";
-pub(crate) const ITEMIZEDDATEDELTA_SIGN: &CStr = c"\
-The sign of the delta, whether it's positive, negative, or zero.
-
->>> ItemizedDateDelta(weeks=2).sign()
-1
->>> ItemizedDateDelta(days=-3).sign()
--1
->>> ItemizedDateDelta(weeks=0).sign()
-0
-";
-pub(crate) const ITEMIZEDDATEDELTA_STRICT_EQ: &CStr = c"\
-Check for strict equality. All fields *and their presence* must match.
-
->>> d = ItemizedDateDelta(weeks=2, days=3)
->>> d == ItemizedDateDelta(weeks=2, days=3)
-True
->>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
-True
->>> d.strict_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
-False
-";
-pub(crate) const ITEMIZEDDATEDELTA_SUBTRACT: &CStr = c"\
-subtract($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
---
-
-Subtract time from this delta, returning a new delta.";
-pub(crate) const ITEMIZEDDATEDELTA_TOTAL: &CStr = c"\
-total($self, unit, /, *, relative_to)
---
-
-Return the total duration expressed in the specified unit as a float
-
->>> ItemizedDateDelta(years=1, months=6).total(\"months\", relative_to=Date(2020, 1, 31))
-18.0
->>> ItemizedDateDelta(days=1000).total(\"years\", relative_to=Date(2020, 4, 10))
-2.73972602739726
-";
-pub(crate) const ITEMIZEDDELTA_ADD: &CStr = c"\
-add($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
---
-
-Add time to this delta, returning a new delta.
-
-Without a `relative_to` reference, composition is field-wise and warns
-when nonzero calendar units are involved. The warning can be suppressed
-with `cal_unit_composition_ok=True`.
-";
-pub(crate) const ITEMIZEDDELTA_DATE_AND_TIME_PARTS: &CStr = c"\
-Split into date and time parts.
-
-Either part may be None if no fields were set of that type.
-At least one part will be non-None, since at least one field must be set.
-
->>> d = ItemizedDelta(
-...     years=1,
-...     months=2,
-...     weeks=3,
-...     days=4,
-...     hours=5,
-...     minutes=6,
-...     seconds=7,
-...     nanoseconds=8,
-... )
->>> date_part, time_part = d.date_and_time_parts()
->>> date_part
-ItemizedDateDelta(\"P1y2m3w4d\")
->>> time_part
-TimeDelta(\"PT5h6m7.000000008s\")
->>> ItemizedDelta(weeks=2).date_and_time_parts()
-(ItemizedDateDelta(\"P2w\"), None)
-
-";
-pub(crate) const ITEMIZEDDELTA_EXACT_EQ: &CStr = c"\
-Deprecated alias for :meth:`strict_eq`.
-
-.. deprecated:: 0.11
-   Use :meth:`strict_eq` instead.
-";
-pub(crate) const ITEMIZEDDELTA_FORMAT_ISO: &CStr = c"\
-format_iso($self, *, lowercase_units=False)
---
-
-Format as the *popular interpretation* of the ISO 8601 duration format.
-May not strictly adhere to (all versions of) the standard.
-See :ref:`here <iso8601-durations>` for more information.
-
-Inverse of :meth:`parse_iso`.
-
-The format is:
-
-.. code-block:: text
-
-    P(nY)(nM)(nW)(nD)T(nH)(nM)(nS)
-
->>> d = ItemizedDelta(
-...     weeks=1,
-...     days=11,
-...     hours=4,
-...     seconds=1,
-...     nanoseconds=12_000,
-... )
->>> d.format_iso()
-'P1W11DT4H1.000012S'
-";
-pub(crate) const ITEMIZEDDELTA_IN_UNITS: &CStr = c"\
-in_units($self, units, /, *, relative_to, round_mode='trunc', round_increment=1)
---
-
-Convert this delta into the specified units. A `relative_to` datetime
-is required to resolve calendar units.
-
->>> d = ItemizedDelta(years=1, months=8, minutes=1000)
->>> d.in_units([\"weeks\", \"hours\"], relative_to=ZonedDateTime(2020, 6, 30, 12, tz=\"Asia/Tokyo\"))
-ItemizedDelta(\"P86wT160h\")
-
-Parameters
-----------
-relative_to
-    A :class:`ZonedDateTime`, :class:`PlainDateTime`, or
-    :class:`OffsetDateTime` reference point.
-
-    - :class:`ZonedDateTime`: DST-aware; emits no warning
-    - :class:`PlainDateTime`: emits :class:`NaiveArithmeticWarning`
-      when the conversion crosses the calendar/exact-time boundary
-      (i.e. the delta or output mixes calendar and exact-time units).
-      Pure calendar-to-calendar or exact-to-exact conversions do not warn.
-    - :class:`OffsetDateTime`: emits :class:`StaleOffsetWarning`
-      when the delta contains calendar units (years, months, weeks, days)
-      **or** the output units include calendar units
-";
-pub(crate) const ITEMIZEDDELTA_PARSE_ISO: &CStr = c"\
-Parse the *popular interpretation* of the ISO 8601 duration format.
-Does not parse all possible ISO 8601 durations.
-See :ref:`here <iso8601-durations>` for more information.
-
-.. code-block:: text
-
-   P4D        # 4 days
-   PT4H       # 4 hours
-   PT0M       # 0 minutes
-   PT3M40.5S  # 3 minutes and 40.5 seconds
-   P1W11DT90M # 1 week, 11 days, and 90 minutes
-   -PT7H400M  # -7 hours and -400 minutes
-   +PT7H4M    # 7 hours and 4 minutes (7:04:00)
-
-Inverse of :meth:`format_iso`
-
->>> ItemizedDelta.parse_iso(\"-P1W11DT4H\")
-ItemizedDelta(\"-P1w11dT4h\")
-";
-pub(crate) const ITEMIZEDDELTA_REPLACE: &CStr = c"\
-replace($self, **kwargs)
---
-
-Return a new delta with specific fields replaced.
-Fields set to ``None`` will be removed.
-
-All normal validation rules apply.
-
->>> d = ItemizedDelta(years=1, months=2, hours=3)
->>> d.replace(months=None, hours=2)
-ItemizedDelta(\"P1yT2h\")
-";
-pub(crate) const ITEMIZEDDELTA_SIGN: &CStr = c"\
-The sign of the delta, 1, 0, or -1";
-pub(crate) const ITEMIZEDDELTA_STRICT_EQ: &CStr = c"\
-Check for strict equality. All fields *and their presence* must match.";
-pub(crate) const ITEMIZEDDELTA_SUBTRACT: &CStr = c"\
-subtract($self, arg=..., /, *, relative_to=..., in_units=..., round_mode=..., round_increment=..., cal_unit_composition_ok=..., **kwargs)
---
-
-Subtract time from this delta, returning a new delta.";
-pub(crate) const ITEMIZEDDELTA_TOTAL: &CStr = c"\
-total($self, unit, /, *, relative_to)
---
-
-Return the total duration expressed in the specified unit as a float
-
-Parameters
-----------
-relative_to
-    A :class:`ZonedDateTime`, :class:`PlainDateTime`, or
-    :class:`OffsetDateTime` reference point.
-
-    - :class:`ZonedDateTime`: DST-aware; emits no warning
-    - :class:`PlainDateTime`: emits :class:`NaiveArithmeticWarning`
-      when the conversion crosses the calendar/exact-time boundary
-      (i.e. the delta or target unit mixes calendar and exact-time units).
-      Pure calendar-to-calendar or exact-to-exact conversions do not warn.
-    - :class:`OffsetDateTime`: emits :class:`StaleOffsetWarning`
-      when the delta contains calendar units (years, months, weeks, days)
-      **or** the target unit is a calendar unit
 ";
 pub(crate) const OFFSETDATETIME_ADD: &CStr = c"\
 add($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, stale_offset_ok=False)
@@ -2333,6 +1934,24 @@ For ``\"hour\"``, ``\"minute\"``, and ``\"second\"``, the existing offset
 is preserved if valid. A boundary skipped by a transition is moved to
 the first valid time after the gap.
 ";
+pub(crate) const ZONEDDATETIME_STRICT_EQ: &CStr = c"\
+Compare two values, including what ``==`` ignores.
+
+``ZonedDateTime.__eq__`` ignores the argument's type, the local
+datetime, the offset, and the timezone. A timezone is compared by
+identifier and definition; the system timezone has no identifier and
+so compares by definition alone. An argument of a different type
+raises :exc:`TypeError`.
+
+>>> a = ZonedDateTime(2020, 8, 15, hour=12, tz=\"Europe/Amsterdam\")
+>>> b = a.to_tz(\"America/New_York\")
+>>> a == b
+True  # same moment in time
+>>> a.strict_eq(b)
+False  # different local datetime, offset and timezone
+
+See :ref:`strict-equality` for the rules on every type.
+";
 pub(crate) const ZONEDDATETIME_SUBTRACT: &CStr = c"\
 subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguation=...)
 --
@@ -2412,23 +2031,22 @@ Deprecated alias for :meth:`strict_eq`.
    Use :meth:`strict_eq` instead.
 ";
 pub(crate) const EXACTTIME_STRICT_EQ: &CStr = c"\
-Compare objects by their values
-(instead of whether they represent the same instant).
-Different types are never equal.
+Compare two values, including what ``==`` ignores.
+
+``Instant.__eq__`` ignores nothing but the argument's type, while
+``OffsetDateTime.__eq__`` also ignores the local datetime and the
+offset. An argument of a different type raises :exc:`TypeError`.
 
 >>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=hours(1))
 >>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=hours(2))
 >>> a == b
 True  # equivalent instants
 >>> a.strict_eq(b)
-False  # different values (hour and offset)
+False  # different local datetime and offset
 >>> a.strict_eq(Instant.now())
 TypeError  # different types
 
-Note
-----
-If ``a.strict_eq(b)`` is true, then
-``a == b`` is also true, but the converse is not necessarily true.
+See :ref:`strict-equality` for the rules on every type.
 ";
 pub(crate) const EXACTTIME_TIMESTAMP: &CStr = c"\
 timestamp($self, *, unit='second')
