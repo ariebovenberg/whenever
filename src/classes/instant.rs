@@ -16,10 +16,7 @@ use crate::{
         compat::{parse_pattern_keyword, warn_deprecated},
         fmt,
         format_args::{self, Suffix},
-        instant::{
-            TimestampUnit, extract_instant, parse_instant_arg, parse_timestamp_millis,
-            parse_timestamp_nanos,
-        },
+        instant::{TimestampUnit, extract_instant, parse_instant_arg},
         pattern, pickle, rfc2822, round_args as round,
     },
     docstrings as doc,
@@ -333,7 +330,7 @@ fn from_timestamp_millis(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
         c"from_timestamp_millis() is deprecated; use from_timestamp(..., unit='millisecond') instead",
         1,
     )?;
-    parse_timestamp_millis(ts)?.to_obj(cls)
+    TimestampUnit::Millisecond.parse(ts)?.to_obj(cls)
 }
 
 fn from_timestamp_nanos(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
@@ -342,7 +339,7 @@ fn from_timestamp_nanos(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
         c"from_timestamp_nanos() is deprecated; use from_timestamp(..., unit='nanosecond') instead",
         1,
     )?;
-    parse_timestamp_nanos(ts)?.to_obj(cls)
+    TimestampUnit::Nanosecond.parse(ts)?.to_obj(cls)
 }
 
 fn to_stdlib(cls: PyClass<Instant>, slf: Instant) -> PyReturn {

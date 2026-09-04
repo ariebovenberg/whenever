@@ -3,7 +3,8 @@ myst:
   html_meta:
     description: >-
       Converting between whenever's types with to_instant(), to_tz(), to_plain(),
-      and the assume_*() methods, including how offset mismatches are handled.
+      and the assume_*() methods, including how offset mismatches are handled,
+      and reading and creating timestamps in seconds through nanoseconds.
 ---
 
 # Converting between types
@@ -29,6 +30,37 @@ ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Paris]")
 >>> d.to_fixed_offset(hours(4)) == d
 True  # always the same moment in time
 ```
+
+(timestamps)=
+## To and from timestamps
+
+A **timestamp** is a count of whole units since the UNIX epoch. Read one with
+{meth}`~whenever.Instant.timestamp` and create one with
+{meth}`~whenever.Instant.from_timestamp`. Both take `unit=`, which is
+`"second"` by default and also accepts `"millisecond"`, `"microsecond"`, and
+`"nanosecond"`.
+
+Both directions **floor** at the requested unit, so a timestamp names the
+bucket that contains the instant. One nanosecond before the epoch is `-1` in
+every unit—not `0`, which is what `int()` on a negative float gives.
+
+Seconds accept an integer or a float; the other units require an integer.
+A float is floored to whole nanoseconds.
+
+```python
+>>> Instant.from_timestamp(1703755800)
+Instant("2023-12-28 09:30:00Z")
+>>> Instant.from_utc(1969, 12, 31, 23, 59, 59, nanosecond=999_999_999).timestamp()
+-1
+>>> Instant.from_timestamp(1703755800123, unit="millisecond")
+Instant("2023-12-28 09:30:00.123Z")
+>>> Instant.from_timestamp(1703755800.5).to_tz("Europe/Amsterdam")
+ZonedDateTime("2023-12-28 10:30:00.5+01:00[Europe/Amsterdam]")
+```
+
+{class}`~whenever.OffsetDateTime` and {class}`~whenever.ZonedDateTime` have no
+timestamp constructor of their own: build an {class}`~whenever.Instant` and
+move it with `to_fixed_offset()` or `to_tz()`.
 
 ## To and from local time
 
@@ -88,7 +120,7 @@ with `disambiguation`.
 :::{admonition} When is `assume_tz` useful?
 :class: hint
 
-A common scenario is receiving timestamps from an external source that only
+A common scenario is receiving datetimes from an external source that only
 carries a fixed offset. If the originating timezone is known,
 {meth}`~whenever.OffsetDateTime.assume_tz` associates its rules before further
 arithmetic. See {ref}`offset-datetime-guidance` for why doing this before

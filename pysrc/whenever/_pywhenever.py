@@ -3088,11 +3088,7 @@ class Instant(_ExactTime):
         Instant("2024-06-15 12:34:56.789123456Z")
         """
         secs, nanos = divmod(time_ns(), 1_000_000_000)
-        try:
-            dt = _from_epoch_offset(secs, 0)
-        except OverflowError as e:
-            raise ValueError("timestamp out of range") from e
-        return cls._from_py_unchecked(dt, nanos)
+        return cls._from_py_unchecked(_from_epoch_utc(secs), nanos)
 
     @classmethod
     def from_timestamp(
@@ -3106,17 +3102,15 @@ class Instant(_ExactTime):
 
         The inverse of the ``timestamp()`` method.
 
-        Seconds accept integers and floats. Milliseconds, microseconds, and
-        nanoseconds require integers.
+        Seconds accept integers and floats, which are floored to whole
+        nanoseconds; milliseconds, microseconds, and nanoseconds require
+        integers. A value outside ``Instant.MIN..MAX`` raises ``ValueError``.
         """
         secs, nanos = split_timestamp(value, unit)
-        return cls._from_py_unchecked(
-            _fromtimestamp(secs, _UTC),
-            nanos,
-        )
+        return cls._from_py_unchecked(_from_epoch_utc(secs), nanos)
 
     @classmethod
-    def from_timestamp_millis(cls, i: int, /) -> Instant:
+    def from_timestamp_millis(cls, value: int, /) -> Instant:
         """Create an Instant from a UNIX timestamp (in milliseconds).
 
         .. deprecated:: 0.11
@@ -3128,12 +3122,10 @@ class Instant(_ExactTime):
             "from_timestamp_millis() is deprecated; use from_timestamp(..., unit='millisecond') instead",
             stacklevel=2,
         )
-        if not isinstance(i, int):
-            raise TypeError("method requires an integer")
-        return cls.from_timestamp(i, unit="millisecond")
+        return cls.from_timestamp(value, unit="millisecond")
 
     @classmethod
-    def from_timestamp_nanos(cls, i: int, /) -> Instant:
+    def from_timestamp_nanos(cls, value: int, /) -> Instant:
         """Create an Instant from a UNIX timestamp (in nanoseconds).
 
         .. deprecated:: 0.11
@@ -3145,9 +3137,7 @@ class Instant(_ExactTime):
             "from_timestamp_nanos() is deprecated; use from_timestamp(..., unit='nanosecond') instead",
             stacklevel=2,
         )
-        if not isinstance(i, int):
-            raise TypeError("method requires an integer")
-        return cls.from_timestamp(i, unit="nanosecond")
+        return cls.from_timestamp(value, unit="nanosecond")
 
     def _init_from_py(self, d: _datetime) -> None:
         if d.tzinfo is None or d.utcoffset() is None:
@@ -3550,7 +3540,7 @@ def _unpkl_utc(data: bytes) -> Instant:
     if nanos >= 1_000_000_000:
         raise ValueError(f"nanosecond out of range: {nanos}")
     return Instant._from_py_unchecked(
-        _fromtimestamp(secs - 62_135_683_200, _UTC), nanos
+        _from_epoch_utc(secs - 62_135_683_200), nanos
     )
 
 
@@ -3678,7 +3668,9 @@ class OffsetDateTime(_ExactAndLocalTime):
             )
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _load_offset(offset, warning_stacklevel=3)),
+            _from_epoch_utc(secs).astimezone(
+                _load_offset(offset, warning_stacklevel=3)
+            ),
             nanos,
         )
 
@@ -3739,7 +3731,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     @classmethod
     def from_timestamp(
         cls,
-        i: int | float,
+        value: int | float,
         /,
         *,
         offset: int | TimeDelta,
@@ -3772,16 +3764,18 @@ class OffsetDateTime(_ExactAndLocalTime):
                 StaleOffsetWarning,
                 stacklevel=2,
             )
-        secs, fract = divmod(i, 1)
+        secs, nanos = split_timestamp(value, "second")
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _load_offset(offset, warning_stacklevel=3)),
-            int(fract * 1_000_000_000),
+            _from_epoch_utc(secs).astimezone(
+                _load_offset(offset, warning_stacklevel=3)
+            ),
+            nanos,
         )
 
     @classmethod
     def from_timestamp_millis(
         cls,
-        i: int,
+        value: int,
         /,
         *,
         offset: int | TimeDelta,
@@ -3806,18 +3800,18 @@ class OffsetDateTime(_ExactAndLocalTime):
                 StaleOffsetWarning,
                 stacklevel=2,
             )
-        if not isinstance(i, int):
-            raise TypeError("method requires an integer")
-        secs, millis = divmod(i, 1_000)
+        secs, nanos = split_timestamp(value, "millisecond")
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _load_offset(offset, warning_stacklevel=3)),
-            millis * 1_000_000,
+            _from_epoch_utc(secs).astimezone(
+                _load_offset(offset, warning_stacklevel=3)
+            ),
+            nanos,
         )
 
     @classmethod
     def from_timestamp_nanos(
         cls,
-        i: int,
+        value: int,
         /,
         *,
         offset: int | TimeDelta,
@@ -3842,11 +3836,11 @@ class OffsetDateTime(_ExactAndLocalTime):
                 StaleOffsetWarning,
                 stacklevel=2,
             )
-        if not isinstance(i, int):
-            raise TypeError("method requires an integer")
-        secs, nanos = divmod(i, 1_000_000_000)
+        secs, nanos = split_timestamp(value, "nanosecond")
         return cls._from_py_unchecked(
-            _fromtimestamp(secs, _load_offset(offset, warning_stacklevel=3)),
+            _from_epoch_utc(secs).astimezone(
+                _load_offset(offset, warning_stacklevel=3)
+            ),
             nanos,
         )
 
@@ -5090,7 +5084,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     @classmethod
     def from_timestamp(
-        cls, i: int | float, /, *, tz: str | _SystemTZ
+        cls, value: int | float, /, *, tz: str | _SystemTZ
     ) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in seconds).
 
@@ -5103,15 +5097,13 @@ class ZonedDateTime(_ExactAndLocalTime):
             "ZonedDateTime.from_timestamp() is deprecated; use Instant.from_timestamp(...).to_tz(...) instead",
             stacklevel=2,
         )
-        secs, fract = divmod(i, 1)
+        secs, nanos = split_timestamp(value, "second")
         _tz = _load_tz(tz)
-        return cls._from_py_unchecked(
-            _from_epoch(int(secs), _tz), int(fract * 1_000_000_000), _tz
-        )
+        return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
     @classmethod
     def from_timestamp_millis(
-        cls, i: int, /, *, tz: str | _SystemTZ
+        cls, value: int, /, *, tz: str | _SystemTZ
     ) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in milliseconds).
 
@@ -5124,17 +5116,13 @@ class ZonedDateTime(_ExactAndLocalTime):
             "ZonedDateTime.from_timestamp_millis() is deprecated; use Instant.from_timestamp(..., unit='millisecond').to_tz(...) instead",
             stacklevel=2,
         )
-        if not isinstance(i, int):
-            raise TypeError("method requires an integer")
-        secs, millis = divmod(i, 1_000)
+        secs, nanos = split_timestamp(value, "millisecond")
         _tz = _load_tz(tz)
-        return cls._from_py_unchecked(
-            _from_epoch(secs, _tz), millis * 1_000_000, _tz
-        )
+        return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
     @classmethod
     def from_timestamp_nanos(
-        cls, i: int, /, *, tz: str | _SystemTZ
+        cls, value: int, /, *, tz: str | _SystemTZ
     ) -> ZonedDateTime:
         """Create an instance from a UNIX timestamp (in nanoseconds).
 
@@ -5147,9 +5135,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             "ZonedDateTime.from_timestamp_nanos() is deprecated; use Instant.from_timestamp(..., unit='nanosecond').to_tz(...) instead",
             stacklevel=2,
         )
-        if not isinstance(i, int):
-            raise TypeError("method requires an integer")
-        secs, nanos = divmod(i, 1_000_000_000)
+        secs, nanos = split_timestamp(value, "nanosecond")
         _tz = _load_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
@@ -7292,6 +7278,15 @@ def _from_epoch(ts: int, tz: TimeZone) -> _datetime:
     return _from_epoch_offset(ts, tz.offset_for_instant(ts))
 
 
+def _from_epoch_utc(ts: int) -> _datetime:
+    # A timestamp outside Instant.MIN..MAX is a ValueError on every platform,
+    # whereas _from_epoch_offset() reports an out-of-range instant.
+    try:
+        return _from_epoch_offset(ts, 0)
+    except OverflowError:
+        raise ValueError("timestamp out of range") from None
+
+
 def _from_epoch_offset(ts: int, offset: int) -> _datetime:
     # Check ts (UTC), not local_ts below, because a negative UTC offset can
     # make local_ts land inside the valid datetime range even when ts itself
@@ -7337,7 +7332,6 @@ def _load_offset(
 
 # Helpers that pre-compute/lookup as much as possible
 _no_tzinfo_fold_or_ms = {"tzinfo", "fold", "microsecond"}.isdisjoint
-_fromtimestamp = _datetime.fromtimestamp
 
 
 def _format_date(d: _date, basic: bool) -> str:

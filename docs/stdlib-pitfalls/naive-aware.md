@@ -27,7 +27,7 @@ def schedule_at(dt: datetime) -> None:
     ...
 ```
 
-Does `dt` represent a local wall-clock time? A UTC timestamp? A zoned time?
+Does `dt` represent a local wall-clock time? A UTC datetime? A zoned time?
 The type gives you no way to say.
 
 This makes it impossible to statically enforce one of the most important

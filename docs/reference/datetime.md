@@ -64,10 +64,8 @@ exact points in time:
 |    |   |   |   |
 |  `x + TimeDelta`  | {meth}`🔗 <Instant.__add__>` | {meth}`🔗 <ZonedDateTime.__add__>`  | {meth}`🔗 <OffsetDateTime.__add__>` |
 
-Timestamp conversion floors values before the UNIX epoch at the requested
-unit. Thus `1969-12-31T23:59:59.999999999Z` maps to `-1` in seconds,
-milliseconds, microseconds, and nanoseconds. This differs from applying
-`int()` to a negative floating-point timestamp, which truncates toward zero.
+Timestamp conversion floors at the requested unit in both directions; see
+{ref}`timestamps`.
 
 
 ## Local time methods

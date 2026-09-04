@@ -1,4 +1,3 @@
-import contextlib
 import pickle
 import re
 from copy import copy, deepcopy
@@ -246,15 +245,24 @@ class TestTimestamp:
         assert value.timestamp(unit=unit) == expected
 
     @pytest.mark.parametrize(
-        "unit",
-        ["second", "millisecond", "microsecond", "nanosecond"],
+        # One nanosecond after the epoch floors to 0 in every unit that
+        # cannot resolve it; in nanoseconds it is the exact value 1.
+        ("unit", "after_epoch"),
+        [
+            ("second", 0),
+            ("millisecond", 0),
+            ("microsecond", 0),
+            ("nanosecond", 1),
+        ],
     )
-    def test_unit_floors_before_epoch(self, unit):
-        value = Instant.from_utc(
+    def test_unit_floors_around_epoch(self, unit, after_epoch):
+        before = Instant.from_utc(
             1969, 12, 31, 23, 59, 59, nanosecond=999_999_999
         )
+        after = Instant.from_utc(1970, 1, 1, nanosecond=1)
 
-        assert value.timestamp(unit=unit) == -1
+        assert before.timestamp(unit=unit) == -1
+        assert after.timestamp(unit=unit) == after_epoch
 
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="invalid timestamp unit"):
@@ -324,7 +332,9 @@ class TestFromTimestamp:
     def test_subsecond_unit_rejects_float(
         self, unit: Literal["millisecond", "microsecond", "nanosecond"]
     ):
-        with pytest.raises(TypeError, match="must be an integer"):
+        with pytest.raises(
+            TypeError, match=f"^timestamp in {unit}s must be an integer$"
+        ):
             Instant.from_timestamp(1.0, unit=unit)  # type: ignore[call-overload]
 
     def test_typed_units(self):
@@ -347,6 +357,7 @@ class TestFromTimestamp:
         [
             ("second", 1),
             ("millisecond", 1_000),
+            ("microsecond", 1_000_000),
             ("nanosecond", 1_000_000_000),
         ],
     )
@@ -363,13 +374,15 @@ class TestFromTimestamp:
             1969, 12, 31, 23, 59, 56
         )
 
-        with pytest.raises((OSError, OverflowError, ValueError)):
+        # Far outside the range, the backends may disagree on the type:
+        # Rust overflows its machine integer before it can check the range.
+        with pytest.raises((ValueError, OverflowError)):
             method(1_000_000_000_000_000_000 * factor)
 
-        with pytest.raises((OSError, OverflowError, ValueError)):
+        with pytest.raises((ValueError, OverflowError)):
             method(-1_000_000_000_000_000_000 * factor)
 
-        with pytest.raises((OSError, OverflowError, ValueError)):
+        with pytest.raises((ValueError, OverflowError)):
             method(1 << 129)
 
         if unit != "second":
@@ -384,47 +397,65 @@ class TestFromTimestamp:
             -4, unit="nanosecond"
         ) == Instant.from_timestamp(0) - nanoseconds(4)
 
+        # bool is an int subclass, so it counts as one unit
+        assert method(True) == method(1)
+
     def test_extremes(self):
-        with contextlib.suppress(OSError):
-            assert Instant.from_timestamp(
-                Instant.MAX.timestamp()
-            ) == Instant.from_utc(9999, 12, 31, 23, 59, 59)
+        assert Instant.from_timestamp(
+            Instant.MAX.timestamp()
+        ) == Instant.from_utc(9999, 12, 31, 23, 59, 59)
 
-        with contextlib.suppress(OSError):
-            assert (
-                Instant.from_timestamp(Instant.MIN.timestamp()) == Instant.MIN
+        assert Instant.from_timestamp(Instant.MIN.timestamp()) == Instant.MIN
+
+        assert Instant.from_timestamp(
+            Instant.MAX.timestamp(unit="millisecond"), unit="millisecond"
+        ) == Instant.from_utc(9999, 12, 31, 23, 59, 59, nanosecond=999_000_000)
+        assert (
+            Instant.from_timestamp(
+                Instant.MIN.timestamp(unit="millisecond"),
+                unit="millisecond",
+            )
+            == Instant.MIN
+        )
+
+        assert Instant.from_timestamp(
+            Instant.MAX.timestamp(unit="microsecond"), unit="microsecond"
+        ) == Instant.from_utc(9999, 12, 31, 23, 59, 59, nanosecond=999_999_000)
+        assert (
+            Instant.from_timestamp(
+                Instant.MIN.timestamp(unit="microsecond"),
+                unit="microsecond",
+            )
+            == Instant.MIN
+        )
+
+        assert (
+            Instant.from_timestamp(
+                Instant.MAX.timestamp(unit="nanosecond"),
+                unit="nanosecond",
+            )
+            == Instant.MAX
+        )
+        assert (
+            Instant.from_timestamp(
+                Instant.MIN.timestamp(unit="nanosecond"),
+                unit="nanosecond",
+            )
+            == Instant.MIN
+        )
+
+    @pytest.mark.parametrize(
+        "unit", ["second", "millisecond", "microsecond", "nanosecond"]
+    )
+    def test_just_outside_the_range(self, unit):
+        with pytest.raises(ValueError, match="out of range"):
+            Instant.from_timestamp(
+                Instant.MAX.timestamp(unit=unit) + 1, unit=unit
             )
 
-        with contextlib.suppress(OSError):
-            assert Instant.from_timestamp(
-                Instant.MAX.timestamp(unit="millisecond"), unit="millisecond"
-            ) == Instant.from_utc(
-                9999, 12, 31, 23, 59, 59, nanosecond=999_000_000
-            )
-        with contextlib.suppress(OSError):
-            assert (
-                Instant.from_timestamp(
-                    Instant.MIN.timestamp(unit="millisecond"),
-                    unit="millisecond",
-                )
-                == Instant.MIN
-            )
-
-        with contextlib.suppress(OSError):
-            assert (
-                Instant.from_timestamp(
-                    Instant.MAX.timestamp(unit="nanosecond"),
-                    unit="nanosecond",
-                )
-                == Instant.MAX
-            )
-        with contextlib.suppress(OSError):
-            assert (
-                Instant.from_timestamp(
-                    Instant.MIN.timestamp(unit="nanosecond"),
-                    unit="nanosecond",
-                )
-                == Instant.MIN
+        with pytest.raises(ValueError, match="out of range"):
+            Instant.from_timestamp(
+                Instant.MIN.timestamp(unit=unit) - 1, unit=unit
             )
 
     def test_float(self):
@@ -437,23 +468,36 @@ class TestFromTimestamp:
             -9.000_000_100
         ) == Instant.from_timestamp(-9) - nanoseconds(100)
 
-        with pytest.raises((ValueError, OverflowError)):
+        # A float floors to whole nanoseconds, in both directions
+        assert Instant.from_timestamp(1.5e-9) == Instant.from_timestamp(
+            0
+        ) + nanoseconds(1)
+        assert Instant.from_timestamp(-1.5e-9) == Instant.from_timestamp(
+            0
+        ) - nanoseconds(2)
+
+        with pytest.raises(ValueError, match="out of range"):
             Instant.from_timestamp(9e200)
 
-        with pytest.raises((ValueError, OverflowError, OSError)):
+        with pytest.raises(ValueError, match="out of range"):
             Instant.from_timestamp(float(Instant.MAX.timestamp()) + 0.99999999)
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError, match="out of range"):
             Instant.from_timestamp(float("inf"))
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError, match="out of range"):
+            Instant.from_timestamp(float("-inf"))
+
+        with pytest.raises(ValueError, match="out of range"):
             Instant.from_timestamp(float("nan"))
 
     def test_invalid(self):
         with pytest.raises(TypeError):
             Instant.from_timestamp("2020")  # type: ignore[call-overload]
 
-    @pytest.mark.parametrize("unit", ["second", "millisecond", "nanosecond"])
+    @pytest.mark.parametrize(
+        "unit", ["second", "millisecond", "microsecond", "nanosecond"]
+    )
     def test_int_subclass(self, unit):
         class MyInt(int):
             pass

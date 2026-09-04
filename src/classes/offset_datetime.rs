@@ -12,10 +12,7 @@ use crate::{
         disambiguation::Disambiguation,
         fmt,
         format_args::{self, Suffix},
-        instant::{
-            TimestampUnit, extract_instant, parse_instant_arg, parse_timestamp,
-            parse_timestamp_millis, parse_timestamp_nanos,
-        },
+        instant::{TimestampUnit, extract_instant, parse_instant_arg, parse_timestamp},
         pattern, pickle, rfc2822, round_args as round,
         shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
     },
@@ -781,7 +778,8 @@ fn from_timestamp_millis(
     )?;
     let offset =
         check_from_timestamp_args_return_offset("from_timestamp_millis", args, kwargs, state)?;
-    parse_timestamp_millis(args[0])?
+    TimestampUnit::Millisecond
+        .parse(args[0])?
         .to_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)
@@ -800,7 +798,8 @@ fn from_timestamp_nanos(
     )?;
     let offset =
         check_from_timestamp_args_return_offset("from_timestamp_nanos", args, kwargs, state)?;
-    parse_timestamp_nanos(args[0])?
+    TimestampUnit::Nanosecond
+        .parse(args[0])?
         .to_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)

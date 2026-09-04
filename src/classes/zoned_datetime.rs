@@ -12,10 +12,7 @@ use crate::{
         disambiguation::*,
         fmt,
         format_args::{self, Suffix},
-        instant::{
-            TimestampUnit, extract_instant, parse_instant_arg, parse_timestamp,
-            parse_timestamp_millis, parse_timestamp_nanos,
-        },
+        instant::{TimestampUnit, extract_instant, parse_instant_arg, parse_timestamp},
         parse::Scan,
         pattern, pickle, round_args as round,
         shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
@@ -1087,7 +1084,9 @@ fn from_timestamp_millis(
         1,
     )?;
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_millis")?;
-    parse_timestamp_millis(args[0])?.into_zoned_obj(tz, cls)
+    TimestampUnit::Millisecond
+        .parse(args[0])?
+        .into_zoned_obj(tz, cls)
 }
 
 fn from_timestamp_nanos(
@@ -1102,7 +1101,9 @@ fn from_timestamp_nanos(
         1,
     )?;
     let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_nanos")?;
-    parse_timestamp_nanos(args[0])?.into_zoned_obj(tz, cls)
+    TimestampUnit::Nanosecond
+        .parse(args[0])?
+        .into_zoned_obj(tz, cls)
 }
 
 fn is_ambiguous(_: PyType, slf: &ZonedDateTime) -> PyReturn {

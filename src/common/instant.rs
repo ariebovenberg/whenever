@@ -8,7 +8,21 @@ pub(crate) enum TimestampUnit {
     Nanosecond,
 }
 
+/// The message for a timestamp that falls outside `Instant.MIN..MAX`.
+/// Deliberately distinct from the generic range error: both backends raise a
+/// `ValueError` with exactly this text, on every platform.
+const TIMESTAMP_RANGE_MSG: &str = "timestamp out of range";
+
 impl TimestampUnit {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Second => "second",
+            Self::Millisecond => "millisecond",
+            Self::Microsecond => "microsecond",
+            Self::Nanosecond => "nanosecond",
+        }
+    }
+
     pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         find_interned(
             obj,
@@ -37,7 +51,12 @@ impl TimestampUnit {
         match self {
             Self::Second => parse_timestamp(obj),
             Self::Millisecond | Self::Microsecond | Self::Nanosecond => {
-                let value = obj.expect_int("timestamp")?.to_i128()?;
+                let value = obj
+                    .cast_allow_subclass::<PyInt>()
+                    .ok_or_else_raise(exc_type_error(), || {
+                        format!("timestamp in {}s must be an integer", self.name())
+                    })?
+                    .to_i128()?;
                 let nanos_per_unit = match self {
                     Self::Millisecond => 1_000_000,
                     Self::Microsecond => 1_000,
@@ -47,7 +66,7 @@ impl TimestampUnit {
                 value
                     .checked_mul(nanos_per_unit)
                     .and_then(Instant::from_timestamp_nanos)
-                    .ok_or_range_err()
+                    .ok_or_value_err(TIMESTAMP_RANGE_MSG)
             }
         }
     }
@@ -78,19 +97,5 @@ pub(crate) fn parse_timestamp(obj: PyObj) -> PyResult<Instant> {
     } else {
         raise_type_err("timestamp must be an integer or float")?
     }
-    .ok_or_range_err()
-}
-
-pub(crate) fn parse_timestamp_millis(obj: PyObj) -> PyResult<Instant> {
-    let value = obj
-        .cast_allow_subclass::<PyInt>()
-        .ok_or_type_err("timestamp conversion requires an integer")?;
-    Instant::from_timestamp_millis(value.to_i64()?).ok_or_range_err()
-}
-
-pub(crate) fn parse_timestamp_nanos(obj: PyObj) -> PyResult<Instant> {
-    let value = obj
-        .cast_allow_subclass::<PyInt>()
-        .ok_or_type_err("timestamp conversion requires an integer")?;
-    Instant::from_timestamp_nanos(value.to_i128()?).ok_or_range_err()
+    .ok_or_value_err(TIMESTAMP_RANGE_MSG)
 }

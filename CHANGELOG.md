@@ -130,6 +130,8 @@ deprecated interfaces are removed.
   previously had three different messages depending on type and version.
 - `clear_tzcache(only_keys="...")` now raises `TypeError` instead of iterating
   the string's characters and clearing nothing.
+- Parsing an out-of-range timestamp now consistently raises `ValueError`
+  or `OverflowError` on all platforms.
 
 Migration summary:
 

@@ -29,16 +29,16 @@ An offset answers a very narrow question:
 Examples:
 
 * `2026-01-15T09:00:00+01:00`
-* "This timestamp is 3 hours behind UTC"
+* "This datetime is 3 hours behind UTC"
 * `Thu, 29 Jan 2026 00:03:32 +0900`
 
-For the timestamp where it was recorded, an offset is precise and unambiguous.
+For the moment where it was recorded, an offset is precise and unambiguous.
 Given local fields and an offset, you can determine the exact instant.
 
 An offset is fixed by definition; what can change is the offset used by a
 region. Many regions change theirs because of daylight saving time or
 political decisions. A recorded offset therefore carries no guarantee about
-which offset applies after shifting or modifying the timestamp. Reusing it may
+which offset applies after shifting or modifying the datetime. Reusing it may
 produce an offset that is stale relative to the original region.
 
 Offsets are excellent for *interchange*, but risky as long-term identifiers.

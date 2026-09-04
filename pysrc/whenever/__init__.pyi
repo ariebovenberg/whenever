@@ -1619,7 +1619,7 @@ class Instant(_PyDateTimeMixin, _ExactTime):
     @classmethod
     def from_timestamp(
         cls,
-        i: int | float,
+        value: int | float,
         /,
         *,
         unit: Literal["second"] = "second",
@@ -1628,17 +1628,17 @@ class Instant(_PyDateTimeMixin, _ExactTime):
     @classmethod
     def from_timestamp(
         cls,
-        i: int,
+        value: int,
         /,
         *,
         unit: Literal["millisecond", "microsecond", "nanosecond"],
     ) -> Self: ...
     @classmethod
     @deprecated("use from_timestamp(..., unit='millisecond') instead")
-    def from_timestamp_millis(cls, i: int, /) -> Self: ...
+    def from_timestamp_millis(cls, value: int, /) -> Self: ...
     @classmethod
     @deprecated("use from_timestamp(..., unit='nanosecond') instead")
-    def from_timestamp_nanos(cls, i: int, /) -> Self: ...
+    def from_timestamp_nanos(cls, value: int, /) -> Self: ...
     def format_rfc2822(self) -> str: ...
     @classmethod
     def parse_rfc2822(cls, s: str, /) -> Self: ...
@@ -1775,7 +1775,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @deprecated("use Instant.from_timestamp(...).to_fixed_offset(...) instead")
     def from_timestamp(
         cls,
-        i: int | float,
+        value: int | float,
         /,
         *,
         offset: int | TimeDelta,
@@ -1787,7 +1787,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     )
     def from_timestamp_millis(
         cls,
-        i: int,
+        value: int,
         /,
         *,
         offset: int | TimeDelta,
@@ -1799,7 +1799,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     )
     def from_timestamp_nanos(
         cls,
-        i: int,
+        value: int,
         /,
         *,
         offset: int | TimeDelta,
@@ -2088,7 +2088,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @deprecated("use Instant.from_timestamp(...).to_tz(...) instead")
     def from_timestamp(
         cls,
-        i: int | float,
+        value: int | float,
         /,
         *,
         tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
@@ -2099,7 +2099,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     )
     def from_timestamp_millis(
         cls,
-        i: int,
+        value: int,
         /,
         *,
         tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
@@ -2110,7 +2110,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     )
     def from_timestamp_nanos(
         cls,
-        i: int,
+        value: int,
         /,
         *,
         tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
