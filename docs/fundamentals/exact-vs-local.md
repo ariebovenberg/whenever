@@ -36,7 +36,7 @@ Examples of exact time include:
 - "The moment this database record was created"
 
 Exact time is what you use when you care about *when something actually happened*.
-It is ideal for logging, ordering events, measuring durations, and comparing timestamps.
+It is ideal for logging, ordering events, measuring durations, and comparing moments.
 Two exact times can always be compared, subtracted, or ordered, and the result is unambiguous.
 
 Importantly, exact time does **not** depend on civil conventions like daylight saving time.

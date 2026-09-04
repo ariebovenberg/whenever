@@ -40,4 +40,19 @@ strict equality
   Provided by `strict_eq()` on exactly the types whose `==` ignores something.
   Preferred over *exact equality*.
   See {doc}`guide/comparison`.
+
+timestamp
+  A count of whole units since the UNIX epoch (1970-01-01 00:00 UTC):
+  seconds by default, or milliseconds, microseconds, or nanoseconds via
+  `unit=`. Floored at the unit, so it labels the bucket containing the
+  instant. An ISO 8601 string is not a timestamp.
+  Preferred over *UNIX time*, *epoch time*, and *POSIX time*.
+  See {ref}`timestamps`.
+
+ISO 8601 string
+  The text form of a value, as produced by `format_iso()` and accepted by
+  `parse_iso()`. "ISO 8601 format" names the format itself.
+  Preferred over *ISO timestamp* and *ISO datetime*; *ISO string* is the
+  short form.
+  See {ref}`iso8601`.
 ```

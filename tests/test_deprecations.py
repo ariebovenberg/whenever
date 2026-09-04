@@ -206,11 +206,19 @@ def test_instant_timestamp_factory_wrappers(method, value, unit):
 
 
 @pytest.mark.parametrize(
-    "method", ["from_timestamp_millis", "from_timestamp_nanos"]
+    "method, unit",
+    [
+        ("from_timestamp_millis", "millisecond"),
+        ("from_timestamp_nanos", "nanosecond"),
+    ],
 )
-def test_instant_timestamp_factory_wrappers_keep_integer_requirement(method):
+def test_instant_timestamp_factory_wrappers_keep_integer_requirement(
+    method, unit
+):
     with warns_here(WheneverDeprecationWarning) as caught:
-        with pytest.raises(TypeError, match="requires an integer"):
+        with pytest.raises(
+            TypeError, match=f"^timestamp in {unit}s must be an integer$"
+        ):
             getattr(Instant, method)(1.5)
     assert caught[0].filename == __file__
 
@@ -260,11 +268,19 @@ def test_offset_timestamp_factory_wrappers_take_stale_offset_ok(method):
 
 
 @pytest.mark.parametrize(
-    "method", ["from_timestamp_millis", "from_timestamp_nanos"]
+    "method, unit",
+    [
+        ("from_timestamp_millis", "millisecond"),
+        ("from_timestamp_nanos", "nanosecond"),
+    ],
 )
-def test_offset_timestamp_factory_wrappers_keep_integer_requirement(method):
+def test_offset_timestamp_factory_wrappers_keep_integer_requirement(
+    method, unit
+):
     with warns_here(WheneverDeprecationWarning) as caught:
-        with pytest.raises(TypeError, match="requires an integer"):
+        with pytest.raises(
+            TypeError, match=f"^timestamp in {unit}s must be an integer$"
+        ):
             getattr(OffsetDateTime, method)(
                 1.5,
                 offset=hours(2),

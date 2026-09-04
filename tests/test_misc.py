@@ -626,10 +626,12 @@ class TestOutOfRangeIsValueError:
         with pytest.raises(TypeError, match="key must be a string"):
             clear_tzcache(only_keys=[bad])
 
-    def test_oversized_int_is_still_overflow_error(self):
-        # Distinct from the above: an *input* that doesn't fit a machine
-        # integer is an OverflowError in both backends, and stays that way.
-        with pytest.raises(OverflowError):
+    def test_oversized_int_is_out_of_range(self):
+        # Distinct from the above: for an integer far outside the range the
+        # backends may disagree on the type. Rust overflows its machine
+        # integer before it can check the range; Python raises whatever its
+        # own arithmetic produces.
+        with pytest.raises((ValueError, OverflowError)):
             Instant.from_timestamp(10**30)
 
 

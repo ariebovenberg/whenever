@@ -784,8 +784,9 @@ Create an Instant from a UNIX timestamp in the requested unit.
 
 The inverse of the ``timestamp()`` method.
 
-Seconds accept integers and floats. Milliseconds, microseconds, and
-nanoseconds require integers.
+Seconds accept integers and floats, which are floored to whole
+nanoseconds; milliseconds, microseconds, and nanoseconds require
+integers. A value outside ``Instant.MIN..MAX`` raises ``ValueError``.
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP_MILLIS: &CStr = c"\
 Create an Instant from a UNIX timestamp (in milliseconds).
@@ -949,7 +950,7 @@ Nanoseconds and offset seconds are discarded.
 \"Sat, 15 Aug 2020 23:12:00 +0200\"
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP: &CStr = c"\
-from_timestamp(i, /, *, offset, stale_offset_ok=...)
+from_timestamp(value, /, *, offset, stale_offset_ok=...)
 --
 
 Create an instance from a UNIX timestamp (in seconds).
@@ -970,7 +971,7 @@ or ``Instant.from_timestamp()`` for timezone-agnostic exact time.
 Pass ``stale_offset_ok=True`` to suppress.
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP_MILLIS: &CStr = c"\
-from_timestamp_millis(i, /, *, offset, stale_offset_ok=...)
+from_timestamp_millis(value, /, *, offset, stale_offset_ok=...)
 --
 
 Create an instance from a UNIX timestamp (in milliseconds).
@@ -983,7 +984,7 @@ The inverse of the ``timestamp_millis()`` method.
 See :meth:`from_timestamp` for more information.
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP_NANOS: &CStr = c"\
-from_timestamp_nanos(i, /, *, offset, stale_offset_ok=...)
+from_timestamp_nanos(value, /, *, offset, stale_offset_ok=...)
 --
 
 Create an instance from a UNIX timestamp (in nanoseconds).
@@ -1721,7 +1722,7 @@ IANA timezone ID is unknown.
 ZonedDateTime(\"2020-08-15 23:12:00+02:00[Europe/Berlin]\")
 ";
 pub(crate) const ZONEDDATETIME_FROM_TIMESTAMP: &CStr = c"\
-from_timestamp(i, /, *, tz)
+from_timestamp(value, /, *, tz)
 --
 
 Create an instance from a UNIX timestamp (in seconds).
@@ -1732,7 +1733,7 @@ Create an instance from a UNIX timestamp (in seconds).
 The inverse of the ``timestamp()`` method.
 ";
 pub(crate) const ZONEDDATETIME_FROM_TIMESTAMP_MILLIS: &CStr = c"\
-from_timestamp_millis(i, /, *, tz)
+from_timestamp_millis(value, /, *, tz)
 --
 
 Create an instance from a UNIX timestamp (in milliseconds).
@@ -1743,7 +1744,7 @@ Create an instance from a UNIX timestamp (in milliseconds).
 The inverse of the ``timestamp_millis()`` method.
 ";
 pub(crate) const ZONEDDATETIME_FROM_TIMESTAMP_NANOS: &CStr = c"\
-from_timestamp_nanos(i, /, *, tz)
+from_timestamp_nanos(value, /, *, tz)
 --
 
 Create an instance from a UNIX timestamp (in nanoseconds).

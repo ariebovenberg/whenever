@@ -12,6 +12,7 @@ from datetime import (  # noqa: F401
     timezone as _timezone,
 )
 from functools import lru_cache
+from math import isfinite as _isfinite
 from typing import TYPE_CHECKING, Any, TypeVar, no_type_check
 from warnings import warn
 
@@ -202,6 +203,8 @@ def split_timestamp(
     if unit == "second":
         if not isinstance(value, (int, float)):
             raise TypeError("timestamp must be an integer or float")
+        if isinstance(value, float) and not _isfinite(value):
+            raise ValueError("timestamp out of range")
         seconds, fraction = divmod(value, 1)
         return int(seconds), int(fraction * 1_000_000_000)
 
