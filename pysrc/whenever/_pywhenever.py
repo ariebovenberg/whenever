@@ -101,7 +101,6 @@ from ._typing import (
     DateDeltaUnitStr,
     DeltaTotalUnitStr,
     DeltaUnitStr,
-    DisambiguateStr,
     DisambiguationStr,
     ExactDeltaUnitStr,
     OffsetMismatchStr,
@@ -4719,7 +4718,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        disambiguate: DisambiguateStr = "compatible",
+        disambiguation: DisambiguationStr = UNSET,
+        **kwargs: Any,
     ) -> ZonedDateTime:
         """Create an instance in the system timezone.
 
@@ -4737,6 +4737,15 @@ class ZonedDateTime(_ExactAndLocalTime):
             "from_system_tz() is deprecated; use ZonedDateTime(..., tz=SYSTEM_TZ) instead",
             stacklevel=2,
         )
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="from_system_tz",
+            warning_stacklevel=4,
+        )
+        check_no_kwargs(kwargs, "from_system_tz")
+        if disambiguation is UNSET:
+            disambiguation = "compatible"
         return cls(
             year,
             month,
@@ -4746,7 +4755,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             second,
             nanosecond=nanosecond,
             tz=SYSTEM_TZ,
-            disambiguation=disambiguate,
+            disambiguation=disambiguation,
         )
 
     @classmethod
@@ -6891,7 +6900,10 @@ class PlainDateTime(_LocalTime):
         )
 
     def assume_system_tz(
-        self, *, disambiguate: DisambiguateStr = "compatible"
+        self,
+        *,
+        disambiguation: DisambiguationStr = UNSET,
+        **kwargs: Any,
     ) -> ZonedDateTime:
         """Assume the datetime is in the system timezone,
         creating a ``ZonedDateTime``.
@@ -6917,7 +6929,16 @@ class PlainDateTime(_LocalTime):
             "assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
             stacklevel=2,
         )
-        return self.assume_tz(SYSTEM_TZ, disambiguation=disambiguate)
+        disambiguation = _normalize_disambiguation(
+            disambiguation,
+            kwargs,
+            function_name="assume_system_tz",
+            warning_stacklevel=4,
+        )
+        check_no_kwargs(kwargs, "assume_system_tz")
+        if disambiguation is UNSET:
+            disambiguation = "compatible"
+        return self.assume_tz(SYSTEM_TZ, disambiguation=disambiguation)
 
     def round(
         self,

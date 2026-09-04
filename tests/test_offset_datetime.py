@@ -9,6 +9,7 @@ import pytest
 from hypothesis import given
 from hypothesis.strategies import floats, integers, text
 from whenever import (
+    SYSTEM_TZ,
     Date,
     ImplicitDisambiguationWarning,
     Instant,
@@ -23,7 +24,6 @@ from whenever import (
     Time,
     TimeDelta,
     TimeZoneNotFoundError,
-    WheneverDeprecationWarning,
     ZonedDateTime,
     hours,
     milliseconds,
@@ -43,10 +43,6 @@ from .common import (
     warns_here,
 )
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
-
 
 class TestInit:
     def test_init_and_attributes(self):
@@ -62,21 +58,9 @@ class TestInit:
         assert d.nanosecond == 450
         assert d.offset == hours(5)
 
-    def test_int_offset(self):
-        with warns_here(WheneverDeprecationWarning):
-            d = OffsetDateTime(
-                2020, 8, 15, 5, 12, 30, nanosecond=450, offset=-5
-            )
-        assert d.offset == hours(-5)
-
     def test_offset_missing(self):
         with pytest.raises(TypeError, match="required.*offset"):
             OffsetDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)  # type: ignore[call-overload]
-
-    def test_invalid_offset_int(self):
-        with warns_here(WheneverDeprecationWarning):
-            with pytest.raises(ValueError, match="offset.*24.*hours"):
-                OffsetDateTime(2020, 8, 15, 5, 12, offset=34)
 
     def test_invalid_offset_delta(self):
         # too large
@@ -670,9 +654,11 @@ class TestTimestamp:
 
         assert value.timestamp(unit=unit) == expected
 
-    def test_millis(self):
+    def test_millisecond(self):
         assert (
-            OffsetDateTime(1970, 1, 1, 3, offset=hours(3)).timestamp_millis()
+            OffsetDateTime(1970, 1, 1, 3, offset=hours(3)).timestamp(
+                unit="millisecond"
+            )
             == 0
         )
         assert (
@@ -685,13 +671,15 @@ class TestTimestamp:
                 30,
                 nanosecond=45_999_123,
                 offset=hours(-4),
-            ).timestamp_millis()
+            ).timestamp(unit="millisecond")
             == 1_597_493_310_045
         )
 
-    def test_nanos(self):
+    def test_nanosecond(self):
         assert (
-            OffsetDateTime(1970, 1, 1, 3, offset=hours(3)).timestamp_nanos()
+            OffsetDateTime(1970, 1, 1, 3, offset=hours(3)).timestamp(
+                unit="nanosecond"
+            )
             == 0
         )
         assert (
@@ -704,7 +692,7 @@ class TestTimestamp:
                 30,
                 nanosecond=45,
                 offset=hours(-4),
-            ).timestamp_nanos()
+            ).timestamp(unit="nanosecond")
             == 1_597_493_310_000_000_045
         )
 
@@ -712,72 +700,83 @@ class TestTimestamp:
 class TestFromTimestamp:
     @suppress(StaleOffsetWarning)
     def test_float(self):
-        assert OffsetDateTime.from_timestamp(1.0, offset=hours(1)).strict_eq(
-            OffsetDateTime.from_timestamp(1, offset=hours(1))
+        assert (
+            Instant.from_timestamp(1.0)
+            .to_fixed_offset(hours(1))
+            .strict_eq(Instant.from_timestamp(1).to_fixed_offset(hours(1)))
         )
 
-        assert OffsetDateTime.from_timestamp(
-            1.000_000_001, offset=hours(1)
-        ).strict_eq(
-            OffsetDateTime.from_timestamp(1, offset=hours(1)).add(
-                nanoseconds=1
+        assert (
+            Instant.from_timestamp(1.000_000_001)
+            .to_fixed_offset(hours(1))
+            .strict_eq(
+                Instant.from_timestamp(1)
+                .to_fixed_offset(hours(1))
+                .add(nanoseconds=1)
             )
         )
 
-        assert OffsetDateTime.from_timestamp(
-            -9.000_000_100, offset=hours(-2)
-        ).strict_eq(
-            OffsetDateTime.from_timestamp(-9, offset=hours(-2)).subtract(
-                nanoseconds=100
+        assert (
+            Instant.from_timestamp(-9.000_000_100)
+            .to_fixed_offset(hours(-2))
+            .strict_eq(
+                Instant.from_timestamp(-9)
+                .to_fixed_offset(hours(-2))
+                .subtract(nanoseconds=100)
             )
         )
 
         with pytest.raises((ValueError, OverflowError)):
-            OffsetDateTime.from_timestamp(9e200, offset=hours(0))
+            Instant.from_timestamp(9e200).to_fixed_offset(hours(0))
 
         with pytest.raises((ValueError, OverflowError, OSError)):
-            OffsetDateTime.from_timestamp(
-                float(Instant.MAX.timestamp()) + 0.99999999,
-                offset=hours(0),
-            )
+            Instant.from_timestamp(
+                float(Instant.MAX.timestamp()) + 0.99999999
+            ).to_fixed_offset(hours(0))
 
         with pytest.raises((ValueError, OverflowError)):
-            OffsetDateTime.from_timestamp(float("inf"), offset=hours(0))
+            Instant.from_timestamp(float("inf")).to_fixed_offset(hours(0))
 
         with pytest.raises((ValueError, OverflowError)):
-            OffsetDateTime.from_timestamp(float("nan"), offset=hours(0))
+            Instant.from_timestamp(float("nan")).to_fixed_offset(hours(0))
 
     @suppress(StaleOffsetWarning)
-    def test_nanos(self):
-        assert OffsetDateTime.from_timestamp_nanos(
-            1_597_493_310_123_456_789, offset=hours(-2)
-        ).strict_eq(
-            OffsetDateTime(
-                2020,
-                8,
-                15,
-                10,
-                8,
-                30,
-                nanosecond=123_456_789,
-                offset=hours(-2),
+    def test_nanosecond(self):
+        assert (
+            Instant.from_timestamp(
+                1_597_493_310_123_456_789, unit="nanosecond"
+            )
+            .to_fixed_offset(hours(-2))
+            .strict_eq(
+                OffsetDateTime(
+                    2020,
+                    8,
+                    15,
+                    10,
+                    8,
+                    30,
+                    nanosecond=123_456_789,
+                    offset=hours(-2),
+                )
             )
         )
 
     @suppress(StaleOffsetWarning)
-    def test_millis(self):
-        assert OffsetDateTime.from_timestamp_millis(
-            1_597_493_310_123, offset=hours(-2)
-        ).strict_eq(
-            OffsetDateTime(
-                2020,
-                8,
-                15,
-                10,
-                8,
-                30,
-                nanosecond=123_000_000,
-                offset=hours(-2),
+    def test_millisecond(self):
+        assert (
+            Instant.from_timestamp(1_597_493_310_123, unit="millisecond")
+            .to_fixed_offset(hours(-2))
+            .strict_eq(
+                OffsetDateTime(
+                    2020,
+                    8,
+                    15,
+                    10,
+                    8,
+                    30,
+                    nanosecond=123_000_000,
+                    offset=hours(-2),
+                )
             )
         )
 
@@ -1048,8 +1047,8 @@ def test_components():
 
 class TestNow:
     @suppress(StaleOffsetWarning)
-    def test_int(self):
-        now = OffsetDateTime.now(-5)
+    def test_typical(self):
+        now = OffsetDateTime.now(hours(-5))
         assert now.offset == hours(-5)
         py_now = py_datetime.now(timezone.utc)
         assert py_now - now.to_stdlib() < timedelta(seconds=1)
@@ -1549,7 +1548,7 @@ def test_to_fixed_offset():
         nanosecond=987_654_321,
         offset=hours(3),
     )
-    assert d.to_fixed_offset(5).strict_eq(
+    assert d.to_fixed_offset(hours(5)).strict_eq(
         OffsetDateTime(
             2020,
             8,
@@ -1562,7 +1561,7 @@ def test_to_fixed_offset():
         )
     )
     assert d.to_fixed_offset().strict_eq(d)
-    assert d.to_fixed_offset(-3).strict_eq(
+    assert d.to_fixed_offset(hours(-3)).strict_eq(
         OffsetDateTime(
             2020,
             8,
@@ -1578,11 +1577,11 @@ def test_to_fixed_offset():
     with pytest.raises((ValueError, OverflowError)):
         OffsetDateTime(
             1, 1, 1, hour=3, minute=59, offset=hours(0)
-        ).to_fixed_offset(-4)
+        ).to_fixed_offset(hours(-4))
 
     with pytest.raises((ValueError, OverflowError)):
         OffsetDateTime(9999, 12, 31, hour=23, offset=hours(0)).to_fixed_offset(
-            1
+            hours(1)
         )
 
 
@@ -1633,7 +1632,7 @@ def test_to_system_tz():
         nanosecond=987_654_321,
         offset=hours(3),
     )
-    assert d.to_system_tz().strict_eq(
+    assert d.to_tz(SYSTEM_TZ).strict_eq(
         ZonedDateTime(
             2020,
             8,
@@ -1648,12 +1647,12 @@ def test_to_system_tz():
 
     small_dt = OffsetDateTime(1, 1, 1, offset=hours(0))
     with pytest.raises((ValueError, OverflowError)):
-        small_dt.to_system_tz()
+        small_dt.to_tz(SYSTEM_TZ)
 
     big_dt = OffsetDateTime(9999, 12, 31, hour=23, offset=hours(0))
     with system_tz_ams():
         with pytest.raises((ValueError, OverflowError)):
-            big_dt.to_system_tz()
+            big_dt.to_tz(SYSTEM_TZ)
 
 
 def test_to_plain():
@@ -2279,7 +2278,9 @@ class TestRound:
 
     @suppress(StaleOffsetWarning)
     def test_out_of_range(self):
-        d = PlainDateTime.MAX.replace(nanosecond=0).assume_fixed_offset(0)
+        d = PlainDateTime.MAX.replace(nanosecond=0).assume_fixed_offset(
+            hours(0)
+        )
         with pytest.raises((ValueError, OverflowError), match="range"):
             d.round("second", increment=5)
 
@@ -2957,30 +2958,6 @@ class TestStaleOffsetOkKwarg:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             OffsetDateTime.now(hours(5), stale_offset_ok=True)
-
-    def test_from_timestamp(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            warnings.simplefilter("ignore", WheneverDeprecationWarning)
-            OffsetDateTime.from_timestamp(
-                0, offset=hours(5), stale_offset_ok=True
-            )
-
-    def test_from_timestamp_millis(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            warnings.simplefilter("ignore", WheneverDeprecationWarning)
-            OffsetDateTime.from_timestamp_millis(
-                0, offset=hours(5), stale_offset_ok=True
-            )
-
-    def test_from_timestamp_nanos(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            warnings.simplefilter("ignore", WheneverDeprecationWarning)
-            OffsetDateTime.from_timestamp_nanos(
-                0, offset=hours(5), stale_offset_ok=True
-            )
 
     def test_add(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))

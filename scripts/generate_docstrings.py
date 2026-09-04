@@ -147,14 +147,49 @@ SKIP = {
     W._Base.__get_pydantic_core_schema__,
 }
 
+# The 0.11 compatibility shims absorb their old keyword through a `**kwargs`
+# catch-all. That's an implementation detail, so hide it from the signature
+# `inspect` derives. Remove along with the shims in 1.0.
+SHIM_KWARGS: set[object] = {
+    W.Date.parse,
+    W.Instant.parse,
+    W.OffsetDateTime.parse,
+    W.PlainDateTime.parse,
+    W.PlainDateTime.assume_tz,
+    W.PlainDateTime.assume_system_tz,
+    W.Time.parse,
+    W.ZonedDateTime.parse,
+    W.ZonedDateTime.parse_iso,
+    W.ZonedDateTime.from_system_tz,
+    W.ZonedDateTime.format_iso,
+    W.ZonedDateTime.replace_date,
+    W.ZonedDateTime.replace_time,
+}
+assert all(
+    any(
+        p.kind is inspect.Parameter.VAR_KEYWORD
+        for p in inspect.signature(m).parameters.values()
+    )
+    for m in SHIM_KWARGS
+), "a method listed in SHIM_KWARGS no longer has a catch-all"
+
 
 def method_doc(method):
     method.__annotations__.clear()
     try:
         sig = MANUALLY_DEFINED_SIGS[method]
     except KeyError:
+        signature = inspect.signature(method)
+        if method in SHIM_KWARGS:
+            signature = signature.replace(
+                parameters=[
+                    p
+                    for p in signature.parameters.values()
+                    if p.kind is not inspect.Parameter.VAR_KEYWORD
+                ]
+            )
         sig = (
-            str(inspect.signature(method))
+            str(signature)
             # I escape the parens (\x28) because they mess up some LSPs
             # and text editors when viewing this script.
             .replace("\x28self", "\x28$self")

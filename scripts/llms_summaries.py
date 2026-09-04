@@ -28,9 +28,11 @@ RST_DESCRIPTION = re.compile(r"^[ \t]+:description:", re.MULTILINE)
 
 def pages():
     for path in sorted(DOCS.rglob("*")):
-        if path.suffix in (".md", ".rst") and not {"_build", "adr"} & set(
-            path.parts
-        ):
+        if path.suffix in (".md", ".rst") and not {
+            "_build",
+            "adr",
+            "internal",
+        } & set(path.parts):
             yield path
 
 

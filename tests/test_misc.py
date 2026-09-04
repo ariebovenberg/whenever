@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 import pickle
@@ -7,6 +8,7 @@ import warnings
 from collections.abc import Callable
 from contextlib import nullcontext
 from copy import copy, deepcopy
+from pathlib import Path
 from time import sleep
 from unittest.mock import patch
 
@@ -38,10 +40,6 @@ from whenever import (
 from whenever._tz.system import _tzid_from_path, get_tz
 
 from .common import system_tz_ams, warns_here
-
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 @pytest.mark.parametrize(
@@ -165,17 +163,38 @@ def test_multiple_interpreters():
 def test_type_aliases():
     from whenever import AnyDelta  # noqa
     from whenever import DateDeltaUnitStr  # noqa
+    from whenever import DeltaTotalUnitStr  # noqa
     from whenever import DeltaUnitStr  # noqa
     from whenever import DisambiguateStr  # noqa
+    from whenever import DisambiguationStr  # noqa
     from whenever import ExactDeltaUnitStr  # noqa
     from whenever import OffsetMismatchStr  # noqa
     from whenever import RoundModeStr  # noqa
+    from whenever import TimestampUnitStr  # noqa
 
 
 def test_version():
     from whenever import __version__
 
     assert isinstance(__version__, str)
+
+
+def test_stub_exports_match_runtime():
+    """The stub's ``__all__`` and the runtime's are meant to be one document."""
+    import whenever
+
+    stub = Path(whenever.__file__).parent / "__init__.pyi"
+    tree = ast.parse(stub.read_text())
+    (value,) = [
+        node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "__all__"
+    ]
+    assert isinstance(value, ast.List)
+    names = [ast.literal_eval(element) for element in value.elts]
+    assert names == list(whenever.__all__)
 
 
 def test_dir_includes_public_names():
@@ -358,7 +377,6 @@ def test_patch_time():
         assert callable(p.shift)
         assert callable(p.move_to)
         assert Instant.now() == i
-        assert Date.today_in_system_tz() == i.to_system_tz().date()
         assert Date.today(SYSTEM_TZ) == i.to_tz(SYSTEM_TZ).date()
         assert (
             Date.today("Europe/Amsterdam")
@@ -381,7 +399,7 @@ def test_patch_time():
 
     # patch has ended
     assert Instant.now() > Instant.from_utc(2024, 1, 1)
-    assert Date.today_in_system_tz() > Date(2024, 1, 1)
+    assert Date.today(SYSTEM_TZ) > Date(2024, 1, 1)
 
     # complex case: freeze time at zoned datetime and keep ticking
     with patch_current_time(
@@ -436,19 +454,6 @@ def test_time_patch_ticks_out_of_range():
         with pytest.raises((OSError, ValueError)):
             sleep(1e-6)
             Instant.now()
-
-
-@system_tz_ams()
-@pytest.mark.parametrize(
-    ("method", "value"),
-    [
-        (ZonedDateTime.from_timestamp, 0),
-        (ZonedDateTime.from_timestamp_millis, 0),
-        (ZonedDateTime.from_timestamp_nanos, 0),
-    ],
-)
-def test_deprecated_timestamp_factories_accept_system_tz(method, value):
-    assert method(value, tz=SYSTEM_TZ).tz_id == "Europe/Amsterdam"
 
 
 def test_time_patch_is_not_constructable():
@@ -519,26 +524,26 @@ def test_get_system_tz():
 @system_tz_ams()
 def test_reset_system_tz():
     plain = PlainDateTime(2020, 1, 1)
-    d1 = plain.assume_system_tz()
+    d1 = plain.assume_tz(SYSTEM_TZ)
     assert d1.tz_id == "Europe/Amsterdam"
 
     with patch.dict(os.environ, {"TZ": "America/New_York"}):
         # The system timezone is now set to America/New_York
         # ...but the cache isn't updated until we call reset_system_tz()
-        assert plain.assume_system_tz().tz_id == "Europe/Amsterdam"
+        assert plain.assume_tz(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
 
         reset_system_tz()
-        d2 = plain.assume_system_tz()
+        d2 = plain.assume_tz(SYSTEM_TZ)
         assert d2.tz_id == "America/New_York"
 
         # old instances should not change
         assert d1.tz_id == "Europe/Amsterdam"
 
     # Cache not yet updated again...
-    assert plain.assume_system_tz().tz_id == "America/New_York"
+    assert plain.assume_tz(SYSTEM_TZ).tz_id == "America/New_York"
 
     reset_system_tz()
-    assert plain.assume_system_tz().tz_id == "Europe/Amsterdam"
+    assert plain.assume_tz(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
 
 
 @pytest.mark.parametrize(

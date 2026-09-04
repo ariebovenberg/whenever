@@ -72,13 +72,6 @@ else:
 
 TEST_DIR = Path(__file__).parent
 
-# Only deprecation warnings may be silenced module-wide. Anything that flags a
-# potential DST bug—ImplicitDisambiguationWarning in particular—must be
-# asserted or suppressed at the test that triggers it.
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
-
 
 class TestInit:
     def test_unambiguous(self):
@@ -688,45 +681,6 @@ class TestInit:
             ZonedDateTime(2020, 8, 15, 5, 12, 60, tz="America/New_York")
 
 
-@system_tz_ams()
-def test_from_system_tz():
-    d = ZonedDateTime.from_system_tz(
-        2020,
-        8,
-        15,
-        23,
-        12,
-        9,
-        nanosecond=987_654_321,
-        disambiguate="later",
-    )
-    assert d.tz_id == "Europe/Amsterdam"
-    assert d.offset == hours(2)
-    assert d.strict_eq(
-        ZonedDateTime(
-            2020,
-            8,
-            15,
-            23,
-            12,
-            9,
-            nanosecond=987_654_321,
-            tz="Europe/Amsterdam",
-        )
-    )
-
-    # check variations of the call
-    assert ZonedDateTime.from_system_tz(2020, 8, 15).strict_eq(
-        ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
-    )
-
-    with pytest.raises(TypeError):
-        ZonedDateTime.from_system_tz(2020, 8, 15, tz="America/New_York")  # type: ignore[call-arg]
-
-    with pytest.raises(ValueError):
-        ZonedDateTime.from_system_tz(2020, 8, 15, nanosecond=1_000_000_000)
-
-
 # NOTE: there's a separate test for changing the tzpath and
 # its effect on available_timezones()
 # We run this test relatively late to allow the cache to be used more
@@ -1200,12 +1154,12 @@ class TestFormatIso:
             ),
             (
                 ZDT2,
-                {"unit": "millisecond", "tz": "never"},
+                {"unit": "millisecond", "tz_id_display": "never"},
                 "1900-01-01T00:00:00.000-00:25:21",
             ),
             (
                 ZDT2,
-                {"unit": "microsecond", "tz": "always"},
+                {"unit": "microsecond", "tz_id_display": "required"},
                 "1900-01-01T00:00:00.000000-00:25:21[Europe/Dublin]",
             ),
             (
@@ -1214,7 +1168,7 @@ class TestFormatIso:
                     "unit": "nanosecond",
                     "basic": True,
                     "sep": " ",
-                    "tz": "auto",
+                    "tz_id_display": "auto",
                 },
                 "19000101 000000.000000000-002521[Europe/Dublin]",
             ),
@@ -1229,13 +1183,13 @@ class TestFormatIso:
                     "unit": "nanosecond",
                     "basic": True,
                     "sep": "T",
-                    "tz": "auto",
+                    "tz_id_display": "auto",
                 },
                 "20200815T231209.987654321+0200",
             ),
             (
                 ZDT_RAWFILE,
-                {"unit": "millisecond", "sep": " ", "tz": "never"},
+                {"unit": "millisecond", "sep": " ", "tz_id_display": "never"},
                 "2020-08-15 23:12:09.987+02:00",
             ),
         ],
@@ -2803,29 +2757,29 @@ def test_to_fixed_offset(tz: str):
     assert d.to_fixed_offset(hours(0)).strict_eq(
         OffsetDateTime(2020, 8, 15, 10, 8, 30, offset=hours(0))
     )
-    assert d.to_fixed_offset(-4).strict_eq(
+    assert d.to_fixed_offset(hours(-4)).strict_eq(
         OffsetDateTime(2020, 8, 15, 6, 8, 30, offset=hours(-4))
     )
 
     # catch local time sliding out of range
     small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
     with pytest.raises((ValueError, OverflowError), match="range|year"):
-        small_zdt.to_fixed_offset(-3)
+        small_zdt.to_fixed_offset(hours(-3))
 
     big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
     with pytest.raises((ValueError, OverflowError), match="range|year"):
-        big_zdt.to_fixed_offset(4)
+        big_zdt.to_fixed_offset(hours(4))
 
 
 @system_tz_ams()
 def test_to_system_tz():
     d = ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
-    assert d.to_system_tz().strict_eq(
+    assert d.to_tz(SYSTEM_TZ).strict_eq(
         ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
     )
     assert (
         d.replace(day=29, disambiguation="later")
-        .to_system_tz()
+        .to_tz(SYSTEM_TZ)
         .strict_eq(
             ZonedDateTime(
                 2023,
@@ -2841,19 +2795,19 @@ def test_to_system_tz():
 
     # posix tz
     with system_tz(AMS_TZ_POSIX):
-        assert d.to_system_tz().strict_eq(
+        assert d.to_tz(SYSTEM_TZ).strict_eq(
             create_zdt(2023, 10, 28, 2, 15, tz=AMS_TZ_POSIX)
         )
 
     # filepath
     with system_tz(AMS_TZ_RAWFILE):
-        assert d.to_system_tz().strict_eq(
+        assert d.to_tz(SYSTEM_TZ).strict_eq(
             create_zdt(2023, 10, 28, 2, 15, tz=AMS_TZ_RAWFILE)
         )
 
     # colon prefix
     with system_tz(":America/New_York"):
-        assert d.to_system_tz().strict_eq(
+        assert d.to_tz(SYSTEM_TZ).strict_eq(
             ZonedDateTime(2023, 10, 27, 20, 15, tz="America/New_York")
         )
 
@@ -2861,11 +2815,11 @@ def test_to_system_tz():
     small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
     with system_tz_nyc():
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            small_zdt.to_system_tz()
+            small_zdt.to_tz(SYSTEM_TZ)
 
     big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
     with pytest.raises((ValueError, OverflowError), match="range|year"):
-        big_zdt.to_system_tz()
+        big_zdt.to_tz(SYSTEM_TZ)
 
 
 class TestParseIso:
@@ -3449,8 +3403,13 @@ class TestTimestamp:
             != ambiguous.replace(disambiguation="later").timestamp()
         )
 
-    def test_millis(self):
-        assert ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp_millis() == 0
+    def test_millisecond(self):
+        assert (
+            ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp(
+                unit="millisecond"
+            )
+            == 0
+        )
         assert (
             ZonedDateTime(
                 2020,
@@ -3461,7 +3420,7 @@ class TestTimestamp:
                 30,
                 nanosecond=45_923_789,
                 tz="America/New_York",
-            ).timestamp_millis()
+            ).timestamp(unit="millisecond")
             == 1_597_493_310_045
         )
 
@@ -3475,13 +3434,17 @@ class TestTimestamp:
             tz="Europe/Amsterdam",
             disambiguation="earlier",
         )
-        assert (
-            ambiguous.timestamp_millis()
-            != ambiguous.replace(disambiguation="later").timestamp_millis()
-        )
+        assert ambiguous.timestamp(unit="millisecond") != ambiguous.replace(
+            disambiguation="later"
+        ).timestamp(unit="millisecond")
 
-    def test_nanos(self):
-        assert ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp_nanos() == 0
+    def test_nanosecond(self):
+        assert (
+            ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp(
+                unit="nanosecond"
+            )
+            == 0
+        )
         assert (
             ZonedDateTime(
                 2020,
@@ -3492,7 +3455,7 @@ class TestTimestamp:
                 30,
                 nanosecond=45_123_789,
                 tz="America/New_York",
-            ).timestamp_nanos()
+            ).timestamp(unit="nanosecond")
             == 1_597_493_310_045_123_789
         )
 
@@ -3506,147 +3469,9 @@ class TestTimestamp:
             tz="Europe/Amsterdam",
             disambiguation="earlier",
         )
-        assert (
-            ambiguous.timestamp_nanos()
-            != ambiguous.replace(disambiguation="later").timestamp_nanos()
-        )
-
-
-class TestFromTimestamp:
-    @pytest.mark.parametrize(
-        "method, factor",
-        [
-            (ZonedDateTime.from_timestamp, 1),
-            (ZonedDateTime.from_timestamp_millis, 1_000),
-            (ZonedDateTime.from_timestamp_nanos, 1_000_000_000),
-        ],
-    )
-    def test_all(self, method, factor):
-        assert method(0, tz="Iceland").strict_eq(
-            ZonedDateTime(1970, 1, 1, tz="Iceland")
-        )
-        assert method(1_597_493_310 * factor, tz="America/Nuuk").strict_eq(
-            ZonedDateTime(2020, 8, 15, 10, 8, 30, tz="America/Nuuk")
-        )
-        with pytest.raises((OSError, OverflowError, ValueError)):
-            method(1_000_000_000_000_000_000 * factor, tz="America/Nuuk")
-
-        with pytest.raises((OSError, OverflowError, ValueError)):
-            method(-1_000_000_000_000_000_000 * factor, tz="America/Nuuk")
-
-        with pytest.raises((TypeError, AttributeError)):
-            method(0, tz=3)
-
-        with pytest.raises(TypeError):
-            method("0", tz="America/New_York")
-
-        with pytest.raises(TimeZoneNotFoundError):
-            method(0, tz="America/Nowhere")
-
-        with pytest.raises(TypeError, match="got 3|foo"):
-            method(0, tz="America/New_York", foo="bar")
-
-        with pytest.raises(TypeError, match="positional|ts"):
-            method(ts=0, tz="America/New_York")
-
-        with pytest.raises(TypeError):
-            method(0, foo="bar")
-
-        with pytest.raises(TypeError):
-            method(0)
-
-        with pytest.raises(TypeError):
-            method(0, "bar")
-
-        assert ZonedDateTime.from_timestamp_millis(
-            -4, tz="America/Nuuk"
-        ).to_instant() == Instant.from_timestamp(0) - milliseconds(4)
-
-        assert ZonedDateTime.from_timestamp_nanos(
-            -4, tz="America/Nuuk"
-        ).to_instant() == Instant.from_timestamp(0).subtract(nanoseconds=4)
-
-    def test_nanos(self):
-        assert ZonedDateTime.from_timestamp_nanos(
-            1_597_493_310_123_456_789, tz="America/Nuuk"
-        ).strict_eq(
-            ZonedDateTime(
-                2020,
-                8,
-                15,
-                10,
-                8,
-                30,
-                nanosecond=123_456_789,
-                tz="America/Nuuk",
-            )
-        )
-
-    def test_millis(self):
-        assert ZonedDateTime.from_timestamp_millis(
-            1_597_493_310_123, tz="America/Nuuk"
-        ).strict_eq(
-            ZonedDateTime(
-                2020,
-                8,
-                15,
-                10,
-                8,
-                30,
-                nanosecond=123_000_000,
-                tz="America/Nuuk",
-            )
-        )
-
-    def test_float(self):
-        assert ZonedDateTime.from_timestamp(
-            1.0,
-            tz="America/New_York",
-        ).strict_eq(
-            ZonedDateTime.from_timestamp(
-                1,
-                tz="America/New_York",
-            )
-        )
-
-        assert ZonedDateTime.from_timestamp(
-            1.000_000_001,
-            tz="America/New_York",
-        ).strict_eq(
-            ZonedDateTime.from_timestamp(
-                1,
-                tz="America/New_York",
-            ).add(
-                nanoseconds=1,
-            )
-        )
-
-        assert ZonedDateTime.from_timestamp(
-            -9.000_000_100,
-            tz="America/New_York",
-        ).strict_eq(
-            ZonedDateTime.from_timestamp(
-                -9,
-                tz="America/New_York",
-            ).subtract(
-                nanoseconds=100,
-            )
-        )
-
-        with pytest.raises((ValueError, OverflowError)):
-            ZonedDateTime.from_timestamp(9e200, tz="America/New_York")
-
-        with pytest.raises((ValueError, OverflowError, OSError)):
-            ZonedDateTime.from_timestamp(
-                float(Instant.MAX.timestamp()) + 0.99999999,
-                tz="America/New_York",
-            )
-
-        with pytest.raises((ValueError, OverflowError)):
-            ZonedDateTime.from_timestamp(float("inf"), tz="America/New_York")
-
-        with pytest.raises((ValueError, OverflowError)):
-            ZonedDateTime.from_timestamp(float("nan"), tz="America/New_York")
+        assert ambiguous.timestamp(unit="nanosecond") != ambiguous.replace(
+            disambiguation="later"
+        ).timestamp(unit="nanosecond")
 
 
 @pytest.mark.parametrize(
@@ -3830,7 +3655,7 @@ class TestComparison:
     def test_system_tz(self, tz: str):
         d = create_zdt(2023, 10, 29, 2, 30, tz=tz, disambiguation="earlier")
 
-        sys_eq = d.to_system_tz()
+        sys_eq = d.to_tz(SYSTEM_TZ)
         sys_lt = sys_eq.replace(minute=29, disambiguation="earlier")
         sys_gt = sys_eq.replace(minute=31, disambiguation="earlier")
 
@@ -4166,7 +3991,7 @@ def test_now():
 
 @system_tz_ams()
 def test_now_in_system_tz():
-    now = ZonedDateTime.now_in_system_tz()
+    now = ZonedDateTime.now(SYSTEM_TZ)
     py_now = py_datetime.now().astimezone()
     assert now.tz_id == "Europe/Amsterdam"
     assert py_now - now.to_stdlib() < py_timedelta(seconds=1)
