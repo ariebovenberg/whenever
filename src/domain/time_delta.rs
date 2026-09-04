@@ -127,16 +127,19 @@ impl TimeDelta {
         let total_ns = self.total_nanos();
         let quotient = total_ns.div_euclid(increment);
         let remainder = total_ns.rem_euclid(increment);
-        let threshold = match abs_mode {
+        // Compare against the half without dividing, so an odd increment isn't truncated.
+        let round_up = match abs_mode {
+            round::AbsMode::Trunc => false,
+            round::AbsMode::Expand => remainder > 0,
+            round::AbsMode::HalfTrunc => remainder > increment - remainder,
+            round::AbsMode::HalfExpand => remainder >= increment - remainder,
             round::AbsMode::HalfEven => {
-                1i128.max(increment / 2 + quotient.unsigned_abs().is_multiple_of(2) as i128)
+                remainder > increment - remainder
+                    || (remainder == increment - remainder
+                        && !quotient.unsigned_abs().is_multiple_of(2))
             }
-            round::AbsMode::Expand => 1,
-            round::AbsMode::Trunc => increment + 1,
-            round::AbsMode::HalfTrunc => increment / 2 + 1,
-            round::AbsMode::HalfExpand => 1i128.max(increment / 2),
         };
-        let result_ns = (quotient + i128::from(remainder >= threshold)) * increment;
+        let result_ns = (quotient + i128::from(round_up)) * increment;
         Some(Self {
             secs: DeltaSeconds::new(result_ns.div_euclid(NS_PER_SEC as i128) as i64)?,
             subsec: SubSecNanos::new_unchecked(result_ns.rem_euclid(NS_PER_SEC as i128) as i32),
