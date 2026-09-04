@@ -1,13 +1,173 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 (unreleased)
 
-- Add LLM-friendly Markdown documentation, including `llms.txt` and
+This release is intended as a soft 1.0 release: it establishes the planned
+1.0 API while retaining compatibility shims for newly deprecated interfaces.
+Unless significant issues arise, this API will become 1.0 after those
+deprecated interfaces are removed.
+
+**Breaking changes**
+
+- Removed APIs deprecated before 0.11: `DateDelta`, `DateTimeDelta`, the
+  `years()`, `months()`, `weeks()`, and `days()` helpers, legacy standard
+  library conversion methods, `TimeDelta.in_*()` convenience methods,
+  `Date.days_since()` and `Date.days_until()`, deprecated `Date` operators,
+  `parse_strptime()`, `ZonedDateTime.start_of_day()`, `ignore_dst`, and
+  `ImplicitlyIgnoringDST`.
+
+  See the 0.10.0 entry below for migration instructions.
+
+- Timestamp APIs are consolidated around a `unit=` argument.
+  `Instant.from_timestamp(..., unit=)` and exact-time `.timestamp(unit=)`
+  support seconds, milliseconds, microseconds, and nanoseconds.
+  `timestamp_millis()`, `timestamp_nanos()`, and their matching `Instant`
+  factories are deprecated. The timestamp factories on `OffsetDateTime` and
+  `ZonedDateTime` are also deprecated; construct an `Instant` first and then
+  call `to_fixed_offset()` or `to_tz()`.
+
+  **Rationale**: one unit-selectable API is easier to discover and extend,
+  while `Instant` is the natural type for constructing an exact time from a
+  timestamp.
+
+- System-timezone-specific convenience methods are deprecated. `SYSTEM_TZ`
+  is now a public sentinel accepted wherever a named timezone is accepted,
+  including `Date.today()`, `ZonedDateTime`, `now()`, `to_tz()`, and
+  `assume_tz()`.
+
+  **Rationale**: one sentinel lets the regular timezone APIs cover the system
+  timezone without duplicating every operation. It also makes call-time
+  system-timezone resolution explicit and takes advantage of the sentinel
+  pattern recently standardized by [PEP 661](https://peps.python.org/pep-0661/).
+
+- Several public names have been clarified: `disambiguate=` becomes
+  `disambiguation=`, `exact_eq()` becomes `strict_eq()`, patterned-parse
+  `format=` becomes `pattern=`, ISO-format `tz=` becomes `tz_id_display=`,
+  timezone display `"always"` becomes `"required"`, `ZonedDateTime.tz`
+  becomes `tz_id`, `MonthDay.is_leap()` becomes `is_leap_day()`, and `TZPATH`
+  becomes `get_tzpath()`. The old spellings are deprecated.
+
+  **Rationale**: the new names describe their concepts and behavior more
+  precisely and use consistent terminology across the API.
+
+- Custom format and parse patterns now use `H`/`HH` for the 24-hour clock.
+  The previous `h`/`hh` spellings are deprecated. Optional seconds use a
+  limited bracketed tail such as `[:ss]`, `[:ss.fff]`, or `[:ss.FFF]`;
+  separator-free optional seconds use `[ss]`. These groups must immediately
+  follow fixed-width `mm`; only the optional colon or no separator is
+  supported. Patterns and parsed input strings are ASCII-only, and ambiguous
+  boundaries after variable-width fields are rejected. The previous `SS`
+  forms remain available with deprecation warnings through 0.11.
+
+  **Rationale**: `H`/`HH` is the near-universal spelling for 24-hour fields,
+  while brackets make the optional separator and seconds tail explicit.
+
+- Pattern offsets without seconds now round timezone offset seconds to the
+  nearest minute. Hour-only `x`/`X` patterns reject values
+  whose rounded offsets still contain minutes.
+
+- Formatting `VV` without an IANA timezone ID now consistently raises an error.
+
+- Fixed-offset arguments passed as bare integers signifying hours are
+  deprecated. Use `TimeDelta` or a factory like `hours()` instead.
+
+  **Rationale**: the unit of a bare integer is implicit, which makes offset
+  values easy to misread or misuse.
+
+- Unpickling a `ZonedDateTime` now preserves its stored instant while applying
+  the timezone rules available in the loading environment. If those rules
+  produce a different offset, the local representation is updated and a
+  `PickleOffsetMismatchWarning` is emitted.
+
+  **Rationale**: timezone databases change. Preserving the instant avoids
+  silently changing when the stored event occurred while still reconciling
+  its local representation with the current rules.
+
+**Added and improved**
+
+- IANA timezone identifiers now accept ASCII letter casing case-insensitively.
+  Successful lookup uses the database spelling in timezone attributes,
+  representations, ISO output, and pickles while preserving aliases such
+  as `US/Eastern`.
+- Added `ImplicitDisambiguationWarning` when a repeated or skipped local time
+  is resolved without an explicit `disambiguation=` policy.
+- Added `offset_mismatch=` to `ZonedDateTime` parsing. A numeric offset is
+  matched at its written precision, while `Z` always identifies an exact UTC
+  instant. `OffsetDateTime.assume_tz()` supports the same mismatch policy and
+  uses `disambiguation=` when retaining local time.
+- Added `Date.today(tz)` and `get_tzpath()`.
+- Added millisecond and microsecond totals to datetime differences and
+  `ItemizedDelta.total()`.
+- Added `YearMonth.add()` and `subtract()`, and `MonthDay.is_leap_day()`.
+- Stabilized `patch_current_time()` and exposed its `TimePatch` handle with
+  `shift()` and `move_to()`.
+- `patch_current_time()` now supports pre-1970 instants.
+- Added LLM-friendly Markdown documentation, including `llms.txt` and
   `llms-full.txt`.
-- **Fixed**: rounding with an odd `increment` rounded away from zero one step
-  early in the Rust extension. For example
+
+**Fixed**
+
+- Rounding with an odd `increment` rounded away from zero one step early in
+  the Rust extension. For example
   `TimeDelta(nanoseconds=2).round("nanosecond", increment=5, mode="half_expand")`
   returned 5ns instead of 0ns.
+- Brought timezone equality in the pure Python version on par with
+  the Rust extension. This affected rare cases where a timezone was reloaded
+  from disk.
+- Corrected a few warning stacklevels that were pointing to internal functions
+  instead of the user call site.
+- Out-of-range results in the pure Python version now raise `ValueError`
+  instead of leaking `OverflowError`, so `except ValueError` catches them all.
+  Oversized integer arguments still raise `OverflowError`.
+- Non-string timezone IDs now raise `TypeError` in the pure Python version,
+  instead of `AttributeError` — or, in `clear_tzcache()`, silent success.
+- `InvalidOffsetError` messages are now consistent between implementations.
+  ISO parsing in pure Python previously raised it with no message at all.
+- The pure Python version no longer accepts arguments positionally (or by
+  keyword) where the Rust extension rejects them. Affects `assume_tz()`,
+  `assume_system_tz()`, `replace()`, `replace_date()`, and `replace_time()`.
+- `strict_eq()` now reports a type mismatch the same way everywhere; it
+  previously had three different messages depending on type and version.
+- `clear_tzcache(only_keys="...")` now raises `TypeError` instead of iterating
+  the string's characters and clearing nothing.
+
+Migration summary:
+
+| Deprecated spelling | Preferred spelling |
+|---|---|
+| `disambiguate=` | `disambiguation=` |
+| `DisambiguateStr` | `DisambiguationStr` |
+| `from_timestamp_millis(v)` | `from_timestamp(v, unit="millisecond")` |
+| `from_timestamp_nanos(v)` | `from_timestamp(v, unit="nanosecond")` |
+| `timestamp_millis()` | `timestamp(unit="millisecond")` |
+| `timestamp_nanos()` | `timestamp(unit="nanosecond")` |
+| `ZonedDateTime.from_timestamp(v, tz=tz)` | `Instant.from_timestamp(v).to_tz(tz)` |
+| `ZonedDateTime.from_timestamp_millis(v, tz=tz)` | `Instant.from_timestamp(v, unit="millisecond").to_tz(tz)` |
+| `ZonedDateTime.from_timestamp_nanos(v, tz=tz)` | `Instant.from_timestamp(v, unit="nanosecond").to_tz(tz)` |
+| `OffsetDateTime.from_timestamp(v, offset=o)` | `Instant.from_timestamp(v).to_fixed_offset(o)` |
+| `OffsetDateTime.from_timestamp_millis(v, offset=o)` | `Instant.from_timestamp(v, unit="millisecond").to_fixed_offset(o)` |
+| `OffsetDateTime.from_timestamp_nanos(v, offset=o)` | `Instant.from_timestamp(v, unit="nanosecond").to_fixed_offset(o)` |
+| `format_iso(tz="never")` | `format_iso(tz_id_display="never")` |
+| `tz_id_display="always"` | `tz_id_display="required"` |
+| `to_system_tz()` | `to_tz(SYSTEM_TZ)` |
+| `assume_system_tz()` | `assume_tz(SYSTEM_TZ)` |
+| `Date.today_in_system_tz()` | `Date.today(SYSTEM_TZ)` |
+| `ZonedDateTime.now_in_system_tz()` | `ZonedDateTime.now(SYSTEM_TZ)` |
+| `ZonedDateTime.from_system_tz(...)` | `ZonedDateTime(..., tz=SYSTEM_TZ)` |
+| `ZonedDateTime.tz` | `ZonedDateTime.tz_id` |
+| `exact_eq()` | `strict_eq()` |
+| `parse(..., format=p)` | `parse(..., pattern=p)` |
+| pattern `h` / `hh` | `H` / `HH` |
+| pattern `:SS` | `[:ss]` |
+| pattern `:SS.fff` | `[:ss.fff]` |
+| pattern `:SS.FFF` | `[:ss.FFF]` |
+| separator-free pattern `SS` | `[ss]` |
+| `offset=2` | `offset=hours(2)` |
+| `MonthDay.is_leap()` | `MonthDay.is_leap_day()` |
+| `TZPATH` | `get_tzpath()` |
+
+`[:ss.fff]` isn't a pure rename of `:SS.fff`: with zero seconds and fraction,
+the old spelling emitted a dangling `12:00.000` instead of `12:00`.
 
 ## 0.10.5 (2026-08-07)
 

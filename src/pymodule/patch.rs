@@ -1,6 +1,11 @@
 //! Functionality related to patching the current time
-use crate::{classes::instant::Instant, domain::scalar::*, py::*, pymodule::State};
-use std::time::SystemTime;
+use crate::{
+    classes::instant::Instant,
+    domain::{scalar::*, time_delta::TimeDelta},
+    py::*,
+    pymodule::State,
+};
+use std::time::{Duration, SystemTime};
 
 pub(crate) fn _patch_time_frozen(state: &State, arg: PyObj) -> PyReturn {
     _patch_time(state, arg, true)
@@ -15,19 +20,12 @@ pub(crate) fn _patch_time(state: &State, arg: PyObj, freeze: bool) -> PyReturn {
         return raise_type_err("expected an Instant")?;
     };
 
-    let pos_epoch = u64::try_from(inst.epoch.get())
-        .ok()
-        .ok_or_type_err("can only set time after 1970")?;
-
     let patch_state = if freeze {
         PatchState::Frozen(inst)
     } else {
         PatchState::KeepTicking {
-            pin: std::time::Duration::new(pos_epoch, inst.subsec.get() as _),
-            at: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .ok()
-                .ok_or_type_err("system time before 1970")?,
+            pin: inst,
+            at: SystemTime::now(),
         }
     };
     state
@@ -75,16 +73,13 @@ fn time_machine_installed() -> PyResult<bool> {
 pub(crate) enum PatchState {
     Unset,
     Frozen(Instant),
-    KeepTicking {
-        pin: std::time::Duration,
-        at: std::time::Duration,
-    },
+    KeepTicking { pin: Instant, at: SystemTime },
 }
 
 impl Instant {
     pub(crate) fn from_duration_since_epoch(d: std::time::Duration) -> Option<Self> {
         Some(Instant {
-            epoch: EpochSecs::new(d.as_secs() as _)?,
+            epoch: EpochSecs::new(i64::try_from(d.as_secs()).ok()?)?,
             // Safe: subsec on Duration is always in range
             subsec: SubSecNanos::new_unchecked(d.subsec_nanos() as _),
         })
@@ -96,6 +91,12 @@ impl Instant {
             subsec: SubSecNanos::from_remainder(ns),
         })
     }
+}
+
+fn duration_nanos(d: Duration) -> PyResult<i128> {
+    i128::try_from(d.as_nanos())
+        .ok()
+        .ok_or_raise(exc_os_error(), "system time out of range")
 }
 
 impl State {
@@ -114,14 +115,15 @@ impl State {
             }
             PatchState::Frozen(e) => Ok(e),
             PatchState::KeepTicking { pin, at } => {
-                let dur = pin
-                    + SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .ok()
-                        .ok_or_raise(exc_os_error(), "System time out of range")?
-                    - at;
-                Instant::from_duration_since_epoch(dur)
-                    .ok_or_raise(exc_os_error(), "System time out of range")
+                let elapsed = match SystemTime::now().duration_since(at) {
+                    Ok(d) => duration_nanos(d)?,
+                    Err(e) => -duration_nanos(e.duration())?,
+                };
+                pin.shift(
+                    TimeDelta::from_nanos(elapsed)
+                        .ok_or_raise(exc_os_error(), "system time out of range")?,
+                )
+                .ok_or_raise(exc_os_error(), "system time out of range")
             }
         }
     }
@@ -133,7 +135,7 @@ impl State {
             .ok_or_raise(exc_runtime_error(), "time_ns() returned a non-integer")?
             // FUTURE: this will break in the year 2262. Fix it before then.
             .to_i64()?;
-        Instant::from_nanos_i64(ns).ok_or_raise(exc_os_error(), "System time out of range")
+        Instant::from_nanos_i64(ns).ok_or_raise(exc_os_error(), "system time out of range")
     }
 
     fn time_ns_rust(&self) -> PyResult<Instant> {
@@ -141,6 +143,6 @@ impl State {
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()
             .and_then(Instant::from_duration_since_epoch)
-            .ok_or_raise(exc_os_error(), "System time out of range")
+            .ok_or_raise(exc_os_error(), "system time out of range")
     }
 }

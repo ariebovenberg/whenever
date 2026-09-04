@@ -8,6 +8,7 @@ import pytest
 from hypothesis import given
 from hypothesis.strategies import floats, integers, text
 from whenever import (
+    SYSTEM_TZ,
     Date,
     Instant,
     ItemizedDateDelta,
@@ -19,15 +20,10 @@ from whenever import (
     SkippedTime,
     Time,
     TimeDelta,
-    WheneverDeprecationWarning,
     ZonedDateTime,
-    days,
     hours,
-    months,
     nanoseconds,
     seconds,
-    weeks,
-    years,
 )
 
 from .common import (
@@ -39,10 +35,7 @@ from .common import (
     suppress,
     system_tz,
     system_tz_ams,
-)
-
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
+    warns_here,
 )
 
 
@@ -106,22 +99,22 @@ def test_assume_fixed_offset():
     assert (
         PlainDateTime(2020, 8, 15, 23)
         .assume_fixed_offset(hours(5))
-        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=5))
+        .strict_eq(OffsetDateTime(2020, 8, 15, 23, offset=hours(5)))
     )
     assert (
         PlainDateTime(2020, 8, 15, 23)
-        .assume_fixed_offset(-2)
-        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=-2))
+        .assume_fixed_offset(hours(-2))
+        .strict_eq(OffsetDateTime(2020, 8, 15, 23, offset=hours(-2)))
     )
 
 
 class TestAssumeTz:
     def test_typical(self):
         d = PlainDateTime(2020, 8, 15, 23)
-        assert d.assume_tz("Asia/Tokyo", disambiguate="raise").exact_eq(
+        assert d.assume_tz("Asia/Tokyo", disambiguation="raise").strict_eq(
             ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
         )
-        assert d.assume_tz("Asia/Tokyo").exact_eq(
+        assert d.assume_tz("Asia/Tokyo").strict_eq(
             ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
         )
 
@@ -129,11 +122,11 @@ class TestAssumeTz:
         d = PlainDateTime(2023, 10, 29, 2, 15)
 
         with pytest.raises(RepeatedTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_tz("Europe/Amsterdam", disambiguate="raise")
+            d.assume_tz("Europe/Amsterdam", disambiguation="raise")
 
         assert d.assume_tz(
-            "Europe/Amsterdam", disambiguate="earlier"
-        ).exact_eq(
+            "Europe/Amsterdam", disambiguation="earlier"
+        ).strict_eq(
             ZonedDateTime(
                 2023,
                 10,
@@ -141,10 +134,12 @@ class TestAssumeTz:
                 2,
                 15,
                 tz="Europe/Amsterdam",
-                disambiguate="earlier",
+                disambiguation="earlier",
             )
         )
-        assert d.assume_tz("Europe/Amsterdam", disambiguate="later").exact_eq(
+        assert d.assume_tz(
+            "Europe/Amsterdam", disambiguation="later"
+        ).strict_eq(
             ZonedDateTime(
                 2023,
                 10,
@@ -152,7 +147,7 @@ class TestAssumeTz:
                 2,
                 15,
                 tz="Europe/Amsterdam",
-                disambiguate="later",
+                disambiguation="later",
             )
         )
 
@@ -160,11 +155,11 @@ class TestAssumeTz:
         d = PlainDateTime(2023, 3, 26, 2, 15)
 
         with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_tz("Europe/Amsterdam", disambiguate="raise")
+            d.assume_tz("Europe/Amsterdam", disambiguation="raise")
 
         assert d.assume_tz(
-            "Europe/Amsterdam", disambiguate="earlier"
-        ).exact_eq(
+            "Europe/Amsterdam", disambiguation="earlier"
+        ).strict_eq(
             ZonedDateTime(
                 2023,
                 3,
@@ -172,7 +167,7 @@ class TestAssumeTz:
                 2,
                 15,
                 tz="Europe/Amsterdam",
-                disambiguate="earlier",
+                disambiguation="earlier",
             )
         )
 
@@ -190,13 +185,13 @@ class TestAssumeSystemTz:
             dt = PlainDateTime(2020, 8, 15, 23)
 
             with system_tz(tz):
-                zdt = dt.assume_system_tz(disambiguate="raise")
+                zdt = dt.assume_tz(SYSTEM_TZ, disambiguation="raise")
                 assert isinstance(zdt, ZonedDateTime)
                 assert zdt.to_plain() == dt
                 assert zdt.offset == hours(2)
 
                 if tz == "Europe/Amsterdam":
-                    assert zdt.tz == "Europe/Amsterdam"
+                    assert zdt.tz_id == "Europe/Amsterdam"
 
     @pytest.mark.parametrize(
         "tz",
@@ -210,27 +205,29 @@ class TestAssumeSystemTz:
             d = PlainDateTime(2023, 10, 29, 2, 15)
 
             with pytest.raises(RepeatedTime, match="02:15.*is repeated"):
-                d.assume_system_tz(disambiguate="raise")
+                d.assume_tz(SYSTEM_TZ, disambiguation="raise")
 
-            zdt1 = d.assume_system_tz(disambiguate="earlier")
+            zdt1 = d.assume_tz(SYSTEM_TZ, disambiguation="earlier")
             assert isinstance(zdt1, ZonedDateTime)
             assert zdt1.to_plain() == d
             assert zdt1.offset == hours(2)
 
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt1.tz == "Europe/Amsterdam"
+                assert zdt1.tz_id == "Europe/Amsterdam"
 
-            assert d.assume_system_tz(disambiguate="compatible").exact_eq(zdt1)
+            assert d.assume_tz(
+                SYSTEM_TZ, disambiguation="compatible"
+            ).strict_eq(zdt1)
 
-            zdt2 = d.assume_system_tz(disambiguate="later")
+            zdt2 = d.assume_tz(SYSTEM_TZ, disambiguation="later")
             assert isinstance(zdt2, ZonedDateTime)
             assert zdt2.to_plain() == d
             assert zdt2.offset == hours(1)
 
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt2.tz == "Europe/Amsterdam"
+                assert zdt2.tz_id == "Europe/Amsterdam"
 
     @pytest.mark.parametrize(
         "tz",
@@ -245,25 +242,27 @@ class TestAssumeSystemTz:
             d = PlainDateTime(2023, 3, 26, 2, 15)
 
             with pytest.raises(SkippedTime, match="02:15.*is skipped"):
-                d.assume_system_tz(disambiguate="raise")
+                d.assume_tz(SYSTEM_TZ, disambiguation="raise")
 
-            zdt1 = d.assume_system_tz(disambiguate="earlier")
+            zdt1 = d.assume_tz(SYSTEM_TZ, disambiguation="earlier")
             assert isinstance(zdt1, ZonedDateTime)
             assert zdt1.to_plain() == d.subtract(hours=1)
             assert zdt1.offset == hours(1)
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt1.tz == "Europe/Amsterdam"
+                assert zdt1.tz_id == "Europe/Amsterdam"
 
-            zdt2 = d.assume_system_tz(disambiguate="later")
+            zdt2 = d.assume_tz(SYSTEM_TZ, disambiguation="later")
             assert isinstance(zdt2, ZonedDateTime)
             assert zdt2.to_plain() == d.add(hours=1)
             assert zdt2.offset == hours(2)
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt2.tz == "Europe/Amsterdam"
+                assert zdt2.tz_id == "Europe/Amsterdam"
 
-            assert d.assume_system_tz(disambiguate="compatible").exact_eq(zdt2)
+            assert d.assume_tz(
+                SYSTEM_TZ, disambiguation="compatible"
+            ).strict_eq(zdt2)
 
 
 def test_immutable():
@@ -422,7 +421,7 @@ def test_equality():
 
     # no mixing with aware types:
     assert d != d.assume_utc()  # type: ignore[comparison-overlap]
-    assert d != d.assume_fixed_offset(+3)  # type: ignore[comparison-overlap]
+    assert d != d.assume_fixed_offset(hours(3))  # type: ignore[comparison-overlap]
 
     # Ambiguity in system timezone doesn't affect equality
     with system_tz_ams():
@@ -604,11 +603,19 @@ def test_replace():
     with pytest.raises(ValueError, match="nano|time"):
         d.replace(nanosecond=-4)
 
+    with pytest.raises(TypeError, match="nanosecond"):
+        d.replace(nanosecond=1.5)  # type: ignore[arg-type]
+
     with pytest.raises(TypeError, match="tzinfo"):
         d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
 
 
 class TestShiftMethods:
+    @suppress(NaiveArithmeticWarning)
+    def test_no_arguments(self):
+        d = PlainDateTime(2020, 8, 15)
+        assert d.add(naive_arithmetic_ok=True) == d
+
     @pytest.mark.parametrize(
         "delta, kwargs",
         [
@@ -620,74 +627,6 @@ class TestShiftMethods:
     def test_itemized_delta_arguments(self, delta, kwargs):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9)
         assert d.add(delta) == d.add(**kwargs)
-
-    def test_warnings(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.warns(NaiveArithmeticWarning) as w:
-            d.add(months=2, hours=48, seconds=5, nanoseconds=3)
-        assert len(w) == 1
-
-        with pytest.warns(NaiveArithmeticWarning) as w:
-            d.subtract(months=2, hours=48, seconds=5, nanoseconds=3)
-        assert len(w) == 1
-
-        # calendar units don't trigger warning
-        d.subtract(days=10, months=3, years=1)
-        d.add(days=10, months=3, years=1)
-
-        # ignore_dst deprecated
-        with suppress(NaiveArithmeticWarning):
-            with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
-                d.add(hours=48, seconds=5, nanoseconds=3, ignore_dst=True)
-
-            with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
-                d.subtract(hours=48, seconds=5, nanoseconds=3, ignore_dst=True)
-
-    @suppress(NaiveArithmeticWarning)
-    def test_valid(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        shifted = PlainDateTime(2020, 5, 27, 23, 12, 14, nanosecond=987_651)
-
-        assert d.add() == d
-
-        assert (
-            d.add(
-                months=-3,
-                days=10,
-                hours=48,
-                seconds=5,
-                nanoseconds=-3,
-            )
-            == shifted
-        )
-
-        # same result with deltas
-        assert (
-            d.add(hours(48) + seconds(5) + nanoseconds(-3))
-            .add(months(-3))
-            .add(days(10))
-        ) == shifted
-
-        # same result with subtract()
-        assert (
-            d.subtract(
-                months=3,
-                days=-10,
-                hours=-48,
-                seconds=-5,
-                nanoseconds=3,
-            )
-            == shifted
-        )
-
-        # same result with deltas
-        assert (
-            d.subtract(hours(-48) + seconds(-5) + nanoseconds(3))
-            .subtract(months(3))
-            .subtract(days(-10))
-        ) == shifted
-
-        assert d.subtract(months=3) == d.add(months=-3)
 
     @suppress(NaiveArithmeticWarning)
     def test_invalid(self):
@@ -799,26 +738,6 @@ class TestNaiveArithmeticOkKwarg:
 
 
 class TestShiftOperators:
-    def test_date_delta(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        shifted = d.replace(year=2021, day=19)
-        assert d + (years(1) + weeks(1) + days(-3)) == shifted
-
-        # same results with subtraction
-        assert d - (years(-1) + weeks(-1) + days(3)) == shifted
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + years(8_000)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + days(366 * 8_000)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + years(-3_000)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + days(-366 * 8_000)
-
     def test_timedelta(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
         with suppress(NaiveArithmeticWarning):
@@ -830,12 +749,12 @@ class TestShiftOperators:
             ) == d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
 
         # operators trigger warning (exactly one warning each)
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             d + TimeDelta(hours=48, seconds=5, nanoseconds=3)
         assert len(w) == 1
 
         # operators trigger warning (exactly one warning each)
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
         assert len(w) == 1
 
@@ -864,7 +783,7 @@ class TestDifference:
             assert d - d == hours(0)
             assert d - other == hours(24) + seconds(5) - nanoseconds(321)
 
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             d - other
         assert len(w) == 1
 
@@ -873,15 +792,6 @@ class TestDifference:
 
         with pytest.raises(TypeError):
             d - 43  # type: ignore[operator]
-
-    def test_ignore_dst_deprecated(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
-        other = PlainDateTime(2020, 8, 14, 23, 12, 4)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", NaiveArithmeticWarning)
-            warnings.simplefilter("always", WheneverDeprecationWarning)
-            with pytest.warns(WheneverDeprecationWarning):
-                d.difference(other, ignore_dst=True)
 
 
 class TestRound:
@@ -1051,29 +961,29 @@ class TestRound:
         assert d.round(TimeDelta(minutes=15)) == PlainDateTime(
             2020, 8, 15, 23, 30
         )
-        assert d.round(TimeDelta(hours=1)) == PlainDateTime(2020, 8, 15, 23)
+        assert d.round(hours(1)) == PlainDateTime(2020, 8, 15, 23)
         assert d.round(TimeDelta(minutes=15), mode="floor") == PlainDateTime(
             2020, 8, 15, 23, 15
         )
 
     def test_round_by_timedelta_wraps_to_next_day(self):
         d = PlainDateTime(2020, 8, 15, 23, 50)
-        assert d.round(TimeDelta(hours=1)) == PlainDateTime(2020, 8, 16)
+        assert d.round(hours(1)) == PlainDateTime(2020, 8, 16)
 
     def test_round_by_timedelta_invalid_not_divides_day(self):
         d = PlainDateTime(2020, 8, 15, 12)
         with pytest.raises(ValueError, match="24.hour"):
-            d.round(TimeDelta(hours=7))
+            d.round(hours(7))
 
     def test_round_by_timedelta_negative(self):
         d = PlainDateTime(2020, 8, 15, 12)
         with pytest.raises(ValueError, match="positive"):
-            d.round(TimeDelta(hours=-1))
+            d.round(hours(-1))
 
     def test_round_by_timedelta_with_increment(self):
         d = PlainDateTime(2020, 8, 15, 12)
         with pytest.raises(TypeError):
-            d.round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
+            d.round(hours(1), increment=2)  # type: ignore[call-overload]
 
 
 def test_replace_date():
@@ -1110,28 +1020,20 @@ def test_old_pickle_data_remains_unpicklable():
     )
 
 
-class TestParseStrptime:
-    def test_strptime(self):
-        assert PlainDateTime.parse_strptime(
-            "2020-08-15 23:12", format="%Y-%m-%d %H:%M"
-        ) == PlainDateTime(2020, 8, 15, 23, 12)
-
-    def test_strptime_invalid(self):
-        # offset now allowed
-        with pytest.raises(ValueError):
-            PlainDateTime.parse_strptime(
-                "2020-08-15 23:12:09+0500", format="%Y-%m-%d %H:%M:%S%z"
-            )
-
-        # format is keyword-only
-        with pytest.raises(TypeError, match="format|argument"):
-            OffsetDateTime.parse_strptime(
-                "2020-08-15 23:12:09",
-                "%Y-%m-%d %H:%M:%S",  # type: ignore[call-arg]
-            )
-
-
 class TestSince:
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("milliseconds", 86_400_000.0),
+            ("microseconds", 86_400_000_000.0),
+        ],
+    )
+    def test_total_subsecond_units(self, unit, expected):
+        a = PlainDateTime(2023, 2, 15)
+        b = PlainDateTime(2023, 2, 14)
+        with suppress(NaiveArithmeticWarning):
+            assert a.since(b, total=unit) == expected
+
     @pytest.mark.parametrize(
         "a, b, units, kwargs, expect",
         [
@@ -1394,28 +1296,28 @@ class TestSince:
         expect: ItemizedDelta,
     ):
         with suppress(NaiveArithmeticWarning):
-            assert a.since(b, in_units=units, **kwargs).exact_eq(expect)
+            assert a.since(b, in_units=units, **kwargs).strict_eq(expect)
 
     def test_warnings(self):
         a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
         b = PlainDateTime(2021, 7, 3, hour=1)
 
         # exact output units trigger the warning
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.since(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.until(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
         # mixed calendar+exact output also triggers (has exact)
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.since(b, in_units=["days", "hours"])
         assert len(w) == 1
 
         # total with exact unit triggers the warning
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.since(b, total="hours")
         assert len(w) == 1
 
@@ -1521,14 +1423,14 @@ class TestSince:
         b = PlainDateTime(2021, 7, 3)
         assert a.since(
             b, in_units=["years", "months", "days", "hours"]
-        ).exact_eq(b.until(a, in_units=["years", "months", "days", "hours"]))
+        ).strict_eq(b.until(a, in_units=["years", "months", "days", "hours"]))
         # floor rounding works correctly
         assert a.since(
             b,
             in_units=["years", "months", "days", "hours"],
             round_increment=2,
             round_mode="floor",
-        ).exact_eq(
+        ).strict_eq(
             b.until(
                 a,
                 in_units=["years", "months", "days", "hours"],
@@ -1626,23 +1528,6 @@ class TestSince:
             round_increment=1 << 65,
             round_mode="ceil",
         ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
-
-
-class TestDeprecations:
-    def test_py_datetime(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_823)
-        with pytest.warns(WheneverDeprecationWarning):
-            result = d.py_datetime()
-        assert result == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
-
-    def test_from_py_datetime(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = PlainDateTime.from_py_datetime(
-                py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
-            )
-        assert result == PlainDateTime(
-            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
-        )
 
 
 def test_cannot_subclass():

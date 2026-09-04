@@ -18,6 +18,7 @@ __all__ = [
     "_clear_tz_cache",
     "_clear_tz_cache_by_keys",
     "_get_tzpath",
+    "get_tzpath",
     "_set_tzpath",
     "reset_system_tz",
 ]
@@ -27,9 +28,16 @@ _NOGIL = hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled()
 _TZPATH: tuple[str, ...] = ()
 
 # Our cache for loaded tz files. The design is based off that of `zoneinfo`.
-_TZCACHE_LRU_SIZE = 8
+_TZCACHE_LRU_SIZE = 32
 _tzcache_lru: OrderedDict[str, TimeZone] = OrderedDict()
 _tzcache_lookup: WeakValueDictionary[str, TimeZone] = WeakValueDictionary()
+
+_TzDirIndex = dict[str, str]
+_TzDirCache = dict[str, _TzDirIndex]
+
+# Maps each scanned directory path to its ASCII-lowercase entry names and
+# their spelling on disk. Published only after a successful TZif load.
+_tzdir_cache: _TzDirCache = {}
 
 # OrderedDict is thread-unsafe in Python < 3.14 under free-threading.
 # Thus we need an extra lock to ensure thread-safety of our LRU cache.
@@ -48,6 +56,7 @@ else:
 
 
 _tzcache_lru_lock = _Lock()
+_tzdir_cache_lock = _Lock()
 
 # One-entry fast path: skips LRU update for repeated lookups of the same zone.
 # Thread-safe for GIL Python (atomic assignment); under free-threading the
@@ -59,10 +68,15 @@ _last_tz_val: TimeZone | None = None
 def _set_tzpath(to: tuple[str, ...]) -> None:
     global _TZPATH
     _TZPATH = to
+    _clear_tzdir_cache()
 
 
-def _get_tzpath() -> tuple[str, ...]:
+def get_tzpath() -> tuple[str, ...]:
+    """Return a snapshot of the current timezone search path."""
     return _TZPATH
+
+
+_get_tzpath = get_tzpath
 
 
 def _clear_tz_cache() -> None:
@@ -72,49 +86,57 @@ def _clear_tz_cache() -> None:
     _tzcache_lookup.clear()
     with _tzcache_lru_lock:
         _tzcache_lru.clear()
+    _clear_tzdir_cache()
 
 
 def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
     global _last_tz_key, _last_tz_val
-    if _last_tz_key in keys:
+    for k in keys:
+        if not isinstance(k, str):
+            raise TypeError("key must be a string")
+    normalized_keys = tuple(k.lower() for k in keys)
+    if _last_tz_key in normalized_keys:
         _last_tz_key = None
         _last_tz_val = None
     with _tzcache_lru_lock:
-        for k in keys:
-            _tzcache_lookup.pop(k, None)
-            _tzcache_lru.pop(k, None)
+        for key in normalized_keys:
+            _tzcache_lookup.pop(key, None)
+            _tzcache_lru.pop(key, None)
+    # Directory indices are shared by many keys, so selective invalidation
+    # would be both more complex and less predictable than clearing them all.
+    _clear_tzdir_cache()
 
 
 def get_tz(key: str) -> TimeZone:
     global _last_tz_key, _last_tz_val
-    if key == _last_tz_key:
+    cache_key = _normalize_tzid(key)
+    if cache_key == _last_tz_key:
         return _last_tz_val  # type: ignore[return-value]
 
-    instance = _tzcache_lookup.get(key)
-    if instance is None:
+    if (instance := _tzcache_lookup.get(cache_key)) is None:
         # Concurrency note: we accept the possibility of multiple threads
         # loading the same timezone at the same time, since TimeZone instances
         # are immutable after construction. The last one to write wins.
-        instance = _tzcache_lookup.setdefault(
-            key, _load_tz(validate_tzid(key))
-        )
+        tzif, canonical_key, updates = _load_tz(cache_key, key)
+        loaded = TimeZone.parse_tzif(tzif, canonical_key)
+        _publish_tzdir_cache(updates)
+        instance = _tzcache_lookup.setdefault(cache_key, loaded)
 
     with _tzcache_lru_lock:
-        _tzcache_lru[key] = _tzcache_lru.pop(key, instance)
+        _tzcache_lru[cache_key] = _tzcache_lru.pop(cache_key, instance)
         if len(_tzcache_lru) > _TZCACHE_LRU_SIZE:
             try:
                 _tzcache_lru.popitem(last=False)
             except KeyError:  # pragma: no cover
                 pass  # theoretically possible if other threads are clearing too
 
-    _last_tz_key = key
+    _last_tz_key = cache_key
     _last_tz_val = instance
     return instance
 
 
-def validate_tzid(key: str) -> SafeTzId:
-    """Checks for invalid characters and path traversal in the key."""
-    if (
+def _is_valid_tzid(key: str) -> bool:
+    return (
         key.isascii()
         # There's no standard limit on IANA tz IDs, but we have to draw
         # the line somewhere to prevent abuse.
@@ -127,55 +149,161 @@ def validate_tzid(key: str) -> SafeTzId:
         # specific restrictions on the first and list characters
         and key[0] not in ".-+/"
         and key[-1] != "/"
-    ):
-        return SafeTzId(key)
-    else:
-        raise TimeZoneNotFoundError.for_key(key)
+    )
 
 
-# Alias for a TZ key that has been confirmed not to be a path traversal
-# or contain other "bad" characters.
+def _normalize_tzid(key: str) -> NormalizedTzId:
+    # Not a redundant check on an annotated argument: this is the boundary
+    # where untyped callers arrive, and without it the validation below
+    # fails with a leaked AttributeError (or, for bytes, passes silently).
+    if not isinstance(key, str):
+        raise TypeError("tz must be a string")
+    if not _is_valid_tzid(key):
+        raise TimeZoneNotFoundError._for_key(key)
+    return NormalizedTzId(key.lower())
+
+
+NormalizedTzId = NewType("NormalizedTzId", str)
 SafeTzId = NewType("SafeTzId", str)
 
 
-def _try_tzif_from_path(key: SafeTzId) -> bytes | None:
-    for search_path in _TZPATH:
-        target = os.path.join(search_path, key)
-        if os.path.isfile(target):
-            with open(target, "rb") as f:
-                return f.read()
+def validate_tzid(key: str) -> SafeTzId:
+    if _is_valid_tzid(key):
+        return SafeTzId(key)
+    raise TimeZoneNotFoundError._for_key(key)
+
+
+# A successful (path, database-spelled ID, pending directory indices) and
+# cached directory paths to invalidate before retrying.
+_ResolvedPath = tuple[str, str, _TzDirCache]
+_ResolveAttempt = tuple[_ResolvedPath | None, list[str]]
+
+
+def _clear_tzdir_cache() -> None:
+    with _tzdir_cache_lock:
+        _tzdir_cache.clear()
+
+
+def _publish_tzdir_cache(updates: _TzDirCache) -> None:
+    with _tzdir_cache_lock:
+        _tzdir_cache.update(updates)
+
+
+def _discard_tzdir_cache(paths: list[str]) -> None:
+    with _tzdir_cache_lock:
+        for p in paths:
+            _tzdir_cache.pop(p, None)
+
+
+def _cached_tzdir(path: str) -> _TzDirIndex | None:
+    with _tzdir_cache_lock:
+        return _tzdir_cache.get(path)
+
+
+def _scan_tzdir(path: str) -> _TzDirIndex | None:
+    try:
+        index: _TzDirIndex = {}
+        with os.scandir(path) as entries:
+            for e in entries:
+                n = e.name
+                if n.isascii():
+                    # Case collisions are unsupported; retain whichever entry
+                    # the filesystem enumerates first.
+                    index.setdefault(n.lower(), n)
+        return index
+    except OSError:
+        return None
+
+
+def _resolve_path_once(base: str, key: NormalizedTzId) -> _ResolveAttempt:
+    path = base
+    updates: _TzDirCache = {}
+    cached_paths: list[str] = []
+    for c in key.split("/"):
+        if (index := _cached_tzdir(path)) is not None and (
+            name := index.get(c)
+        ) is not None:
+            cached_paths.append(path)
+        else:
+            if (index := _scan_tzdir(path)) is None:
+                return None, cached_paths
+            if (name := index.get(c)) is None:
+                return None, []
+            updates[path] = index
+        path = os.path.join(path, name)
+
+    if os.path.isfile(path):
+        return (
+            path,
+            os.path.relpath(path, base).replace(os.sep, "/"),
+            updates,
+        ), []
+    return None, cached_paths
+
+
+def _resolve_path(base: str, key: NormalizedTzId) -> _ResolvedPath | None:
+    resolved, cached_paths = _resolve_path_once(base, key)
+    if resolved is not None or not cached_paths:
+        return resolved
+
+    # A cached positive may have been removed or renamed. Invalidate the
+    # contributing indices and retry once from the filesystem.
+    _discard_tzdir_cache(cached_paths)
+    resolved, _ = _resolve_path_once(base, key)
+    return resolved
+
+
+def _read_tzif_from_path(
+    base: str, key: NormalizedTzId
+) -> tuple[bytes, str, _TzDirCache] | None:
+    if (resolved := _resolve_path(base, key)) is None:
+        return None
+    path, canonical_key, updates = resolved
+    with open(path, "rb") as f:
+        return f.read(), canonical_key, updates
+
+
+def _try_tzif_from_path(
+    key: NormalizedTzId, original_key: str
+) -> tuple[bytes, str, _TzDirCache] | None:
+    try:
+        for search_path in _TZPATH:
+            if (tzif := _read_tzif_from_path(search_path, key)) is not None:
+                return tzif
+    except OSError:
+        raise TimeZoneNotFoundError._for_key(original_key) from None
     return None
 
 
-def _tzif_from_tzdata(key: SafeTzId) -> bytes:
+def _tzif_from_tzdata(
+    key: NormalizedTzId, original_key: str
+) -> tuple[bytes, str, _TzDirCache]:
     try:
         tzdata_path = __import__("tzdata.zoneinfo").zoneinfo.__path__[0]
-        # We check before we read, since the resulting exceptions vary
-        # on different platforms
-        if os.path.isfile(
-            relpath := os.path.join(tzdata_path, *key.split("/"))
-        ):
-            with open(relpath, "rb") as f:
-                return f.read()
-        else:
+        if (tzif := _read_tzif_from_path(tzdata_path, key)) is None:
             raise FileNotFoundError()
+        return tzif
     # Several exceptions amount to "can't find the key"
     except (
         ImportError,
         FileNotFoundError,
+        OSError,
         UnicodeEncodeError,
     ):
-        raise TimeZoneNotFoundError.for_key(key)
+        raise TimeZoneNotFoundError._for_key(original_key)
 
 
-def _load_tz(key: SafeTzId) -> TimeZone:
-    tzif = _try_tzif_from_path(key) or _tzif_from_tzdata(key)
-    if not tzif.startswith(b"TZif"):
+def _load_tz(
+    key: NormalizedTzId, original_key: str
+) -> tuple[bytes, str, _TzDirCache]:
+    tzif = _try_tzif_from_path(key, original_key) or _tzif_from_tzdata(
+        key, original_key
+    )
+    if not tzif[0].startswith(b"TZif"):
         # We've found a file, but doesn't look like a TZif file.
         # Stop here instead of getting a cryptic error later.
-        raise TimeZoneNotFoundError.for_key(key)
-
-    return TimeZone.parse_tzif(tzif, key)
+        raise TimeZoneNotFoundError._for_key(original_key)
+    return tzif
 
 
 _CACHED_SYSTEM_TZ: TimeZone | None = None
@@ -202,10 +330,10 @@ def reset_system_tz() -> None:
     >>> os.environ["TZ"] = "America/New_York"
     >>> reset_system_tz()  # system tz is now New York
     >>> os.environ["TZ"] = "Europe/London"
-    >>> ZonedDateTime.now_in_system_tz()  # still uses cached New York tz
+    >>> ZonedDateTime.now(SYSTEM_TZ)  # still uses cached New York tz
     ZonedDateTime(2025-06-18 15:11:08-04:00[America/New_York])
     >>> reset_system_tz()  # system tz is now London
-    >>> ZonedDateTime.now_in_system_tz()
+    >>> ZonedDateTime.now(SYSTEM_TZ)
     ZonedDateTime(2025-06-18 20:11:08+01:00[Europe/London])
     """
     global _CACHED_SYSTEM_TZ
@@ -232,5 +360,5 @@ class TimeZoneNotFoundError(ValueError):
     """A timezone with the given ID was not found"""
 
     @classmethod
-    def for_key(cls, key: str) -> TimeZoneNotFoundError:
+    def _for_key(cls, key: str) -> TimeZoneNotFoundError:
         return cls(f"No time zone found for key: {key!r}")

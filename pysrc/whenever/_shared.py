@@ -20,6 +20,7 @@ from ._common import (
     _Base,
     add_alternate_constructors,
     final,
+    warn_deprecated,
 )
 from ._math import days_in_month, is_leap
 from ._parse import _strict_int, monthday_from_iso, yearmonth_from_iso
@@ -188,6 +189,20 @@ class YearMonth(_Base):
                 "replace() got an unexpected keyword argument 'day'"
             )
         return YearMonth._from_py_unchecked(self._py.replace(**kwargs))
+
+    def add(self, *, years: int = 0, months: int = 0) -> YearMonth:
+        """Shift this year-month by a number of years and months."""
+        year, month = divmod(
+            self.year * 12 + self.month - 1 + years * 12 + months,
+            12,
+        )
+        return YearMonth._from_py_unchecked(
+            self._py.replace(year=year, month=month + 1)
+        )
+
+    def subtract(self, *, years: int = 0, months: int = 0) -> YearMonth:
+        """Shift this year-month backwards by a number of years and months."""
+        return self.add(years=-years, months=-months)
 
     def on_day(self, day: int, /) -> Date:
         """Create a date from this year-month with a given day
@@ -419,15 +434,27 @@ class MonthDay(_Base):
 
         return Date(self._py.replace(year=year))
 
-    def is_leap(self) -> bool:
+    def is_leap_day(self) -> bool:
         """Check if the month-day is February 29th
 
-        >>> MonthDay(2, 29).is_leap()
+        >>> MonthDay(2, 29).is_leap_day()
         True
-        >>> MonthDay(3, 1).is_leap()
+        >>> MonthDay(3, 1).is_leap_day()
         False
         """
         return self._py.month == 2 and self._py.day == 29
+
+    def is_leap(self) -> bool:
+        """Check if the month-day is February 29th.
+
+        .. deprecated:: 0.11
+           Use :meth:`is_leap_day` instead.
+        """
+        warn_deprecated(
+            "is_leap() is deprecated; use is_leap_day() instead",
+            stacklevel=2,
+        )
+        return self.is_leap_day()
 
     __str__ = format_iso
 
@@ -539,11 +566,9 @@ class IsoWeekDate(_Base):
         def __init__(self, iso_string: str, /) -> None: ...
 
         @overload
-        def __init__(
-            self, year: int, week: int, weekday: Weekday, /
-        ) -> None: ...
+        def __init__(self, year: int, week: int, weekday: Weekday) -> None: ...
 
-    def __init__(self, year: int, week: int, weekday: Weekday, /) -> None:
+    def __init__(self, year: int, week: int, weekday: Weekday) -> None:
         if not isinstance(weekday, Weekday):
             raise TypeError("weekday must be a Weekday")
         max_weeks = 53 if _is_long_year(year) else 52

@@ -4,7 +4,7 @@ from .ambiguity import (
     resolve_ambiguity,
     resolve_ambiguity_using_prev_offset,
 )
-from .common import Fold, Gap, Unambiguous
+from .common import Fold, Gap, Unique
 from .store import (
     SafeTzId,
     TimeZoneNotFoundError,
@@ -14,6 +14,7 @@ from .store import (
     _set_tzpath,
     get_system_tz,
     get_tz,
+    get_tzpath,
     reset_system_tz,
     validate_tzid,
 )
@@ -27,11 +28,12 @@ __all__ = [
     "SkippedTime",
     "TimeZone",
     "TimeZoneNotFoundError",
-    "Unambiguous",
+    "Unique",
     "_clear_tz_cache",
     "_clear_tz_cache_by_keys",
     "_get_tzpath",
     "_set_tzpath",
+    "get_tzpath",
     "get_system_tz",
     "get_tz",
     "reset_system_tz",

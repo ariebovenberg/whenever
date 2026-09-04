@@ -51,6 +51,10 @@ sync-docstrings:
 	# --no-sync prevents rust rebuild, which fails on empty docstrings.rs
 	uv $(UV_ARGS) run --no-sync python scripts/generate_docstrings.py > src/docstrings.rs
 
+.PHONY: check-examples
+check-examples:
+	uv $(UV_ARGS) run --no-sync python scripts/check_docstring_examples.py
+
 .PHONY: check-docstrings
 check-docstrings:
 	uv $(UV_ARGS) run --no-sync python scripts/generate_docstrings.py | diff -u src/docstrings.rs - || { \
@@ -60,8 +64,8 @@ check-docstrings:
 
 .PHONY: fix
 fix:
-	uv $(UV_ARGS) run --no-sync ruff check $(RUFF_ARGS) --select I --fix src/ tests/ scripts/
-	uv $(UV_ARGS) run --no-sync ruff format $(RUFF_ARGS) src/ tests/ scripts/
+	uv $(UV_ARGS) run --no-sync ruff check $(RUFF_ARGS) --select I --fix pysrc/ tests/ scripts/
+	uv $(UV_ARGS) run --no-sync ruff format $(RUFF_ARGS) pysrc/ tests/ scripts/
 	cargo fmt
 
 .PHONY: docs
@@ -101,8 +105,8 @@ test: test-py test-rs
 .PHONY: ci-lint
 ci-lint: check-readme check-docstrings check-llms-summaries
 	uv $(UV_ARGS) lock --check
-	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) src/ tests/ scripts/
-	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check src/ tests/ scripts/
+	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) pysrc/ tests/ scripts/
+	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check pysrc/ tests/ scripts/
 	cargo fmt -- --check
 	# hash seed to ensure deterministic import order by slotscheck
 	uv $(UV_ARGS) run env PYTHONPATH=pysrc/ PYTHONHASHSEED=3 slotscheck $(SLOTSCHECK_ARGS) pysrc

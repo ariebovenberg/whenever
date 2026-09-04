@@ -7,10 +7,6 @@ from whenever import Date, MonthDay
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
-
 
 class TestInit:
     def test_valid(self):
@@ -53,12 +49,12 @@ def test_properties():
     assert md.day == 14
 
 
-def test_is_leap():
-    assert MonthDay(2, 29).is_leap()
-    assert not MonthDay(2, 28).is_leap()
-    assert not MonthDay(3, 1).is_leap()
-    assert not MonthDay(1, 1).is_leap()
-    assert not MonthDay(12, 31).is_leap()
+def test_is_leap_day():
+    assert MonthDay(2, 29).is_leap_day()
+    assert not MonthDay(2, 28).is_leap_day()
+    assert not MonthDay(3, 1).is_leap_day()
+    assert not MonthDay(1, 1).is_leap_day()
+    assert not MonthDay(12, 31).is_leap_day()
 
 
 def test_eq():

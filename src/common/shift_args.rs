@@ -14,17 +14,10 @@ pub(crate) fn parse_calendar_shift_arg(
     obj: PyObj,
     state: &State,
 ) -> PyResult<CalendarShift> {
-    if let Some(delta) = obj.extract(*state.date_delta_type) {
-        Ok(CalendarShift {
-            months: delta.months,
-            days: delta.days,
-        })
-    } else if let Some(delta) = ItemizedDateDelta::extract(obj, state)? {
+    if let Some(delta) = ItemizedDateDelta::extract(obj, state)? {
         delta.to_calendar_shift().ok_or_range_err()
     } else {
-        raise_type_err(format!(
-            "{fname}() argument must be a DateDelta or ItemizedDateDelta"
-        ))
+        raise_type_err(format!("{fname}() argument must be an ItemizedDateDelta"))
     }
 }
 
@@ -35,20 +28,6 @@ pub(crate) fn parse_datetime_shift_arg(
 ) -> PyResult<DateTimeShift> {
     if let Some(time) = obj.extract(*state.time_delta_type) {
         Ok(time.to_shift())
-    } else if let Some(calendar) = obj.extract(*state.date_delta_type) {
-        Ok(CalendarShift {
-            months: calendar.months,
-            days: calendar.days,
-        }
-        .to_shift())
-    } else if let Some(delta) = obj.extract(*state.datetime_delta_type) {
-        Ok(DateTimeShift {
-            calendar: CalendarShift {
-                months: delta.date.months,
-                days: delta.date.days,
-            },
-            time: delta.time,
-        })
     } else if let Some(calendar) = ItemizedDateDelta::extract(obj, state)? {
         Ok(calendar.to_calendar_shift().ok_or_range_err()?.to_shift())
     } else if let Some(delta) = ItemizedDelta::extract(obj, state)? {
@@ -64,25 +43,25 @@ fn parse_calendar_shift_unit(
     eq: StrEqFn,
     state: &State,
 ) -> PyResult<Option<CalendarShift>> {
-    Ok(Some(if eq(key, *state.str_years) {
+    Ok(Some(if eq(key, *state.strs.years) {
         CalendarShift {
             months: DeltaMonths::from_i64_years(value.expect_int("years")?.to_i64()?)
                 .ok_or_range_err()?,
             days: DeltaDays::ZERO,
         }
-    } else if eq(key, *state.str_months) {
+    } else if eq(key, *state.strs.months) {
         CalendarShift {
             months: DeltaMonths::from_i64(value.expect_int("months")?.to_i64()?)
                 .ok_or_range_err()?,
             days: DeltaDays::ZERO,
         }
-    } else if eq(key, *state.str_weeks) {
+    } else if eq(key, *state.strs.weeks) {
         CalendarShift {
             months: DeltaMonths::ZERO,
             days: DeltaDays::from_i64_weeks(value.expect_int("weeks")?.to_i64()?)
                 .ok_or_range_err()?,
         }
-    } else if eq(key, *state.str_days) {
+    } else if eq(key, *state.strs.days) {
         CalendarShift {
             months: DeltaMonths::ZERO,
             days: DeltaDays::from_i64(value.expect_int("days")?.to_i64()?).ok_or_range_err()?,
@@ -101,17 +80,17 @@ fn parse_datetime_shift_unit(
     if let Some(calendar) = parse_calendar_shift_unit(key, value, eq, state)? {
         return Ok(Some(calendar.to_shift()));
     }
-    Ok(Some(if eq(key, *state.str_hours) {
+    Ok(Some(if eq(key, *state.strs.hours) {
         ExactUnit::Hours.parse_py_number(value)?.to_shift()
-    } else if eq(key, *state.str_minutes) {
+    } else if eq(key, *state.strs.minutes) {
         ExactUnit::Minutes.parse_py_number(value)?.to_shift()
-    } else if eq(key, *state.str_seconds) {
+    } else if eq(key, *state.strs.seconds) {
         ExactUnit::Seconds.parse_py_number(value)?.to_shift()
-    } else if eq(key, *state.str_milliseconds) {
+    } else if eq(key, *state.strs.milliseconds) {
         ExactUnit::Milliseconds.parse_py_number(value)?.to_shift()
-    } else if eq(key, *state.str_microseconds) {
+    } else if eq(key, *state.strs.microseconds) {
         ExactUnit::Microseconds.parse_py_number(value)?.to_shift()
-    } else if eq(key, *state.str_nanoseconds) {
+    } else if eq(key, *state.strs.nanoseconds) {
         ExactUnit::Nanoseconds.parse_py_number(value)?.to_shift()
     } else {
         return Ok(None);

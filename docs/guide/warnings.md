@@ -26,8 +26,10 @@ fully, giving you several levels of control.
 UserWarning (stdlib)
 └── WheneverWarning
     ├── CalendarUnitCompositionWarning
+    ├── PickleOffsetMismatchWarning
     ├── PotentialDstBugWarning
     │   ├── DaysAssumed24HoursWarning
+    │   ├── ImplicitDisambiguationWarning
     │   ├── NaiveArithmeticWarning
     │   └── StaleOffsetWarning
     └── WheneverDeprecationWarning
@@ -35,7 +37,7 @@ UserWarning (stdlib)
 
 ## Turn warnings into errors
 
-For production code, **turn whenever's warnings into exceptions** as early as
+For application code, **turn whenever's warnings into exceptions** as early as
 possible — typically in your module's setup or at
 the top of your application entry point:
 
@@ -64,6 +66,9 @@ warnings.filterwarnings("error", category=whenever.NaiveArithmeticWarning)
 
 # Only error on potentially stale offset operations (OffsetDateTime):
 warnings.filterwarnings("error", category=whenever.StaleOffsetWarning)
+
+# Require an explicit policy whenever a timezone fold or gap needs resolving:
+warnings.filterwarnings("error", category=whenever.ImplicitDisambiguationWarning)
 ```
 
 ### In pytest
@@ -140,10 +145,8 @@ next_departure = scheduled.add(hours=1, naive_arithmetic_ok=True)
 The keyword argument documents the decision at the call site
 while keeping the suppression limited to exactly one operation.
 
-```{note}
-These keyword arguments supersede the ``ignore_dst`` keyword argument
-(deprecated in 0.10).
-```
+For the distinction between observed and permanently fixed offsets, see
+{ref}`offset-datetime-guidance`.
 
 ### Operators
 
@@ -215,7 +218,7 @@ underlying issue or suppress it explicitly with the appropriate keyword argument
 
 | Situation | Recommended approach |
 |---|---|
-| Production code | `filterwarnings("error", ...)` at startup |
+| Application code | `filterwarnings("error", ...)` at startup |
 | CI / test suite | `filterwarnings = error::whenever.WheneverWarning` in `pytest.ini` |
 | One intentional imprecision | Per-method kwarg (e.g. `naive_arithmetic_ok=True`) + a comment |
 | Suppress operator warnings | `warnings.catch_warnings()` block (Python ≥ 3.14 for concurrency safety) |

@@ -9,9 +9,14 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterable
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from itertools import pairwise
+from typing import TYPE_CHECKING, Literal
 
-from ._common import WheneverWarning
+from ._common import (
+    WheneverDeprecationWarning,
+    WheneverWarning,
+    round_offset_to_minute,
+)
 
 if TYPE_CHECKING:
     from typing import Sequence
@@ -176,6 +181,8 @@ class _ParseState:
         "nanos",
         "ampm",
         "offset_secs",
+        "offset_exact",
+        "offset_is_z",
         "tz_id",
         "weekday",
         "second_absent",
@@ -191,6 +198,8 @@ class _ParseState:
         self.nanos: int = 0
         self.ampm: str | None = None
         self.offset_secs: int | None = None
+        self.offset_exact: bool = False
+        self.offset_is_z: bool = False
         self.tz_id: str | None = None
         self.weekday: int | None = None
         self.second_absent: bool = False
@@ -208,10 +217,20 @@ class _ParseState:
 
 
 class _Literal:
-    __slots__ = ("text",)
+    __slots__ = (
+        "text",
+        "can_start_with_digit",
+        "can_start_with_colon",
+        "can_start_with_dot",
+    )
+
+    can_be_empty = False
 
     def __init__(self, text: str):
         self.text = text
+        self.can_start_with_digit = text[0].isdigit()
+        self.can_start_with_colon = text.startswith(":")
+        self.can_start_with_dot = text.startswith(".")
 
     def __repr__(self) -> str:
         return f"Literal({self.text!r})"
@@ -232,6 +251,13 @@ class _Field:
     category: str
     state_field: str
     format_only: bool = False
+    can_be_empty = False
+    can_start_with_digit = False
+    can_start_with_colon = False
+    can_start_with_dot = False
+    needs_digit_terminator = False
+    needs_colon_terminator = False
+    needs_dot_terminator = False
 
     def format_value(self, v: _FormatValues) -> str:
         raise NotImplementedError
@@ -253,13 +279,21 @@ class _Field:
         return letter * count
 
 
+class _DigitField(_Field):
+    can_start_with_digit = True
+
+
+class _UnpaddedDigitField(_DigitField):
+    needs_digit_terminator = True
+
+
 _Element = _Literal | _Field
 
 
 # --- Concrete field types ---
 
 
-class _Year4(_Field):
+class _Year4(_DigitField):
     pattern = ("Y", 4)
     category = "date"
     state_field = "year"
@@ -272,7 +306,7 @@ class _Year4(_Field):
         return pos
 
 
-class _Year2(_Field):
+class _Year2(_DigitField):
     pattern = ("Y", 2)
     category = "date"
     state_field = "year"
@@ -282,7 +316,7 @@ class _Year2(_Field):
         return f"{v.year % 100:02d}"
 
 
-class _MonthNum(_Field):
+class _MonthNum(_DigitField):
     pattern = ("M", 2)
     category = "date"
     state_field = "month"
@@ -295,7 +329,7 @@ class _MonthNum(_Field):
         return pos
 
 
-class _MonthNumUnpadded(_Field):
+class _MonthNumUnpadded(_UnpaddedDigitField):
     pattern = ("M", 1)
     category = "date"
     state_field = "month"
@@ -338,7 +372,7 @@ class _MonthFull(_Field):
         return pos
 
 
-class _Day(_Field):
+class _Day(_DigitField):
     pattern = ("D", 2)
     category = "date"
     state_field = "day"
@@ -351,7 +385,7 @@ class _Day(_Field):
         return pos
 
 
-class _DayUnpadded(_Field):
+class _DayUnpadded(_UnpaddedDigitField):
     pattern = ("D", 1)
     category = "date"
     state_field = "day"
@@ -394,8 +428,8 @@ class _WeekdayFull(_Field):
         return pos
 
 
-class _Hour24(_Field):
-    pattern = ("h", 2)
+class _Hour24(_DigitField):
+    pattern = ("H", 2)
     category = "time"
     state_field = "hour"
 
@@ -407,8 +441,8 @@ class _Hour24(_Field):
         return pos
 
 
-class _Hour24Unpadded(_Field):
-    pattern = ("h", 1)
+class _Hour24Unpadded(_UnpaddedDigitField):
+    pattern = ("H", 1)
     category = "time"
     state_field = "hour"
 
@@ -420,7 +454,15 @@ class _Hour24Unpadded(_Field):
         return pos
 
 
-class _Hour12(_Field):
+class _Hour24Legacy(_Hour24):
+    pattern = ("h", 2)
+
+
+class _Hour24UnpaddedLegacy(_Hour24Unpadded):
+    pattern = ("h", 1)
+
+
+class _Hour12(_DigitField):
     pattern = ("i", 2)
     category = "time"
     state_field = "hour"
@@ -440,7 +482,7 @@ class _Hour12(_Field):
         return pos
 
 
-class _Hour12Unpadded(_Field):
+class _Hour12Unpadded(_UnpaddedDigitField):
     pattern = ("i", 1)
     category = "time"
     state_field = "hour"
@@ -458,7 +500,7 @@ class _Hour12Unpadded(_Field):
         return pos
 
 
-class _Minute(_Field):
+class _Minute(_DigitField):
     pattern = ("m", 2)
     category = "time"
     state_field = "minute"
@@ -471,7 +513,7 @@ class _Minute(_Field):
         return pos
 
 
-class _MinuteUnpadded(_Field):
+class _MinuteUnpadded(_UnpaddedDigitField):
     pattern = ("m", 1)
     category = "time"
     state_field = "minute"
@@ -484,7 +526,7 @@ class _MinuteUnpadded(_Field):
         return pos
 
 
-class _Second(_Field):
+class _Second(_DigitField):
     pattern = ("s", 2)
     category = "time"
     state_field = "second"
@@ -499,7 +541,7 @@ class _Second(_Field):
         return pos
 
 
-class _SecondUnpadded(_Field):
+class _SecondUnpadded(_UnpaddedDigitField):
     pattern = ("s", 1)
     category = "time"
     state_field = "second"
@@ -514,10 +556,12 @@ class _SecondUnpadded(_Field):
         return pos
 
 
-class _SecondOpt(_Field):
+class _SecondOpt(_DigitField):
     pattern = ("S", 2)
     category = "time"
     state_field = "second"
+    can_be_empty = True
+    needs_digit_terminator = True
 
     def format_value(self, v: _FormatValues) -> str:
         return f"{v.second:02d}" if (v.second or v.nanos) else ""
@@ -546,6 +590,9 @@ class _ColonSec(_Field):
 
     category = "time"
     state_field = "second"
+    can_be_empty = True
+    can_start_with_colon = True
+    needs_colon_terminator = True
 
     def format_value(self, v: _FormatValues) -> str:
         return f":{v.second:02d}" if (v.second or v.nanos) else ""
@@ -562,7 +609,84 @@ class _ColonSec(_Field):
         return pos
 
 
-class _FracExact(_Field):
+class _OptionalSeconds(_Field):
+    """An optional seconds tail with an optional literal separator."""
+
+    category = "time"
+    state_field = "second"
+    can_be_empty = True
+
+    def __init__(
+        self,
+        separator: str,
+        fraction_kind: Literal["none", "exact", "trimmed"],
+        width: int,
+    ):
+        self.separator = separator
+        self.fraction_kind = fraction_kind
+        self.width = width
+        self.can_start_with_digit = not separator
+        self.can_start_with_colon = separator == ":"
+
+    def format_value(self, v: _FormatValues) -> str:
+        if not (v.second or v.nanos):
+            return ""
+        result = f"{self.separator}{v.second:02d}"
+        if self.fraction_kind == "exact":
+            return f"{result}.{v.nanos:09d}"[: len(result) + 1 + self.width]
+        if self.fraction_kind == "trimmed":
+            fraction = f"{v.nanos:09d}"[: self.width].rstrip("0")
+            if fraction:
+                return f"{result}.{fraction}"
+        return result
+
+    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
+        if self.separator:
+            present = pos < len(s) and s[pos] == self.separator
+        else:
+            present = pos < len(s) and s[pos].isdigit()
+        if not present:
+            state.second = 0
+            state.nanos = 0
+            state.second_absent = True
+            return pos
+
+        state.second, pos = _parse_digits(s, pos + len(self.separator), 2)
+        if state.second == 60:
+            state.second = 59
+
+        if self.fraction_kind == "exact":
+            if pos >= len(s) or s[pos] != ".":
+                raise ValueError(f"expected '.' at position {pos}")
+            value, pos = _parse_digits(s, pos + 1, self.width)
+            state.nanos = value * (10 ** (9 - self.width))
+        elif (
+            self.fraction_kind == "trimmed"
+            and pos + 1 < len(s)
+            and s[pos] == "."
+            and s[pos + 1].isdigit()
+        ):
+            pos += 1
+            count = 0
+            while (
+                count < self.width
+                and pos + count < len(s)
+                and s[pos + count].isdigit()
+            ):
+                count += 1
+            value = int(s[pos : pos + count])
+            state.nanos = value * (10 ** (9 - count))
+            pos += count
+        return pos
+
+    def __repr__(self) -> str:
+        if self.fraction_kind == "none":
+            return f"[{self.separator}ss]"
+        letter = "f" if self.fraction_kind == "exact" else "F"
+        return f"[{self.separator}ss.{letter * self.width}]"
+
+
+class _FracExact(_DigitField):
     """Fixed-width fractional seconds (e.g. ``fff`` = 3 digits)."""
 
     category = "time"
@@ -583,11 +707,13 @@ class _FracExact(_Field):
         return "f" * self.width
 
 
-class _FracTrim(_Field):
+class _FracTrim(_DigitField):
     """Trimmed fractional seconds (e.g. ``FFF`` = up to 3 digits)."""
 
     category = "time"
     state_field = "nanos"
+    can_be_empty = True
+    needs_digit_terminator = True
 
     def __init__(self, width: int):
         self.width = width
@@ -632,6 +758,10 @@ class _DotFrac(_Field):
 
     category = "time"
     state_field = "nanos"
+    can_be_empty = True
+    can_start_with_dot = True
+    needs_digit_terminator = True
+    needs_dot_terminator = True
 
     def __init__(self, width: int):
         self.width = width
@@ -641,7 +771,12 @@ class _DotFrac(_Field):
         return f".{trimmed}" if trimmed else ""
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        if state.second_absent or pos >= len(s) or s[pos] != ".":
+        if (
+            state.second_absent
+            or pos + 1 >= len(s)
+            or s[pos] != "."
+            or not s[pos + 1].isdigit()
+        ):
             state.nanos = 0
             return pos
         pos += 1  # consume the dot
@@ -652,11 +787,8 @@ class _DotFrac(_Field):
             and s[pos + count].isdigit()
         ):
             count += 1
-        if count == 0:
-            state.nanos = 0
-        else:
-            val = int(s[pos : pos + count])
-            state.nanos = val * (10 ** (9 - count))
+        val = int(s[pos : pos + count])
+        state.nanos = val * (10 ** (9 - count))
         return pos + count
 
     def __repr__(self) -> str:
@@ -705,6 +837,15 @@ class _AmPmFull(_Field):
 
 def _format_offset_value(offset_secs: int, width: int, use_z: bool) -> str:
     """Format an offset value according to width and z-substitution rules."""
+    if width <= 3:
+        offset_secs = round_offset_to_minute(offset_secs)
+        if abs(offset_secs) >= 24 * 3600:
+            raise ValueError("rounded offset is out of range")
+        if width == 1 and offset_secs % 3600:
+            raise ValueError(
+                "offset cannot be formatted with x/X: rounded offset has "
+                "nonzero minutes"
+            )
     if offset_secs == 0 and use_z:
         return "Z"
     sign = "+" if offset_secs >= 0 else "-"
@@ -727,17 +868,23 @@ def _format_offset_value(offset_secs: int, width: int, use_z: bool) -> str:
 
 def _parse_offset_value(
     s: str, pos: int, width: int, accept_z: bool
-) -> tuple[int, int]:
-    """Parse an offset value. Returns (offset_secs, new_pos)."""
+) -> tuple[int, int, bool, bool]:
+    """Parse an offset value.
+
+    The final two return values indicate whether the input included offset
+    seconds and whether it used ``Z``, respectively.
+    """
     if accept_z and pos < len(s) and s[pos] == "Z":
-        return 0, pos + 1
+        return 0, pos + 1, True, True
     if pos >= len(s) or s[pos] not in "+-":
         raise ValueError(f"Expected offset sign at position {pos}")
     sign = 1 if s[pos] == "+" else -1
     pos += 1
     oh, pos = _parse_digits(s, pos, 2)
+    if oh >= 24:
+        raise ValueError("offset hours must be 0..23")
     if width == 1:
-        return sign * oh * 3600, pos
+        return sign * oh * 3600, pos, False, False
     if width in (2, 4):
         om, pos = _parse_digits(s, pos, 2)
     else:  # width 3 or 5
@@ -748,16 +895,24 @@ def _parse_offset_value(
     if om >= 60:
         raise ValueError("offset minutes must be 0..59")
     os = 0
+    has_seconds = False
     if width >= 4:
         has_colon = width == 5
         if has_colon and pos < len(s) and s[pos] == ":":
             pos += 1
             os, pos = _parse_digits(s, pos, 2)
+            has_seconds = True
         elif not has_colon and pos < len(s) and s[pos].isdigit():
             os, pos = _parse_digits(s, pos, 2)
+            has_seconds = True
         if os >= 60:
             raise ValueError("offset seconds must be 0..59")
-    return sign * (oh * 3600 + om * 60 + os), pos
+    return (
+        sign * (oh * 3600 + om * 60 + os),
+        pos,
+        has_seconds,
+        False,
+    )
 
 
 class _OffsetLower(_Field):
@@ -768,6 +923,8 @@ class _OffsetLower(_Field):
 
     def __init__(self, width: int):
         self.width = width
+        self.needs_digit_terminator = width == 4
+        self.needs_colon_terminator = width == 5
 
     def format_value(self, v: _FormatValues) -> str:
         if v.offset_secs is None:
@@ -777,9 +934,12 @@ class _OffsetLower(_Field):
         return _format_offset_value(v.offset_secs, self.width, use_z=False)
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.offset_secs, pos = _parse_offset_value(
-            s, pos, self.width, accept_z=False
-        )
+        (
+            state.offset_secs,
+            pos,
+            state.offset_exact,
+            state.offset_is_z,
+        ) = _parse_offset_value(s, pos, self.width, accept_z=False)
         return pos
 
     def __repr__(self) -> str:
@@ -794,6 +954,8 @@ class _OffsetUpper(_Field):
 
     def __init__(self, width: int):
         self.width = width
+        self.needs_digit_terminator = width == 4
+        self.needs_colon_terminator = width == 5
 
     def format_value(self, v: _FormatValues) -> str:
         if v.offset_secs is None:
@@ -803,9 +965,12 @@ class _OffsetUpper(_Field):
         return _format_offset_value(v.offset_secs, self.width, use_z=True)
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.offset_secs, pos = _parse_offset_value(
-            s, pos, self.width, accept_z=True
-        )
+        (
+            state.offset_secs,
+            pos,
+            state.offset_exact,
+            state.offset_is_z,
+        ) = _parse_offset_value(s, pos, self.width, accept_z=True)
         return pos
 
     def __repr__(self) -> str:
@@ -816,6 +981,8 @@ class _TzId(_Field):
     pattern = ("V", 2)
     category = "tz"
     state_field = "tz_id"
+    can_start_with_digit = True
+    can_start_with_dot = True
 
     def format_value(self, v: _FormatValues) -> str:
         if v.tz_id is None:
@@ -841,6 +1008,8 @@ class _TzAbbrev(_Field):
     category = "tz"
     state_field = "tz_abbrev"
     format_only = True
+    can_start_with_digit = True
+    can_start_with_dot = True
 
     def format_value(self, v: _FormatValues) -> str:
         if v.tz_abbrev is None:
@@ -866,6 +1035,8 @@ _FIXED_FIELDS: list[type[_Field]] = [
     _WeekdayFull,
     _Hour24,
     _Hour24Unpadded,
+    _Hour24Legacy,
+    _Hour24UnpaddedLegacy,
     _Hour12,
     _Hour12Unpadded,
     _Minute,
@@ -902,43 +1073,110 @@ _SPEC_CHARS = frozenset(_FIXED_SPEC) | frozenset(_VARIABLE_SPEC)
 
 def _validate_cross_fields(elements: Iterable[_Element]) -> None:
     """Check for invalid field combinations and duplicates."""
+    elements = tuple(elements)
     has_24h = False
-    has_12h = False
     has_ampm = False
     seen_state_fields: dict[str, _Field] = {}
 
-    for el in elements:
+    for i, el in enumerate(elements):
         if not isinstance(el, _Field):
             continue
-        if isinstance(el, (_Hour24, _Hour24Unpadded)):
+        if isinstance(el, _OptionalSeconds):
+            if i == 0 or not isinstance(elements[i - 1], _Minute):
+                raise ValueError(
+                    f"optional seconds group {el!r} must immediately "
+                    "follow fixed-width 'mm'"
+                )
+            if i + 1 < len(elements):
+                follower = elements[i + 1]
+                if follower.can_be_empty:
+                    raise ValueError(
+                        f"optional seconds group {el!r} cannot be followed "
+                        f"by optional field {follower!r}"
+                    )
+                if not el.separator and follower.can_start_with_digit:
+                    raise ValueError(
+                        "separator-free optional seconds cannot be followed "
+                        "by an element that starts with a digit"
+                    )
+                if el.separator == ":" and follower.can_start_with_colon:
+                    raise ValueError(
+                        "colon-prefixed optional seconds cannot be followed "
+                        "by an element that starts with ':'"
+                    )
+                if (
+                    el.fraction_kind == "trimmed"
+                    and follower.can_start_with_dot
+                ):
+                    raise ValueError(
+                        "trimmed optional seconds cannot be followed by an "
+                        "element that starts with '.'"
+                    )
+        if isinstance(
+            el,
+            (
+                _Hour24,
+                _Hour24Unpadded,
+                _Hour24Legacy,
+                _Hour24UnpaddedLegacy,
+            ),
+        ):
             has_24h = True
-        elif isinstance(el, (_Hour12, _Hour12Unpadded)):
-            has_12h = True
         elif isinstance(el, (_AmPmShort, _AmPmFull)):
             has_ampm = True
 
-        sf = el.state_field
-        if sf in seen_state_fields:
-            raise ValueError(
-                f"Duplicate field: {el!r} conflicts with "
-                f"{seen_state_fields[sf]!r} (both set {sf})"
-            )
-        seen_state_fields[sf] = el
+        state_fields = [el.state_field]
+        if isinstance(el, _OptionalSeconds) and el.fraction_kind != "none":
+            state_fields.append("nanos")
+        for sf in state_fields:
+            if sf in seen_state_fields:
+                raise ValueError(
+                    f"Duplicate field: {el!r} conflicts with "
+                    f"{seen_state_fields[sf]!r} (both set {sf})"
+                )
+            seen_state_fields[sf] = el
 
     if has_24h and has_ampm:
         raise ValueError(
-            "24-hour format (h/hh) cannot be combined with "
+            "24-hour format (H/HH) cannot be combined with "
             "AM/PM (a/aa). Use 12-hour format (i/ii) instead."
         )
-    if has_12h and not has_ampm:
-        warnings.warn(
-            "The pattern uses a 12-hour clock (`i` or `ii`) without an AM/PM "
-            "field (`a` or `aa`). A value such as `03:00` could mean either "
-            "3 AM or 3 PM. Add `a` or `aa`, or use the 24-hour fields `h` or "
-            "`hh`.",
-            WheneverWarning,
-            stacklevel=4,
-        )
+
+    for el, follower in pairwise(elements):
+        if not isinstance(el, _Field):
+            continue
+        if (
+            el.needs_digit_terminator
+            and follower.can_start_with_digit
+            and not (
+                isinstance(el, _SecondOpt) and isinstance(follower, _FracTrim)
+            )
+        ):
+            raise ValueError(
+                f"pattern field {el!r} cannot be followed by an element "
+                "that starts with a digit"
+            )
+        if el.needs_colon_terminator and follower.can_start_with_colon:
+            raise ValueError(
+                f"pattern field {el!r} cannot be followed by an element "
+                "that starts with ':'"
+            )
+        if el.needs_dot_terminator and follower.can_start_with_dot:
+            raise ValueError(
+                f"pattern field {el!r} cannot be followed by an element "
+                "that starts with '.'"
+            )
+        if isinstance(el, _TzId) and (
+            not isinstance(follower, _Literal)
+            or (
+                follower.text[0].isascii()
+                and (follower.text[0].isalnum() or follower.text[0] in "/_-+.")
+            )
+        ):
+            raise ValueError(
+                "timezone ID field VV must be followed by a literal "
+                "delimiter that is not valid in a timezone ID"
+            )
 
 
 # Characters allowed as unquoted literals in patterns.
@@ -946,7 +1184,6 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
 # '.' and ':' are handled separately as potential compound-token prefixes.
 _LITERAL_CHARS = frozenset(' \t\n0123456789-/,;_()+@!~*&%$^|\\=?`"')
 _PENDING_CHARS = frozenset(".:")
-
 _RESERVED_CHARS = frozenset("<>[]{}#")
 
 
@@ -998,9 +1235,67 @@ def _compile_specifier(
         )
 
 
+def _compile_optional_seconds(
+    pattern: str, i: int
+) -> tuple[int, _OptionalSeconds]:
+    """Compile an optional separator, ``ss``, and optional fraction."""
+    end = pattern.find("]", i + 1)
+    nested = pattern.find("[", i + 1)
+    if nested != -1 and (end == -1 or nested < end):
+        raise ValueError(
+            f"nested optional groups are not supported at position {nested}"
+        )
+    if end == -1:
+        raise ValueError(
+            f"missing closing ']' for optional seconds group at position {i}"
+        )
+
+    contents = pattern[i + 1 : end]
+    if not contents:
+        raise ValueError(f"empty optional group at position {i}")
+    if contents.startswith("ss"):
+        separator = ""
+        suffix = contents[2:]
+    elif contents.startswith(":ss"):
+        separator = ":"
+        suffix = contents[3:]
+    else:
+        raise ValueError(
+            f"optional group at position {i} must start with 'ss' or ':ss'"
+        )
+    if not suffix:
+        return end + 1, _OptionalSeconds(separator, "none", 0)
+    if not suffix.startswith("."):
+        raise ValueError(
+            f"unsupported optional group contents {contents!r} at position {i}"
+        )
+    fraction = suffix[1:]
+    fraction_pos = i + 4 + len(separator)
+    if not fraction:
+        raise ValueError(
+            f"optional seconds fraction is missing at position {fraction_pos}"
+        )
+    if len(fraction) > 9:
+        raise ValueError("optional seconds fraction is limited to 9 digits")
+    if set(fraction) == {"f"}:
+        return end + 1, _OptionalSeconds(separator, "exact", len(fraction))
+    if set(fraction) == {"F"}:
+        return end + 1, _OptionalSeconds(separator, "trimmed", len(fraction))
+    raise ValueError(
+        f"optional seconds fraction must use only 'f' or only 'F' "
+        f"at position {fraction_pos}"
+    )
+
+
 @lru_cache(maxsize=64)
 def compile_pattern(pattern: str) -> tuple[_Element, ...]:
     """Compile a pattern string into a tuple of elements."""
+    for i, ch in enumerate(pattern):
+        if not ch.isascii():
+            raise ValueError(
+                f"Non-ASCII character {ch!r} at position {i}. "
+                f"Patterns must be ASCII-only."
+            )
     if len(pattern) > 1000:
         raise ValueError("Pattern string too long (max 1000 characters)")
     elements: list[_Element] = []
@@ -1014,12 +1309,6 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
     while i < n:
         ch = pattern[i]
 
-        if not ch.isascii():
-            raise ValueError(
-                f"Non-ASCII character {ch!r} at position {i}. "
-                f"Patterns must be ASCII-only."
-            )
-
         # Quoted literal — pending is never consumed by a quoted literal
         if ch == "'":
             if pending is not None:
@@ -1028,6 +1317,14 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
             new_i, el = _compile_quoted_literal(pattern, i, n)
             elements.append(el)
             i = new_i
+            continue
+
+        if ch == "[":
+            if pending is not None:
+                elements.append(_Literal(pending))
+                pending = None
+            i, el = _compile_optional_seconds(pattern, i)
+            elements.append(el)
             continue
 
         # Recognized specifier: delegate pending handling to the field itself
@@ -1081,7 +1378,7 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
             f"Use quotes for literal text: '...'"
         )
 
-    # Flush any pending prefix left at end of pattern (e.g. pattern = "hh:mm.")
+    # Flush any pending prefix left at end of pattern (e.g. pattern = "HH:mm.")
     if pending is not None:
         elements.append(_Literal(pending))
 
@@ -1093,12 +1390,63 @@ def validate_fields(
     elements: Sequence[_Element],
     allowed_categories: frozenset[str],
     type_name: str,
+    *,
+    warning_stacklevel: int,
 ) -> None:
-    """Validate that all fields are allowed for the given type."""
+    """Validate fields and emit non-error pattern warnings."""
     for el in elements:
         if isinstance(el, _Field) and el.category not in allowed_categories:
             raise ValueError(
                 f"{type_name} does not support pattern field {el!r}"
+            )
+
+    has_12h = any(
+        isinstance(el, (_Hour12, _Hour12Unpadded)) for el in elements
+    )
+    has_ampm = any(isinstance(el, (_AmPmShort, _AmPmFull)) for el in elements)
+    if has_12h and not has_ampm:
+        warnings.warn(
+            "The pattern uses a 12-hour clock (`i` or `ii`) without an AM/PM "
+            "field (`a` or `aa`). A value such as `03:00` could mean either "
+            "3 AM or 3 PM. Add `a` or `aa`, or use the 24-hour fields `H` or "
+            "`HH`.",
+            WheneverWarning,
+            stacklevel=warning_stacklevel,
+        )
+
+    for i, el in enumerate(elements):
+        if isinstance(el, _Hour24UnpaddedLegacy):
+            warnings.warn(
+                "The pattern field `h` is deprecated; use `H` instead.",
+                WheneverDeprecationWarning,
+                stacklevel=warning_stacklevel,
+            )
+        elif isinstance(el, _Hour24Legacy):
+            warnings.warn(
+                "The pattern field `hh` is deprecated; use `HH` instead.",
+                WheneverDeprecationWarning,
+                stacklevel=warning_stacklevel,
+            )
+        elif isinstance(el, (_ColonSec, _SecondOpt)):
+            separator = ":" if isinstance(el, _ColonSec) else ""
+            replacement = f"[{separator}ss]"
+            next_el = elements[i + 1] if i + 1 < len(elements) else None
+            if isinstance(next_el, _DotFrac):
+                replacement = f"[{separator}ss.{'F' * next_el.width}]"
+            elif (
+                i + 2 < len(elements)
+                and isinstance(next_el, _Literal)
+                and next_el.text == "."
+            ):
+                frac_el = elements[i + 2]
+                if isinstance(frac_el, _FracExact):
+                    replacement = f"[{separator}ss.{'f' * frac_el.width}]"
+            legacy = f"{separator}SS"
+            warnings.warn(
+                f"The pattern field `{legacy}` is deprecated; use "
+                f"`{replacement}` instead.",
+                WheneverDeprecationWarning,
+                stacklevel=warning_stacklevel,
             )
 
 
@@ -1153,6 +1501,8 @@ def parse_fields(
     s: str,
 ) -> _ParseState:
     """Parse a string using compiled pattern elements."""
+    if not s.isascii():
+        raise ValueError("Input string must be ASCII-only")
     if len(s) > 1000:
         raise ValueError("Input string too long (max 1000 characters)")
     state = _ParseState()

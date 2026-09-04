@@ -163,7 +163,8 @@ impl Instant {
 }
 
 pub(crate) enum OffsetInIsoString {
-    Some(Offset),
+    MinutePrecision(Offset),
+    SecondPrecision(Offset),
     Z,
     Missing,
 }
@@ -175,7 +176,14 @@ pub(crate) fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(OffsetInIso
             s.take_unchecked(1);
             OffsetInIsoString::Z
         }
-        _ => OffsetInIsoString::Some(Offset::read_iso(s)?),
+        _ => {
+            let (offset, exact) = Offset::read_iso_with_precision(s)?;
+            if exact {
+                OffsetInIsoString::SecondPrecision(offset)
+            } else {
+                OffsetInIsoString::MinutePrecision(offset)
+            }
+        }
     };
     let tz = s.rest();
     (tz.len() > 2
@@ -196,7 +204,7 @@ pub(crate) struct TzFormat<'a> {
 
 impl fmt::Chunk for TzFormat<'_> {
     fn len(&self) -> usize {
-        self.tz.key.as_ref().map_or(0, |key| key.len() + 2)
+        self.tz.key.as_ref().map_or(0, |k| k.len() + 2)
     }
 
     fn write(&self, sink: &mut impl Sink) {

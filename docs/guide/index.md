@@ -4,8 +4,8 @@ myst:
   html_meta:
     description: >-
       Entry point to the practical guide, grouped by task: choosing a type,
-      comparison and conversion, ambiguity, arithmetic and deltas, parsing,
-      standard library interop, and testing.
+      comparison and conversion, resolving local times, arithmetic and deltas,
+      parsing, standard library and timezone data, pickling, and testing.
 ---
 
 (guide)=
@@ -29,7 +29,7 @@ For the details of a specific class or method, see the {ref}`API reference <api>
    partial-types
    comparison
    conversions
-   ambiguity
+   resolving-local-times
 ```
 
 ## Calculating with dates and times
@@ -52,6 +52,8 @@ For the details of a specific class or method, see the {ref}`API reference <api>
    parsing
    stdlib-convert
    system-tz
+   timezone-database
+   pickling
 ```
 
 ## Keeping it reliable

@@ -165,17 +165,20 @@ Instant("2023-03-26 12:00:00Z")
 TimeDelta("PT66h")
 ```
 
-`years` and `months` are not available; `weeks` and `days` 
-can be treated as exact units, but emit a {class}`DaysAssumed24HoursWarning`:
+`years` and `months` are not available. `weeks` and `days` can be converted to
+exact units, but emit a {class}`DaysAssumed24HoursWarning`:
 
 ```python
 >>> i.add(days=1)                                # emits DaysAssumed24HoursWarning
 Instant("2023-03-26 12:00:00Z")
->>> i.add(days=1, days_assumed_24h_ok=True)      # suppress
+>>> i.add(days=1, days_assumed_24h_ok=True)      # explicitly means 24 hours
 Instant("2023-03-26 12:00:00Z")
 ```
 
-Becuase {class}`Instant` has no calendar or timezone context, 
+The `days_assumed_24h_ok` opt-in also covers exact weeks. See
+{ref}`the rounding distinction <rounding-instant-day>`.
+
+Because {class}`Instant` has no calendar or timezone context,
 it doesn't support `since()`/`until()`.
 Use {meth}`~TimeDelta.in_units`/{meth}`~TimeDelta.total` 
 on the result of `-`/`difference()` instead:
@@ -220,13 +223,13 @@ ValueError: Calendar units can only be used to compare ZonedDateTimes with the s
 ```
 
 When adding calendar units, the result may land in a DST transition.
-Use `disambiguate` to control how this is resolved (default: `"compatible"`):
+Pass `disambiguation` explicitly to control how this is resolved:
 
 ```python
 >>> d = ZonedDateTime(2024, 10, 3, 1, 15, tz="America/Denver")
->>> d.add(months=1)                          # default: compatible
+>>> d.add(months=1, disambiguation="compatible")
 ZonedDateTime("2024-11-03 01:15:00-06:00[America/Denver]")
->>> d.add(months=1, disambiguate="raise")
+>>> d.add(months=1, disambiguation="raise")
 Traceback (most recent call last):
   ...
 whenever.RepeatedTime: 2024-11-03 01:15:00 is repeated in timezone 'America/Denver'
@@ -245,20 +248,12 @@ ZonedDateTime("2025-03-31 02:00:00+02:00[Europe/Amsterdam]")
 (arithmetic-offset)=
 ### OffsetDateTime
 
-{class}`OffsetDateTime` carries a fixed UTC offset, not the full timezone
-rules needed to determine whether DST applies at a future point. All arithmetic
-operations are supported, but any operation that crosses a DST boundary may silently
-carry a stale offset. These operations emit a {class}`StaleOffsetWarning`:
-
-```python
->>> d = OffsetDateTime(2024, 3, 9, 13, offset=-7)
->>> d.add(hours=24)                           # emits StaleOffsetWarning
-OffsetDateTime("2024-03-10 13:00:00-07:00")   # offset is stale; Denver is -06:00 here
->>> d.assume_tz("America/Denver").add(hours=24)   # DST-safe alternative
-ZonedDateTime("2024-03-10 14:00:00-06:00[America/Denver]")
->>> d.add(hours=24, stale_offset_ok=True)     # suppress if intentional
-OffsetDateTime("2024-03-10 13:00:00-07:00")
-```
+Arithmetic is defined, but an {class}`OffsetDateTime` has no regional rules
+with which to update its stored offset. Operations that preserve an offset
+which may no longer apply in its original regional context emit
+{class}`StaleOffsetWarning`. See
+{ref}`offset-datetime-guidance` for the complete explanation, examples, and
+suppression guidance.
 
 For `since()`/`until()`, calendar units (`years`, `months`, `weeks`, `days`) require
 both datetimes to carry the same UTC offset — or a {exc}`ValueError` is raised.

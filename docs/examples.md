@@ -27,9 +27,9 @@ Instant("2025-04-19 19:02:56.39569Z")
 ## Convert UTC to the system timezone
 
 ```python
->>> from whenever import Instant
+>>> from whenever import Instant, SYSTEM_TZ
 >>> i = Instant.now()
->>> i.to_system_tz()
+>>> i.to_tz(SYSTEM_TZ)
 ZonedDateTime("2025-04-19 21:02:56.39569+02:00[Europe/Berlin]")
 ```
 
@@ -55,12 +55,17 @@ PlainDateTime("2023-10-01 12:30:00")
 
 ```python
 >>> from whenever import Date
->>> birth_date = Date(2023, 11, 2)
->>> today = Date.today_in_system_tz()
->>> today.since(birth_date, total="years")
-2.3753424657534246
->>> years, months = today.since(birth_date, in_units=("years", "months")).values()
-(2, 4)
+>>> birth_date = Date(2000, 11, 2)
+>>> today = Date(2026, 3, 10)
+>>> today.since(birth_date, total="years")  # scalar totals may be fractional
+25.350684931506848
+>>> years, months, days = today.since(
+...     birth_date, in_units=("years", "months", "days")
+... ).values()
+>>> years  # completed calendar years
+25
+>>> months, days  # optional remainder
+(4, 8)
 ```
 
 ## Assign a timezone to a datetime
@@ -139,17 +144,17 @@ Note that this is always in whole seconds.
 If you need additional precision:
 
 ```python
->>> i.timestamp_millis()
+>>> i.timestamp(unit="millisecond")
 1745090505629
->>> i.timestamp_nanos()
+>>> i.timestamp(unit="nanosecond")
 1745090505629346833
 ```
 
 ## Get a date and time from a timestamp
 
 ```python
->>> from whenever import ZonedDateTime
->>> ZonedDateTime.from_timestamp(1745090505, tz="America/New_York")
+>>> from whenever import Instant
+>>> Instant.from_timestamp(1745090505).to_tz("America/New_York")
 ZonedDateTime("2025-04-19 15:21:45-04:00[America/New_York]")
 ```
 
@@ -194,29 +199,28 @@ so the time 2:30 AM doesn't exist.
 ```python
 >>> from whenever import ZonedDateTime
 >>> # set up the date and time for the example
->>> dt = PlainDateTime(2023, 2, 26, hour=2, minute=30)
+>>> dt = PlainDateTime(2023, 3, 26, hour=2, minute=30)
 ```
 
-The default behavior (take the first offset) is consistent with other
-modern libraries and industry standards:
+For a repeated or skipped local time, choose the desired policy explicitly.
+The `"compatible"` policy follows established libraries and RFC 5545:
 
 ```python
->>> zoned = dt.assume_tz("Europe/Berlin")
-ZonedDateTime("2023-02-26 03:30:00+02:00[Europe/Berlin]")
+>>> zoned = dt.assume_tz("Europe/Berlin", disambiguation="compatible")
+ZonedDateTime("2023-03-26 03:30:00+02:00[Europe/Berlin]")
 ```
 
-But it's also possible to "refuse to guess" and choose the "earlier"
-or "later" occurrence explicitly:
+You can instead choose the earlier or later interpretation:
 
 ```python
->>> zoned = dt.assume_tz("Europe/Berlin", disambiguate="earlier")
-ZonedDateTime("2023-02-26 01:30:00+02:00[Europe/Berlin]")
+>>> zoned = dt.assume_tz("Europe/Berlin", disambiguation="earlier")
+ZonedDateTime("2023-03-26 01:30:00+01:00[Europe/Berlin]")
 ```
 
 Or, you can even reject ambiguous datetimes altogether:
 
 ```python
->>> zoned = dt.assume_tz("Europe/Berlin", disambiguate="raise")
+>>> zoned = dt.assume_tz("Europe/Berlin", disambiguation="raise")
 ```
 
 ## "Same time tomorrow" across DST
@@ -247,9 +251,9 @@ ZonedDateTime("2025-03-31 02:00:00+02:00[Europe/Amsterdam]")
 ## Flight itinerary across time zones
 
 ```python
->>> from whenever import OffsetDateTime
->>> departure = OffsetDateTime(2025, 7, 1, hour=9, offset=-4)   # New York
->>> arrival = OffsetDateTime(2025, 7, 1, hour=22, offset=2)     # Amsterdam
+>>> from whenever import OffsetDateTime, hours
+>>> departure = OffsetDateTime(2025, 7, 1, hour=9, offset=-hours(4))  # New York
+>>> arrival = OffsetDateTime(2025, 7, 1, hour=22, offset=hours(2))    # Amsterdam
 >>> flight_time = arrival - departure
 >>> flight_time.total("hours")
 7.0
@@ -274,11 +278,11 @@ Date("2025-03-31")
 All *exact types* can be compared and sorted amongst each other:
 
 ```python
->>> from whenever import Instant, ZonedDateTime, OffsetDateTime
+>>> from whenever import Instant, ZonedDateTime, OffsetDateTime, hours
 >>> times = [
 ...     ZonedDateTime(2025, 6, 1, hour=12, tz="Asia/Tokyo"),
 ...     Instant.from_utc(2025, 6, 1, hour=2),
-...     OffsetDateTime(2025, 6, 1, hour=6, offset=4),
+...     OffsetDateTime(2025, 6, 1, hour=6, offset=hours(4)),
 ... ]
 >>> sorted(times)  # all represent the same moment—sorted by the underlying instant
 [...]
@@ -293,11 +297,11 @@ For formats beyond ISO 8601, use pattern strings:
 
 ```python
 >>> from whenever import Date, PlainDateTime, OffsetDateTime
->>> Date.parse("15 Mar 2024", format="DD MMM YYYY")
+>>> Date.parse("15 Mar 2024", pattern="DD MMM YYYY")
 Date("2024-03-15")
->>> PlainDateTime.parse("03/15/2024 02:30 PM", format="MM/DD/YYYY ii:mm aa")
+>>> PlainDateTime.parse("03/15/2024 02:30 PM", pattern="MM/DD/YYYY ii:mm aa")
 PlainDateTime("2024-03-15 14:30:00")
->>> OffsetDateTime.parse("2024-03-15 14:30+02:00", format="YYYY-MM-DD hh:mmxxx")
+>>> OffsetDateTime.parse("2024-03-15 14:30+02:00", pattern="YYYY-MM-DD HH:mmxxx")
 OffsetDateTime("2024-03-15 14:30:00+02:00")
 ```
 
@@ -306,7 +310,7 @@ If your input doesn't include an offset or timezone, parse with
 
 ```python
 >>> from whenever import PlainDateTime
->>> pdt = PlainDateTime.parse("2024-03-15 14:30", format="YYYY-MM-DD hh:mm")
+>>> pdt = PlainDateTime.parse("2024-03-15 14:30", pattern="YYYY-MM-DD HH:mm")
 >>> pdt.assume_utc()
 Instant("2024-03-15 14:30:00Z")
 ```

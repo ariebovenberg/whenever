@@ -131,16 +131,16 @@ impl TotalUnit {
         find_interned(
             v,
             &[
-                (*state.str_years, Self::Years),
-                (*state.str_months, Self::Months),
-                (*state.str_weeks, Self::Weeks),
-                (*state.str_days, Self::Days),
-                (*state.str_hours, Self::Hours),
-                (*state.str_minutes, Self::Minutes),
-                (*state.str_seconds, Self::Seconds),
-                (*state.str_milliseconds, Self::Milliseconds),
-                (*state.str_microseconds, Self::Microseconds),
-                (*state.str_nanoseconds, Self::Nanoseconds),
+                (*state.strs.years, Self::Years),
+                (*state.strs.months, Self::Months),
+                (*state.strs.weeks, Self::Weeks),
+                (*state.strs.days, Self::Days),
+                (*state.strs.hours, Self::Hours),
+                (*state.strs.minutes, Self::Minutes),
+                (*state.strs.seconds, Self::Seconds),
+                (*state.strs.milliseconds, Self::Milliseconds),
+                (*state.strs.microseconds, Self::Microseconds),
+                (*state.strs.nanoseconds, Self::Nanoseconds),
             ],
         )
     }
@@ -154,7 +154,7 @@ impl TotalUnit {
 
 #[derive(Copy, Clone)]
 enum Units {
-    One(DifferenceUnit),
+    One(TotalUnit),
     Many(DifferenceUnitSet),
 }
 
@@ -177,20 +177,20 @@ impl DifferenceSpec {
         let mut units = None;
         let mut got_rounding = false;
         handle_kwargs(fname, kwargs, |k, v, eq| {
-            if eq(k, *state.str_total) {
+            if eq(k, *state.strs.total) {
                 if units.is_some() {
                     raise_type_err("cannot specify both 'total' and 'in_units'")?;
                 }
-                units = Some(Units::One(DifferenceUnit::from_py(v, state)?));
-            } else if eq(k, *state.str_in_units) {
+                units = Some(Units::One(TotalUnit::from_py(v, state)?));
+            } else if eq(k, *state.strs.in_units) {
                 if units.is_some() {
                     raise_type_err("cannot specify both 'total' and 'in_units'")?;
                 }
                 units = Some(Units::Many(DifferenceUnitSet::from_py(v, state)?));
-            } else if eq(k, *state.str_round_mode) {
-                mode = round::Mode::from_py_named("round_mode", v, &state.round_mode_strs)?;
+            } else if eq(k, *state.strs.round_mode) {
+                mode = round::Mode::from_py_named("round_mode", v, &state.strs)?;
                 got_rounding = true;
-            } else if eq(k, *state.str_round_increment) {
+            } else if eq(k, *state.strs.round_increment) {
                 increment = DifferenceIncrement::from_py(v)?;
                 got_rounding = true;
             } else {

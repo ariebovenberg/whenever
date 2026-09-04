@@ -66,6 +66,19 @@ Allowed values depend on the type of the object being rounded:
 | {class}`~whenever.OffsetDateTime`, | ❌ | ✅ | ✅ |
 | {class}`~whenever.Instant` | ❌ | ❌ [^2] | ✅ |
 
+(rounding-instant-day)=
+For {class}`~whenever.Instant`, an explicit day/week conversion during
+arithmetic is distinct from calendar-day rounding:
+
+```python
+i.add(days=1, days_assumed_24h_ok=True)  # shift by exactly 24 hours
+i.round("day")                           # rejected: no local calendar
+i.round(hours(24))                       # exact, epoch-aligned quantum
+```
+
+The named `"day"` unit would silently choose UTC as the calendar whose midnight
+defines the boundary; an exact 86,400-second quantum makes no such claim.
+
 ## Increment
 
 The `increment` argument allows you to specify the rounding increment.
@@ -75,7 +88,7 @@ and `unit="minute"`.
 There are some restrictions on the allowed increments:
 
 - The increment must be a positive, non-zero integer.
-- In case of rounding datetimes, the increment must be a divide a 24-hour day evenly.
+- When rounding datetimes, the increment must divide a 24-hour day evenly.
   For example, you can round to the nearest 90 minutes (16 increments per day),
   but not to the nearest 7 seconds.
 
@@ -90,8 +103,5 @@ There are some restrictions on the allowed increments:
       >>> d.round("day", days_assumed_24h_ok=True)
       TimeDelta("PT48h")
       ```
-[^2]: This is explicitly disallowed because an Instant has no concept of days.
-      Treating a UTC "day" as a locally meaningful concept is a common source of bugs,
-      so it's better to disallow it entirely.
-      You can still round to the nearest 24 hours by setting `unit="hour"` and `increment=24`.
-
+[^2]: See {ref}`the note above <rounding-instant-day>` for the distinction
+      between calendar-day rounding and an exact 24-hour quantum.

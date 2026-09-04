@@ -2804,7 +2804,7 @@ wheels = [
 
 [[package]]
 name = "whenever"
-version = "0.10.5"
+version = "0.11.0b0"
 source = { editable = "." }
 dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
@@ -2849,9 +2849,11 @@ test = [
     { name = "pytest-benchmark", extra = ["histogram"] },
     { name = "pytest-cov" },
     { name = "pytest-order" },
+    { name = "typing-extensions" },
 ]
 typing = [
     { name = "mypy" },
+    { name = "typing-extensions" },
 ]
 
 [package.metadata]
@@ -2898,8 +2900,12 @@ test = [
     { name = "pytest-benchmark", extras = ["histogram"], specifier = ">=5.2.3,<6" },
     { name = "pytest-cov", specifier = ">=7.1.0,<8" },
     { name = "pytest-order", specifier = ">=1.4.0,<2" },
+    { name = "typing-extensions", specifier = ">=4.16.0" },
 ]
-typing = [{ name = "mypy", specifier = ">=2.3,<2.4" }]
+typing = [
+    { name = "mypy", specifier = ">=2.3,<2.4" },
+    { name = "typing-extensions", specifier = ">=4.16.0" },
+]
 
 [[package]]
 name = "zipp"

@@ -1,7 +1,9 @@
 #[cfg(test)]
 use crate::common::{fmt::Sink, parse::Scan};
 use crate::{
-    common::{fmt, format_args, pattern, pickle, round_args as round},
+    common::{
+        compat::parse_pattern_keyword, fmt, format_args, pattern, pickle, round_args as round,
+    },
     docstrings as doc,
     domain::scalar::*,
     py::*,
@@ -19,9 +21,9 @@ impl TimeBoundaryUnit {
         find_interned_by(
             obj,
             &[
-                (*state.str_hour, Self::Hour),
-                (*state.str_minute, Self::Minute),
-                (*state.str_second, Self::Second),
+                (*state.strs.hour, Self::Hour),
+                (*state.strs.minute, Self::Minute),
+                (*state.strs.second, Self::Second),
             ],
             eq,
         )
@@ -115,7 +117,11 @@ impl Time {
     }
 }
 
-impl PyPayload for Time {}
+impl PyPayload for Time {
+    fn class(state: &State) -> PyClass<Self> {
+        *state.time_type
+    }
+}
 
 pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
     (c"MIN", Time::MIN),
@@ -183,8 +189,7 @@ fn __repr__(_: PyType, slf: Time) -> PyReturn {
     ))
 }
 
-#[allow(static_mut_refs)]
-static mut SLOTS: &[PyType_Slot] = &[
+static SLOTS: PyDefSlice<PyType_Slot> = PyDefSlice::new(&[
     slotmethod!(Time, Py_tp_new, __new__),
     slotmethod!(Time, Py_tp_str, __str__, 1),
     slotmethod!(Time, Py_tp_repr, __repr__, 1),
@@ -195,11 +200,11 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_methods,
-        pfunc: unsafe { METHODS.as_ptr() as *mut c_void },
+        pfunc: METHODS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_getset,
-        pfunc: unsafe { GETSETTERS.as_ptr() as *mut c_void },
+        pfunc: GETSETTERS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_hash,
@@ -207,38 +212,16 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
-        pfunc: generic_dealloc as *mut c_void,
+        pfunc: generic_dealloc::<Time> as *mut c_void,
     },
     PyType_Slot {
         slot: 0,
         pfunc: NULL(),
     },
-];
+]);
 
 fn to_stdlib(cls: PyClass<Time>, slf: Time) -> PyReturn {
     slf.to_stdlib_time(cls.state().py_api()?)
-}
-
-fn py_time(cls: PyClass<Time>, slf: Time) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"py_time() is deprecated and will be removed in a future release; use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
-}
-
-fn from_py_time(cls: PyClass<Time>, arg: PyObj) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"from_py_time() is deprecated and will be removed in a future release; use Time() instead.",
-        1,
-    )?;
-    Time::from_stdlib_time(
-        arg.cast_allow_subclass::<PyTime>()
-            .ok_or_type_err("argument must be a datetime.time")?,
-    )
-    .to_obj(cls)
 }
 
 fn format_iso(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
@@ -284,13 +267,13 @@ fn replace(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwarg
     let mut second = slf.second.into();
     let mut nanos = slf.subsec.get() as _;
     handle_kwargs("replace", kwargs, |k, v, eq| {
-        if eq(k, *state.str_hour) {
+        if eq(k, *state.strs.hour) {
             hour = v.expect_int("hour")?.to_i64()?;
-        } else if eq(k, *state.str_minute) {
+        } else if eq(k, *state.strs.minute) {
             minute = v.expect_int("minute")?.to_i64()?;
-        } else if eq(k, *state.str_second) {
+        } else if eq(k, *state.strs.second) {
             second = v.expect_int("second")?.to_i64()?;
-        } else if eq(k, *state.str_nanosecond) {
+        } else if eq(k, *state.strs.nanosecond) {
             nanos = v.expect_int("nanosecond")?.to_i64()?;
         } else {
             return Ok(false);
@@ -319,8 +302,12 @@ fn format(cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(pattern::CategorySet::TIME, "Time")?;
-    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
+    pattern.validate(
+        pattern::CategorySet::TIME,
+        "Time",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     pattern.format(&slf.pattern_values())
 }
 
@@ -339,29 +326,30 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         .ok_or_type_err("parse() argument must be str")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = handle_one_kwarg("parse", *cls.state().str_format, kwargs)?.ok_or_else(|| {
-        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
-    })?;
+    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format must be str")?;
+        .ok_or_type_err("pattern must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(pattern::CategorySet::TIME, "Time")?;
+    pattern.validate(
+        pattern::CategorySet::TIME,
+        "Time",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     pattern.parse(s).into_value_err()?.time()?.to_obj(cls)
 }
 
-static mut METHODS: &[PyMethodDef] = &[
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(Time, __reduce__, c""),
     method0!(Time, to_stdlib, doc::TIME_TO_STDLIB),
-    method0!(Time, py_time, doc::TIME_PY_TIME),
     method_kwargs!(Time, replace, doc::TIME_REPLACE),
     method_kwargs!(Time, format_iso, doc::TIME_FORMAT_ISO),
     classmethod1!(Time, parse_iso, doc::TIME_PARSE_ISO),
-    classmethod1!(Time, from_py_time, doc::TIME_FROM_PY_TIME),
     method1!(Time, on, doc::TIME_ON),
     method_kwargs!(Time, round, doc::TIME_ROUND),
     method1!(Time, format, doc::TIME_FORMAT),
@@ -369,7 +357,7 @@ static mut METHODS: &[PyMethodDef] = &[
     classmethod_kwargs!(Time, parse, doc::TIME_PARSE),
     classmethod_kwargs!(Time, __get_pydantic_core_schema__, doc::PYDANTIC_SCHEMA),
     PyMethodDef::zeroed(),
-];
+]);
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     pickle::decode_time(arg.expect_bytes()?)
@@ -393,7 +381,7 @@ fn nanosecond(_: PyType, slf: Time) -> PyReturn {
     slf.subsec.get().to_py()
 }
 
-static mut GETSETTERS: &[PyGetSetDef] = &[
+static GETSETTERS: PyDefSlice<PyGetSetDef> = PyDefSlice::new(&[
     getter!(Time, hour, doc::TIME_HOUR),
     getter!(Time, minute, doc::TIME_MINUTE),
     getter!(Time, second, doc::TIME_SECOND),
@@ -405,9 +393,10 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
         doc: NULL(),
         closure: NULL(),
     },
-];
+]);
 
-pub(crate) static mut SPEC: PyType_Spec = type_spec::<Time>(c"whenever.Time", unsafe { SLOTS });
+pub(crate) static SPEC: PyDefCell<PyType_Spec> =
+    PyDefCell::new(type_spec::<Time>(c"whenever.Time", &SLOTS));
 
 #[cfg(test)]
 mod tests {

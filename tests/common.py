@@ -2,10 +2,13 @@ import os
 import warnings
 from contextlib import contextmanager
 from pathlib import Path
+from sys import _getframe
 from typing import Literal
 from unittest.mock import patch
 
+import pytest
 from whenever import (
+    SYSTEM_TZ,
     PlainDateTime,
     ZonedDateTime,
     reset_system_tz,
@@ -50,6 +53,32 @@ INVALID_DDELTAS = [
 
 
 @contextmanager
+def warns_here(warning_class):
+    """Like ``pytest.warns``, but also assert the warning points at this very
+    ``with`` block instead of at whenever's own internals.
+
+    ``pytest.warns`` matches only the category and the message, so it happily
+    accepts a warning whose ``stacklevel`` is off—even though the file and line
+    are the only part a user actually sees. Use this wherever the call site
+    attribution matters, i.e. nearly everywhere::
+
+        with warns_here(ImplicitDisambiguationWarning):
+            ZonedDateTime(2023, 10, 29, 2, 30, tz="Europe/Amsterdam")
+
+    Must be used directly in a test function: 2 frames up is this generator,
+    then contextlib's __enter__, then the caller.
+    """
+    caller_file = _getframe(2).f_code.co_filename
+    with pytest.warns(warning_class) as caught:
+        yield caught
+    for w in caught:
+        assert w.filename == caller_file, (
+            f"{warning_class.__name__} has a wrong stacklevel: it points at "
+            f"{w.filename}:{w.lineno}, not at the caller in {caller_file}"
+        )
+
+
+@contextmanager
 def suppress(*warning_classes):
     """Suppress specific warning classes in a block.
 
@@ -75,6 +104,13 @@ AMS_TZ_POSIX = "CET-1CEST,M3.5.0,M10.5.0/3"
 # A non-standard path to the Amsterdam timezone file, that can't be traced
 # back to the zoneinfo database.
 AMS_TZ_RAWFILE = str(Path(__file__).parent / "tzif" / "Amsterdam.tzif")
+# The same file, with the 2020 DST end moved from October 25 to November 1
+# (transition epoch 1603587600 -> 1604192400, rewritten in both the v1 and the
+# v2 block). Nothing else differs, so the two definitions agree on every
+# instant outside that week.
+AMS_TZ_RAWFILE_DST_LATE = str(
+    Path(__file__).parent / "tzif" / "Amsterdam_dst_ends_a_week_late.tzif"
+)
 
 
 class AlwaysEqual:
@@ -146,10 +182,14 @@ def system_tz_nyc():
 
 
 with system_tz(AMS_TZ_POSIX):
-    _AMS_POSIX_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_system_tz()
+    _AMS_POSIX_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_tz(
+        SYSTEM_TZ, disambiguation="compatible"
+    )
 
 with system_tz(AMS_TZ_RAWFILE):
-    _AMS_RAWFILE_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_system_tz()
+    _AMS_RAWFILE_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_tz(
+        SYSTEM_TZ, disambiguation="compatible"
+    )
 
 
 def create_zdt(
@@ -162,7 +202,7 @@ def create_zdt(
     nanosecond: int = 0,
     *,
     tz: str = "",
-    disambiguate: Literal[
+    disambiguation: Literal[
         "compatible", "earlier", "later", "raise"
     ] = "compatible",
 ) -> ZonedDateTime:
@@ -178,7 +218,7 @@ def create_zdt(
             minute=minute,
             second=second,
             nanosecond=nanosecond,
-            disambiguate=disambiguate,
+            disambiguation=disambiguation,
         )
     elif tz == AMS_TZ_RAWFILE:
         return _AMS_RAWFILE_DT.replace(
@@ -189,7 +229,7 @@ def create_zdt(
             minute=minute,
             second=second,
             nanosecond=nanosecond,
-            disambiguate=disambiguate,
+            disambiguation=disambiguation,
         )
     else:
         return ZonedDateTime(
@@ -201,5 +241,5 @@ def create_zdt(
             second,
             nanosecond=nanosecond,
             tz=tz,
-            disambiguate=disambiguate,
+            disambiguation=disambiguation,
         )

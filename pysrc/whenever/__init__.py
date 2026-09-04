@@ -13,23 +13,20 @@ def __getattr__(name: str) -> object:
         return g[name]
     # TZPATH is a live view, not a cached value.
     elif name == "TZPATH":
+        from ._common import warn_deprecated
         from ._core import _get_tzpath
 
+        warn_deprecated(
+            "TZPATH is deprecated; use get_tzpath() instead",
+            stacklevel=2,
+        )
         return _get_tzpath()
     elif name == "AnyDelta":
-        from ._core import (
-            DateDelta,
-            DateTimeDelta,
-            TimeDelta,
-        )
+        from ._core import TimeDelta
         from ._ideltas import ItemizedDateDelta, ItemizedDelta
 
         globals()["AnyDelta"] = val = (
-            DateDelta
-            | TimeDelta
-            | DateTimeDelta
-            | ItemizedDelta
-            | ItemizedDateDelta
+            TimeDelta | ItemizedDelta | ItemizedDateDelta
         )
         return val
     elif name == "__version__":
@@ -67,15 +64,9 @@ __all__ = (
     "ZonedDateTime",
     "PlainDateTime",
     # Deltas and time units
-    "DateDelta",
     "TimeDelta",
-    "DateTimeDelta",
     "ItemizedDelta",
     "ItemizedDateDelta",
-    "years",
-    "months",
-    "weeks",
-    "days",
     "hours",
     "minutes",
     "seconds",
@@ -89,11 +80,12 @@ __all__ = (
     "CalendarUnitCompositionWarning",
     "WheneverWarning",
     "PotentialDstBugWarning",
+    "PickleOffsetMismatchWarning",
     "WheneverDeprecationWarning",
+    "ImplicitDisambiguationWarning",
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
-    "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
     # Enums/constants
     "Weekday",
@@ -104,9 +96,12 @@ __all__ = (
     "FRIDAY",
     "SATURDAY",
     "SUNDAY",
+    "SYSTEM_TZ",
     # Other
     "reset_system_tz",
     "patch_current_time",
+    "TimePatch",
+    "get_tzpath",
     "reset_tzpath",
     "clear_tzcache",
     "available_timezones",
@@ -123,14 +118,8 @@ _LAZY_MODULES = {
         "OffsetDateTime",
         "ZonedDateTime",
         "PlainDateTime",
-        "DateDelta",
         "TimeDelta",
-        "DateTimeDelta",
         # Unit constructors
-        "years",
-        "months",
-        "weeks",
-        "days",
         "hours",
         "minutes",
         "seconds",
@@ -143,19 +132,18 @@ _LAZY_MODULES = {
         "NaiveArithmeticWarning",
         "WheneverWarning",
         "PotentialDstBugWarning",
+        "PickleOffsetMismatchWarning",
         "WheneverDeprecationWarning",
+        "ImplicitDisambiguationWarning",
         "SkippedTime",
         "RepeatedTime",
         "InvalidOffsetError",
-        "ImplicitlyIgnoringDST",
         "TimeZoneNotFoundError",
         # Other
         "reset_system_tz",
         "_EXTENSION_LOADED",
         # Unpickle functions
         "_unpkl_date",
-        "_unpkl_ddelta",
-        "_unpkl_dtdelta",
         "_unpkl_inst",
         "_unpkl_local",
         "_unpkl_offset",
@@ -172,7 +160,9 @@ _LAZY_MODULES = {
         "_unpkl_idelta",
     ),
     f"{__package__}._utils": (
+        "TimePatch",
         "patch_current_time",
+        "get_tzpath",
         "reset_tzpath",
         "clear_tzcache",
         "available_timezones",
@@ -180,11 +170,15 @@ _LAZY_MODULES = {
     f"{__package__}._typing": (
         "RoundModeStr",
         "DeltaUnitStr",
+        "DeltaTotalUnitStr",
         "DateDeltaUnitStr",
         "ExactDeltaUnitStr",
         "DisambiguateStr",
+        "DisambiguationStr",
         "OffsetMismatchStr",
+        "TimestampUnitStr",
     ),
+    f"{__package__}._common": ("SYSTEM_TZ",),
     f"{__package__}._shared": (
         "YearMonth",
         "MonthDay",

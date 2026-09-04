@@ -12,8 +12,6 @@ try:  # pragma: no cover
         _set_tzpath as _set_tzpath,
         _unpatch_time as _unpatch_time,
         _unpkl_date,
-        _unpkl_ddelta,
-        _unpkl_dtdelta,
         _unpkl_inst,
         _unpkl_local,
         _unpkl_offset,
@@ -29,18 +27,17 @@ except ModuleNotFoundError as e:
     # Ensure we don't silence other ModuleNotFoundErrors!
     if e.name != "whenever._whenever":  # pragma: no cover
         raise e
+    import sys
+
     from ._pywhenever import *
     from ._pywhenever import (
         _clear_tz_cache,
         _clear_tz_cache_by_keys,
-        _get_tzpath,
         _patch_time_frozen,
         _patch_time_keep_ticking,
         _set_tzpath,
         _unpatch_time,
         _unpkl_date,
-        _unpkl_ddelta,
-        _unpkl_dtdelta,
         _unpkl_inst,
         _unpkl_local,
         _unpkl_offset,
@@ -48,15 +45,17 @@ except ModuleNotFoundError as e:
         _unpkl_time,
         _unpkl_utc,
         _unpkl_zoned,
+        get_tzpath as _get_tzpath,
     )
 
     _EXTENSION_LOADED = False
 
     # In pure Python mode, populate TZPATH eagerly (the Rust extension defers
     # this to first timezone lookup for faster import time).
-    from ._utils import reset_tzpath
+    if "whenever._utils" not in sys.modules:  # pragma: no branch
+        from ._utils import reset_tzpath
 
-    reset_tzpath()
+        reset_tzpath()
 
 from ._ideltas import (
     CalendarUnitCompositionWarning,

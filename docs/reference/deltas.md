@@ -22,47 +22,15 @@ myst:
 ```
 
 ```{tip}
-For a quick introduction to adding and subtracting time,
-see {ref}`arithmetic`. This page goes into more detail on
-working with durations as standalone objects.
+For the motivation behind the three types and help choosing one, start with
+{ref}`guide-deltas`. This page documents their complete behavior.
 ```
-
-As we've seen {ref}`earlier <add-subtract-time>`, you can add and subtract
-time units from datetimes:
-
-```python
-dt.add(hours=5, minutes=30)
-```
-
-However, sometimes you want to operate on these durations directly.
-For example, you might want to reuse a particular duration,
-or perform arithmetic on it.
-For this, `whenever` provides an API
-designed to help you avoid common pitfalls.
-The key concept is that there are **three different delta types**,
-each suited for different use cases:
-
-- Use {class}`TimeDelta` if you're working with {class}`Instant`
-  or exact time units (hours, minutes, seconds). Similar to {class}`datetime.timedelta`.
-- Use {class}`ItemizedDateDelta` if you're working {class}`Date` or
-  only with calendar units (years, months, days).
-- Use {class}`ItemizedDelta` if you need to work with *both* with calendar units
-  (years, months, days) and exact time units (hours, minutes, seconds).
-
-```{note}
-{class}`ItemizedDelta` and {class}`ItemizedDateDelta` were introduced in version 0.10,
-and replace the (now deprecated) {class}`DateTimeDelta` and {class}`DateDelta` classes.
-```
-
-
-Here is a summary of the three delta types provided,
-and their key differences. Click on the features to learn more about them.
 
 ## Overview
 
 | Feature |     {class}`TimeDelta`     | {class}`ItemizedDateDelta` | {class}`ItemizedDelta`   |
 |:---------------|:--------------------------:|:---------------------------:|:------------------------:|
-| {ref}`Supported units <delta-units>`  | exact units              | calendar units | exact *and* calendar units |         |
+| {ref}`Supported units <delta-units>`  | exact units              | calendar units | exact *and* calendar units |
 | {ref}`Normalized <delta-norm>`       | yes                      | no                          | no                       |
 | {ref}`Equality <delta-eq>`          | {meth}`normalized <TimeDelta.__eq__>`     | {meth}`itemwise <ItemizedDateDelta.__eq__>`     | {meth}`itemwise <ItemizedDelta.__eq__>`     |
 | {ref}`Convert to units <delta-in-units>`     | {meth}`~TimeDelta.in_units` | {meth}`~ItemizedDateDelta.in_units` [^1] | {meth}`~ItemizedDelta.in_units` [^1] |
@@ -77,39 +45,24 @@ and their key differences. Click on the features to learn more about them.
 (delta-units)=
 ## Exact and calendar units
 
-A key distinction when working with durations
-is between exact time units and calendar units.
-See {ref}`the fundamentals <arithmetic2>` for an in-depth explanation.
-
-In short:
+The delta types accept these unit categories:
 
 - **Exact units** (hours, minutes, seconds) have a fixed duration.
 - **Calendar units** (years, months, weeks, days) have a variable duration
   depending on context (e.g. leap years, DST).
 
-Depending on the units you need to work with, you should choose the appropriate delta type:
-
-- {class}`TimeDelta` for exact time units
-- {class}`ItemizedDateDelta` for calendar units
-- {class}`ItemizedDelta` for a combination of the two
+See {ref}`the fundamentals <arithmetic2>` for exact versus calendar semantics
+and {ref}`guide-deltas` for choosing a delta type.
 
 (delta-norm)=
 ## Normalized or "itemized"
 
-These delta classes also differ in how their components are stored.
-"Itemized" deltas keep track of their individual components
-(years, months, days, hours, minutes, seconds) separately, without normalizing them
-into each other.
-
-For example, an {class}`ItemizedDelta` of "1 hour and 90 minutes" will keep its components
-as "1 hour" and "90 minutes", without converting the 90 minutes into 1 hour and 30 minutes.
-This is essential when working with calendar units,
-and sometimes useful when working with exact time units.
-
-```python
->>> d = ItemizedDelta(hours=1, minutes=90)
-ItemizedDelta("PT1h90m")
-```
+{class}`ItemizedDateDelta` and {class}`ItemizedDelta` store their individual
+components
+(years, months, weeks, days, hours, minutes, seconds, nanoseconds) separately,
+without normalizing them into each other. Subsecond values have one canonical
+itemized field: `nanoseconds`. Milliseconds and microseconds are available as
+scalar totals, not as itemized fields.
 
 You can imagine this working like a `dict` or {class}`~collections.Counter` of components,
 where each unit is a key and its value is the corresponding amount:
@@ -119,24 +72,16 @@ where each unit is a key and its value is the corresponding amount:
 {'hours': 1, 'minutes': 90}
 ```
 
-{class}`TimeDelta`, on the other hand, normalizes all its components into each other.
-So "1 hour and 90 minutes" becomes "2 hours and 30 minutes".
-This enables easier arithmetic and comparisons,
-as their duration is always the same.
+Iteration always runs from the largest unit to the smallest and includes only
+fields that were explicitly supplied. Explicit zeroes remain present:
 
 ```python
->>> d = TimeDelta(hours=1, minutes=90)
-TimeDelta("PT2h30m")
+>>> list(ItemizedDelta(seconds=0, hours=2))
+['hours', 'seconds']
 ```
 
-You can imagine this working like a big `int` of nanoseconds internally, which is then converted back into the appropriate units when needed:
-
-```python
->>> d.total("minutes")
-150.0
->>> d.total("nanoseconds")
-9000000000000
-```
+{class}`TimeDelta` instead normalizes all its components into one exact
+duration. See {ref}`guide-deltas` for a side-by-side example.
 
 (delta-eq)=
 ## Equality
@@ -157,6 +102,13 @@ if their total duration is the same, regardless of how their components are repr
 >>> TimeDelta(hours=1, minutes=90) == TimeDelta(hours=2, minutes=30)
 True  # normalized durations are the same
 ```
+
+Use {meth}`~ItemizedDelta.strict_eq` when explicit field presence also matters
+(see {ref}`strict-equality`).
+Constructors currently require at least one component, so construct an
+itemized zero with an explicit field such as `ItemizedDelta(seconds=0)` or
+`ItemizedDateDelta(days=0)`. Allowing empty constructors may be considered as
+an additive change after 1.0.
 
 (delta-sign)=
 ## Sign
@@ -191,8 +143,8 @@ TimeDelta("PT45m")
 (delta-in-units)=
 ## Convert into specific units
 
-All delta types can be converted into specific units using
-their `in_units()` method.
+All delta types can be converted into specific units using their
+{meth}`~TimeDelta.in_units` method (and its itemized-delta equivalents).
 This is sometimes called "balancing"—redistributing the value
 across the requested units:
 
@@ -224,8 +176,9 @@ If you'd like to convert into a single unit instead, see the next section.
 (delta-total)=
 ## Summing into a single unit
 
-All delta types can also be summed into a single unit using
-their `total()` method, which returns a `float`.
+All delta types can also be summed into a single unit using their
+{meth}`~TimeDelta.total` method (and its itemized-delta equivalents), which
+returns a `float`.
 
 ```python
 >>> d = TimeDelta(hours=2, minutes=30, seconds=6)
@@ -233,8 +186,17 @@ their `total()` method, which returns a `float`.
 150.1
 ```
 
-When the total duration is requested in `"nanoseconds"` (the smallest supported unit),
-`total()` returns an `int` instead of a `float` to avoid precision issues.
+When the total duration is requested in `"nanoseconds"` (the smallest
+supported unit), {meth}`~TimeDelta.total` returns an `int` instead of a `float`
+to avoid precision issues. {meth}`~ItemizedDelta.total` also accepts
+`"milliseconds"` and `"microseconds"`.
+
+See {ref}`guide-deltas` for millisecond, microsecond, and nanosecond examples.
+
+The `nanoseconds` constructor argument is a component field and is bounded to
+999,999,999 under the normal itemized sign rules. It is not a total-duration
+limit: use `delta.total("nanoseconds", relative_to=...)` to obtain the aggregate
+scalar value.
 
 ```{note}
 For {class}`ItemizedDelta` and {class}`ItemizedDateDelta`,

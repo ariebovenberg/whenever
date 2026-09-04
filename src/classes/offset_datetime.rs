@@ -8,11 +8,13 @@ use crate::classes::plain_datetime::DateTimeBoundaryUnit;
 use crate::{
     classes::{date::Date, plain_datetime, time::Time, time_delta::TimeDelta},
     common::{
+        compat::{parse_pattern_keyword, warn_deprecated},
+        disambiguation::Disambiguation,
         fmt,
         format_args::{self, Suffix},
         instant::{
-            extract_instant, parse_instant_arg, parse_timestamp, parse_timestamp_millis,
-            parse_timestamp_nanos,
+            TimestampUnit, extract_instant, parse_instant_arg, parse_timestamp,
+            parse_timestamp_millis, parse_timestamp_nanos,
         },
         pattern, pickle, rfc2822, round_args as round,
         shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
@@ -59,11 +61,12 @@ impl Offset {
         })
     }
 
-    pub(crate) fn from_py(obj: PyObj, tdelta_cls: PyClass<TimeDelta>) -> PyResult<Self> {
-        if let Some(py_int) = obj.cast_exact::<PyInt>() {
+    pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
+        if let Some(py_int) = obj.cast_allow_subclass::<PyInt>() {
+            warn_deprecated(state, doc::INTEGER_OFFSET_DEPRECATION_MSG, 1)?;
             Offset::from_hours(py_int.to_i64()?)
                 .ok_or_value_err("offset must be between -24 and 24 hours")
-        } else if let Some(TimeDelta { secs, subsec }) = obj.extract(tdelta_cls) {
+        } else if let Some(TimeDelta { secs, subsec }) = obj.extract(*state.time_delta_type) {
             if subsec.get() == 0 {
                 Offset::from_i64(secs.get())
                     .ok_or_value_err("offset must be between -24 and 24 hours")
@@ -78,7 +81,11 @@ impl Offset {
     }
 }
 
-impl PyPayload for OffsetDateTime {}
+impl PyPayload for OffsetDateTime {
+    fn class(state: &State) -> PyClass<Self> {
+        *state.offset_datetime_type
+    }
+}
 
 fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
     if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
@@ -112,7 +119,7 @@ fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
     let offset_obj = offset
         .borrow_opt()
         .ok_or_type_err("missing required keyword argument: 'offset'")?;
-    let offset = Offset::from_py(offset_obj, *cls.state().time_delta_type)?;
+    let offset = Offset::from_py(offset_obj, cls.state())?;
     Date::from_i64_components(year, month, day)
         .ok_or_value_err("invalid date")?
         .at(Time::from_i64_components(hour, minute, second, nanosecond)
@@ -210,8 +217,7 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
     })
 }
 
-#[allow(static_mut_refs)]
-static mut SLOTS: &[PyType_Slot] = &[
+static SLOTS: PyDefSlice<PyType_Slot> = PyDefSlice::new(&[
     slotmethod!(OffsetDateTime, Py_tp_new, __new__),
     slotmethod!(OffsetDateTime, Py_tp_str, __str__, 1),
     slotmethod!(OffsetDateTime, Py_tp_repr, __repr__, 1),
@@ -228,28 +234,37 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_methods,
-        pfunc: unsafe { METHODS.as_ptr() as *mut c_void },
+        pfunc: METHODS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_getset,
-        pfunc: unsafe { GETSETTERS.as_ptr() as *mut c_void },
+        pfunc: GETSETTERS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
-        pfunc: generic_dealloc as *mut c_void,
+        pfunc: generic_dealloc::<OffsetDateTime> as *mut c_void,
     },
     PyType_Slot {
         slot: 0,
         pfunc: NULL(),
     },
-];
+]);
 
-fn exact_eq(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, obj_b: PyObj) -> PyReturn {
+fn strict_eq(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, obj_b: PyObj) -> PyReturn {
     if let Some(odt) = obj_b.extract(cls) {
         (slf == odt).to_py()
     } else {
-        raise_type_err("can't compare different types")?
+        raise_type_err("strict_eq() requires same-type arguments")?
     }
+}
+
+fn exact_eq(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, obj_b: PyObj) -> PyReturn {
+    warn_deprecated(
+        cls.state(),
+        c"exact_eq() is deprecated; use strict_eq() instead",
+        1,
+    )?;
+    strict_eq(cls, slf, obj_b)
 }
 
 pub(crate) fn to_instant(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
@@ -261,7 +276,7 @@ fn to_fixed_offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, args: &[Py
         None => slf.to_obj(cls),
         Some(offset_obj) => slf
             .to_instant()
-            .to_offset(Offset::from_py(offset_obj, *cls.state().time_delta_type)?)
+            .to_offset(Offset::from_py(offset_obj, cls.state())?)
             .ok_or_range_err()?
             .to_obj(cls),
     }
@@ -270,11 +285,16 @@ fn to_fixed_offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, args: &[Py
 fn to_tz(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
     slf.to_instant()
-        .into_zoned_obj(state.tz_store.obj_get(tz_obj)?, *state.zoned_datetime_type)
+        .into_zoned_obj(state.load_tz(tz_obj)?, *state.zoned_datetime_type)
 }
 
 fn to_system_tz(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let state = cls.state();
+    warn_deprecated(
+        state,
+        c"to_system_tz() is deprecated; use to_tz(SYSTEM_TZ) instead",
+        1,
+    )?;
     slf.to_instant()
         .into_zoned_obj(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
@@ -290,9 +310,12 @@ fn assume_tz(
 
     // Parse offset_mismatch kwarg
     let mut mismatch_obj: Option<PyObj> = None;
+    let mut dis_obj: Option<PyObj> = None;
     handle_kwargs("assume_tz", kwargs, |key, value, eq| {
-        if eq(key, *state.str_offset_mismatch) {
+        if eq(key, *state.strs.offset_mismatch) {
             mismatch_obj = Some(value);
+        } else if eq(key, *state.strs.disambiguation) {
+            dis_obj = Some(value);
         } else {
             return Ok(false);
         }
@@ -303,8 +326,11 @@ fn assume_tz(
         None => OffsetMismatch::Raise,
         Some(v) => OffsetMismatch::from_py(v, state)?,
     };
+    let dis = dis_obj
+        .map(|value| Disambiguation::from_py(value, state))
+        .transpose()?;
 
-    let tz = state.tz_store.obj_get(tz_obj)?;
+    let tz = state.load_tz(tz_obj)?;
 
     // Compute what offset the timezone has at this instant
     let instant = slf.to_instant();
@@ -326,29 +352,28 @@ fn assume_tz(
         ),
         OffsetMismatch::KeepLocal => slf
             .to_plain()
-            .resolve_compatible(&tz)
-            .ok_or_range_err()?
+            .resolve_with_disambiguation(&tz, dis, state)?
             .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type),
         OffsetMismatch::KeepInstant => unreachable!(),
     }
 }
 
 #[derive(Clone, Copy)]
-enum OffsetMismatch {
+pub(crate) enum OffsetMismatch {
     Raise,
     KeepInstant,
     KeepLocal,
 }
 
 impl OffsetMismatch {
-    fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
+    pub(crate) fn from_py(obj: PyObj, state: &State) -> PyResult<Self> {
         match_interned_str(
             "offset_mismatch",
             obj,
             &[
-                (*state.str_raise, Self::Raise),
-                (*state.str_keep_instant, Self::KeepInstant),
-                (*state.str_keep_local, Self::KeepLocal),
+                (*state.strs.raise, Self::Raise),
+                (*state.strs.keep_instant, Self::KeepInstant),
+                (*state.strs.keep_local, Self::KeepLocal),
             ],
         )
     }
@@ -363,15 +388,6 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
 fn to_stdlib(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     slf.to_stdlib_datetime(cls.state().py_api()?)
         .map(Owned::into_obj)
-}
-
-fn py_datetime(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"py_datetime() is deprecated and will be removed in a future release; use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
 }
 
 fn date(cls: PyClass<OffsetDateTime>, OffsetDateTime { date, .. }: OffsetDateTime) -> PyReturn {
@@ -405,7 +421,7 @@ fn start_of(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let stale_offset_ok = handle_one_kwarg("start_of", *state.str_stale_offset_ok, kwargs)?;
+    let stale_offset_ok = handle_one_kwarg("start_of", *state.strs.stale_offset_ok, kwargs)?;
     if !match stale_offset_ok {
         Some(value) => value.is_truthy()?,
         None => false,
@@ -430,7 +446,7 @@ fn end_of(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    let stale_offset_ok = handle_one_kwarg("end_of", *state.str_stale_offset_ok, kwargs)?;
+    let stale_offset_ok = handle_one_kwarg("end_of", *state.strs.stale_offset_ok, kwargs)?;
     if !match stale_offset_ok {
         Some(value) => value.is_truthy()?,
         None => false,
@@ -452,10 +468,7 @@ fn offset_stale_warning(state: &State, msg: &CStr) -> PyResult<()> {
     warn_with_class(*state.warn_potentially_stale_offset, msg, 1)
 }
 
-/// Check for deprecated `ignore_dst` and new `stale_offset_ok`
-/// kwargs in a kwargs iterator that only has these optional kwargs remaining,
-/// and emit stale offset warning.
-fn check_ignore_dst_and_stale_offset(
+fn check_stale_offset(
     fname: &str,
     kwargs: &mut IterKwargs,
     state: &State,
@@ -463,9 +476,7 @@ fn check_ignore_dst_and_stale_offset(
 ) -> PyResult<()> {
     let mut suppress = false;
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, *state.str_ignore_dst) {
-            warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-        } else if eq(key, *state.str_stale_offset_ok) {
+        if eq(key, *state.strs.stale_offset_ok) {
             suppress = value.is_truthy()?;
         } else {
             return Ok(false);
@@ -485,12 +496,7 @@ fn replace_date(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    check_ignore_dst_and_stale_offset(
-        "replace_date",
-        kwargs,
-        state,
-        doc::OFFSET_REPLACE_STALE_MSG,
-    )?;
+    check_stale_offset("replace_date", kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
     let arg = handle_one_arg("replace_date", args)?;
     if let Some(date) = arg.extract(*state.date_type) {
         date.at(time)
@@ -509,12 +515,7 @@ fn replace_time(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    check_ignore_dst_and_stale_offset(
-        "replace_time",
-        kwargs,
-        state,
-        doc::OFFSET_REPLACE_STALE_MSG,
-    )?;
+    check_stale_offset("replace_time", kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
     let arg = handle_one_arg("replace_time", args)?;
     if let Some(time) = arg.extract(*state.time_type) {
         date.at(time)
@@ -564,25 +565,19 @@ fn replace(
     let state = cls.state();
     let mut components = slf.to_plain().components();
     let mut offset = slf.offset;
-    let mut got_ignore_dst = false;
     let mut suppress_stale = false;
 
     handle_kwargs("replace", kwargs, |k, v, eq| {
-        if eq(k, *state.str_ignore_dst) {
-            got_ignore_dst = true;
-        } else if eq(k, *state.str_stale_offset_ok) {
+        if eq(k, *state.strs.stale_offset_ok) {
             suppress_stale = v.is_truthy()?;
-        } else if eq(k, *state.str_offset) {
-            offset = Offset::from_py(v, *state.time_delta_type)?;
+        } else if eq(k, *state.strs.offset) {
+            offset = Offset::from_py(v, state)?;
         } else {
             return components.set_from_kwarg(k, v, state, eq);
         }
         Ok(true)
     })?;
 
-    if got_ignore_dst {
-        warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-    }
     if !suppress_stale {
         offset_stale_warning(state, doc::OFFSET_REPLACE_STALE_MSG)?;
     }
@@ -597,8 +592,8 @@ fn replace(
 fn now(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let state = cls.state();
     let offset_obj = handle_one_arg("now", args)?;
-    check_ignore_dst_and_stale_offset("now", kwargs, state, doc::OFFSET_NOW_STALE_MSG)?;
-    let offset = Offset::from_py(offset_obj, *state.time_delta_type)?;
+    check_stale_offset("now", kwargs, state, doc::OFFSET_NOW_STALE_MSG)?;
+    let offset = Offset::from_py(offset_obj, state)?;
     state
         .now()?
         .to_offset(offset)
@@ -606,33 +601,39 @@ fn now(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) ->
         .to_obj(cls)
 }
 
-fn from_py_datetime(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
-    let state = cls.state();
-    warn_with_class(
-        *state.warn_deprecation,
-        c"from_py_datetime() is deprecated and will be removed in a future release; use OffsetDateTime() instead.",
-        1,
-    )?;
-    if let Some(py_dt) = arg.cast_allow_subclass::<PyDateTime>() {
-        OffsetDateTime::from_stdlib_datetime(py_dt)?.to_obj(cls)
-    } else {
-        raise_type_err("argument must be a datetime.datetime instance")?
-    }
-}
-
 pub(crate) fn to_plain(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     slf.to_plain().to_obj(*cls.state().plain_datetime_type)
 }
 
-pub(crate) fn timestamp(_: PyType, slf: OffsetDateTime) -> PyReturn {
-    slf.to_instant().epoch.get().to_py()
+pub(crate) fn timestamp(
+    cls: PyClass<OffsetDateTime>,
+    slf: OffsetDateTime,
+    args: &[PyObj],
+    kwargs: &mut IterKwargs,
+) -> PyReturn {
+    handle_no_args("timestamp", args)?;
+    let unit = handle_one_kwarg("timestamp", *cls.state().strs.unit, kwargs)?
+        .map(|value| TimestampUnit::from_py(value, cls.state()))
+        .transpose()?
+        .unwrap_or(TimestampUnit::Second);
+    unit.timestamp(slf.to_instant()).to_py()
 }
 
-pub(crate) fn timestamp_millis(_: PyType, slf: OffsetDateTime) -> PyReturn {
+pub(crate) fn timestamp_millis(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+    warn_deprecated(
+        cls.state(),
+        c"timestamp_millis() is deprecated; use timestamp(unit='millisecond') instead",
+        1,
+    )?;
     slf.to_instant().timestamp_millis().to_py()
 }
 
-pub(crate) fn timestamp_nanos(_: PyType, slf: OffsetDateTime) -> PyReturn {
+pub(crate) fn timestamp_nanos(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+    warn_deprecated(
+        cls.state(),
+        c"timestamp_nanos() is deprecated; use timestamp(unit='nanosecond') instead",
+        1,
+    )?;
     slf.to_instant().timestamp_nanos().to_py()
 }
 
@@ -664,15 +665,12 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let mut got_ignore_dst = false;
     let mut suppress_stale = false;
 
     let shift = match handle_opt_arg(fname, args)? {
         Some(arg) => {
             for (key, value) in kwargs.by_ref() {
-                if unicode_eq(key, *state.str_ignore_dst) {
-                    got_ignore_dst = true;
-                } else if unicode_eq(key, *state.str_stale_offset_ok) {
+                if unicode_eq(key, *state.strs.stale_offset_ok) {
                     suppress_stale = value.is_truthy()?;
                 } else {
                     raise_mixed_args(fname)?;
@@ -681,10 +679,7 @@ fn shift_method(
             parse_datetime_shift_arg(fname, arg, state)?
         }
         None => parse_datetime_shift_kwargs(fname, kwargs, state, |k, v, eq| {
-            if eq(k, *state.str_ignore_dst) {
-                got_ignore_dst = true;
-                Ok(true)
-            } else if eq(k, *state.str_stale_offset_ok) {
+            if eq(k, *state.strs.stale_offset_ok) {
                 suppress_stale = v.is_truthy()?;
                 Ok(true)
             } else {
@@ -693,9 +688,6 @@ fn shift_method(
         })?,
     };
 
-    if got_ignore_dst {
-        warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-    }
     if !suppress_stale {
         offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
     }
@@ -722,14 +714,13 @@ fn __reduce__(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     .into_pytuple()
 }
 
-/// checks the args comply with (ts: ?, /, *, offset: ?, ignore_dst: ?, stale_offset_ok: ?)
+/// checks the args comply with (ts: ?, /, *, offset: ?, stale_offset_ok: ?)
 fn check_from_timestamp_args_return_offset(
     fname: &str,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
     state: &State,
 ) -> PyResult<Offset> {
-    let mut got_ignore_dst = false;
     let mut suppress_stale = false;
     let mut offset = None;
     if args.len() != 1 {
@@ -741,21 +732,16 @@ fn check_from_timestamp_args_return_offset(
     }
 
     handle_kwargs("from_timestamp", kwargs, |key, value, eq| {
-        if eq(key, *state.str_ignore_dst) {
-            got_ignore_dst = true;
-        } else if eq(key, *state.str_stale_offset_ok) {
+        if eq(key, *state.strs.stale_offset_ok) {
             suppress_stale = value.is_truthy()?;
-        } else if eq(key, *state.str_offset) {
-            offset = Some(Offset::from_py(value, *state.time_delta_type)?);
+        } else if eq(key, *state.strs.offset) {
+            offset = Some(Offset::from_py(value, state)?);
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
 
-    if got_ignore_dst {
-        warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-    }
     if !suppress_stale {
         offset_stale_warning(state, doc::OFFSET_FROM_TIMESTAMP_STALE_MSG)?;
     }
@@ -769,6 +755,11 @@ fn from_timestamp(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
+    warn_deprecated(
+        state,
+        c"OffsetDateTime.from_timestamp() is deprecated; use Instant.from_timestamp(...).to_fixed_offset(...) instead",
+        1,
+    )?;
     let offset = check_from_timestamp_args_return_offset("from_timestamp", args, kwargs, state)?;
 
     parse_timestamp(args[0])?
@@ -783,6 +774,11 @@ fn from_timestamp_millis(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
+    warn_deprecated(
+        state,
+        c"OffsetDateTime.from_timestamp_millis() is deprecated; use Instant.from_timestamp(..., unit='millisecond').to_fixed_offset(...) instead",
+        1,
+    )?;
     let offset =
         check_from_timestamp_args_return_offset("from_timestamp_millis", args, kwargs, state)?;
     parse_timestamp_millis(args[0])?
@@ -797,41 +793,17 @@ fn from_timestamp_nanos(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
+    warn_deprecated(
+        state,
+        c"OffsetDateTime.from_timestamp_nanos() is deprecated; use Instant.from_timestamp(..., unit='nanosecond').to_fixed_offset(...) instead",
+        1,
+    )?;
     let offset =
         check_from_timestamp_args_return_offset("from_timestamp_nanos", args, kwargs, state)?;
     parse_timestamp_nanos(args[0])?
         .to_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)
-}
-
-fn parse_strptime(
-    cls: PyClass<OffsetDateTime>,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    let state = cls.state();
-    warn_with_class(
-        *state.warn_deprecation,
-        c"parse_strptime() is deprecated and will be removed in a future release; use parse() with a pattern string instead.",
-        1,
-    )?;
-    let format_obj = match kwargs.next() {
-        Some((key, value)) if kwargs.original_len() == 1 && unicode_eq(key, *state.str_format) => {
-            value
-        }
-        _ => raise_type_err("parse_strptime() requires exactly one keyword argument `format`")?,
-    };
-    let arg_obj = handle_one_arg("parse_strptime", args)?;
-
-    let parsed = state
-        .strptime
-        .get()?
-        .call_args([arg_obj, format_obj])?
-        .cast_exact::<PyDateTime>()
-        .ok_or_type_err("strptime() returned non-datetime")?;
-
-    OffsetDateTime::from_stdlib_datetime(*parsed)?.to_obj(cls)
 }
 
 fn format_rfc2822(_: PyType, slf: OffsetDateTime) -> PyReturn {
@@ -862,12 +834,8 @@ fn round(
     let round::Args {
         increment,
         mode,
-        got_ignore_dst,
         suppress_stale,
     } = round::Args::parse(args, kwargs, state, round::ArgsContext::Offset)?;
-    if got_ignore_dst {
-        warn_with_class(*state.warn_deprecation, doc::IGNORE_DST_DEPRECATED_MSG, 1)?;
-    }
     if !suppress_stale {
         offset_stale_warning(state, doc::OFFSET_ROUND_STALE_MSG)?;
     }
@@ -1011,8 +979,12 @@ fn format(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj)
         .ok_or_type_err("format() argument must be str")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "OffsetDateTime")?;
-    pattern.warn_if_ambiguous_12h(*cls.state().warn_whenever)?;
+    pattern.validate(
+        pattern::CategorySet::DATE_TIME_OFFSET,
+        "OffsetDateTime",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     pattern.format(&slf.to_plain().pattern_values().with_offset(slf.offset))
 }
 
@@ -1031,16 +1003,19 @@ fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
         .ok_or_type_err("parse() argument must be str")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = handle_one_kwarg("parse", *cls.state().str_format, kwargs)?.ok_or_else(|| {
-        raise_type_err::<(), _>("parse() requires 'format' keyword argument").unwrap_err()
-    })?;
+    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format must be str")?;
+        .ok_or_type_err("pattern must be str")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "OffsetDateTime")?;
+    pattern.validate(
+        pattern::CategorySet::DATE_TIME_OFFSET,
+        "OffsetDateTime",
+        *cls.state().warn_whenever,
+        *cls.state().warn_deprecation,
+    )?;
     let parsed = pattern.parse(s).into_value_err()?;
     let offset = parsed
         .offset_secs
@@ -1056,23 +1031,14 @@ fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
         .to_obj(cls)
 }
 
-static mut METHODS: &[PyMethodDef] = &[
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(OffsetDateTime, __reduce__, c""),
     classmethod_kwargs!(OffsetDateTime, now, doc::OFFSETDATETIME_NOW),
     method1!(OffsetDateTime, exact_eq, doc::EXACTTIME_EXACT_EQ),
+    method1!(OffsetDateTime, strict_eq, doc::EXACTTIME_STRICT_EQ),
     method0!(OffsetDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
-    method0!(
-        OffsetDateTime,
-        py_datetime,
-        doc::BASICCONVERSIONS_PY_DATETIME
-    ),
-    classmethod1!(
-        OffsetDateTime,
-        from_py_datetime,
-        doc::BASICCONVERSIONS_FROM_PY_DATETIME
-    ),
     method0!(
         OffsetDateTime,
         to_instant,
@@ -1107,7 +1073,7 @@ static mut METHODS: &[PyMethodDef] = &[
     ),
     method_kwargs!(OffsetDateTime, format_iso, doc::OFFSETDATETIME_FORMAT_ISO),
     classmethod1!(OffsetDateTime, parse_iso, doc::OFFSETDATETIME_PARSE_ISO),
-    method0!(OffsetDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
+    method_kwargs!(OffsetDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
     method0!(
         OffsetDateTime,
         timestamp_millis,
@@ -1144,11 +1110,6 @@ static mut METHODS: &[PyMethodDef] = &[
         replace_time,
         doc::OFFSETDATETIME_REPLACE_TIME
     ),
-    classmethod_kwargs!(
-        OffsetDateTime,
-        parse_strptime,
-        doc::OFFSETDATETIME_PARSE_STRPTIME
-    ),
     method_kwargs!(OffsetDateTime, add, doc::OFFSETDATETIME_ADD),
     method_kwargs!(OffsetDateTime, subtract, doc::OFFSETDATETIME_SUBTRACT),
     method1!(OffsetDateTime, difference, doc::EXACTTIME_DIFFERENCE),
@@ -1164,7 +1125,7 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::PYDANTIC_SCHEMA
     ),
     PyMethodDef::zeroed(),
-];
+]);
 
 fn year(_: PyType, slf: OffsetDateTime) -> PyReturn {
     slf.date.year.get().to_py()
@@ -1198,7 +1159,7 @@ fn offset(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     slf.offset.to_delta().to_obj(*cls.state().time_delta_type)
 }
 
-static mut GETSETTERS: &[PyGetSetDef] = &[
+static GETSETTERS: PyDefSlice<PyGetSetDef> = PyDefSlice::new(&[
     getter!(OffsetDateTime, year, doc::LOCALTIME_YEAR),
     getter!(OffsetDateTime, month, doc::LOCALTIME_MONTH),
     getter!(OffsetDateTime, day, doc::LOCALTIME_DAY),
@@ -1214,7 +1175,9 @@ static mut GETSETTERS: &[PyGetSetDef] = &[
         doc: NULL(),
         closure: NULL(),
     },
-];
+]);
 
-pub(crate) static mut SPEC: PyType_Spec =
-    type_spec::<OffsetDateTime>(c"whenever.OffsetDateTime", unsafe { SLOTS });
+pub(crate) static SPEC: PyDefCell<PyType_Spec> = PyDefCell::new(type_spec::<OffsetDateTime>(
+    c"whenever.OffsetDateTime",
+    &SLOTS,
+));

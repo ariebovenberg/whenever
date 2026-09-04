@@ -5,7 +5,8 @@ from __future__ import annotations
 import os.path  # NOTE: we don't use pathlib here to keep our imports light
 from contextlib import contextmanager
 from functools import partial
-from typing import Any, Iterable, Iterator, no_type_check
+from threading import RLock
+from typing import Any, Iterable, Iterator, Protocol, no_type_check
 
 from ._core import (
     Instant,
@@ -28,39 +29,81 @@ from ._core import (
 
 
 __all__ = [
+    "TimePatch",
     "patch_current_time",
+    "get_tzpath",
     "reset_tzpath",
     "clear_tzcache",
     "available_timezones",
 ]
 
 
+get_tzpath = _get_tzpath
+
+
+class TimePatch(Protocol):  # pragma: no cover
+    def shift(self, *args: Any, **kwargs: Any) -> None:
+        """Move the patched clock by an exact elapsed-time amount."""
+        ...
+
+    def move_to(
+        self,
+        value: Instant | OffsetDateTime | ZonedDateTime,
+        /,
+    ) -> None:
+        """Move the patched clock to an exact time."""
+        ...
+
+
 class _TimePatch:
-    _pin: Instant | ZonedDateTime | OffsetDateTime
+    _pin: Instant
     _keep_ticking: bool
+    _active: bool
 
     def __init__(
         self,
-        pin: Instant | ZonedDateTime | OffsetDateTime,
+        pin: Instant,
         keep_ticking: bool,
     ):
         self._pin = pin
         self._keep_ticking = keep_ticking
+        self._active = True
 
-    # NOTE: permissively typechecked, but that's OK for a testing utility
-    def shift(self, *args: Any, **kwargs: Any) -> None:
+    def _check_active(self) -> None:
+        if not self._active:
+            raise RuntimeError("time patch is no longer active")
+
+    def _apply(self, pin: Instant, /) -> None:
         if self._keep_ticking:
-            self._pin = new = (self._pin + (Instant.now() - self._pin)).add(
-                *args, **kwargs
-            )
-            _patch_time_keep_ticking(
-                new if isinstance(new, Instant) else new.to_instant()
-            )
+            _patch_time_keep_ticking(pin)
         else:
-            self._pin = new = self._pin.add(*args, **kwargs)
-            _patch_time_frozen(
-                new if isinstance(new, Instant) else new.to_instant()
+            _patch_time_frozen(pin)
+        self._pin = pin
+
+    def shift(self, *args: Any, **kwargs: Any) -> None:
+        """Move the patched clock by an exact elapsed-time amount."""
+        with _patch_lock:
+            self._check_active()
+            current = Instant.now() if self._keep_ticking else self._pin
+            self._apply(current.add(*args, **kwargs))
+
+    def move_to(
+        self,
+        value: Instant | OffsetDateTime | ZonedDateTime,
+        /,
+    ) -> None:
+        """Move the patched clock to an exact time."""
+        with _patch_lock:
+            self._check_active()
+            if not isinstance(value, (Instant, OffsetDateTime, ZonedDateTime)):
+                raise TypeError("move_to() argument must be an exact time")
+            self._apply(
+                value if isinstance(value, Instant) else value.to_instant()
             )
+
+
+_active_patch: _TimePatch | None = None
+_patch_lock = RLock()
 
 
 @contextmanager
@@ -69,7 +112,7 @@ def patch_current_time(
     /,
     *,
     keep_ticking: bool,
-) -> Iterator[_TimePatch]:
+) -> Iterator[TimePatch]:
     """Patch the current time to a fixed value (for testing purposes).
     Behaves as a context manager or decorator, with similar semantics to
     ``unittest.mock.patch``.
@@ -77,8 +120,7 @@ def patch_current_time(
     Important
     ---------
 
-    * This function should be used only for testing purposes. It is not
-      thread-safe or part of the stable API.
+    * This function should be used only for testing purposes.
     * This function only affects whenever's ``now`` functions. It does not
       affect the standard library's time functions or any other libraries.
       Use the ``time_machine`` package if you also want to patch other libraries.
@@ -99,22 +141,29 @@ def patch_current_time(
     >>> assert Instant.now() != i
     ...
     >>> @patch_current_time(i, keep_ticking=True)
-    ... def test_thing(p):
+    ... def test_thing():
     ...     assert (Instant.now() - i) < seconds(1)
-    ...     p.shift(hours=8)
-    ...     sleep(0.000001)
-    ...     assert hours(8) < (Instant.now() - i) < hours(8.1)
     """
-    instant = dt if isinstance(dt, Instant) else dt.to_instant()
-    if keep_ticking:
-        _patch_time_keep_ticking(instant)
-    else:
-        _patch_time_frozen(instant)
+    global _active_patch
 
+    with _patch_lock:
+        if _active_patch is not None:
+            raise RuntimeError("a time patch is already active")
+        instant = dt if isinstance(dt, Instant) else dt.to_instant()
+        if keep_ticking:
+            _patch_time_keep_ticking(instant)
+        else:
+            _patch_time_frozen(instant)
+        patch = _active_patch = _TimePatch(instant, keep_ticking)
     try:
-        yield _TimePatch(dt, keep_ticking)
+        yield patch
     finally:
-        _unpatch_time()
+        with _patch_lock:
+            try:
+                _unpatch_time()
+            finally:
+                patch._active = False
+                _active_patch = None
 
 
 def reset_tzpath(
@@ -126,10 +175,9 @@ def reset_tzpath(
 
     Note
     ----
-    Due to caching, you may find that looking up a timezone after setting the tzpath
-    doesn't load the timezone data from the new path. You may need to call
-    :func:`clear_tzcache` if you want to force loading *all* timezones from the new path.
-    Note that clearing the cache may have unexpected side effects, however.
+    Due to caching, looking up a timezone after changing the search path may
+    continue to use the already loaded definition. Call :func:`clear_tzcache`
+    to make subsequent lookups load from the new path.
 
     Behaves similarly to :func:`zoneinfo.reset_tzpath`
     """
@@ -155,7 +203,7 @@ def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
     Caution
     -------
     Calling this function may change the behavior of existing ``ZonedDateTime``
-    instances in surprising ways. Most significantly, ``exact_eq()`` may
+    instances in surprising ways. Most significantly, ``strict_eq()`` may
     return ``False`` between two timezone instances with the same TZ ID,
     if this timezone definition was changed on disk.
 
@@ -166,6 +214,9 @@ def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
     if only_keys is None:
         _clear_tz_cache()
     else:
+        # This is such a common mistake, that we raise a descriptive error
+        if isinstance(only_keys, (str, bytes)):
+            raise TypeError("only_keys must be an iterable of timezone IDs")
         _clear_tz_cache_by_keys(tuple(only_keys))
 
 
@@ -263,7 +314,7 @@ def _pydantic_parse(cls: type, v: object) -> object:
     elif type(v) is str:
         return cls.parse_iso(v)
     else:
-        raise ValueError(f"Cannot parse {cls.__name__} from type {type(v)}")
+        raise ValueError(f"cannot parse {cls.__name__} from type {type(v)}")
 
 
 @no_type_check

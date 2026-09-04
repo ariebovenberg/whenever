@@ -2,8 +2,6 @@
 use crate::{
     classes::{
         date::{self, unpickle as _unpkl_date},
-        date_delta::{self, days, months, unpickle as _unpkl_ddelta, weeks, years},
-        datetime_delta::{self, unpickle as _unpkl_dtdelta},
         instant::{self, unpickle as _unpkl_inst, unpickle_pre_0_8 as _unpkl_utc},
         offset_datetime::{self, unpickle as _unpkl_offset},
         plain_datetime::{self, unpickle as _unpkl_local},
@@ -14,10 +12,7 @@ use crate::{
         },
         zoned_datetime::{self, unpickle as _unpkl_zoned},
     },
-    common::{
-        round_args as round,
-        sync::{OncePyCell, SwapPtr, SyncCell},
-    },
+    common::sync::{OncePyCell, SwapPtr, SyncCell},
     docstrings as doc,
     py::*,
     pymodule::{
@@ -25,7 +20,7 @@ use crate::{
         tzconf::*,
         utils::*,
     },
-    tz::store::TzStore,
+    tz::{store::TzStore, tzif::TimeZone},
 };
 use core::{
     ffi::{c_int, c_void},
@@ -33,15 +28,15 @@ use core::{
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
+use std::sync::Arc;
 
-#[allow(static_mut_refs)]
-pub(crate) static mut MODULE_DEF: PyModuleDef = PyModuleDef {
+pub(crate) static MODULE_DEF: PyDefCell<PyModuleDef> = PyDefCell::new(PyModuleDef {
     m_base: PyModuleDef_HEAD_INIT,
     m_name: c"whenever".as_ptr(),
     m_doc: c"Modern datetime library for Python.\n\nItemizedDelta and ItemizedDateDelta are implemented in Python; the Rust extension only provides glue for extracting and constructing them from Rust-backed operations.".as_ptr(),
     m_size: mem::size_of::<MaybeUninit<Option<State>>>() as _,
-    m_methods: unsafe { METHODS.as_mut_ptr() },
-    m_slots: unsafe { MODULE_SLOTS.as_mut_ptr() },
+    m_methods: METHODS.as_mut_ptr(),
+    m_slots: MODULE_SLOTS.as_mut_ptr(),
     m_traverse: Some({
         unsafe extern "C" fn _wrap(
             module: *mut PyObject,
@@ -57,24 +52,17 @@ pub(crate) static mut MODULE_DEF: PyModuleDef = PyModuleDef {
     }),
     m_clear: Some(module_clear),
     m_free: Some(module_free),
-};
+});
 
-static mut METHODS: &mut [PyMethodDef] = &mut [
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     modmethod1!(_unpkl_date, c""),
     modmethod1!(_unpkl_time, c""),
-    modmethod_vararg!(_unpkl_ddelta, c""),
     modmethod1!(_unpkl_tdelta, c""),
-    modmethod_vararg!(_unpkl_dtdelta, c""),
     modmethod1!(_unpkl_local, c""),
     modmethod1!(_unpkl_inst, c""),
     modmethod1!(_unpkl_utc, c""), // for backwards compatibility
     modmethod1!(_unpkl_offset, c""),
     modmethod_vararg!(_unpkl_zoned, c""),
-    // FUTURE: set __module__ on these
-    modmethod1!(years, doc::YEARS),
-    modmethod1!(months, doc::MONTHS),
-    modmethod1!(weeks, doc::WEEKS),
-    modmethod1!(days, doc::DAYS),
     modmethod1!(hours, doc::HOURS),
     modmethod1!(minutes, doc::MINUTES),
     modmethod1!(seconds, doc::SECONDS),
@@ -90,9 +78,9 @@ static mut METHODS: &mut [PyMethodDef] = &mut [
     modmethod1!(_clear_tz_cache_by_keys, c""),
     modmethod0!(reset_system_tz, doc::RESET_SYSTEM_TZ),
     PyMethodDef::zeroed(),
-];
+]);
 
-static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
+static MODULE_SLOTS: PyDefSlice<PyModuleDef_Slot> = PyDefSlice::new(&[
     PyModuleDef_Slot {
         slot: Py_mod_exec,
         value: {
@@ -123,70 +111,74 @@ static mut MODULE_SLOTS: &mut [PyModuleDef_Slot] = &mut [
         slot: 0,
         value: NULL(),
     },
-];
+]);
 
-struct InternedStrings {
-    str_years: Owned<PyObj>,
-    str_months: Owned<PyObj>,
-    str_weeks: Owned<PyObj>,
-    str_days: Owned<PyObj>,
-    str_hours: Owned<PyObj>,
-    str_minutes: Owned<PyObj>,
-    str_seconds: Owned<PyObj>,
-    str_milliseconds: Owned<PyObj>,
-    str_microseconds: Owned<PyObj>,
-    str_nanoseconds: Owned<PyObj>,
-    str_year: Owned<PyObj>,
-    str_month: Owned<PyObj>,
-    str_day: Owned<PyObj>,
-    str_week: Owned<PyObj>,
-    str_hour: Owned<PyObj>,
-    str_minute: Owned<PyObj>,
-    str_second: Owned<PyObj>,
-    str_millisecond: Owned<PyObj>,
-    str_microsecond: Owned<PyObj>,
-    str_nanosecond: Owned<PyObj>,
-    str_compatible: Owned<PyObj>,
-    str_raise: Owned<PyObj>,
-    str_earlier: Owned<PyObj>,
-    str_later: Owned<PyObj>,
-    str_tz: Owned<PyObj>,
-    str_disambiguate: Owned<PyObj>,
-    str_offset: Owned<PyObj>,
-    str_ignore_dst: Owned<PyObj>,
-    str_total: Owned<PyObj>,
-    str_unit: Owned<PyObj>,
-    str_in_units: Owned<PyObj>,
-    str_increment: Owned<PyObj>,
-    str_mode: Owned<PyObj>,
-    str_round_mode: Owned<PyObj>,
-    str_round_increment: Owned<PyObj>,
-    str_relative_to: Owned<PyObj>,
-    str_floor: Owned<PyObj>,
-    str_ceil: Owned<PyObj>,
-    str_trunc: Owned<PyObj>,
-    str_expand: Owned<PyObj>,
-    str_half_floor: Owned<PyObj>,
-    str_half_ceil: Owned<PyObj>,
-    str_half_even: Owned<PyObj>,
-    str_half_trunc: Owned<PyObj>,
-    str_half_expand: Owned<PyObj>,
-    str_format: Owned<PyObj>,
-    str_sep: Owned<PyObj>,
-    str_space: Owned<PyObj>,
-    str_t: Owned<PyObj>,
-    str_auto: Owned<PyObj>,
-    str_basic: Owned<PyObj>,
-    str_always: Owned<PyObj>,
-    str_never: Owned<PyObj>,
-    str_offset_mismatch: Owned<PyObj>,
-    str_keep_instant: Owned<PyObj>,
-    str_keep_local: Owned<PyObj>,
-    str_days_assumed_24h_ok: Owned<PyObj>,
-    str_stale_offset_ok: Owned<PyObj>,
-    str_naive_arithmetic_ok: Owned<PyObj>,
-    str_week_mon: Owned<PyObj>,
-    str_week_sun: Owned<PyObj>,
+pub(crate) struct InternedStrings {
+    pub(crate) years: Owned<PyObj>,
+    pub(crate) months: Owned<PyObj>,
+    pub(crate) weeks: Owned<PyObj>,
+    pub(crate) days: Owned<PyObj>,
+    pub(crate) hours: Owned<PyObj>,
+    pub(crate) minutes: Owned<PyObj>,
+    pub(crate) seconds: Owned<PyObj>,
+    pub(crate) milliseconds: Owned<PyObj>,
+    pub(crate) microseconds: Owned<PyObj>,
+    pub(crate) nanoseconds: Owned<PyObj>,
+    pub(crate) year: Owned<PyObj>,
+    pub(crate) month: Owned<PyObj>,
+    pub(crate) day: Owned<PyObj>,
+    pub(crate) week: Owned<PyObj>,
+    pub(crate) hour: Owned<PyObj>,
+    pub(crate) minute: Owned<PyObj>,
+    pub(crate) second: Owned<PyObj>,
+    pub(crate) millisecond: Owned<PyObj>,
+    pub(crate) microsecond: Owned<PyObj>,
+    pub(crate) nanosecond: Owned<PyObj>,
+    pub(crate) compatible: Owned<PyObj>,
+    pub(crate) raise: Owned<PyObj>,
+    pub(crate) earlier: Owned<PyObj>,
+    pub(crate) later: Owned<PyObj>,
+    pub(crate) tz: Owned<PyObj>,
+    pub(crate) disambiguate: Owned<PyObj>,
+    pub(crate) disambiguation: Owned<PyObj>,
+    pub(crate) warn_stacklevel: Owned<PyObj>,
+    pub(crate) offset: Owned<PyObj>,
+    pub(crate) total: Owned<PyObj>,
+    pub(crate) unit: Owned<PyObj>,
+    pub(crate) in_units: Owned<PyObj>,
+    pub(crate) increment: Owned<PyObj>,
+    pub(crate) mode: Owned<PyObj>,
+    pub(crate) round_mode: Owned<PyObj>,
+    pub(crate) round_increment: Owned<PyObj>,
+    pub(crate) relative_to: Owned<PyObj>,
+    pub(crate) floor: Owned<PyObj>,
+    pub(crate) ceil: Owned<PyObj>,
+    pub(crate) trunc: Owned<PyObj>,
+    pub(crate) expand: Owned<PyObj>,
+    pub(crate) half_floor: Owned<PyObj>,
+    pub(crate) half_ceil: Owned<PyObj>,
+    pub(crate) half_even: Owned<PyObj>,
+    pub(crate) half_trunc: Owned<PyObj>,
+    pub(crate) half_expand: Owned<PyObj>,
+    pub(crate) format: Owned<PyObj>,
+    pub(crate) pattern: Owned<PyObj>,
+    pub(crate) sep: Owned<PyObj>,
+    pub(crate) space: Owned<PyObj>,
+    pub(crate) t: Owned<PyObj>,
+    pub(crate) auto: Owned<PyObj>,
+    pub(crate) basic: Owned<PyObj>,
+    pub(crate) always: Owned<PyObj>,
+    pub(crate) required: Owned<PyObj>,
+    pub(crate) never: Owned<PyObj>,
+    pub(crate) tz_id_display: Owned<PyObj>,
+    pub(crate) offset_mismatch: Owned<PyObj>,
+    pub(crate) keep_instant: Owned<PyObj>,
+    pub(crate) keep_local: Owned<PyObj>,
+    pub(crate) days_assumed_24h_ok: Owned<PyObj>,
+    pub(crate) stale_offset_ok: Owned<PyObj>,
+    pub(crate) naive_arithmetic_ok: Owned<PyObj>,
+    pub(crate) week_mon: Owned<PyObj>,
+    pub(crate) week_sun: Owned<PyObj>,
 }
 
 // Creating inlined strings separately here saves a significant
@@ -195,67 +187,71 @@ struct InternedStrings {
 #[inline(never)]
 fn intern_strings() -> PyResult<InternedStrings> {
     Ok(InternedStrings {
-        str_years: intern(c"years")?,
-        str_months: intern(c"months")?,
-        str_weeks: intern(c"weeks")?,
-        str_days: intern(c"days")?,
-        str_hours: intern(c"hours")?,
-        str_minutes: intern(c"minutes")?,
-        str_seconds: intern(c"seconds")?,
-        str_milliseconds: intern(c"milliseconds")?,
-        str_microseconds: intern(c"microseconds")?,
-        str_nanoseconds: intern(c"nanoseconds")?,
-        str_year: intern(c"year")?,
-        str_month: intern(c"month")?,
-        str_day: intern(c"day")?,
-        str_week: intern(c"week")?,
-        str_hour: intern(c"hour")?,
-        str_minute: intern(c"minute")?,
-        str_second: intern(c"second")?,
-        str_millisecond: intern(c"millisecond")?,
-        str_microsecond: intern(c"microsecond")?,
-        str_nanosecond: intern(c"nanosecond")?,
-        str_compatible: intern(c"compatible")?,
-        str_raise: intern(c"raise")?,
-        str_earlier: intern(c"earlier")?,
-        str_later: intern(c"later")?,
-        str_tz: intern(c"tz")?,
-        str_disambiguate: intern(c"disambiguate")?,
-        str_offset: intern(c"offset")?,
-        str_ignore_dst: intern(c"ignore_dst")?,
-        str_total: intern(c"total")?,
-        str_unit: intern(c"unit")?,
-        str_in_units: intern(c"in_units")?,
-        str_increment: intern(c"increment")?,
-        str_mode: intern(c"mode")?,
-        str_round_mode: intern(c"round_mode")?,
-        str_round_increment: intern(c"round_increment")?,
-        str_relative_to: intern(c"relative_to")?,
-        str_floor: intern(c"floor")?,
-        str_ceil: intern(c"ceil")?,
-        str_trunc: intern(c"trunc")?,
-        str_expand: intern(c"expand")?,
-        str_half_floor: intern(c"half_floor")?,
-        str_half_ceil: intern(c"half_ceil")?,
-        str_half_even: intern(c"half_even")?,
-        str_half_trunc: intern(c"half_trunc")?,
-        str_half_expand: intern(c"half_expand")?,
-        str_format: intern(c"format")?,
-        str_sep: intern(c"sep")?,
-        str_space: intern(c" ")?,
-        str_t: intern(c"T")?,
-        str_auto: intern(c"auto")?,
-        str_basic: intern(c"basic")?,
-        str_always: intern(c"always")?,
-        str_never: intern(c"never")?,
-        str_offset_mismatch: intern(c"offset_mismatch")?,
-        str_keep_instant: intern(c"keep_instant")?,
-        str_keep_local: intern(c"keep_local")?,
-        str_days_assumed_24h_ok: intern(c"days_assumed_24h_ok")?,
-        str_stale_offset_ok: intern(c"stale_offset_ok")?,
-        str_naive_arithmetic_ok: intern(c"naive_arithmetic_ok")?,
-        str_week_mon: intern(c"week_mon")?,
-        str_week_sun: intern(c"week_sun")?,
+        years: intern(c"years")?,
+        months: intern(c"months")?,
+        weeks: intern(c"weeks")?,
+        days: intern(c"days")?,
+        hours: intern(c"hours")?,
+        minutes: intern(c"minutes")?,
+        seconds: intern(c"seconds")?,
+        milliseconds: intern(c"milliseconds")?,
+        microseconds: intern(c"microseconds")?,
+        nanoseconds: intern(c"nanoseconds")?,
+        year: intern(c"year")?,
+        month: intern(c"month")?,
+        day: intern(c"day")?,
+        week: intern(c"week")?,
+        hour: intern(c"hour")?,
+        minute: intern(c"minute")?,
+        second: intern(c"second")?,
+        millisecond: intern(c"millisecond")?,
+        microsecond: intern(c"microsecond")?,
+        nanosecond: intern(c"nanosecond")?,
+        compatible: intern(c"compatible")?,
+        raise: intern(c"raise")?,
+        earlier: intern(c"earlier")?,
+        later: intern(c"later")?,
+        tz: intern(c"tz")?,
+        disambiguate: intern(c"disambiguate")?,
+        disambiguation: intern(c"disambiguation")?,
+        warn_stacklevel: intern(c"_warn_stacklevel")?,
+        offset: intern(c"offset")?,
+        total: intern(c"total")?,
+        unit: intern(c"unit")?,
+        in_units: intern(c"in_units")?,
+        increment: intern(c"increment")?,
+        mode: intern(c"mode")?,
+        round_mode: intern(c"round_mode")?,
+        round_increment: intern(c"round_increment")?,
+        relative_to: intern(c"relative_to")?,
+        floor: intern(c"floor")?,
+        ceil: intern(c"ceil")?,
+        trunc: intern(c"trunc")?,
+        expand: intern(c"expand")?,
+        half_floor: intern(c"half_floor")?,
+        half_ceil: intern(c"half_ceil")?,
+        half_even: intern(c"half_even")?,
+        half_trunc: intern(c"half_trunc")?,
+        half_expand: intern(c"half_expand")?,
+        format: intern(c"format")?,
+        pattern: intern(c"pattern")?,
+        sep: intern(c"sep")?,
+        space: intern(c" ")?,
+        t: intern(c"T")?,
+        auto: intern(c"auto")?,
+        basic: intern(c"basic")?,
+        always: intern(c"always")?,
+        required: intern(c"required")?,
+        never: intern(c"never")?,
+        tz_id_display: intern(c"tz_id_display")?,
+        offset_mismatch: intern(c"offset_mismatch")?,
+        keep_instant: intern(c"keep_instant")?,
+        keep_local: intern(c"keep_local")?,
+        days_assumed_24h_ok: intern(c"days_assumed_24h_ok")?,
+        stale_offset_ok: intern(c"stale_offset_ok")?,
+        naive_arithmetic_ok: intern(c"naive_arithmetic_ok")?,
+        week_mon: intern(c"week_mon")?,
+        week_sun: intern(c"week_sun")?,
     })
 }
 
@@ -267,80 +263,37 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
     // Initialize state to None to get it out of uninitialized state ASAP,
     // as any further calls could trigger a GC cycle which would retrieve
     // the state.
-    // SAFETY: module_exec has exclusive access while initializing the module state.
+    // SAFETY: only accessed under CPython's own synchronization (module-init exclusivity).
     unsafe { module.state_mut() }.write(None);
     let module_name = "whenever".to_py()?;
 
-    let (date_type, unpickle_date) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { date::SPEC },
-        c"_unpkl_date",
-    )?;
+    let (date_type, unpickle_date) = new_class(module, *module_name, &date::SPEC, c"_unpkl_date")?;
     create_singletons(*date_type, date::SINGLETONS)?;
-    let (time_type, unpickle_time) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { time::SPEC },
-        c"_unpkl_time",
-    )?;
+    let (time_type, unpickle_time) = new_class(module, *module_name, &time::SPEC, c"_unpkl_time")?;
     create_singletons(*time_type, time::SINGLETONS)?;
-    let (date_delta_type, unpickle_date_delta) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { date_delta::SPEC },
-        c"_unpkl_ddelta",
-    )?;
-    create_singletons(*date_delta_type, date_delta::SINGLETONS)?;
-    let (time_delta_type, unpickle_time_delta) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { time_delta::SPEC },
-        c"_unpkl_tdelta",
-    )?;
+    let (time_delta_type, unpickle_time_delta) =
+        new_class(module, *module_name, &time_delta::SPEC, c"_unpkl_tdelta")?;
     create_singletons(*time_delta_type, time_delta::SINGLETONS)?;
-    let (datetime_delta_type, unpickle_datetime_delta) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { datetime_delta::SPEC },
-        c"_unpkl_dtdelta",
-    )?;
-    create_singletons(*datetime_delta_type, datetime_delta::SINGLETONS)?;
-    let (plain_datetime_type, unpickle_plain_datetime) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { plain_datetime::SPEC },
-        c"_unpkl_local",
-    )?;
+    let (plain_datetime_type, unpickle_plain_datetime) =
+        new_class(module, *module_name, &plain_datetime::SPEC, c"_unpkl_local")?;
     create_singletons(*plain_datetime_type, plain_datetime::SINGLETONS)?;
-    let (instant_type, unpickle_instant) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { instant::SPEC },
-        c"_unpkl_inst",
-    )?;
+    let (instant_type, unpickle_instant) =
+        new_class(module, *module_name, &instant::SPEC, c"_unpkl_inst")?;
     create_singletons(*instant_type, instant::SINGLETONS)?;
     let (offset_datetime_type, unpickle_offset_datetime) = new_class(
         module,
         *module_name,
-        &mut unsafe { offset_datetime::SPEC },
+        &offset_datetime::SPEC,
         c"_unpkl_offset",
     )?;
-    let (zoned_datetime_type, unpickle_zoned_datetime) = new_class(
-        module,
-        *module_name,
-        &mut unsafe { zoned_datetime::SPEC },
-        c"_unpkl_zoned",
-    )?;
+    let (zoned_datetime_type, unpickle_zoned_datetime) =
+        new_class(module, *module_name, &zoned_datetime::SPEC, c"_unpkl_zoned")?;
     module
         .getattr(c"_unpkl_utc")?
         .setattr(c"__module__", *module_name)?;
 
     unsafe { PyDateTime_IMPORT() };
-    match unsafe { PyDateTimeAPI().as_ref() } {
-        Some(_) => {}
-        None => Err(PyErrMarker)?,
-    };
+    unsafe { PyDateTimeAPI().as_ref() }.ok_or(PyErrMarker)?;
 
     let exc_repeated = new_exception(
         module,
@@ -360,12 +313,6 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
         doc::INVALIDOFFSETERROR,
         exc_value_error(),
     )?;
-    let exc_implicitly_ignoring_dst = new_exception(
-        module,
-        c"whenever.ImplicitlyIgnoringDST",
-        doc::IMPLICITLYIGNORINGDST,
-        exc_type_error(),
-    )?;
     let exc_tz_notfound = new_exception(
         module,
         c"whenever.TimeZoneNotFoundError",
@@ -375,13 +322,27 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
 
     // Warning classes. The root class is implemented in Python so pure-Python
     // itemized delta warnings and Rust-created warnings share one base.
-    let warn_whenever = import(c"whenever._common")?.getattr(c"WheneverWarning")?;
+    let common_module = import(c"whenever._common")?;
+    let warn_whenever = common_module.getattr(c"WheneverWarning")?;
+    let system_tz_sentinel = common_module.getattr(c"SYSTEM_TZ")?;
     warn_whenever.setattr(c"__module__", *module_name)?;
     module.setattr(c"WheneverWarning", *warn_whenever)?;
     let warn_potential_dst_bug = new_exception(
         module,
         c"whenever.PotentialDstBugWarning",
         doc::POTENTIALDSTBUGWARNING,
+        *warn_whenever,
+    )?;
+    let warn_implicit_disambiguation = new_exception(
+        module,
+        c"whenever.ImplicitDisambiguationWarning",
+        doc::IMPLICITDISAMBIGUATIONWARNING,
+        *warn_potential_dst_bug,
+    )?;
+    let warn_pickle_offset_mismatch = new_exception(
+        module,
+        c"whenever.PickleOffsetMismatchWarning",
+        doc::PICKLEOFFSETMISMATCHWARNING,
         *warn_whenever,
     )?;
     let warn_days_not_always_24h = new_exception(
@@ -402,12 +363,9 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
         doc::NAIVEARITHMETICWARNING,
         *warn_potential_dst_bug,
     )?;
-    let warn_deprecation = new_exception(
-        module,
-        c"whenever.WheneverDeprecationWarning",
-        doc::WHENEVERDEPRECATIONWARNING,
-        *warn_whenever,
-    )?;
+    let warn_deprecation = common_module.getattr(c"WheneverDeprecationWarning")?;
+    warn_deprecation.setattr(c"__module__", *module_name)?;
+    module.setattr(c"WheneverDeprecationWarning", *warn_deprecation)?;
     let warn_calendar_unit_composition = new_exception(
         module,
         c"whenever.CalendarUnitCompositionWarning",
@@ -416,80 +374,14 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
     )?;
 
     let tz_store = TzStore::new(*exc_tz_notfound);
-    let strings = intern_strings()?;
     let time_patch = SyncCell::new(Patch::new()?);
-    let InternedStrings {
-        str_years,
-        str_months,
-        str_weeks,
-        str_days,
-        str_hours,
-        str_minutes,
-        str_seconds,
-        str_milliseconds,
-        str_microseconds,
-        str_nanoseconds,
-        str_year,
-        str_month,
-        str_day,
-        str_week,
-        str_hour,
-        str_minute,
-        str_second,
-        str_millisecond,
-        str_microsecond,
-        str_nanosecond,
-        str_compatible,
-        str_raise,
-        str_earlier,
-        str_later,
-        str_tz,
-        str_disambiguate,
-        str_offset,
-        str_ignore_dst,
-        str_total,
-        str_unit,
-        str_in_units,
-        str_increment,
-        str_mode,
-        str_round_mode,
-        str_round_increment,
-        str_relative_to,
-        str_floor,
-        str_ceil,
-        str_trunc,
-        str_expand,
-        str_half_floor,
-        str_half_ceil,
-        str_half_even,
-        str_half_trunc,
-        str_half_expand,
-        str_format,
-        str_sep,
-        str_space,
-        str_t,
-        str_auto,
-        str_basic,
-        str_always,
-        str_never,
-        str_offset_mismatch,
-        str_keep_instant,
-        str_keep_local,
-        str_days_assumed_24h_ok,
-        str_stale_offset_ok,
-        str_naive_arithmetic_ok,
-        str_week_mon,
-        str_week_sun,
-    } = strings;
 
     // Only write the state once everything is initialized,
     // to ensure we don't leak references to the above.
     let state = State {
         date_type,
         time_type,
-        date_delta_type,
         time_delta_type,
-        datetime_delta_type,
         itemized_date_delta_type: OncePyObj::new(|| {
             import(c"whenever._ideltas")?.getattr(c"ItemizedDateDelta")
         }),
@@ -523,90 +415,23 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
         }),
 
         py_api: SwapPtr::new(None),
-        // NOTE: getting strptime from the C API `DateTimeType` results in crashes
-        // with subinterpreters. Thus we import it through Python.
-        strptime: OncePyObj::new(|| {
-            import(c"datetime")?
-                .getattr(c"datetime")?
-                .getattr(c"strptime")
-        }),
         time_ns: OncePyObj::new(|| import(c"time")?.getattr(c"time_ns")),
         zoneinfo_type: OncePyObj::new(|| import(c"zoneinfo")?.getattr(c"ZoneInfo")),
         get_pydantic_schema: OncePyObj::new(|| {
             import(c"whenever._utils")?.getattr(c"pydantic_schema")
         }),
+        system_tz_sentinel,
 
-        str_years,
-        str_months,
-        str_weeks,
-        str_days,
-        str_hours,
-        str_minutes,
-        str_seconds,
-        str_milliseconds,
-        str_microseconds,
-        str_nanoseconds,
-        str_year,
-        str_month,
-        str_day,
-        str_week,
-        str_hour,
-        str_minute,
-        str_second,
-        str_millisecond,
-        str_microsecond,
-        str_nanosecond,
-        str_compatible,
-        str_raise,
-        str_earlier,
-        str_later,
-        str_tz,
-        str_disambiguate,
-        str_offset,
-        str_ignore_dst,
-        str_total,
-        str_unit,
-        str_in_units,
-        str_increment,
-        str_mode,
-        str_round_mode,
-        str_round_increment,
-        str_relative_to,
-        round_mode_strs: round::ModeStrs {
-            str_floor,
-            str_ceil,
-            str_trunc,
-            str_expand,
-            str_half_floor,
-            str_half_ceil,
-            str_half_even,
-            str_half_trunc,
-            str_half_expand,
-        },
-        str_format,
-        str_sep,
-        str_space,
-        str_t,
-        str_auto,
-        str_basic,
-        str_always,
-        str_never,
-        str_offset_mismatch,
-        str_keep_instant,
-        str_keep_local,
-        str_days_assumed_24h_ok,
-        str_stale_offset_ok,
-        str_naive_arithmetic_ok,
-        str_week_mon,
-        str_week_sun,
+        strs: intern_strings()?,
 
         exc_repeated,
         exc_skipped,
         exc_invalid_offset,
-        exc_implicitly_ignoring_dst,
         exc_tz_notfound,
 
         warn_potential_dst_bug,
+        warn_implicit_disambiguation,
+        warn_pickle_offset_mismatch,
         warn_whenever,
         warn_days_not_always_24h,
         warn_potentially_stale_offset,
@@ -616,9 +441,7 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
 
         unpickle_date,
         unpickle_time,
-        unpickle_date_delta,
         unpickle_time_delta,
-        unpickle_datetime_delta,
         unpickle_itemized_date_delta: OncePyObj::new(|| {
             import(c"whenever._ideltas")?.getattr(c"_unpkl_iddelta")
         }),
@@ -633,7 +456,7 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
         time_patch,
         tz_store,
     };
-    // SAFETY: module_exec exclusively owns the module-state lifecycle transition.
+    // SAFETY: only accessed under CPython's own synchronization (module-init exclusivity).
     unsafe { module.state_mut().assume_init_mut() }.replace(state);
 
     Ok(())
@@ -680,19 +503,9 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
             time::SINGLETONS.len(),
         ),
         (
-            state.date_delta_type.as_type(),
-            *state.unpickle_date_delta,
-            date_delta::SINGLETONS.len(),
-        ),
-        (
             state.time_delta_type.as_type(),
             *state.unpickle_time_delta,
             time_delta::SINGLETONS.len(),
-        ),
-        (
-            state.datetime_delta_type.as_type(),
-            *state.unpickle_datetime_delta,
-            datetime_delta::SINGLETONS.len(),
         ),
         (
             state.plain_datetime_type.as_type(),
@@ -740,10 +553,11 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         *state.exc_repeated,
         *state.exc_skipped,
         *state.exc_invalid_offset,
-        *state.exc_implicitly_ignoring_dst,
         *state.exc_tz_notfound,
         *state.warn_whenever,
         *state.warn_potential_dst_bug,
+        *state.warn_implicit_disambiguation,
+        *state.warn_pickle_offset_mismatch,
         *state.warn_days_not_always_24h,
         *state.warn_potentially_stale_offset,
         *state.warn_naive_arithmetic,
@@ -754,10 +568,10 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
     }
 
     // Imported stuff
-    state.strptime.gc_traverse(visit, arg)?;
     state.time_ns.gc_traverse(visit, arg)?;
     state.zoneinfo_type.gc_traverse(visit, arg)?;
     state.get_pydantic_schema.gc_traverse(visit, arg)?;
+    state.system_tz_sentinel.gc_traverse(visit, arg)?;
     Ok(())
 }
 
@@ -796,9 +610,7 @@ pub(crate) struct State {
     // classes
     pub(crate) date_type: Owned<PyClass<date::Date>>,
     pub(crate) time_type: Owned<PyClass<time::Time>>,
-    pub(crate) date_delta_type: Owned<PyClass<date_delta::DateDelta>>,
     pub(crate) time_delta_type: Owned<PyClass<time_delta::TimeDelta>>,
-    pub(crate) datetime_delta_type: Owned<PyClass<datetime_delta::DateTimeDelta>>,
     pub(crate) plain_datetime_type: Owned<PyClass<plain_datetime::PlainDateTime>>,
     pub(crate) instant_type: Owned<PyClass<instant::Instant>>,
     pub(crate) offset_datetime_type: Owned<PyClass<offset_datetime::OffsetDateTime>>,
@@ -818,11 +630,12 @@ pub(crate) struct State {
     pub(crate) exc_repeated: Owned<PyObj>,
     pub(crate) exc_skipped: Owned<PyObj>,
     pub(crate) exc_invalid_offset: Owned<PyObj>,
-    pub(crate) exc_implicitly_ignoring_dst: Owned<PyObj>,
     pub(crate) exc_tz_notfound: Owned<PyObj>,
 
     // warnings
     pub(crate) warn_potential_dst_bug: Owned<PyObj>,
+    pub(crate) warn_implicit_disambiguation: Owned<PyObj>,
+    pub(crate) warn_pickle_offset_mismatch: Owned<PyObj>,
     pub(crate) warn_whenever: Owned<PyObj>,
     pub(crate) warn_days_not_always_24h: Owned<PyObj>,
     pub(crate) warn_potentially_stale_offset: Owned<PyObj>,
@@ -833,9 +646,7 @@ pub(crate) struct State {
     // unpickling functions
     pub(crate) unpickle_date: Owned<PyObj>,
     pub(crate) unpickle_time: Owned<PyObj>,
-    pub(crate) unpickle_date_delta: Owned<PyObj>,
     pub(crate) unpickle_time_delta: Owned<PyObj>,
-    pub(crate) unpickle_datetime_delta: Owned<PyObj>,
     pub(crate) unpickle_itemized_date_delta: OncePyObj,
     pub(crate) unpickle_itemized_delta: OncePyObj,
     pub(crate) unpickle_plain_datetime: Owned<PyObj>,
@@ -846,71 +657,27 @@ pub(crate) struct State {
     pub(crate) py_api: SwapPtr<PyDateTime_CAPI>,
 
     // imported stuff
-    pub(crate) strptime: OncePyObj,
     pub(crate) time_ns: OncePyObj,
     pub(crate) zoneinfo_type: OncePyObj,
     pub(crate) get_pydantic_schema: OncePyObj,
+    pub(crate) system_tz_sentinel: Owned<PyObj>,
 
     // strings
-    pub(crate) str_years: Owned<PyObj>,
-    pub(crate) str_months: Owned<PyObj>,
-    pub(crate) str_weeks: Owned<PyObj>,
-    pub(crate) str_days: Owned<PyObj>,
-    pub(crate) str_hours: Owned<PyObj>,
-    pub(crate) str_minutes: Owned<PyObj>,
-    pub(crate) str_seconds: Owned<PyObj>,
-    pub(crate) str_milliseconds: Owned<PyObj>,
-    pub(crate) str_microseconds: Owned<PyObj>,
-    pub(crate) str_nanoseconds: Owned<PyObj>,
-    pub(crate) str_year: Owned<PyObj>,
-    pub(crate) str_month: Owned<PyObj>,
-    pub(crate) str_day: Owned<PyObj>,
-    pub(crate) str_week: Owned<PyObj>,
-    pub(crate) str_hour: Owned<PyObj>,
-    pub(crate) str_minute: Owned<PyObj>,
-    pub(crate) str_second: Owned<PyObj>,
-    pub(crate) str_millisecond: Owned<PyObj>,
-    pub(crate) str_microsecond: Owned<PyObj>,
-    pub(crate) str_nanosecond: Owned<PyObj>,
-    pub(crate) str_compatible: Owned<PyObj>,
-    pub(crate) str_raise: Owned<PyObj>,
-    pub(crate) str_earlier: Owned<PyObj>,
-    pub(crate) str_later: Owned<PyObj>,
-    pub(crate) str_tz: Owned<PyObj>,
-    pub(crate) str_disambiguate: Owned<PyObj>,
-    pub(crate) str_offset: Owned<PyObj>,
-    pub(crate) str_ignore_dst: Owned<PyObj>,
-    pub(crate) str_total: Owned<PyObj>,
-    pub(crate) str_unit: Owned<PyObj>,
-    pub(crate) str_in_units: Owned<PyObj>,
-    pub(crate) str_increment: Owned<PyObj>,
-    pub(crate) str_mode: Owned<PyObj>,
-    pub(crate) str_round_mode: Owned<PyObj>,
-    pub(crate) str_round_increment: Owned<PyObj>,
-    pub(crate) str_relative_to: Owned<PyObj>,
-    pub(crate) round_mode_strs: round::ModeStrs,
-    pub(crate) str_format: Owned<PyObj>,
-    pub(crate) str_sep: Owned<PyObj>,
-    pub(crate) str_space: Owned<PyObj>,
-    pub(crate) str_t: Owned<PyObj>,
-    pub(crate) str_auto: Owned<PyObj>,
-    pub(crate) str_basic: Owned<PyObj>,
-    pub(crate) str_always: Owned<PyObj>,
-    pub(crate) str_never: Owned<PyObj>,
-    pub(crate) str_offset_mismatch: Owned<PyObj>,
-    pub(crate) str_keep_instant: Owned<PyObj>,
-    pub(crate) str_keep_local: Owned<PyObj>,
-    pub(crate) str_days_assumed_24h_ok: Owned<PyObj>,
-    pub(crate) str_stale_offset_ok: Owned<PyObj>,
-    pub(crate) str_naive_arithmetic_ok: Owned<PyObj>,
-    pub(crate) str_week_mon: Owned<PyObj>,
-    pub(crate) str_week_sun: Owned<PyObj>,
+    pub(crate) strs: InternedStrings,
 
     pub(crate) time_patch: SyncCell<Patch>,
     pub(crate) tz_store: TzStore,
 }
 
 impl State {
+    pub(crate) fn load_tz(&self, obj: PyObj) -> PyResult<Arc<TimeZone>> {
+        if obj.ptr_eq(*self.system_tz_sentinel) {
+            self.tz_store.get_system_tz()
+        } else {
+            self.tz_store.obj_get(obj)
+        }
+    }
+
     pub(crate) fn py_api(&self) -> PyResult<&'static PyDateTime_CAPI> {
         if let Some(p) = self.py_api.load() {
             return Ok(unsafe { p.as_ref() });

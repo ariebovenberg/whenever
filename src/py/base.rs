@@ -12,14 +12,14 @@ pub(crate) trait ToPy: Sized {
 }
 
 pub(crate) trait PyStaticType: PyBase {
-    fn isinstance_exact(obj: impl PyBase) -> bool;
-    fn isinstance(obj: impl PyBase) -> bool;
+    fn isinstance_exact(obj: PyObj) -> bool;
+    fn isinstance(obj: PyObj) -> bool;
 }
 
 /// A minimal wrapper for the PyObject pointer.
 /// Transparent to PyObject to allow casting to/from PyObject.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct PyObj {
     inner: NonNull<PyObject>,
 }
@@ -61,13 +61,15 @@ impl PyObj {
     }
 
     pub(crate) fn extract_ref<T: PyPayload>(&self, t: PyClass<T>) -> Option<&T> {
-        (self.type_() == t.as_type())
+        self.type_()
+            .ptr_eq(t.as_type())
             // SAFETY: we've just checked the type, so this is safe
             .then(|| unsafe { self.data_ref::<T>() })
     }
 
     pub(crate) fn extract<T: PyPayload + Copy>(&self, t: PyClass<T>) -> Option<T> {
-        (self.type_() == t.as_type())
+        self.type_()
+            .ptr_eq(t.as_type())
             // SAFETY: we've just checked the type, so this is safe
             .then(|| *unsafe { self.data_ref::<T>() })
     }
@@ -75,14 +77,12 @@ impl PyObj {
     /// Downcast to a specific type *exactly*. Cannot be used for heap types,
     /// use `extract` instead.
     pub(crate) fn cast_exact<T: PyStaticType>(self) -> Option<T> {
-        T::isinstance_exact(self)
-            .then_some(unsafe { T::from_ptr_unchecked(self.as_py_obj().inner.as_ptr()) })
+        T::isinstance_exact(self).then_some(unsafe { T::from_ptr_unchecked(self.as_ptr()) })
     }
 
     /// Like `cast`, but allows subclasses.
     pub(crate) fn cast_allow_subclass<T: PyStaticType>(self) -> Option<T> {
-        T::isinstance(self)
-            .then_some(unsafe { T::from_ptr_unchecked(self.as_py_obj().inner.as_ptr()) })
+        T::isinstance(self).then_some(unsafe { T::from_ptr_unchecked(self.as_ptr()) })
     }
 
     /// Like `cast`, but does not check the type.
@@ -125,18 +125,17 @@ impl FromPy for PyObj {
             !ptr.is_null(),
             "from_ptr_unchecked called with null pointer"
         );
-        Self {
-            inner: unsafe { NonNull::new_unchecked(ptr) },
-        }
+        // SAFETY: caller guarantees `ptr` is non-null.
+        Self::new(unsafe { NonNull::new_unchecked(ptr) })
     }
 }
 
 impl PyStaticType for PyObj {
-    fn isinstance_exact(_: impl PyBase) -> bool {
+    fn isinstance_exact(_: PyObj) -> bool {
         true
     }
 
-    fn isinstance(_: impl PyBase) -> bool {
+    fn isinstance(_: PyObj) -> bool {
         true
     }
 }
@@ -220,7 +219,7 @@ pub(crate) trait PyBase: FromPy {
         .own()
     }
 
-    fn is(&self, other: impl PyBase) -> bool {
+    fn ptr_eq(&self, other: impl PyBase) -> bool {
         self.as_ptr() == other.as_ptr()
     }
 
