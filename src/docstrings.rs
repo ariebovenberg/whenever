@@ -595,7 +595,7 @@ Date(\"2024-08-09\")
 Date(\"2024-08-30\")
 ";
 pub(crate) const DATE_PARSE: &CStr = c"\
-parse(s, /, *, pattern=..., **kwargs)
+parse(s, /, *, pattern=...)
 --
 
 Parse a date from a custom pattern string.
@@ -815,7 +815,7 @@ Create an Instant from the current time.
 Instant(\"2024-06-15 12:34:56.789123456Z\")
 ";
 pub(crate) const INSTANT_PARSE: &CStr = c"\
-parse(s, /, *, pattern=..., **kwargs)
+parse(s, /, *, pattern=...)
 --
 
 Parse an instant from a custom pattern string.
@@ -1009,7 +1009,7 @@ A fixed offset may be stale relative to the region you intend. See the
 Pass ``stale_offset_ok=True`` when the fixed offset is intentional.
 ";
 pub(crate) const OFFSETDATETIME_PARSE: &CStr = c"\
-parse(s, /, *, pattern=..., **kwargs)
+parse(s, /, *, pattern=...)
 --
 
 Parse an offset datetime from a custom pattern string.
@@ -1179,7 +1179,7 @@ Assume the datetime has the given offset, creating an ``OffsetDateTime``.
 OffsetDateTime(\"2020-08-15 23:12:00+02:00\")
 ";
 pub(crate) const PLAINDATETIME_ASSUME_SYSTEM_TZ: &CStr = c"\
-assume_system_tz($self, *, disambiguate='compatible')
+assume_system_tz($self, *, disambiguation=...)
 --
 
 Assume the datetime is in the system timezone,
@@ -1203,7 +1203,7 @@ for more information.
 ZonedDateTime(\"2020-08-15 23:12:00-04:00[America/New_York]\")
 ";
 pub(crate) const PLAINDATETIME_ASSUME_TZ: &CStr = c"\
-assume_tz($self, tz, /, *, disambiguation=..., **kwargs)
+assume_tz($self, tz, /, *, disambiguation=...)
 --
 
 Assume the datetime is in the given timezone,
@@ -1278,7 +1278,7 @@ Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
 The inverse of the ``parse_iso()`` method.
 ";
 pub(crate) const PLAINDATETIME_PARSE: &CStr = c"\
-parse(s, /, *, pattern=..., **kwargs)
+parse(s, /, *, pattern=...)
 --
 
 Parse a plain datetime from a custom pattern string.
@@ -1410,7 +1410,7 @@ to find the corresponding exact time:
 ZonedDateTime(\"2021-01-02 12:30:00-05:00[America/New_York]\")
 ";
 pub(crate) const TIME_PARSE: &CStr = c"\
-parse(s, /, *, pattern=..., **kwargs)
+parse(s, /, *, pattern=...)
 --
 
 Parse a time from a custom pattern string.
@@ -1670,7 +1670,7 @@ See :ref:`pattern-format` for details.
 '2024-03-15 14:30+01:00[Europe/Paris]'
 ";
 pub(crate) const ZONEDDATETIME_FORMAT_ISO: &CStr = c"\
-format_iso($self, *, unit='auto', basic=False, sep='T', tz_id_display=..., **kwargs)
+format_iso($self, *, unit='auto', basic=False, sep='T', tz_id_display=...)
 --
 
 Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
@@ -1705,7 +1705,7 @@ Although it is gaining popularity, it is not yet widely supported
 by ISO 8601 parsers.
 ";
 pub(crate) const ZONEDDATETIME_FROM_SYSTEM_TZ: &CStr = c"\
-from_system_tz(year, month, day, hour=0, minute=0, second=0, *, nanosecond=0, disambiguate='compatible')
+from_system_tz(year, month, day, hour=0, minute=0, second=0, *, nanosecond=0, disambiguation=...)
 --
 
 Create an instance in the system timezone.
@@ -1782,7 +1782,7 @@ Create an instance from the current time in the system timezone.
 Equivalent to ``Instant.now().to_system_tz()``.
 ";
 pub(crate) const ZONEDDATETIME_PARSE: &CStr = c"\
-parse(s, /, *, pattern=..., disambiguation=..., offset_mismatch='raise', **kwargs)
+parse(s, /, *, pattern=..., disambiguation=..., offset_mismatch='raise')
 --
 
 Parse a zoned datetime from a custom pattern string.
@@ -1808,7 +1808,7 @@ See :ref:`pattern-format` for details.
 ZonedDateTime(\"2024-03-15 14:30:00+01:00[Europe/Paris]\")
 ";
 pub(crate) const ZONEDDATETIME_PARSE_ISO: &CStr = c"\
-parse_iso(s, /, *, disambiguation=..., offset_mismatch='raise', **kwargs)
+parse_iso(s, /, *, disambiguation=..., offset_mismatch='raise')
 --
 
 Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
@@ -1863,7 +1863,7 @@ for more information.
 
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_DATE: &CStr = c"\
-replace_date($self, date, /, *, disambiguation=..., **kwargs)
+replace_date($self, date, /, *, disambiguation=...)
 --
 
 Construct a new instance with the date replaced.
@@ -1871,7 +1871,7 @@ Construct a new instance with the date replaced.
 See the ``replace()`` method for more information.
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_TIME: &CStr = c"\
-replace_time($self, time, /, *, disambiguation=..., **kwargs)
+replace_time($self, time, /, *, disambiguation=...)
 --
 
 Construct a new instance with the time replaced.

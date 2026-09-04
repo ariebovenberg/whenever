@@ -891,12 +891,13 @@ fn from_system_tz(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyD
     let mut minute: i64 = 0;
     let mut second: i64 = 0;
     let mut nanosecond: i64 = 0;
+    let mut disambiguation: *mut PyObject = NULL();
     let mut disambiguate: *mut PyObject = NULL();
 
     let fmt = if IS_LP64 {
-        c"lll|lll$lO:ZonedDateTime"
+        c"lll|lll$lOO:ZonedDateTime"
     } else {
-        c"LLL|LLL$LO:ZonedDateTime"
+        c"LLL|LLL$LOO:ZonedDateTime"
     };
     parse_args_kwargs!(
         args,
@@ -909,15 +910,22 @@ fn from_system_tz(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyD
         minute,
         second,
         nanosecond,
+        disambiguation,
         disambiguate
     );
 
+    let mut dis_arg = DisambiguationArg::default();
+    if let Some(value) = disambiguation.borrow_opt() {
+        dis_arg.set_new(value);
+    }
+    if let Some(value) = disambiguate.borrow_opt() {
+        dis_arg.set_old(value);
+    }
+
     let tz = state.tz_store.get_system_tz()?;
-    let dis = disambiguate
-        .borrow_opt()
-        .map_or(Ok(Disambiguation::Compatible), |o| {
-            Disambiguation::from_py(o, state)
-        })?;
+    let dis = dis_arg
+        .finish("from_system_tz", state)?
+        .unwrap_or(Disambiguation::Compatible);
     Date::from_i64_components(year, month, day)
         .ok_or_value_err("invalid date")?
         .at(Time::from_i64_components(hour, minute, second, nanosecond)

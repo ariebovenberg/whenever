@@ -139,6 +139,7 @@ exclude_lines = [
 [tool.mypy]
 warn_unused_ignores = true
 strict = true
+enable_error_code = ["deprecated"]
 
 [[tool.mypy.overrides]]
 module = [
