@@ -2803,23 +2803,22 @@ class _ExactTime(_BasicConversions):
         return self.to_tz(SYSTEM_TZ)
 
     def strict_eq(self, other: Any, /) -> bool:
-        """Compare objects by their values
-        (instead of whether they represent the same instant).
-        Different types are never equal.
+        """Compare two values, including what ``==`` ignores.
+
+        ``Instant.__eq__`` ignores nothing but the argument's type, while
+        ``OffsetDateTime.__eq__`` also ignores the local datetime and the
+        offset. An argument of a different type raises :exc:`TypeError`.
 
         >>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=hours(1))
         >>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=hours(2))
         >>> a == b
         True  # equivalent instants
         >>> a.strict_eq(b)
-        False  # different values (hour and offset)
+        False  # different local datetime and offset
         >>> a.strict_eq(Instant.now())
         TypeError  # different types
 
-        Note
-        ----
-        If ``a.strict_eq(b)`` is true, then
-        ``a == b`` is also true, but the converse is not necessarily true.
+        See :ref:`strict-equality` for the rules on every type.
         """
         if type(self) is not type(other):
             raise TypeError("strict_eq() requires same-type arguments")
@@ -5997,13 +5996,36 @@ class ZonedDateTime(_ExactAndLocalTime):
         return self
 
     def strict_eq(self, other: ZonedDateTime, /) -> bool:
+        """Compare two values, including what ``==`` ignores.
+
+        ``ZonedDateTime.__eq__`` ignores the argument's type, the local
+        datetime, the offset, and the timezone. A timezone is compared by
+        identifier and definition; the system timezone has no identifier and
+        so compares by definition alone. An argument of a different type
+        raises :exc:`TypeError`.
+
+        >>> a = ZonedDateTime(2020, 8, 15, hour=12, tz="Europe/Amsterdam")
+        >>> b = a.to_tz("America/New_York")
+        >>> a == b
+        True  # same moment in time
+        >>> a.strict_eq(b)
+        False  # different local datetime, offset and timezone
+
+        See :ref:`strict-equality` for the rules on every type.
+        """
         if type(other) is not type(self):
             raise TypeError("strict_eq() requires same-type arguments")
+        # The contract compares the local datetime, the offset, the
+        # nanoseconds and the timezone, which is what the Rust extension does.
+        # Comparing the instant instead is equivalent and cheaper: the offset
+        # is always resolved from the timezone, so an equal instant and an
+        # equal timezone imply an equal offset, and therefore an equal local
+        # datetime. Only a stale offset would separate the two, and no
+        # constructor produces one.
         return (
             self._py_dt == other._py_dt  # same moment in time
             and self._nanos == other._nanos
-            and self._tz == other._tz  # same timezone
-            # don't need to check the offset, it's implied by the above
+            and self._tz == other._tz  # same timezone definition
         )
 
     def exact_eq(self, other: ZonedDateTime, /) -> bool:

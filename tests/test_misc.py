@@ -626,3 +626,45 @@ class TestOutOfRangeIsValueError:
         # integer is an OverflowError in both backends, and stays that way.
         with pytest.raises(OverflowError):
             Instant.from_timestamp(10**30)
+
+
+# One pair per type that has ``strict_eq()``: ``a == b`` holds, while
+# ``a.strict_eq(b)`` does not. A cross-type pair raises instead of returning
+# ``False``, which is also a way of not holding.
+EQUAL_BUT_NOT_STRICTLY_EQUAL = [
+    (
+        Instant.from_utc(2020, 8, 15, 10),
+        OffsetDateTime(2020, 8, 15, 12, offset=hours(2)),
+    ),
+    (
+        OffsetDateTime(2020, 8, 15, 12, offset=hours(2)),
+        OffsetDateTime(2020, 8, 15, 13, offset=hours(3)),
+    ),
+    (
+        ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam"),
+        ZonedDateTime(2020, 8, 15, 6, tz="America/New_York"),
+    ),
+    (
+        ItemizedDelta(weeks=2, hours=3),
+        ItemizedDelta(weeks=2, hours=3, months=0),
+    ),
+    (
+        ItemizedDateDelta(weeks=2, days=3),
+        ItemizedDateDelta(weeks=2, days=3, months=0),
+    ),
+]
+
+
+@pytest.mark.parametrize("a, b", EQUAL_BUT_NOT_STRICTLY_EQUAL)
+def test_strict_eq_refines_eq(a, b):
+    # the law: strict_eq() implies ==
+    assert a.strict_eq(a) and a == a
+    assert b.strict_eq(b) and b == b
+    # ...and never the converse
+    assert a == b
+    if type(a) is type(b):
+        assert not a.strict_eq(b)
+        assert not b.strict_eq(a)
+    else:
+        with pytest.raises(TypeError, match="same-type"):
+            a.strict_eq(b)

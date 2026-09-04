@@ -60,7 +60,7 @@ html_context = {"homepage_title": "Whenever — type-safe datetimes for Python"}
 html_baseurl = "https://whenever.readthedocs.io/en/latest/"
 
 master_doc = "index"
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "adr", "Thumbs.db", ".DS_Store"]
 myst_heading_anchors = 2
 myst_enable_extensions = [
     "colon_fence",

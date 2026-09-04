@@ -103,7 +103,8 @@ if their total duration is the same, regardless of how their components are repr
 True  # normalized durations are the same
 ```
 
-Use {meth}`~ItemizedDelta.strict_eq` when explicit field presence also matters.
+Use {meth}`~ItemizedDelta.strict_eq` when explicit field presence also matters
+(see {ref}`strict-equality`).
 Constructors currently require at least one component, so construct an
 itemized zero with an explicit field such as `ItemizedDelta(seconds=0)` or
 `ItemizedDateDelta(days=0)`. Allowing empty constructors may be considered as

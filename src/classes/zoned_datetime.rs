@@ -1508,8 +1508,8 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
         to_fixed_offset,
         doc::EXACTTIME_TO_FIXED_OFFSET
     ),
-    method1!(ZonedDateTime, exact_eq, doc::EXACTTIME_STRICT_EQ),
-    method1!(ZonedDateTime, strict_eq, doc::EXACTTIME_STRICT_EQ),
+    method1!(ZonedDateTime, exact_eq, doc::ZONEDDATETIME_EXACT_EQ),
+    method1!(ZonedDateTime, strict_eq, doc::ZONEDDATETIME_STRICT_EQ),
     method0!(ZonedDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(ZonedDateTime, to_instant, doc::EXACTANDLOCALTIME_TO_INSTANT),
     method0!(ZonedDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
