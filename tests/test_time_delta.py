@@ -34,9 +34,6 @@ from .common import (
 )
 
 MAX_HOURS = 9999 * 366 * 24
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 class TestInit:

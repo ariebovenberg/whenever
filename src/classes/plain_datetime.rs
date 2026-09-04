@@ -526,9 +526,12 @@ fn assume_system_tz(
     )?;
     handle_no_args("assume_system_tz", args)?;
 
-    let dis = handle_one_kwarg("assume_system_tz", *state.strs.disambiguate, kwargs)?
-        .map(|value| Disambiguation::from_py(value, state))
-        .transpose()?
+    let mut dis_arg = DisambiguationArg::default();
+    handle_kwargs("assume_system_tz", kwargs, |k, v, eq| {
+        Ok(dis_arg.handle_kwarg(k, v, eq, state))
+    })?;
+    let dis = dis_arg
+        .finish("assume_system_tz", state)?
         .unwrap_or(Disambiguation::Compatible);
     let tz = state.tz_store.get_system_tz()?;
     slf.resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?

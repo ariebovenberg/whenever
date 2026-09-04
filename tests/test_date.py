@@ -15,7 +15,6 @@ from whenever import (
     PlainDateTime,
     Time,
     Weekday,
-    WheneverDeprecationWarning,
     YearMonth,
 )
 
@@ -24,7 +23,6 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
-    warns_here,
 )
 
 MAX_I64 = 1 << 63
@@ -156,13 +154,10 @@ def test_to_stdlib():
     assert d.to_stdlib() == py_date(2021, 1, 2)
 
 
-def test_today_in_system_tz():
-    with warns_here(WheneverDeprecationWarning):
-        d = Date.today_in_system_tz()
+def test_today():
     # NOTE: this may fail if the test is run *exactly* at midnight.
     # Mocking this out would make things more complicated than it's worth.
-    assert d == Date(py_date.today())
-    assert d == Date.today(SYSTEM_TZ)
+    assert Date.today(SYSTEM_TZ) == Date(py_date.today())
 
 
 def test_init_from_py_date():

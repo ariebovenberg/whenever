@@ -136,6 +136,7 @@ Migration summary:
 | Deprecated spelling | Preferred spelling |
 |---|---|
 | `disambiguate=` | `disambiguation=` |
+| `DisambiguateStr` | `DisambiguationStr` |
 | `from_timestamp_millis(v)` | `from_timestamp(v, unit="millisecond")` |
 | `from_timestamp_nanos(v)` | `from_timestamp(v, unit="nanosecond")` |
 | `timestamp_millis()` | `timestamp(unit="millisecond")` |

@@ -8,6 +8,7 @@ import pytest
 from hypothesis import given
 from hypothesis.strategies import floats, integers, text
 from whenever import (
+    SYSTEM_TZ,
     Date,
     Instant,
     ItemizedDateDelta,
@@ -35,13 +36,6 @@ from .common import (
     system_tz,
     system_tz_ams,
     warns_here,
-)
-
-# Only deprecation warnings may be silenced module-wide. Anything that flags a
-# potential DST bug—ImplicitDisambiguationWarning in particular—must be
-# asserted or suppressed at the test that triggers it.
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
 )
 
 
@@ -109,7 +103,7 @@ def test_assume_fixed_offset():
     )
     assert (
         PlainDateTime(2020, 8, 15, 23)
-        .assume_fixed_offset(-2)
+        .assume_fixed_offset(hours(-2))
         .strict_eq(OffsetDateTime(2020, 8, 15, 23, offset=hours(-2)))
     )
 
@@ -191,7 +185,7 @@ class TestAssumeSystemTz:
             dt = PlainDateTime(2020, 8, 15, 23)
 
             with system_tz(tz):
-                zdt = dt.assume_system_tz(disambiguate="raise")
+                zdt = dt.assume_tz(SYSTEM_TZ, disambiguation="raise")
                 assert isinstance(zdt, ZonedDateTime)
                 assert zdt.to_plain() == dt
                 assert zdt.offset == hours(2)
@@ -211,9 +205,9 @@ class TestAssumeSystemTz:
             d = PlainDateTime(2023, 10, 29, 2, 15)
 
             with pytest.raises(RepeatedTime, match="02:15.*is repeated"):
-                d.assume_system_tz(disambiguate="raise")
+                d.assume_tz(SYSTEM_TZ, disambiguation="raise")
 
-            zdt1 = d.assume_system_tz(disambiguate="earlier")
+            zdt1 = d.assume_tz(SYSTEM_TZ, disambiguation="earlier")
             assert isinstance(zdt1, ZonedDateTime)
             assert zdt1.to_plain() == d
             assert zdt1.offset == hours(2)
@@ -222,11 +216,11 @@ class TestAssumeSystemTz:
             if tz == "Europe/Amsterdam":
                 assert zdt1.tz_id == "Europe/Amsterdam"
 
-            assert d.assume_system_tz(disambiguate="compatible").strict_eq(
-                zdt1
-            )
+            assert d.assume_tz(
+                SYSTEM_TZ, disambiguation="compatible"
+            ).strict_eq(zdt1)
 
-            zdt2 = d.assume_system_tz(disambiguate="later")
+            zdt2 = d.assume_tz(SYSTEM_TZ, disambiguation="later")
             assert isinstance(zdt2, ZonedDateTime)
             assert zdt2.to_plain() == d
             assert zdt2.offset == hours(1)
@@ -248,9 +242,9 @@ class TestAssumeSystemTz:
             d = PlainDateTime(2023, 3, 26, 2, 15)
 
             with pytest.raises(SkippedTime, match="02:15.*is skipped"):
-                d.assume_system_tz(disambiguate="raise")
+                d.assume_tz(SYSTEM_TZ, disambiguation="raise")
 
-            zdt1 = d.assume_system_tz(disambiguate="earlier")
+            zdt1 = d.assume_tz(SYSTEM_TZ, disambiguation="earlier")
             assert isinstance(zdt1, ZonedDateTime)
             assert zdt1.to_plain() == d.subtract(hours=1)
             assert zdt1.offset == hours(1)
@@ -258,7 +252,7 @@ class TestAssumeSystemTz:
             if tz == "Europe/Amsterdam":
                 assert zdt1.tz_id == "Europe/Amsterdam"
 
-            zdt2 = d.assume_system_tz(disambiguate="later")
+            zdt2 = d.assume_tz(SYSTEM_TZ, disambiguation="later")
             assert isinstance(zdt2, ZonedDateTime)
             assert zdt2.to_plain() == d.add(hours=1)
             assert zdt2.offset == hours(2)
@@ -266,9 +260,9 @@ class TestAssumeSystemTz:
             if tz == "Europe/Amsterdam":
                 assert zdt2.tz_id == "Europe/Amsterdam"
 
-            assert d.assume_system_tz(disambiguate="compatible").strict_eq(
-                zdt2
-            )
+            assert d.assume_tz(
+                SYSTEM_TZ, disambiguation="compatible"
+            ).strict_eq(zdt2)
 
 
 def test_immutable():
@@ -427,7 +421,7 @@ def test_equality():
 
     # no mixing with aware types:
     assert d != d.assume_utc()  # type: ignore[comparison-overlap]
-    assert d != d.assume_fixed_offset(+3)  # type: ignore[comparison-overlap]
+    assert d != d.assume_fixed_offset(hours(3))  # type: ignore[comparison-overlap]
 
     # Ambiguity in system timezone doesn't affect equality
     with system_tz_ams():

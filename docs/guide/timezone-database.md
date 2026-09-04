@@ -2,8 +2,8 @@
 myst:
   html_meta:
     description: >-
-      How whenever finds IANA timezone data: the TZPATH search order and tzdata
-      fallback, case-insensitive timezone IDs, reset_tzpath(), and the
+      How whenever finds IANA timezone data: the timezone search path and
+      tzdata fallback, case-insensitive timezone IDs, reset_tzpath(), and the
       definition cache with clear_tzcache().
 ---
 
@@ -11,8 +11,9 @@ myst:
 # Working with the timezone database
 
 `whenever` loads named timezones from the IANA timezone database installed on
-your system. It uses the configured timezone search path (`TZPATH`) first and
-falls back to the `tzdata` package when it is installed.
+your system. It uses the configured timezone search path (see
+`get_tzpath()`) first and falls back to the `tzdata` package when it is
+installed.
 
 ## Timezone identifiers
 
@@ -47,10 +48,10 @@ requested identifier rather than indexing the complete database.
 
 ## Cache behavior
 
-Loaded timezone definitions are cached. Changing `TZPATH` does not change
-existing datetimes or discard already loaded definitions. If you need new
-lookups to use the replacement database, clear the relevant entries after
-changing the path:
+Loaded timezone definitions are cached. Changing the timezone search path
+does not change existing datetimes or discard already loaded definitions. If
+you need new lookups to use the replacement database, clear the relevant
+entries after changing the path:
 
 ```python
 from whenever import clear_tzcache, reset_tzpath

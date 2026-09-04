@@ -10,6 +10,7 @@ import pytest
 from hypothesis import given
 from hypothesis.strategies import floats, integers, text
 from whenever import (
+    SYSTEM_TZ,
     DaysAssumed24HoursWarning,
     Instant,
     OffsetDateTime,
@@ -41,9 +42,6 @@ from .test_offset_datetime import (
 )
 
 BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 def test_init_parses_iso():
@@ -202,7 +200,7 @@ class TestEquality:
 
         # important: check typing errors in case of strict-comparison mode
         d2 = Instant.from_utc(2020, 8, 15)
-        assert d2 == d2.to_fixed_offset(+4)  # type: ignore[comparison-overlap]
+        assert d2 == d2.to_fixed_offset(hours(4))  # type: ignore[comparison-overlap]
 
     def test_offset(self):
         d: Instant | OffsetDateTime = Instant.from_utc(2023, 4, 5, 4)
@@ -264,27 +262,33 @@ class TestTimestamp:
                 unit="seconds"  # type: ignore[arg-type]
             )
 
-    def test_millis(self):
-        assert Instant.from_utc(1970, 1, 1).timestamp_millis() == 0
+    def test_millisecond(self):
+        assert Instant.from_utc(1970, 1, 1).timestamp(unit="millisecond") == 0
         assert (
             Instant.from_utc(
                 2020, 8, 15, 12, 8, 30, nanosecond=45_123_987
-            ).timestamp_millis()
+            ).timestamp(unit="millisecond")
             == 1_597_493_310_045
         )
-        assert Instant.MAX.timestamp_millis() == 253_402_300_799_999
-        assert Instant.MIN.timestamp_millis() == -62_135_596_800_000
+        assert Instant.MAX.timestamp(unit="millisecond") == 253_402_300_799_999
+        assert Instant.MIN.timestamp(unit="millisecond") == -62_135_596_800_000
 
-    def test_nanos(self):
-        assert Instant.from_utc(1970, 1, 1).timestamp_nanos() == 0
+    def test_nanosecond(self):
+        assert Instant.from_utc(1970, 1, 1).timestamp(unit="nanosecond") == 0
         assert (
             Instant.from_utc(
                 2020, 8, 15, 12, 8, 30, nanosecond=45_123_789
-            ).timestamp_nanos()
+            ).timestamp(unit="nanosecond")
             == 1_597_493_310_045_123_789
         )
-        assert Instant.MAX.timestamp_nanos() == 253_402_300_799_999_999_999
-        assert Instant.MIN.timestamp_nanos() == -62_135_596_800_000_000_000
+        assert (
+            Instant.MAX.timestamp(unit="nanosecond")
+            == 253_402_300_799_999_999_999
+        )
+        assert (
+            Instant.MIN.timestamp(unit="nanosecond")
+            == -62_135_596_800_000_000_000
+        )
 
 
 class TestFromTimestamp:
@@ -339,14 +343,17 @@ class TestFromTimestamp:
             )
 
     @pytest.mark.parametrize(
-        "method, factor",
+        "unit, factor",
         [
-            (Instant.from_timestamp, 1),
-            (Instant.from_timestamp_millis, 1_000),
-            (Instant.from_timestamp_nanos, 1_000_000_000),
+            ("second", 1),
+            ("millisecond", 1_000),
+            ("nanosecond", 1_000_000_000),
         ],
     )
-    def test_all(self, method, factor):
+    def test_all(self, unit, factor):
+        def method(value: int | float) -> Instant:
+            return Instant.from_timestamp(value, unit=unit)
+
         assert method(0) == Instant.from_utc(1970, 1, 1)
         assert method(1_597_493_310 * factor) == Instant.from_utc(
             2020, 8, 15, 12, 8, 30
@@ -365,17 +372,17 @@ class TestFromTimestamp:
         with pytest.raises((OSError, OverflowError, ValueError)):
             method(1 << 129)
 
-        if method != Instant.from_timestamp:
+        if unit != "second":
             with pytest.raises(TypeError):
                 method(1.0)
 
-        assert Instant.from_timestamp_millis(-4) == Instant.from_timestamp(
-            0
-        ) - milliseconds(4)
+        assert Instant.from_timestamp(
+            -4, unit="millisecond"
+        ) == Instant.from_timestamp(0) - milliseconds(4)
 
-        assert Instant.from_timestamp_nanos(-4) == Instant.from_timestamp(
-            0
-        ) - nanoseconds(4)
+        assert Instant.from_timestamp(
+            -4, unit="nanosecond"
+        ) == Instant.from_timestamp(0) - nanoseconds(4)
 
     def test_extremes(self):
         with contextlib.suppress(OSError):
@@ -389,25 +396,34 @@ class TestFromTimestamp:
             )
 
         with contextlib.suppress(OSError):
-            assert Instant.from_timestamp_millis(
-                Instant.MAX.timestamp_millis()
+            assert Instant.from_timestamp(
+                Instant.MAX.timestamp(unit="millisecond"), unit="millisecond"
             ) == Instant.from_utc(
                 9999, 12, 31, 23, 59, 59, nanosecond=999_000_000
             )
         with contextlib.suppress(OSError):
             assert (
-                Instant.from_timestamp_millis(Instant.MIN.timestamp_millis())
+                Instant.from_timestamp(
+                    Instant.MIN.timestamp(unit="millisecond"),
+                    unit="millisecond",
+                )
                 == Instant.MIN
             )
 
         with contextlib.suppress(OSError):
             assert (
-                Instant.from_timestamp_nanos(Instant.MAX.timestamp_nanos())
+                Instant.from_timestamp(
+                    Instant.MAX.timestamp(unit="nanosecond"),
+                    unit="nanosecond",
+                )
                 == Instant.MAX
             )
         with contextlib.suppress(OSError):
             assert (
-                Instant.from_timestamp_nanos(Instant.MIN.timestamp_nanos())
+                Instant.from_timestamp(
+                    Instant.MIN.timestamp(unit="nanosecond"),
+                    unit="nanosecond",
+                )
                 == Instant.MIN
             )
 
@@ -437,19 +453,14 @@ class TestFromTimestamp:
         with pytest.raises(TypeError):
             Instant.from_timestamp("2020")  # type: ignore[call-overload]
 
-    @pytest.mark.parametrize(
-        "method",
-        [
-            Instant.from_timestamp,
-            Instant.from_timestamp_millis,
-            Instant.from_timestamp_nanos,
-        ],
-    )
-    def test_int_subclass(self, method):
+    @pytest.mark.parametrize("unit", ["second", "millisecond", "nanosecond"])
+    def test_int_subclass(self, unit):
         class MyInt(int):
             pass
 
-        assert method(MyInt(0)) == Instant.from_utc(1970, 1, 1)
+        assert Instant.from_timestamp(MyInt(0), unit=unit) == Instant.from_utc(
+            1970, 1, 1
+        )
 
 
 def test_repr():
@@ -494,7 +505,7 @@ class TestComparison:
     def test_offset(self):
         d = Instant.from_utc(2020, 8, 15, 12, 30)
 
-        offset_eq = d.to_fixed_offset(4)
+        offset_eq = d.to_fixed_offset(hours(4))
         with suppress(StaleOffsetWarning):
             offset_gt = offset_eq.replace(minute=31)
             offset_lt = offset_eq.replace(minute=29)
@@ -928,15 +939,15 @@ def test_to_fixed_offset():
     assert d.to_fixed_offset(hours(3)).strict_eq(
         OffsetDateTime(2020, 8, 15, 23, offset=hours(3))
     )
-    assert d.to_fixed_offset(-3).strict_eq(
+    assert d.to_fixed_offset(hours(-3)).strict_eq(
         OffsetDateTime(2020, 8, 15, 17, offset=hours(-3))
     )
 
     with pytest.raises((ValueError, OverflowError)):
-        Instant.MIN.to_fixed_offset(-4)
+        Instant.MIN.to_fixed_offset(hours(-4))
 
     with pytest.raises((ValueError, OverflowError)):
-        Instant.MAX.to_fixed_offset(4)
+        Instant.MAX.to_fixed_offset(hours(4))
 
 
 def test_to_tz():
@@ -955,19 +966,19 @@ def test_to_tz():
 @system_tz_nyc()
 def test_to_system_tz():
     d = Instant.from_utc(2020, 8, 15, 20)
-    assert d.to_system_tz().strict_eq(
+    assert d.to_tz(SYSTEM_TZ).strict_eq(
         ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
     )
     # ensure disembiguation is correct
     d = Instant.from_utc(2022, 11, 6, 5)
-    assert d.to_system_tz().strict_eq(
+    assert d.to_tz(SYSTEM_TZ).strict_eq(
         ZonedDateTime(
             2022, 11, 6, 1, disambiguation="earlier", tz="America/New_York"
         )
     )
     assert (
         Instant.from_utc(2022, 11, 6, 6)
-        .to_system_tz()
+        .to_tz(SYSTEM_TZ)
         .strict_eq(
             ZonedDateTime(
                 2022, 11, 6, 1, disambiguation="later", tz="America/New_York"
@@ -976,11 +987,11 @@ def test_to_system_tz():
     )
 
     with pytest.raises((ValueError, OverflowError)):
-        Instant.MIN.to_system_tz()
+        Instant.MIN.to_tz(SYSTEM_TZ)
 
     with system_tz_ams():
         with pytest.raises((ValueError, OverflowError)):
-            Instant.MAX.to_system_tz()
+            Instant.MAX.to_tz(SYSTEM_TZ)
 
 
 @pytest.mark.parametrize(

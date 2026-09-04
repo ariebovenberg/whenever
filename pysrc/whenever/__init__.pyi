@@ -2074,6 +2074,9 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         second: int = 0,
         *,
         nanosecond: int = 0,
+        disambiguation: Literal[
+            "compatible", "raise", "earlier", "later"
+        ] = ...,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @classmethod
@@ -2473,6 +2476,9 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     def assume_system_tz(
         self,
         *,
+        disambiguation: Literal[
+            "compatible", "raise", "earlier", "later"
+        ] = ...,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
     def format(self, pattern: str, /) -> str: ...
