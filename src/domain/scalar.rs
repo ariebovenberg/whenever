@@ -818,14 +818,17 @@ impl SubSecNanos {
         let tot = self.as_u32();
         let quotient = tot / increment;
         let remainder = tot % increment;
-        let threshold = match mode {
-            round::AbsMode::HalfEven => 1.max(increment / 2 + quotient.is_multiple_of(2) as u32),
-            round::AbsMode::Expand => 1,
-            round::AbsMode::Trunc => increment + 1,
-            round::AbsMode::HalfTrunc => increment / 2 + 1,
-            round::AbsMode::HalfExpand => 1.max(increment / 2),
+        // Compare against the half without dividing, so an odd increment isn't truncated.
+        let round_up = match mode {
+            round::AbsMode::Trunc => false,
+            round::AbsMode::Expand => remainder > 0,
+            round::AbsMode::HalfTrunc => remainder > increment - remainder,
+            round::AbsMode::HalfExpand => remainder >= increment - remainder,
+            round::AbsMode::HalfEven => {
+                remainder > increment - remainder
+                    || (remainder == increment - remainder && !quotient.is_multiple_of(2))
+            }
         };
-        let round_up = remainder >= threshold;
         let rounded = (quotient + round_up as u32) * increment;
         (
             DeltaSeconds::new_unchecked((rounded / 1_000_000_000).into()),

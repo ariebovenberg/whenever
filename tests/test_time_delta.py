@@ -1279,6 +1279,37 @@ class TestRound:
             ),
             # irregular increments are fine for deltas (in contrast to datetimes)
             (
+                # an odd increment: 2ns is nearer 0 than 5, so no half-mode expands
+                TimeDelta(nanoseconds=2),
+                5,
+                "nanosecond",
+                TimeDelta.ZERO,
+                TimeDelta(nanoseconds=5),
+                TimeDelta.ZERO,
+                TimeDelta.ZERO,
+                TimeDelta.ZERO,
+            ),
+            (
+                TimeDelta(nanoseconds=7),
+                5,
+                "nanosecond",
+                TimeDelta(nanoseconds=5),
+                TimeDelta(nanoseconds=10),
+                TimeDelta(nanoseconds=5),
+                TimeDelta(nanoseconds=5),
+                TimeDelta(nanoseconds=5),
+            ),
+            (
+                -TimeDelta(nanoseconds=2),
+                5,
+                "nanosecond",
+                -TimeDelta(nanoseconds=5),
+                TimeDelta.ZERO,
+                TimeDelta.ZERO,
+                TimeDelta.ZERO,
+                TimeDelta.ZERO,
+            ),
+            (
                 TimeDelta(hours=10, minutes=30),
                 23439118,
                 "millisecond",  # FUTURE: catch non-plural units with special message?

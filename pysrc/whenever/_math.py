@@ -260,9 +260,17 @@ def custom_round(
         case "floor":
             do_expand = remainder * sign < 0
         case "half_ceil":
-            do_expand = remainder * 2 >= (expanded - sign or 1)
+            do_expand = (
+                remainder * 2 >= expanded
+                if sign > 0
+                else remainder * 2 > expanded
+            )
         case "half_floor":
-            do_expand = remainder * 2 >= (expanded + sign or 1)
+            do_expand = (
+                remainder * 2 > expanded
+                if sign > 0
+                else remainder * 2 >= expanded
+            )
         case "half_trunc":
             do_expand = remainder * 2 > expanded
         case "half_expand":

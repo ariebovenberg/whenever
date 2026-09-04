@@ -4,6 +4,10 @@
 
 - Add LLM-friendly Markdown documentation, including `llms.txt` and
   `llms-full.txt`.
+- **Fixed**: rounding with an odd `increment` rounded away from zero one step
+  early in the Rust extension. For example
+  `TimeDelta(nanoseconds=2).round("nanosecond", increment=5, mode="half_expand")`
+  returned 5ns instead of 0ns.
 
 ## 0.10.5 (2026-08-07)
 
