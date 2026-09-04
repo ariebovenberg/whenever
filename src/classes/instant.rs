@@ -564,7 +564,7 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(Instant, __reduce__, c""),
-    method1!(Instant, exact_eq, doc::EXACTTIME_STRICT_EQ),
+    method1!(Instant, exact_eq, doc::EXACTTIME_EXACT_EQ),
     method1!(Instant, strict_eq, doc::EXACTTIME_STRICT_EQ),
     method_kwargs!(Instant, timestamp, doc::EXACTTIME_TIMESTAMP),
     method0!(Instant, timestamp_millis, doc::EXACTTIME_TIMESTAMP_MILLIS),

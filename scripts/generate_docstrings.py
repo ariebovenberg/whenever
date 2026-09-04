@@ -20,7 +20,13 @@ assert sys.version_info >= (
 )
 
 # Types defined in pure Python only (not in Rust extension)
-_PURE_PYTHON_TYPES = {"YearMonth", "MonthDay", "IsoWeekDate"}
+_PURE_PYTHON_TYPES = {
+    "YearMonth",
+    "MonthDay",
+    "IsoWeekDate",
+    "ItemizedDelta",
+    "ItemizedDateDelta",
+}
 
 classes = {
     cls

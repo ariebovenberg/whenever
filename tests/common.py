@@ -104,6 +104,13 @@ AMS_TZ_POSIX = "CET-1CEST,M3.5.0,M10.5.0/3"
 # A non-standard path to the Amsterdam timezone file, that can't be traced
 # back to the zoneinfo database.
 AMS_TZ_RAWFILE = str(Path(__file__).parent / "tzif" / "Amsterdam.tzif")
+# The same file, with the 2020 DST end moved from October 25 to November 1
+# (transition epoch 1603587600 -> 1604192400, rewritten in both the v1 and the
+# v2 block). Nothing else differs, so the two definitions agree on every
+# instant outside that week.
+AMS_TZ_RAWFILE_DST_LATE = str(
+    Path(__file__).parent / "tzif" / "Amsterdam_dst_ends_a_week_late.tzif"
+)
 
 
 class AlwaysEqual:

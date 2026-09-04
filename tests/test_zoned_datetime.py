@@ -21,6 +21,7 @@ from hypothesis import given
 from hypothesis.strategies import text
 from whenever import (
     _EXTENSION_LOADED,
+    SYSTEM_TZ,
     Date,
     ImplicitDisambiguationWarning,
     Instant,
@@ -42,12 +43,14 @@ from whenever import (
     hours,
     milliseconds,
     minutes,
+    reset_system_tz,
     reset_tzpath,
 )
 
 from .common import (
     AMS_TZ_POSIX,
     AMS_TZ_RAWFILE,
+    AMS_TZ_RAWFILE_DST_LATE,
     AlwaysEqual,
     AlwaysLarger,
     AlwaysSmaller,
@@ -1415,6 +1418,60 @@ class TestEquality:
         assert 42 != d  # type: ignore[comparison-overlap]
         assert not 42 == d  # type: ignore[comparison-overlap]
         assert not hours(2) == d  # type: ignore[comparison-overlap]
+
+
+class TestStrictEq:
+    @staticmethod
+    def _under_both_amsterdams(
+        *local: int,
+    ) -> tuple[ZonedDateTime, ZonedDateTime]:
+        """Build the same local datetime under both Amsterdam definitions.
+
+        Both timezones are loaded straight from a tzif file, so neither has an
+        identifier and the two values differ only in the rules they carry.
+        """
+        with system_tz(AMS_TZ_RAWFILE):
+            a = ZonedDateTime(*local, tz=SYSTEM_TZ)
+        with system_tz(AMS_TZ_RAWFILE_DST_LATE):
+            b = ZonedDateTime(*local, tz=SYSTEM_TZ)
+        return a, b
+
+    # Note: there is no test for a stale offset, i.e. a value whose offset
+    # disagrees with its own timezone. Every constructor resolves the offset
+    # from the timezone (the pickle reader warns and corrects), so such a value
+    # is unreachable. It is also the only thing that would tell the two
+    # backends apart: the extension compares the local datetime and the offset,
+    # the Python version the instant they are derived from.
+
+    def test_different_definition_same_offset(self):
+        """Same moment, same offset, no identifier either side—but other rules."""
+        a, b = self._under_both_amsterdams(2020, 8, 15, 12)
+        assert a.tz_id is b.tz_id is None
+        assert a.to_plain() == b.to_plain()
+        assert a.offset == b.offset == hours(2)
+        assert a == b  # the same moment in time
+        assert not a.strict_eq(b)
+        assert not b.strict_eq(a)
+
+    def test_different_definition_different_offset(self):
+        """The moved transition puts the same local datetime at a different offset."""
+        a, b = self._under_both_amsterdams(2020, 10, 28, 12)
+        assert a.tz_id is b.tz_id is None
+        assert a.to_plain() == b.to_plain()
+        assert a.offset == hours(1)
+        assert b.offset == hours(2)
+        assert not a.strict_eq(b)
+        assert not b.strict_eq(a)
+
+    def test_system_tz_compares_by_definition(self):
+        """The system timezone has no identifier, so only its rules count."""
+        with system_tz_ams():
+            a = ZonedDateTime(2020, 8, 15, 12, tz=SYSTEM_TZ)
+            # force a reload, so the two values hold distinct timezone objects
+            reset_system_tz()
+            b = ZonedDateTime(2020, 8, 15, 12, tz=SYSTEM_TZ)
+            assert a.strict_eq(b)
+            assert b.strict_eq(a)
 
 
 class TestIsAmbiguous:

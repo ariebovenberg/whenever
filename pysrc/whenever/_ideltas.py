@@ -167,7 +167,7 @@ def _has_nonzero_calendar_units(
 class CalendarUnitCompositionWarning(WheneverWarning):
     """Warn when itemized deltas are composed field by field.
 
-    Itemized deltas preserve the exact fields they were created with:
+    Itemized deltas preserve the fields they were given:
     ``1 month`` remains ``1 month`` rather than being normalized to days.
     Composing two itemized deltas without a ``relative_to`` reference therefore
     performs literal field-wise arithmetic, such as
@@ -253,7 +253,7 @@ def _check_component(
 
 @final
 class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
-    """A duration that preserves the exact fields it was created with.
+    """A duration that preserves the fields it was given.
     It closely models the ISO 8601 duration format for durations.
 
     >>> d = ItemizedDelta(weeks=2, days=3, hours=14)
@@ -919,7 +919,20 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         )
 
     def strict_eq(self, other: ItemizedDelta, /) -> bool:
-        """Check for strict equality. All fields *and their presence* must match."""
+        """Compare two deltas, including what ``==`` ignores.
+
+        ``ItemizedDelta.__eq__`` ignores the argument's type, and whether a
+        component was given explicitly as zero. An argument of a different
+        type raises :exc:`TypeError`.
+
+        >>> d = ItemizedDelta(weeks=2, hours=3)
+        >>> d == ItemizedDelta(weeks=2, hours=3, months=0)
+        True
+        >>> d.strict_eq(ItemizedDelta(weeks=2, hours=3, months=0))
+        False
+
+        See :ref:`strict-equality` for the rules on every type.
+        """
         if type(other) is not type(self):
             raise TypeError("strict_eq() requires same-type arguments")
         return (
@@ -1590,7 +1603,7 @@ _unpkl_idelta.__module__ = "whenever"
 
 @final
 class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
-    """A date duration that preserves the exact fields it was created with.
+    """A date duration that preserves the fields it was given.
     It closely models the ISO 8601 duration format for date-only durations.
 
     >>> d = ItemizedDateDelta(years=2, weeks=3)
@@ -2046,15 +2059,19 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         )
 
     def strict_eq(self, other: ItemizedDateDelta, /) -> bool:
-        """Check for strict equality. All fields *and their presence* must match.
+        """Compare two deltas, including what ``==`` ignores.
+
+        ``ItemizedDateDelta.__eq__`` ignores the argument's type, and whether
+        a component was given explicitly as zero. An argument of a different
+        type raises :exc:`TypeError`.
 
         >>> d = ItemizedDateDelta(weeks=2, days=3)
-        >>> d == ItemizedDateDelta(weeks=2, days=3)
-        True
         >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
         True
         >>> d.strict_eq(ItemizedDateDelta(weeks=2, days=3, months=0))
         False
+
+        See :ref:`strict-equality` for the rules on every type.
         """
         if type(other) is not type(self):
             raise TypeError("strict_eq() requires same-type arguments")

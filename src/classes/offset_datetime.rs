@@ -1036,7 +1036,7 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     DEEPCOPY_METHOD,
     method0!(OffsetDateTime, __reduce__, c""),
     classmethod_kwargs!(OffsetDateTime, now, doc::OFFSETDATETIME_NOW),
-    method1!(OffsetDateTime, exact_eq, doc::EXACTTIME_STRICT_EQ),
+    method1!(OffsetDateTime, exact_eq, doc::EXACTTIME_EXACT_EQ),
     method1!(OffsetDateTime, strict_eq, doc::EXACTTIME_STRICT_EQ),
     method0!(OffsetDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(
