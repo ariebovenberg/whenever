@@ -277,7 +277,7 @@ _Tcall = TypeVar("_Tcall", bound=Callable[..., None])
 # in mypy getting too confused. I've tried a lot.
 def add_alternate_constructors(
     init_default: _Tcall,
-    py_type: type | None = None,
+    py_type: type | None,
 ) -> _Tcall:
     """Add alternate constructors to a class's __init__ method."""
 
@@ -285,10 +285,8 @@ def add_alternate_constructors(
         match args:
             case [str() as iso_string]:
                 self._init_from_iso(iso_string, **kwargs)
-            case [obj] if (
-                py_type is not None and not kwargs and isinstance(obj, py_type)
-            ):
-                self._init_from_py(obj)
+            case [obj] if py_type is not None and isinstance(obj, py_type):
+                self._init_from_py(obj, **kwargs)
             case _:
                 init_default(self, *args, **kwargs)
 

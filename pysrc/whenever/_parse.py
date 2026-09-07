@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
 from datetime import (
     date as _date,
     datetime as _datetime,
@@ -9,7 +8,7 @@ from datetime import (
     timedelta as _timedelta,
     timezone as _timezone,
 )
-from typing import TYPE_CHECKING, Literal, NoReturn, cast
+from typing import TYPE_CHECKING, Literal, NamedTuple, NoReturn, cast
 
 from ._common import (
     DUMMY_LEAP_YEAR,
@@ -132,11 +131,28 @@ def offset_dt_from_iso(s: str) -> tuple[_datetime, Nanos]:
         _parse_err(s)
 
 
+def instant_at_offset(
+    local: _datetime,
+    tz: TimeZone,
+    offset_secs: int,
+    /,
+) -> _datetime:
+    """Read ``local`` at ``offset_secs``, then re-express the resulting exact
+    time with the offset ``tz`` actually applies to it."""
+    dt = check_utc_bounds(local.replace(tzinfo=mk_fixed_tzinfo(offset_secs)))
+    expected_offset = tz.offset_for_instant(int(dt.timestamp()))
+    try:
+        return dt.astimezone(mk_fixed_tzinfo(expected_offset))
+    except OverflowError:
+        raise ValueError("Instant out of range") from None
+
+
 def matching_local_offset(
     local: _datetime,
     tz: TimeZone,
     parsed_offset: int,
     exact: bool,
+    gap_extrapolates: bool,
     /,
 ) -> _datetime | None:
     from ._tz import Fold, Gap, Unique
@@ -147,8 +163,16 @@ def matching_local_offset(
             candidate_offsets = (offset,)
         case Fold(_, earlier_offset, later_offset):
             candidate_offsets = (earlier_offset, later_offset)
-        case Gap():  # pragma: no branch
-            candidate_offsets = ()
+        case Gap(_, later_offset, earlier_offset):  # pragma: no branch
+            # A skipped local time has no occurrence, so no offset identifies
+            # one. A stdlib datetime in a gap does name an exact time, though:
+            # PEP 495 extrapolates from the offset on either side of it.
+            if gap_extrapolates and parsed_offset in (
+                earlier_offset,
+                later_offset,
+            ):
+                return instant_at_offset(local, tz, parsed_offset)
+            return None
 
     for offset in candidate_offsets:
         comparable = offset if exact else round_offset_to_minute(offset)
@@ -159,13 +183,20 @@ def matching_local_offset(
     return None
 
 
-def zdt_from_iso(
-    s: str,
-    disambiguation: object,
-    offset_mismatch: str,
-    resolve_local: Callable[[_datetime, TimeZone, object], _datetime],
-    /,
-) -> tuple[_datetime, Nanos, TimeZone]:
+class ZonedInput(NamedTuple):
+    """A local time in a named timezone, with the offset it was written with:
+    the input to the resolution flow, from an ISO string or a stdlib datetime.
+    """
+
+    local: _datetime
+    nanos: Nanos
+    tz: TimeZone
+    tzid: str
+    offset: _timezone | Literal["Z"] | None
+    offset_exact: bool
+
+
+def zdt_parts_from_iso(s: str, /) -> ZonedInput:
     from ._tz import get_tz
 
     if len(s) < 11 or "W" in s[:11] or not s.isascii():
@@ -182,43 +213,14 @@ def zdt_from_iso(
     if tzid is None:
         _parse_err(s)
 
-    tz = get_tz(tzid)
-
-    if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
-        raise ValueError(f"invalid offset_mismatch: {offset_mismatch!r}")
-
-    local = _datetime.combine(date, time)
-    if offset is None:
-        dt = resolve_local(local, tz, disambiguation)
-    elif offset == "Z":
-        # Raises if the instant is out of range
-        dt = check_utc_bounds(local.replace(tzinfo=UTC))
-        expected_offset = tz.offset_for_instant(int(dt.timestamp()))
-        try:
-            dt = dt.astimezone(mk_fixed_tzinfo(expected_offset))
-        except OverflowError:
-            raise ValueError("Instant out of range") from None
-    else:
-        assert isinstance(offset, _timezone)
-        parsed_offset = int(offset.utcoffset(None).total_seconds())
-        matching = matching_local_offset(
-            local, tz, parsed_offset, offset_exact
-        )
-        if matching is not None:
-            dt = matching
-        elif offset_mismatch == "raise":
-            raise InvalidOffsetError(f"invalid offset for {tzid}")
-        elif offset_mismatch == "keep_instant":
-            dt = check_utc_bounds(local.replace(tzinfo=offset))
-            expected_offset = tz.offset_for_instant(int(dt.timestamp()))
-            try:
-                dt = dt.astimezone(mk_fixed_tzinfo(expected_offset))
-            except OverflowError:
-                raise ValueError("Instant out of range") from None
-        else:
-            dt = resolve_local(local, tz, disambiguation)
-
-    return (dt, nanos, tz)
+    return ZonedInput(
+        _datetime.combine(date, time),
+        nanos,
+        get_tz(tzid),
+        tzid,
+        offset,
+        offset_exact,
+    )
 
 
 def time_from_iso(s_orig: str) -> tuple[_time, Nanos]:

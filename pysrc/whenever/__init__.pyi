@@ -2025,7 +2025,18 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         ] = "raise",
     ) -> None: ...
     @overload
-    def __init__(self, py_datetime: _datetime, /) -> None: ...
+    def __init__(
+        self,
+        py_datetime: _datetime,
+        /,
+        *,
+        disambiguation: Literal[
+            "compatible", "raise", "earlier", "later"
+        ] = ...,
+        offset_mismatch: Literal[
+            "raise", "keep_instant", "keep_local"
+        ] = "raise",
+    ) -> None: ...
     @overload
     def __init__(
         self,

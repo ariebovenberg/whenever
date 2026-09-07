@@ -132,6 +132,14 @@ deprecated interfaces are removed.
   the string's characters and clearing nothing.
 - Parsing an out-of-range timestamp now consistently raises `ValueError`
   or `OverflowError` on all platforms.
+- `ZonedDateTime.round()` and `day_length()` now handle daylight-saving gaps
+  the same way `start_of()` and `end_of()` do: a boundary inside a gap snaps
+  to its edge. Rounding to a day now measures elapsed time rather than the
+  clock reading, which matters on days that are not 24 hours long.
+- Constructing a `ZonedDateTime` from a standard library `datetime` now
+  follows the same resolution flow as ISO parsing: an offset that disagrees
+  with *whenever*'s timezone rules raises `InvalidOffsetError` by default, and
+  `offset_mismatch=` and `disambiguation=` resolve it.
 
 Migration summary:
 
@@ -170,6 +178,9 @@ Migration summary:
 
 `[:ss.fff]` isn't a pure rename of `:SS.fff`: with zero seconds and fraction,
 the old spelling emitted a dangling `12:00.000` instead of `12:00`.
+
+`tz_id` is typed `str | None`, where `tz` was typed `str`. Code that passed
+`.tz` where a `str` was required now needs a check or an assertion.
 
 ## 0.10.5 (2026-08-07)
 

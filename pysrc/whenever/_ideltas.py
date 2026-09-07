@@ -418,7 +418,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             # There is no "empty" duration in ISO8601; at least one field must be present.
             raise ValueError("at least one field must be set")
 
-    __init__ = add_alternate_constructors(__init__)
+    __init__ = add_alternate_constructors(__init__, None)
 
     def sign(self) -> Sign:
         """The sign of the delta, 1, 0, or -1"""
@@ -1719,7 +1719,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             # There is no "empty" duration in ISO8601; at least one field must be present.
             raise ValueError("at least one field must be set")
 
-    __init__ = add_alternate_constructors(__init__)
+    __init__ = add_alternate_constructors(__init__, None)
 
     def sign(self) -> Sign:
         """The sign of the delta, whether it's positive, negative, or zero.

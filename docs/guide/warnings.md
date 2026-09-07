@@ -67,7 +67,7 @@ warnings.filterwarnings("error", category=whenever.NaiveArithmeticWarning)
 # Only error on potentially stale offset operations (OffsetDateTime):
 warnings.filterwarnings("error", category=whenever.StaleOffsetWarning)
 
-# Require an explicit policy whenever a timezone fold or gap needs resolving:
+# Require an explicit policy for a repeated or skipped local time:
 warnings.filterwarnings("error", category=whenever.ImplicitDisambiguationWarning)
 ```
 

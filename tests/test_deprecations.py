@@ -486,6 +486,23 @@ def test_tzpath():
             lambda: PlainDateTime(2020, 8, 15).assume_fixed_offset(2),  # type: ignore[deprecated]
             lambda: PlainDateTime(2020, 8, 15).assume_fixed_offset(hours(2)),
         ),
+        # Rust implements to_fixed_offset() separately on each type
+        (
+            lambda: OffsetDateTime(
+                2020, 8, 15, offset=hours(1)
+            ).to_fixed_offset(2),  # type: ignore[deprecated]
+            lambda: OffsetDateTime(
+                2020, 8, 15, offset=hours(1)
+            ).to_fixed_offset(hours(2)),
+        ),
+        (
+            lambda: ZonedDateTime(
+                2020, 8, 15, tz="Europe/Paris"
+            ).to_fixed_offset(2),  # type: ignore[deprecated]
+            lambda: ZonedDateTime(
+                2020, 8, 15, tz="Europe/Paris"
+            ).to_fixed_offset(hours(2)),
+        ),
     ],
 )
 def test_integer_offsets(old, new):
@@ -504,7 +521,9 @@ def test_integer_offset_to_init():
 
 def test_integer_offset_is_still_range_checked():
     with warns_here(WheneverDeprecationWarning):
-        with pytest.raises(ValueError, match="offset.*24.*hours"):
+        with pytest.raises(
+            ValueError, match="offset must be between -24 and 24 hours"
+        ):
             OffsetDateTime(2020, 8, 15, 5, 12, offset=34)  # type: ignore[deprecated]
 
 

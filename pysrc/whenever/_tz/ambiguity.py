@@ -83,14 +83,6 @@ def _resolve_ambiguity_from_mapping(
     return check_utc_bounds(dt.replace(tzinfo=mk_fixed_tzinfo(offset)))
 
 
-def resolve_ambiguity_using_prev_offset(
-    dt: _datetime, prev_offset: _timedelta, tz: TimeZone
-) -> _datetime:
-    return _resolve_ambiguity_using_prev_offset_from_mapping(
-        dt, prev_offset, tz.ambiguity_for_local(dt)
-    )
-
-
 def _resolve_ambiguity_using_prev_offset_from_mapping(
     dt: _datetime,
     prev_offset: _timedelta,

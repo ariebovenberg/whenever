@@ -18,6 +18,13 @@ messages; the "preferred over" words are rejected synonyms.
   ("use X instead").
   Preferred over *preferred spelling* and *preferred path*.
 
+**boundary method**
+: One of `start_of()`, `end_of()`, `round()`, and `day_length()` on
+  `ZonedDateTime`: a method that computes a unit boundary rather than
+  resolving a caller-supplied local time, and therefore takes no
+  disambiguation policy (ADR 0003).
+  Preferred over *truncation method* and *snapping method*.
+
 **omitted**
 : Said of an argument the caller did not pass. Omission is distinct from
   every accepted value, including `None`; where it has its own meaning, the

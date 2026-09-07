@@ -2,7 +2,6 @@ from .ambiguity import (
     RepeatedTime,
     SkippedTime,
     resolve_ambiguity,
-    resolve_ambiguity_using_prev_offset,
 )
 from .common import Fold, Gap, Unique
 from .store import (
@@ -38,6 +37,5 @@ __all__ = [
     "get_tz",
     "reset_system_tz",
     "resolve_ambiguity",
-    "resolve_ambiguity_using_prev_offset",
     "validate_tzid",
 ]

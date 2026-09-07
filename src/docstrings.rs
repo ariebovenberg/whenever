@@ -1529,6 +1529,10 @@ relative_to
       :class:`NaiveArithmeticWarning`
     - :class:`OffsetDateTime`: does not account for DST changes; emits
       :class:`StaleOffsetWarning`
+
+    The :class:`OffsetDateTime` case has no call-local escape: either
+    convert the reference with :meth:`OffsetDateTime.assume_tz`
+    first, or filter the :class:`StaleOffsetWarning` category.
 ";
 pub(crate) const TIMEDELTA_PARSE_ISO: &CStr = c"\
 Parse the *popular interpretation* of the ISO 8601 duration format.
@@ -1597,6 +1601,10 @@ argument is required to determine the actual duration of each unit:
 - :class:`OffsetDateTime`: fixed offset; emits
   :class:`StaleOffsetWarning`
 
+The :class:`OffsetDateTime` case has no call-local escape: either
+convert the reference with :meth:`OffsetDateTime.assume_tz` first, or
+filter the :class:`StaleOffsetWarning` category.
+
 >>> d = TimeDelta(hours=1, minutes=30)
 >>> d.total('minutes')
 90.0
@@ -1652,7 +1660,8 @@ The end of the given unit
 >>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").end_of(\"day\")
 ZonedDateTime(\"2024-08-15 23:59:59.999999999-04:00[America/New_York]\")
 
-See also :meth:`start_of`
+See also :meth:`start_of`. A boundary skipped by a transition snaps to
+the edge of the gap, so that successive intervals stay contiguous.
 ";
 pub(crate) const ZONEDDATETIME_EXACT_EQ: &CStr = c"\
 Deprecated alias for :meth:`strict_eq`.
@@ -1895,11 +1904,13 @@ ZonedDateTime(\"2020-08-15 23:15:00+02:00[Europe/Paris]\")
 
 Notes
 -----
-* In the rare case that rounding results in a repeated time,
-  the offset is preserved if possible.
-  Otherwise, ambiguity is resolved according to the \"compatible\" strategy.
-* Rounding in \"day\" mode may be affected by DST transitions.
-  i.e. on 23-hour days, 11:31 AM is rounded up.
+* A rounded time that is repeated keeps the current offset if that
+  offset is still valid, and takes the earlier one otherwise.
+  A rounded time that is skipped becomes the first instant after
+  the gap.
+* Rounding to a day compares the time elapsed since the start of the
+  day with the day's length. On the 23-hour day of 2023-03-26 in
+  Amsterdam, 11:31 therefore rounds down and 12:31 rounds up.
 ";
 pub(crate) const ZONEDDATETIME_SINCE: &CStr = c"\
 since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
@@ -1926,14 +1937,14 @@ ZonedDateTime(\"2024-08-15 00:00:00-04:00[America/New_York]\")
 >>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").start_of(\"hour\")
 ZonedDateTime(\"2024-08-15 14:00:00-04:00[America/New_York]\")
 
-For ``\"day\"``, ``\"month\"``, ``\"week_mon\"``, ``\"week_sun\"``,
-and ``\"year\"``, the resulting time
-is resolved in the timezone using ``\"compatible\"`` disambiguation,
-since midnight may not exist due to DST transitions.
+A boundary skipped by a transition snaps to the edge of the gap, so
+that successive intervals stay contiguous.
 
-For ``\"hour\"``, ``\"minute\"``, and ``\"second\"``, the existing offset
-is preserved if valid. A boundary skipped by a transition is moved to
-the first valid time after the gap.
+For ``\"hour\"``, ``\"minute\"``, and ``\"second\"``, a repeated boundary
+keeps the current offset if that offset is still valid. For
+``\"day\"``, ``\"week_mon\"``, ``\"week_sun\"``, ``\"month\"``, and
+``\"year\"``, a repeated boundary always takes the earlier occurrence,
+so that every value on the same date shares one boundary.
 ";
 pub(crate) const ZONEDDATETIME_STRICT_EQ: &CStr = c"\
 Compare two values, including what ``==`` ignores.
@@ -1959,9 +1970,7 @@ subtract($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, m
 
 The inverse of the ``add()`` method. See :meth:`add` for more information.";
 pub(crate) const ZONEDDATETIME_TZ: &CStr = c"\
-The timezone ID. In rare cases, this may be ``None``,
-if the ``ZonedDateTime`` was created from a system timezone
-without a known IANA key.
+Deprecated alias of :attr:`tz_id`.
 
 .. deprecated:: 0.11
    Use :attr:`tz_id` instead.
@@ -1981,7 +1990,10 @@ but it is commonly used in human-readable formats.
 Use the timezone ID (e.g. ``\"Europe/London\"``) for unambiguous identification of timezones.
 ";
 pub(crate) const ZONEDDATETIME_TZ_ID: &CStr = c"\
-The timezone ID, if the timezone has one.";
+The timezone ID. In rare cases, this may be ``None``,
+if the ``ZonedDateTime`` was created from a system timezone
+without a known IANA key.
+";
 pub(crate) const ZONEDDATETIME_UNTIL: &CStr = c"\
 until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
