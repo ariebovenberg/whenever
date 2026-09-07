@@ -707,7 +707,9 @@ Date(\"2020-03-01\")
 pub(crate) const DATE_TO_STDLIB: &CStr = c"\
 Convert to a standard library :class:`~datetime.date`";
 pub(crate) const DATE_TODAY: &CStr = c"\
-Get the current date in the given named timezone.";
+Get the current date in the given timezone.
+Pass ``SYSTEM_TZ`` for the system timezone.
+";
 pub(crate) const DATE_TODAY_IN_SYSTEM_TZ: &CStr = c"\
 Get the current date in the system's local timezone.
 

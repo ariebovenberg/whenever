@@ -121,6 +121,10 @@ deprecated interfaces are removed.
   Oversized integer arguments still raise `OverflowError`.
 - Non-string timezone IDs now raise `TypeError` in the pure Python version,
   instead of `AttributeError` — or, in `clear_tzcache()`, silent success.
+- Resolving the system timezone from a missing or invalid file, or from an
+  invalid POSIX TZ string, now raises `TimeZoneNotFoundError` in the pure
+  Python version, matching the Rust extension. It previously leaked
+  `FileNotFoundError` or a bare `ValueError`.
 - `InvalidOffsetError` messages are now consistent between implementations.
   ISO parsing in pure Python previously raised it with no message at all.
 - The pure Python version no longer accepts arguments positionally (or by

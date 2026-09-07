@@ -551,8 +551,10 @@ class Date(_Base):
         return cls.today(SYSTEM_TZ)
 
     @classmethod
-    def today(cls, tz: Any, /) -> Date:
-        """Get the current date in the given named timezone."""
+    def today(cls, tz: str | _SystemTZ, /) -> Date:
+        """Get the current date in the given timezone.
+        Pass ``SYSTEM_TZ`` for the system timezone.
+        """
         return Instant.now().to_tz(tz).date()
 
     @property

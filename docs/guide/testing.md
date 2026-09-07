@@ -14,8 +14,8 @@ myst:
 Sometimes you need to 'fake' the output of `.now()` functions, typically for testing.
 `whenever` supports various ways to do this, depending on your needs:
 
-1. With {class}`whenever.patch_current_time`. This patcher
-   only affects `whenever`, not the standard library or other libraries.
+1. With {func}`whenever.patch_current_time`. It affects only
+   `whenever`, not the standard library or other libraries.
    See its documentation for more details.
 2. With the [`time-machine`](https://github.com/adamchainz/time-machine) package.
    Using `time-machine` *does* affect the standard library and other libraries,
@@ -29,11 +29,12 @@ It's also possible to use the
 but it will *only work on the Pure-Python version* of `whenever`.
 ```
 
-The context manager yields a {class}`~whenever.TimePatch` handle. Use
-{meth}`~whenever.TimePatch.shift` for exact elapsed-time movement and
-{meth}`~whenever.TimePatch.move_to` to set a new exact time:
+The context manager yields a {class}`~whenever.TimePatch` handle to the
+**time patch**. Use {meth}`~whenever.TimePatch.shift` for exact elapsed-time
+movement and {meth}`~whenever.TimePatch.move_to` to set a new exact time:
 
 ```python
+>>> from whenever import Instant, patch_current_time
 >>> with patch_current_time(Instant("2024-01-01T00:00:00Z"), keep_ticking=False) as p:
 ...     p.shift(hours=2)
 ...     assert Instant.now() == Instant("2024-01-01T02:00:00Z")
@@ -42,9 +43,10 @@ The context manager yields a {class}`~whenever.TimePatch` handle. Use
 ```
 
 `shift()` accepts exact units only. To perform calendar arithmetic, calculate
-the target explicitly and pass it to `move_to()`. With `keep_ticking=True`,
-shifts apply to the patched current instant at the moment of the call and the
-clock then continues ticking from the result.
+the target explicitly and pass it to `move_to()`. A time patch is either
+**frozen** (`keep_ticking=False`) or **ticking** (`keep_ticking=True`). With a
+ticking patch, shifts apply to the patched current instant at the moment of
+the call and the clock then continues ticking from the result.
 
 The patch affects only Whenever's current-time functions. Its state is global
 to the interpreter/module and therefore visible to every thread. Overlapping

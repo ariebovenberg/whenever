@@ -31,3 +31,10 @@ messages; the "preferred over" words are rejected synonyms.
   runtime default is the private sentinel spelled `UNSET`
   (`pysrc/whenever/_common.py`).
   Preferred over *unset*, *missing*, and *not specified*.
+
+**pin**
+: The instant a time patch anchors the clock to: the whole clock for a
+  frozen patch, the value at the moment it was set for a ticking one.
+  Spelled `_pin` in `pysrc/whenever/_utils.py` and `pin` in the Rust
+  `PatchState`.
+  Preferred over *anchor*, *base*, and *origin*.

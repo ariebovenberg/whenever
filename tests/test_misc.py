@@ -28,6 +28,7 @@ from whenever import (
     Time,
     TimeDelta,
     TimePatch,
+    TimeZoneNotFoundError,
     YearMonth,
     ZonedDateTime,
     clear_tzcache,
@@ -39,7 +40,7 @@ from whenever import (
 )
 from whenever._tz.system import _tzid_from_path, get_tz
 
-from .common import system_tz_ams, warns_here
+from .common import system_tz, system_tz_ams, warns_here
 
 
 @pytest.mark.parametrize(
@@ -493,6 +494,19 @@ def test_patch_current_time_decorator_does_not_inject_handle():
     assert decorated(i) == i
 
 
+def test_import_does_not_load_typing_extensions():
+    subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            "import sys, whenever; from whenever import *; "
+            "assert 'typing_extensions' not in sys.modules",
+        ],
+        check=True,
+    )
+
+
 def test_system_tz_sentinel():
     assert repr(SYSTEM_TZ) == "SYSTEM_TZ"
     assert copy(SYSTEM_TZ) is SYSTEM_TZ
@@ -544,6 +558,28 @@ def test_reset_system_tz():
 
     reset_system_tz()
     assert plain.assume_tz(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
+
+
+class TestUnresolvableSystemTz:
+    @staticmethod
+    def _cases(tmp_path: Path) -> list[tuple[str, str]]:
+        not_tzif = tmp_path / "not-tzif"
+        not_tzif.write_bytes(b"this is not a TZif file")
+        # absolute on every platform: a bare `/x` is not absolute on Windows
+        return [
+            (str(tmp_path / "missing"), "No time zone found at path"),
+            (str(not_tzif), "No time zone found at path"),
+            ("Foo1Bar", "No time zone found with key or posix TZ string"),
+        ]
+
+    @system_tz_ams()
+    def test_raises_and_keeps_cache(self, tmp_path: Path) -> None:
+        for value, message in self._cases(tmp_path):
+            with pytest.raises(TimeZoneNotFoundError, match=message):
+                with system_tz(value):
+                    pass  # pragma: no cover
+            # the failed reset left the cached timezone in place
+            assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
 
 
 @pytest.mark.parametrize(

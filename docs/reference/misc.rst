@@ -36,7 +36,7 @@ System timezone
    timezone, not the sentinel itself.
 
    See :ref:`systemtime` for caching, reset behavior, and system timezones
-   without an IANA ID.
+   without a timezone ID.
 
 
 Timezone data

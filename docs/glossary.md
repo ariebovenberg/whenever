@@ -64,6 +64,16 @@ timezone ID
   *tz*.
   See {ref}`timezone-database`.
 
+system timezone
+  The timezone the operating system is configured with. Requested with
+  `SYSTEM_TZ` wherever a timezone ID is accepted. Each call resolves it and
+  stores the result in the returned value, which keeps that timezone for
+  good; `reset_system_tz()` changes only what later calls resolve to. It may
+  have no timezone ID.
+  Preferred over *local timezone*, *local zone*, *machine timezone*, and
+  *OS timezone*.
+  See {ref}`systemtime`.
+
 repeated local time
   A local time that occurs twice in a timezone because the clock moved
   backward. Resolved by a disambiguation policy.
@@ -104,4 +114,12 @@ stale offset
   timezone would apply. Flagged by `StaleOffsetWarning`.
   Preferred over *wrong offset* and *outdated offset*.
   See {ref}`offset-datetime-guidance`.
+
+time patch
+  A test-only override of the current time as Whenever sees it, created by
+  `patch_current_time()` and driven through its `TimePatch` handle. Either
+  frozen (holds one instant) or ticking (advances from it).
+  Preferred over *mocked time*, *fake clock*, and *frozen time* as the
+  general term.
+  See {doc}`guide/testing`.
 ```
