@@ -104,7 +104,6 @@ autodoc_type_aliases = {
     "DisambiguateStr": "DisambiguateStr",
     "OffsetMismatchStr": "OffsetMismatchStr",
     "TimestampUnitStr": "TimestampUnitStr",
-    "_SystemTZ": "SYSTEM_TZ",
 }
 
 
@@ -141,5 +140,46 @@ def _hide_shim_kwargs(
     return None
 
 
+# Two renderings Sphinx 9.1 gets wrong inside signatures, fixed on the doctree
+# because `@overload` variants never pass through `autodoc-process-signature`:
+#
+# - an alias from `autodoc_type_aliases` nested in a generic or union prints
+#   as `TypeAliasForwardRef('DeltaUnitStr')` instead of `DeltaUnitStr`;
+# - the system timezone sentinel is annotated with its private class
+#   `_SystemTZ`, which should read (and link) as `SYSTEM_TZ`.
+_SYSTEM_TZ_CLASS = re.compile(r"(?:whenever\.(?:_common\.)?)?_SystemTZ")
+
+
+def _fix_signature_nodes(app, doctree):
+    from docutils import nodes
+    from sphinx import addnodes
+
+    for sig in doctree.findall(addnodes.desc_signature):
+        for xref in list(sig.findall(addnodes.pending_xref)):
+            if _SYSTEM_TZ_CLASS.fullmatch(xref.get("reftarget", "")):
+                xref["reftarget"] = "whenever.SYSTEM_TZ"
+                xref["reftype"] = "data"
+        for text in list(sig.findall(nodes.Text)):
+            if _SYSTEM_TZ_CLASS.fullmatch(text.astext()):
+                text.parent.replace(text, nodes.Text("SYSTEM_TZ"))
+        # The forward reference is tokenized into four siblings:
+        # `TypeAliasForwardRef`, `(`, `'Name'`, and `)`.
+        for text in list(sig.findall(nodes.Text)):
+            if text.astext() != "TypeAliasForwardRef":
+                continue
+            node, parent = text, text.parent
+            if len(parent) == 1:
+                node, parent = parent, parent.parent
+            i = parent.index(node)
+            tokens = [n.astext() for n in parent[i : i + 4]]
+            if len(tokens) < 4 or tokens[1] != "(" or tokens[3] != ")":
+                continue  # pragma: no cover
+            name = tokens[2].strip("'\"")
+            for _ in range(4):
+                parent.remove(parent[i])
+            parent.insert(i, addnodes.desc_sig_name(name, name))
+
+
 def setup(app):
     app.connect("autodoc-process-signature", _hide_shim_kwargs)
+    app.connect("doctree-read", _fix_signature_nodes)

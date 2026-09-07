@@ -349,11 +349,21 @@ def _read_system_tz() -> TimeZone:
             return get_tz(tz_value)
         except TimeZoneNotFoundError:
             # If the key is not found, it might be a PosixTz string
-            return TimeZone.parse_posix(tz_value)
+            try:
+                return TimeZone.parse_posix(tz_value)
+            except ValueError:
+                raise TimeZoneNotFoundError(
+                    f"No time zone found with key or posix TZ string {tz_value}"
+                ) from None
     else:  # file-based timezone (no key)
         assert tz_type == 1, "Unknown system timezone type"
-        with open(tz_value, "rb") as f:
-            return TimeZone.parse_tzif(f.read())
+        try:
+            with open(tz_value, "rb") as f:
+                return TimeZone.parse_tzif(f.read())
+        except (OSError, ValueError):
+            raise TimeZoneNotFoundError(
+                f'No time zone found at path "{tz_value}"'
+            ) from None
 
 
 class TimeZoneNotFoundError(ValueError):

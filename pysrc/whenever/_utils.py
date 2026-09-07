@@ -114,8 +114,9 @@ def patch_current_time(
     keep_ticking: bool,
 ) -> Iterator[TimePatch]:
     """Patch the current time to a fixed value (for testing purposes).
-    Behaves as a context manager or decorator, with similar semantics to
-    ``unittest.mock.patch``.
+    Works as a context manager or as a decorator. Patches do not nest:
+    creating one while another is active raises :exc:`RuntimeError`.
+    The decorator form does not pass the handle to the decorated function.
 
     Important
     ---------
@@ -131,7 +132,7 @@ def patch_current_time(
     Example
     -------
 
-    >>> from whenever import Instant, patch_current_time
+    >>> from whenever import Instant, patch_current_time, seconds
     >>> i = Instant.from_utc(1980, 3, 2, hour=2)
     >>> with patch_current_time(i, keep_ticking=False) as p:
     ...     assert Instant.now() == i

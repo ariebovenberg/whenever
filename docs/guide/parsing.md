@@ -17,7 +17,7 @@ patterns for everything else.
 
 All types in *whenever* use ISO 8601 as their canonical string representation.
 This representation is round-trippable except in the uncommon case of a zoned
-datetime backed by a system timezone without an IANA identifier (see
+datetime backed by a system timezone without a timezone ID (see
 {ref}`systemtime`).
 You can even instantiate objects directly from their ISO 8601 string representation:
 

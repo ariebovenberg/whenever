@@ -3,8 +3,8 @@ myst:
   html_meta:
     description: >-
       Using the system timezone via the SYSTEM_TZ sentinel, how whenever caches
-      it, reset_system_tz(), and the limits of system timezones without an IANA
-      identifier.
+      it, reset_system_tz(), and the limits of system timezones without a
+      timezone ID.
 ---
 
 (systemtime)=
@@ -55,11 +55,11 @@ ZonedDateTime("2020-08-15 08:00:00-04:00[America/New_York]")
 ZonedDateTime("2025-08-15 15:03:28+02:00[Europe/Amsterdam]")
 ```
 
-## Non-IANA system timezones
+## System timezones without a timezone ID
 
-This is uncommon: most system timezones can be matched with an IANA timezone
-ID (like `Europe/Amsterdam`). However, some systems use custom timezone
-definitions that don't unambiguously map to an IANA timezone ID.
+This is uncommon: most system timezones can be matched with a timezone ID
+(like `Europe/Amsterdam`). However, some systems use custom timezone
+definitions that don't unambiguously map to a timezone ID.
 For example, some systems may set the `TZ` environment variable to a POSIX TZ
 string like `CET-1CEST,M3.5.0,M10.5.0/3`,
 or specify a custom timezone file.
@@ -85,8 +85,8 @@ However there are some limitations of such instances of {class}`~whenever.ZonedD
 1. Their `tz_id` attribute is `None`
 2. They cannot be pickled
 3. Their string representation cannot preserve the timezone rules and is not
-   round-trippable. {meth}`~whenever.ZonedDateTime.format_iso` requires an IANA
-   identifier by default; `tz_id_display="never"` or `"auto"` produces only the
+   round-trippable. {meth}`~whenever.ZonedDateTime.format_iso` requires a timezone
+   ID by default; `tz_id_display="never"` or `"auto"` produces only the
    local fields and current offset.
 4. The result of `to_stdlib()` will have a fixed offset, not a `ZoneInfo` object.
 5. Formatting with `VV` raises {class}`ValueError`.
