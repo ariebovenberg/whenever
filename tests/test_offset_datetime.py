@@ -64,7 +64,9 @@ class TestInit:
 
     def test_invalid_offset_delta(self):
         # too large
-        with pytest.raises(ValueError, match="offset.*24.*hours"):
+        with pytest.raises(
+            ValueError, match="offset must be between -24 and 24 hours"
+        ):
             OffsetDateTime(2020, 8, 15, 5, 12, offset=hours(34))
 
         # too precise

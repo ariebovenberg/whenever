@@ -104,7 +104,8 @@ The {class}`~whenever.ZonedDateTime` ISO-string constructor,
 {meth}`~whenever.ZonedDateTime.parse` accept `disambiguation=` and
 `offset_mismatch=`. See
 {ref}`resolving-local-times` for the complete decision flow, including
-matching offsets, conflicts, `Z`, folds, gaps, and offset precision.
+matching offsets, conflicts, `Z`, repeated and skipped local times, and
+offset precision.
 
 ## Pydantic integration
 

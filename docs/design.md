@@ -43,10 +43,21 @@ account for DST, but may be acceptable if the user knows
 DST isn't relevant for their use case, or accepts the possibility
 of an incorrect result some of the time.
 
-Outright forbidding these operations would push users toward workarounds
-that would obscure their intention. Whenever allows them but emits a
-{class}`warning <whenever.PotentialDstBugWarning>`,
-which can then explicitly and selectively be silenced.
+Whenever allows these operations and emits a
+{class}`warning <whenever.PotentialDstBugWarning>` instead, because three
+audiences need three different things from the same call:
+
+- A strict codebase turns the whole category into an error with one filter,
+  and still allows the deliberate exception through a call-local escape such
+  as `naive_arithmetic_ok=True`.
+- A codebase that has weighed the risk and accepted it leaves the default
+  filters alone.
+- A newcomer who did not know the pitfall existed is told once per call site,
+  with the fix in the message.
+
+Raising would serve only the first audience. Staying silent would serve only
+the second. See {ref}`the guide to handling warnings <warnings>` for the
+filters.
 
 ## No system timezone by default
 

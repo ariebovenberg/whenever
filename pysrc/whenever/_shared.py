@@ -128,7 +128,7 @@ class YearMonth(_Base):
     def __init__(self, year: int, month: int) -> None:
         self._py = _date(year, month, 1)
 
-    __init__ = add_alternate_constructors(__init__)
+    __init__ = add_alternate_constructors(__init__, None)
 
     def _init_from_iso(self, s: str) -> None:
         self._py = yearmonth_from_iso(s)
@@ -351,7 +351,7 @@ class MonthDay(_Base):
     def __init__(self, month: int, day: int) -> None:
         self._py = _date(_DUMMY_LEAP_YEAR, month, day)
 
-    __init__ = add_alternate_constructors(__init__)
+    __init__ = add_alternate_constructors(__init__, None)
 
     def _init_from_iso(self, s: str) -> None:
         self._py = monthday_from_iso(s)
@@ -580,7 +580,7 @@ class IsoWeekDate(_Base):
         self._week = week
         self._weekday = weekday
 
-    __init__ = add_alternate_constructors(__init__)
+    __init__ = add_alternate_constructors(__init__, None)
 
     def _init_from_iso(self, s: str) -> None:
         year, week, day = _parse_iso_week_date(s)
