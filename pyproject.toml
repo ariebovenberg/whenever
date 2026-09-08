@@ -58,7 +58,7 @@ integrations = [
 ]
 dev-extra = [
     "ruff>=0.16,<0.17",
-    "slotscheck>=0.20,<0.21",
+    "slotscheck>=0.20.1,<0.21",
     "build",
     "packaging>=26.2",
     "setuptools-rust",
