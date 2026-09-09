@@ -66,7 +66,7 @@ dev-extra = [
 ]
 benchmark = [
     "arrow>=1.4,<2",
-    "matplotlib>=3.10,<4",
+    "matplotlib>=3.10.9,<4",
     "pendulum>=3.2,<4",
     "pyperf>=2.10,<3",
     "python-dateutil>=2.9,<3",
