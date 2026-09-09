@@ -1031,8 +1031,8 @@ class TestFormatIso:
         ("tz_id_display", "suffix"),
         [
             ("required", "[Europe/Amsterdam]"),
-            ("auto", "[Europe/Amsterdam]"),
-            ("never", ""),
+            ("if_available", "[Europe/Amsterdam]"),
+            ("omit", ""),
         ],
     )
     def test_tz_id_display(self, tz_id_display, suffix):
@@ -1154,7 +1154,7 @@ class TestFormatIso:
             ),
             (
                 ZDT2,
-                {"unit": "millisecond", "tz_id_display": "never"},
+                {"unit": "millisecond", "tz_id_display": "omit"},
                 "1900-01-01T00:00:00.000-00:25:21",
             ),
             (
@@ -1168,7 +1168,7 @@ class TestFormatIso:
                     "unit": "nanosecond",
                     "basic": True,
                     "sep": " ",
-                    "tz_id_display": "auto",
+                    "tz_id_display": "if_available",
                 },
                 "19000101 000000.000000000-002521[Europe/Dublin]",
             ),
@@ -1183,13 +1183,13 @@ class TestFormatIso:
                     "unit": "nanosecond",
                     "basic": True,
                     "sep": "T",
-                    "tz_id_display": "auto",
+                    "tz_id_display": "if_available",
                 },
                 "20200815T231209.987654321+0200",
             ),
             (
                 ZDT_RAWFILE,
-                {"unit": "millisecond", "sep": " ", "tz_id_display": "never"},
+                {"unit": "millisecond", "sep": " ", "tz_id_display": "omit"},
                 "2020-08-15 23:12:09.987+02:00",
             ),
         ],

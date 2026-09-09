@@ -143,19 +143,69 @@ def test_both_parse_pattern_keywords_rejected():
 def test_format_iso_tz_keyword():
     dt = ZonedDateTime(2020, 8, 15, tz="UTC")
     actual = deprecated(
-        lambda: dt.format_iso(tz="never"),  # type: ignore[deprecated]
+        lambda: dt.format_iso(tz="omit"),  # type: ignore[deprecated]
         match="'tz' is deprecated",
     )
-    assert actual == dt.format_iso(tz_id_display="never")
+    assert actual == dt.format_iso(tz_id_display="omit")
 
 
-def test_format_iso_always_value():
+def test_format_iso_tz_keyword_with_deprecated_value():
+    """A deprecated keyword carrying a deprecated value warns once for each."""
+    dt = ZonedDateTime(2020, 8, 15, tz="UTC")
+    with warns_here(WheneverDeprecationWarning) as caught:
+        actual = dt.format_iso(tz="never")  # type: ignore[deprecated]
+    assert [str(w.message) for w in caught] == [
+        "'tz' is deprecated; use 'tz_id_display' instead",
+        "tz_id_display='never' is deprecated; use 'omit' instead",
+    ]
+    assert all(w.filename == __file__ for w in caught)
+    assert actual == dt.format_iso(tz_id_display="omit")
+
+
+@pytest.mark.parametrize(
+    "old, new",
+    [
+        ("always", "required"),
+        ("auto", "if_available"),
+        ("never", "omit"),
+    ],
+)
+def test_format_iso_deprecated_values(old, new):
     dt = ZonedDateTime(2020, 8, 15, tz="UTC")
     actual = deprecated(
-        lambda: dt.format_iso(tz_id_display="always"),  # type: ignore[deprecated]
-        match="tz_id_display='always' is deprecated",
+        lambda: dt.format_iso(tz_id_display=old),
+        match=f"tz_id_display='{old}' is deprecated; use '{new}' instead",
     )
-    assert actual == dt.format_iso(tz_id_display="required")
+    assert actual == dt.format_iso(tz_id_display=new)
+
+
+class _Str(str):
+    pass
+
+
+@pytest.mark.parametrize(
+    "old, new",
+    [
+        ("always", "required"),
+        ("auto", "if_available"),
+        ("never", "omit"),
+    ],
+)
+@pytest.mark.parametrize(
+    "make",
+    [
+        pytest.param(lambda s: s, id="literal"),
+        pytest.param(lambda s: "".join(s), id="dynamic"),
+        pytest.param(_Str, id="subclass"),
+    ],
+)
+def test_format_iso_deprecated_values_not_interned(old, new, make):
+    dt = ZonedDateTime(2020, 8, 15, tz="UTC")
+    actual = deprecated(
+        lambda: dt.format_iso(tz_id_display=make(old)),
+        match=f"tz_id_display='{old}' is deprecated",
+    )
+    assert actual == dt.format_iso(tz_id_display=make(new))
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,7 @@
 //! Python argument parsing for ISO formatting.
 
+use std::ffi::CStr;
+
 use crate::{
     common::{
         compat::{RenamedKeyword, warn_deprecated},
@@ -58,8 +60,41 @@ impl Chunk for SuffixFormat<'_> {
 #[derive(Clone, Copy)]
 enum TzDisplay {
     Required,
-    Never,
-    Auto,
+    IfAvailable,
+    Omit,
+}
+
+/// The `tz_id_display` values, each with the deprecation warning it emits.
+///
+/// The 0.10 spellings map to their replacements; deleting their rows in 1.0
+/// makes them fail with the ordinary invalid-value error.
+fn tz_display_choices(state: &State) -> [(PyObj, (TzDisplay, Option<&'static CStr>)); 6] {
+    [
+        (*state.strs.required, (TzDisplay::Required, None)),
+        (*state.strs.if_available, (TzDisplay::IfAvailable, None)),
+        (*state.strs.omit, (TzDisplay::Omit, None)),
+        (
+            *state.strs.always,
+            (
+                TzDisplay::Required,
+                Some(c"tz_id_display='always' is deprecated; use 'required' instead"),
+            ),
+        ),
+        (
+            *state.strs.auto,
+            (
+                TzDisplay::IfAvailable,
+                Some(c"tz_id_display='auto' is deprecated; use 'if_available' instead"),
+            ),
+        ),
+        (
+            *state.strs.never,
+            (
+                TzDisplay::Omit,
+                Some(c"tz_id_display='never' is deprecated; use 'omit' instead"),
+            ),
+        ),
+    ]
 }
 
 pub(crate) fn parse_precision(obj: PyObj, state: &State) -> PyResult<Precision> {
@@ -155,7 +190,7 @@ pub(crate) fn format_datetime_iso(
         Ok(true)
     })?;
 
-    let (tz_id_display, warn_always) = display_arg
+    let (tz_id_display, deprecation) = display_arg
         .finish(
             state,
             "format_iso",
@@ -164,26 +199,11 @@ pub(crate) fn format_datetime_iso(
             c"'tz' is deprecated; use 'tz_id_display' instead",
             1,
         )?
-        .map(|v| {
-            match_interned_str(
-                "tz_id_display",
-                v,
-                &[
-                    (*state.strs.auto, (TzDisplay::Auto, false)),
-                    (*state.strs.never, (TzDisplay::Never, false)),
-                    (*state.strs.required, (TzDisplay::Required, false)),
-                    (*state.strs.always, (TzDisplay::Required, true)),
-                ],
-            )
-        })
+        .map(|v| match_interned_str("tz_id_display", v, &tz_display_choices(state)))
         .transpose()?
-        .unwrap_or((TzDisplay::Required, false));
-    if warn_always {
-        warn_deprecated(
-            state,
-            c"tz_id_display='always' is deprecated; use 'required' instead",
-            1,
-        )?;
+        .unwrap_or((TzDisplay::Required, None));
+    if let Some(message) = deprecation {
+        warn_deprecated(state, message, 1)?;
     }
 
     let suffix = match suffix {
@@ -191,10 +211,10 @@ pub(crate) fn format_datetime_iso(
         Suffix::Zulu => SuffixFormat::Zulu,
         Suffix::Offset(offset) => SuffixFormat::Offset(offset.iso_format(basic)),
         Suffix::OffsetTz(offset, tz_key) => match (tz_key, tz_id_display) {
-            (Some(key), TzDisplay::Auto | TzDisplay::Required) => {
+            (Some(key), TzDisplay::IfAvailable | TzDisplay::Required) => {
                 SuffixFormat::OffsetTz(offset.iso_format(basic), key)
             }
-            (_, TzDisplay::Never | TzDisplay::Auto) => {
+            (_, TzDisplay::Omit | TzDisplay::IfAvailable) => {
                 SuffixFormat::Offset(offset.iso_format(basic))
             }
             (None, TzDisplay::Required) => raise_value_err(FORMAT_ISO_NO_TZ_MSG)?,

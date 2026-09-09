@@ -10,8 +10,18 @@ messages; the "preferred over" words are rejected synonyms.
 
 **compatibility shim**
 : A deprecated path kept for one release cycle: it delegates to its
-  replacement and emits `WheneverDeprecationWarning`.
+  replacement and emits `WheneverDeprecationWarning`. A deprecated pattern
+  spelling is one too; the compiler variants that keep it (`_Hour24Legacy`,
+  `Hour24Legacy`, `_SecondOpt`, `_ColonSec`) and their tests keep "legacy"
+  in their names until 1.0 deletes them, rather than being renamed first.
   Preferred over *wrapper*, *alias*, and *legacy path*.
+
+**field**
+: The value a specifier sets: year, month, day, weekday, hour, minute,
+  second, nanoseconds, offset, or timezone ID. Category validation and
+  duplicate detection reason about fields; a message shown to a user names
+  the specifier instead.
+  Preferred over *slot*, *component*, and *state key*.
 
 **replacement**
 : What a deprecated path migrates to, as named in its warning message

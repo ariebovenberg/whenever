@@ -961,7 +961,7 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
 
     if has_24h && has_ampm {
         return Err(
-            "24-hour format (H/HH) cannot be combined with AM/PM (a/aa). Use 12-hour format (i/ii) instead.".into(),
+            "24-hour clock (H/HH) cannot be combined with AM/PM (a/aa). Use the 12-hour clock (i/ii) instead.".into(),
         );
     }
 
@@ -978,19 +978,19 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
             )
         {
             return Err(format!(
-                "pattern field {} cannot be followed by an element that starts with a digit",
+                "specifier {} cannot be followed by an element that starts with a digit",
                 field.display_name()
             ));
         }
         if field.needs_colon_terminator() && element_can_start_with_colon(follower) {
             return Err(format!(
-                "pattern field {} cannot be followed by an element that starts with ':'",
+                "specifier {} cannot be followed by an element that starts with ':'",
                 field.display_name()
             ));
         }
         if field.needs_dot_terminator() && element_can_start_with_dot(follower) {
             return Err(format!(
-                "pattern field {} cannot be followed by an element that starts with '.'",
+                "specifier {} cannot be followed by an element that starts with '.'",
                 field.display_name()
             ));
         }
@@ -1804,7 +1804,7 @@ fn parse_field(
         Field::Hour12 => {
             let (v, p) = parse_digits(s, pos, 2)?;
             if !(1..=12).contains(&v) {
-                return Err(format!("12-hour format requires hour in 1..12, got {}", v));
+                return Err(format!("12-hour clock requires hour in 1..12, got {}", v));
             }
             state.hour = Some(v as u8);
             Ok(p)
@@ -1812,7 +1812,7 @@ fn parse_field(
         Field::Hour12Unpadded => {
             let (v, p) = parse_1or2_digits(s, pos)?;
             if !(1..=12).contains(&v) {
-                return Err(format!("12-hour format requires hour in 1..12, got {}", v));
+                return Err(format!("12-hour clock requires hour in 1..12, got {}", v));
             }
             state.hour = Some(v as u8);
             Ok(p)
@@ -1985,7 +1985,7 @@ fn validate_fields(
                 Element::Literal(_) => unreachable!(),
             };
             return raise_value_err(format!(
-                "{} does not support pattern field {}",
+                "{} does not support specifier {}",
                 type_name, display_name
             ));
         }
@@ -2011,7 +2011,7 @@ fn warn_pattern(
             Element::Field(Field::Hour24UnpaddedLegacy) => {
                 warn_with_class(
                     deprecation_cls,
-                    c"The pattern field `h` is deprecated; use `H` instead.",
+                    c"The specifier `h` is deprecated; use `H` instead.",
                     1,
                 )?;
                 continue;
@@ -2019,7 +2019,7 @@ fn warn_pattern(
             Element::Field(Field::Hour24Legacy) => {
                 warn_with_class(
                     deprecation_cls,
-                    c"The pattern field `hh` is deprecated; use `HH` instead.",
+                    c"The specifier `hh` is deprecated; use `HH` instead.",
                     1,
                 )?;
                 continue;
@@ -2040,7 +2040,7 @@ fn warn_pattern(
             },
         };
         let message = CString::new(format!(
-            "The pattern field `{}` is deprecated; use `{}` instead.",
+            "The specifier `{}` is deprecated; use `{}` instead.",
             legacy, replacement
         ))
         .expect("deprecation warning contains no NUL bytes");

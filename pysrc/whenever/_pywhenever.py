@@ -881,9 +881,14 @@ class Date(_Base):
         >>> Date(2024, 3, 15).format("DD MMM YYYY")
         '15 Mar 2024'
         """
+        return self._format(pattern)
+
+    def _format(self, pattern: str, /) -> str:
+        # Shared by format() and __format__(); the stack level counts
+        # from validate_fields() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(
-            elements, self._PATTERN_CATS, "Date", warning_stacklevel=3
+            elements, self._PATTERN_CATS, "Date", warning_stacklevel=4
         )
         d = self._py_date
         return format_fields(
@@ -895,7 +900,7 @@ class Date(_Base):
         )
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self.format(spec)
+        return str(self) if not spec else self._format(spec)
 
     @classmethod
     def parse(cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any) -> Date:
@@ -1489,9 +1494,14 @@ class Time(_Base):
         >>> Time(14, 30).format("ii:mm aa")
         '02:30 PM'
         """
+        return self._format(pattern)
+
+    def _format(self, pattern: str, /) -> str:
+        # Shared by format() and __format__(); the stack level counts
+        # from validate_fields() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(
-            elements, self._PATTERN_CATS, "Time", warning_stacklevel=3
+            elements, self._PATTERN_CATS, "Time", warning_stacklevel=4
         )
         t = self._py
         return format_fields(
@@ -1503,7 +1513,7 @@ class Time(_Base):
         )
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self.format(spec)
+        return str(self) if not spec else self._format(spec)
 
     @classmethod
     def parse(cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any) -> Time:
@@ -3296,9 +3306,14 @@ class Instant(_ExactTime):
         >>> Instant.from_utc(2024, 3, 15, 14, 30).format("YYYY-MM-DD HH:mm:ssXXX")
         '2024-03-15 14:30:00Z'
         """
+        return self._format(pattern)
+
+    def _format(self, pattern: str, /) -> str:
+        # Shared by format() and __format__(); the stack level counts
+        # from validate_fields() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(
-            elements, self._PATTERN_CATS, "Instant", warning_stacklevel=3
+            elements, self._PATTERN_CATS, "Instant", warning_stacklevel=4
         )
         d = self._py_dt
         return format_fields(
@@ -3315,7 +3330,7 @@ class Instant(_ExactTime):
         )
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self.format(spec)
+        return str(self) if not spec else self._format(spec)
 
     @classmethod
     def parse(
@@ -4195,12 +4210,17 @@ class OffsetDateTime(_ExactAndLocalTime):
         ... )
         '2024-03-15 14:30+02:00'
         """
+        return self._format(pattern)
+
+    def _format(self, pattern: str, /) -> str:
+        # Shared by format() and __format__(); the stack level counts
+        # from validate_fields() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(
             elements,
             self._PATTERN_CATS,
             "OffsetDateTime",
-            warning_stacklevel=3,
+            warning_stacklevel=4,
         )
         d = self._py_dt
         return format_fields(
@@ -4219,7 +4239,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         )
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self.format(spec)
+        return str(self) if not spec else self._format(spec)
 
     @classmethod
     def parse(
@@ -4858,7 +4878,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         ] = "auto",
         basic: bool = False,
         sep: Literal["T", " "] = "T",
-        tz_id_display: Literal["required", "never", "auto", "always"] = UNSET,
+        tz_id_display: Literal[
+            "required", "if_available", "omit", "always", "auto", "never"
+        ] = UNSET,
         **kwargs: Any,
     ) -> str:
         """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
@@ -4881,10 +4903,10 @@ class ZonedDateTime(_ExactAndLocalTime):
             The separator between the date and time parts.
         tz_id_display
             Whether to include the timezone ID in the output.
-            ``"required"`` (default) raises an error if the timezone ID is not available
-            (in practice, this should only happen for some system timezones without a corresponding IANA timezone ID).
-            ``"auto"`` includes the ID if available, and omits it otherwise.
-            ``"never"`` always omits the ID.
+            ``"required"`` (default) raises :exc:`ValueError` when the timezone
+            has no ID, which happens for some system timezones.
+            ``"if_available"`` writes the ID when there is one and omits it otherwise.
+            ``"omit"`` never writes it.
 
         Important
         ---------
@@ -4903,20 +4925,22 @@ class ZonedDateTime(_ExactAndLocalTime):
         check_no_kwargs(kwargs, "format_iso")
         if tz_id_display is UNSET:
             tz_id_display = "required"
-        elif tz_id_display == "always":
+        elif tz_id_display in _TZ_ID_DISPLAY_DEPRECATED:
+            replacement = _TZ_ID_DISPLAY_DEPRECATED[tz_id_display]
             warn_deprecated(
-                "tz_id_display='always' is deprecated; use 'required' instead",
+                f"tz_id_display='{tz_id_display}' is deprecated; "
+                f"use '{replacement}' instead",
                 stacklevel=2,
             )
-            tz_id_display = "required"
+            tz_id_display = replacement
 
         if tz_id_display == "required":
             if self._tz.key is None:
                 raise ValueError(FORMAT_ISO_NO_TZ_MSG)
             suffix = f"[{self._tz.key}]"
-        elif tz_id_display == "auto":
+        elif tz_id_display == "if_available":
             suffix = f"[{self._tz.key}]" if self._tz.key is not None else ""
-        elif tz_id_display == "never":
+        elif tz_id_display == "omit":
             suffix = ""
         else:
             raise ValueError(f"invalid tz_id_display: {tz_id_display!r}")
@@ -5007,12 +5031,17 @@ class ZonedDateTime(_ExactAndLocalTime):
         ... )
         '2024-03-15 14:30+01:00[Europe/Paris]'
         """
+        return self._format(pattern)
+
+    def _format(self, pattern: str, /) -> str:
+        # Shared by format() and __format__(); the stack level counts
+        # from validate_fields() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(
             elements,
             self._PATTERN_CATS,
             "ZonedDateTime",
-            warning_stacklevel=3,
+            warning_stacklevel=4,
         )
         d = self._py_dt
         return format_fields(
@@ -5033,7 +5062,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self.format(spec)
+        return str(self) if not spec else self._format(spec)
 
     @classmethod
     def parse(
@@ -6358,12 +6387,17 @@ class PlainDateTime(_LocalTime):
         >>> PlainDateTime(2024, 3, 15, 14, 30).format("YYYY-MM-DD HH:mm")
         '2024-03-15 14:30'
         """
+        return self._format(pattern)
+
+    def _format(self, pattern: str, /) -> str:
+        # Shared by format() and __format__(); the stack level counts
+        # from validate_fields() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(
             elements,
             self._PATTERN_CATS,
             "PlainDateTime",
-            warning_stacklevel=3,
+            warning_stacklevel=4,
         )
         d = self._py_dt
         return format_fields(
@@ -6379,7 +6413,7 @@ class PlainDateTime(_LocalTime):
         )
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self.format(spec)
+        return str(self) if not spec else self._format(spec)
 
     @classmethod
     def parse(
@@ -7360,6 +7394,13 @@ ZONEINFO_NO_KEY_MSG = (
     "is not a valid IANA timezone ID and cannot be used here."
 )
 
+_TZ_ID_DISPLAY_DEPRECATED: dict[
+    str, Literal["required", "if_available", "omit"]
+] = {
+    "always": "required",
+    "auto": "if_available",
+    "never": "omit",
+}
 FORMAT_ISO_NO_TZ_MSG = (
     "This ZonedDateTime has no timezone ID and cannot be formatted in the "
     "standard ISO format, which requires it. "

@@ -2329,7 +2329,9 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         ] = "auto",
         basic: bool = False,
         sep: Literal["T", " "] = "T",
-        tz_id_display: Literal["required", "never", "auto"] = "required",
+        tz_id_display: Literal[
+            "required", "if_available", "omit"
+        ] = "required",
     ) -> str: ...
     @overload
     @deprecated("use tz_id_display='required' instead")
@@ -2350,6 +2352,42 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         tz_id_display: Literal["always"],
     ) -> str: ...
     @overload
+    @deprecated("use tz_id_display='if_available' instead")
+    def format_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+        tz_id_display: Literal["auto"],
+    ) -> str: ...
+    @overload
+    @deprecated("use tz_id_display='omit' instead")
+    def format_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+        tz_id_display: Literal["never"],
+    ) -> str: ...
+    @overload
     @deprecated("use tz_id_display= instead")
     def format_iso(
         self,
@@ -2365,7 +2403,9 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         ] = "auto",
         basic: bool = False,
         sep: Literal["T", " "] = "T",
-        tz: Literal["required", "always", "never", "auto"],
+        tz: Literal[
+            "required", "if_available", "omit", "always", "auto", "never"
+        ],
     ) -> str: ...
     def format(self, pattern: str, /) -> str: ...
     def __format__(self, spec: str, /) -> str: ...

@@ -1705,10 +1705,10 @@ sep
     The separator between the date and time parts.
 tz_id_display
     Whether to include the timezone ID in the output.
-    ``\"required\"`` (default) raises an error if the timezone ID is not available
-    (in practice, this should only happen for some system timezones without a corresponding IANA timezone ID).
-    ``\"auto\"`` includes the ID if available, and omits it otherwise.
-    ``\"never\"`` always omits the ID.
+    ``\"required\"`` (default) raises :exc:`ValueError` when the timezone
+    has no ID, which happens for some system timezones.
+    ``\"if_available\"`` writes the ID when there is one and omits it otherwise.
+    ``\"omit\"`` never writes it.
 
 Important
 ---------
