@@ -69,7 +69,7 @@ benchmark = [
     "matplotlib>=3.10,<4",
     "pendulum>=3.2,<4",
     "pyperf>=2.10,<3",
-    "python-dateutil>=2.9,<3",
+    "python-dateutil>=2.9.0.post0,<3",
     "setuptools-rust",
 ]
 docs = [
