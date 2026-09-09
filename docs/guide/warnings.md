@@ -35,6 +35,10 @@ UserWarning (stdlib)
     └── WheneverDeprecationWarning
 ```
 
+One warning has no class of its own: a pattern with a 12-hour clock (`i` or
+`ii`) and no AM/PM specifier emits `WheneverWarning` itself. Filter it by
+message if that case needs separate handling.
+
 ## Turn warnings into errors
 
 For application code, **turn whenever's warnings into exceptions** as early as

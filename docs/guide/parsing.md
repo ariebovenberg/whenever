@@ -72,9 +72,9 @@ RFC 2822 only represents whole seconds and minute-precision offsets.
 Formatting therefore discards nanoseconds and any seconds in the offset; use
 ISO 8601 when those values must round-trip exactly.
 
-## Custom formats
+## Custom patterns
 
-All datetime types support custom format and parse patterns via
+All datetime types support custom patterns for formatting and parsing via
 their format and parse methods—for example,
 {meth}`~whenever.OffsetDateTime.format` and
 {meth}`~whenever.OffsetDateTime.parse`.

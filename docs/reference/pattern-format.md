@@ -64,11 +64,11 @@ letters fail instead of silently acquiring a different meaning.
 
 | Symbol  | Meaning                    | Pattern | Example output |
 |:---------|:---------------------------|:---------------|:--------------|
-| `H` | hour (24-hour) | `H` <br/> `HH` | `4` <br/> `04` |
-| `i`   | hour (12-hour) | `i` <br/> `ii` | `4` <br/> `04` |
+| `H` | hour (24-hour clock) | `H` <br/> `HH` | `4` <br/> `04` |
+| `i`   | hour (12-hour clock) | `i` <br/> `ii` | `4` <br/> `04` |
 | `m`   | minute | `m` <br/> `mm` | `5` <br/> `05` |
 | `s`   | second | `s` <br/> `ss` | `5` <br/> `05` |
-| `[...]` | optional seconds tail [^3] | `[ss]` <br/> `[:ss]` <br/> `[:ss.fff]` <br/> `[:ss.FFF]` | `05`, (omitted) <br/> `:05`, (omitted) <br/> `:05.123`, (omitted) <br/> `:05.12`, (omitted) |
+| `[...]` | optional seconds [^3] | `[ss]` <br/> `[:ss]` <br/> `[:ss.fff]` <br/> `[:ss.FFF]` | `05`, (omitted) <br/> `:05`, (omitted) <br/> `:05.123`, (omitted) <br/> `:05.12`, (omitted) |
 | `f` | fractional seconds, exact digits | `f`<br/>`ff`<br/>`fff`<br/>...<br/>`fffffffff` | `1` <br/> `12`, `00` <br/> `123`, `400` <br/> ... <br/> `123456789`, `374930000` |
 | `F` | fractional seconds, trimmed [^4] | `F`<br/>`FF`<br/>`FFF`<br/>...<br/>`FFFFFFFFF` | `1` <br/> `12`, (omitted) <br/> `123`, `4` <br/>...<br/> `123456789`, `37493` |
 | `a`   | AM/PM [^5] | `a`<br/>`aa` | `P` <br/> `PM` |
@@ -78,10 +78,10 @@ letters fail instead of silently acquiring a different meaning.
 
 Brackets have one limited use immediately after fixed-width `mm`: optional
 seconds written as `[ss]` or `[:ss]`, followed optionally by `.` and 1–9 `f`
-or `F` characters. They are not general-purpose optional groups, and the
+or `F` characters. Brackets are not general-purpose optional groups, and the
 colon is the only supported separator.
 
-The whole tail is omitted when both seconds and nanoseconds are zero. Otherwise,
+The whole group is omitted when both seconds and nanoseconds are zero. Otherwise,
 the separator and two zero-padded second digits are emitted. Lowercase `f`
 requires exactly that many fractional digits; uppercase `F` trims trailing
 zeroes and omits the decimal point when the fraction is empty.
@@ -222,7 +222,8 @@ Some types require specific fields in the parse pattern:
   An offset (`x`/`X`) is optional but recommended for DST disambiguation.
 - {meth}`Instant.parse() <Instant.parse>` requires an offset (`x`/`X`)
 
-All types that include date fields require `YYYY`, `MM`, and `DD`.
+All types that include a date require a year, a month, and a day, in any of
+their spellings; `DD MMM YYYY` is complete.
 
 A second value of ``60`` (leap second) is accepted and normalized to ``59``.
 See [](faq-leap-seconds) for details.
@@ -243,7 +244,7 @@ call and will be rejected in 1.0.
 
 The same bracketed spelling applies to exact fractions, such as replacing
 `:SS.fff` with `[:ss.fff]`. Keeping the separator inside the brackets makes
-it disappear with the seconds tail.
+it disappear with the seconds.
 
 ## Comparison with strftime
 
@@ -260,7 +261,7 @@ The following table maps common `strftime` directives to Whenever patterns:
 | `%a`   | `EEE` |       |
 | `%A`   | `EEEE`|       |
 | `%H`   | `HH`  | 24-hour clock |
-| `%I`   | `ii`  | Note: `ii` = 12-hour |
+| `%I`   | `ii`  | 12-hour clock |
 | `%M`   | `mm`  |       |
 | `%S`   | `ss`  |       |
 | `%f`   | `ffffff`| microseconds (6 digits) |
@@ -271,7 +272,7 @@ The following table maps common `strftime` directives to Whenever patterns:
 
 [^1]: `YY` is only supported for formatting. When parsing, use `YYYY` to avoid ambiguity.
 [^2]: During parsing, weekday names are validated against the parsed date. A mismatch raises ``ValueError``.
-[^3]: The complete bracketed tail is omitted when both seconds and nanoseconds are zero.
+[^3]: The complete bracketed group is omitted when both seconds and nanoseconds are zero.
 [^4]: Omitted when the value is zero, with preceding `.` also omitted.
 [^5]: AM/PM is determined by the hour value. Using `i`/`ii` without `a`/`aa` emits a warning about ambiguity.
 [^6]: Timezone abbreviations are ambiguous and not supported for parsing. Use `VV` (IANA timezone ID) instead. See {ref}`timezones-explained` for details.

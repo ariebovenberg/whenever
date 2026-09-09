@@ -122,4 +122,35 @@ time patch
   Preferred over *mocked time*, *fake clock*, and *frozen time* as the
   general term.
   See {doc}`guide/testing`.
+
+pattern
+  A string of specifiers and literal text that `format()` writes and
+  `parse()` reads, passed as `pattern=`. The canonical full pattern is
+  `YYYY-MM-DD HH:mm:ss`.
+  Preferred over *format string*, *format*, and *custom format*.
+  See {ref}`pattern-format`.
+
+specifier
+  A run of one letter in a pattern that stands for one value, such as `HH`
+  or `MMM`. Two specifiers cannot set the same value.
+  Preferred over *pattern letter*, *token*, *directive*, and *format code*.
+  See {ref}`pattern-format`.
+
+optional seconds
+  The bracketed group after the minutes in a pattern, `[ss]` or `[:ss]` with
+  an optional fraction, written only when seconds or nanoseconds are nonzero.
+  Brackets have no other use in a pattern.
+  Preferred over *optional group*, *bracket group*, and *seconds tail*.
+  See {ref}`pattern-format`.
+
+24-hour clock
+  Hours 0 through 23, written with the `H`/`HH` specifiers.
+  Preferred over *24-hour format* and *24-hour time*.
+  See {ref}`pattern-format`.
+
+12-hour clock
+  Hours 1 through 12 together with an AM/PM specifier, written with `i`/`ii`
+  and `a`/`aa`. A pattern with one but not the other warns.
+  Preferred over *12-hour format*, *12-hour time*, and *AM/PM time*.
+  See {ref}`pattern-format`.
 ```

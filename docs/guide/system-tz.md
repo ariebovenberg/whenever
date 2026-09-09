@@ -86,7 +86,7 @@ However there are some limitations of such instances of {class}`~whenever.ZonedD
 2. They cannot be pickled
 3. Their string representation cannot preserve the timezone rules and is not
    round-trippable. {meth}`~whenever.ZonedDateTime.format_iso` requires a timezone
-   ID by default; `tz_id_display="never"` or `"auto"` produces only the
-   local fields and current offset.
+   ID by default; `tz_id_display="omit"` or `"if_available"` produces only
+   the local fields and current offset.
 4. The result of `to_stdlib()` will have a fixed offset, not a `ZoneInfo` object.
 5. Formatting with `VV` raises {class}`ValueError`.

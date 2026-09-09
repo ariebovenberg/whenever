@@ -42,13 +42,18 @@ deprecated interfaces are removed.
 
 - Several public names have been clarified: `disambiguate=` becomes
   `disambiguation=`, `exact_eq()` becomes `strict_eq()`, patterned-parse
-  `format=` becomes `pattern=`, ISO-format `tz=` becomes `tz_id_display=`,
-  timezone display `"always"` becomes `"required"`, `ZonedDateTime.tz`
-  becomes `tz_id`, `MonthDay.is_leap()` becomes `is_leap_day()`, and `TZPATH`
-  becomes `get_tzpath()`. The old spellings are deprecated.
+  `format=` becomes `pattern=`, ISO-format `tz=` becomes `tz_id_display=`
+  with the values `"required"`, `"if_available"`, and `"omit"` replacing
+  `"always"`, `"auto"`, and `"never"`, `ZonedDateTime.tz` becomes `tz_id`,
+  `MonthDay.is_leap()` becomes `is_leap_day()`, and `TZPATH` becomes
+  `get_tzpath()`. The old spellings are deprecated.
 
   **Rationale**: the new names describe their concepts and behavior more
-  precisely and use consistent terminology across the API.
+  precisely and use consistent terminology across the API. For the display
+  values: `"required"` says the call can raise, `"if_available"` says when
+  the ID is written, and `"omit"` says what happens instead; `"always"`,
+  `"auto"`, and `"never"` each needed the docstring to say which of those
+  it meant.
 
 - Custom format and parse patterns now use `H`/`HH` for the 24-hour clock.
   The previous `h`/`hh` spellings are deprecated. Optional seconds use a
@@ -161,8 +166,10 @@ Migration summary:
 | `OffsetDateTime.from_timestamp(v, offset=o)` | `Instant.from_timestamp(v).to_fixed_offset(o)` |
 | `OffsetDateTime.from_timestamp_millis(v, offset=o)` | `Instant.from_timestamp(v, unit="millisecond").to_fixed_offset(o)` |
 | `OffsetDateTime.from_timestamp_nanos(v, offset=o)` | `Instant.from_timestamp(v, unit="nanosecond").to_fixed_offset(o)` |
-| `format_iso(tz="never")` | `format_iso(tz_id_display="never")` |
+| `format_iso(tz="omit")` | `format_iso(tz_id_display="omit")` |
 | `tz_id_display="always"` | `tz_id_display="required"` |
+| `tz_id_display="auto"` | `tz_id_display="if_available"` |
+| `tz_id_display="never"` | `tz_id_display="omit"` |
 | `to_system_tz()` | `to_tz(SYSTEM_TZ)` |
 | `assume_system_tz()` | `assume_tz(SYSTEM_TZ)` |
 | `Date.today_in_system_tz()` | `Date.today(SYSTEM_TZ)` |

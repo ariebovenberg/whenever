@@ -1696,20 +1696,20 @@ class TestFormatFieldsInternal:
         assert result == "14:30:05.000"
 
     def test_parse_12hour_hour_too_high(self):
-        """12-hour format rejects hour > 12."""
+        """12-hour clock rejects hour > 12."""
         with pytest.raises(
-            ValueError, match="12-hour format requires hour in 1..12"
+            ValueError, match="12-hour clock requires hour in 1..12"
         ):
             Time.parse("13:30 AM", pattern="ii:mm aa")
         with pytest.raises(
-            ValueError, match="12-hour format requires hour in 1..12"
+            ValueError, match="12-hour clock requires hour in 1..12"
         ):
             Time.parse("99:30 PM", pattern="ii:mm aa")
 
     def test_parse_12hour_hour_zero(self):
-        """12-hour format rejects hour = 0."""
+        """12-hour clock rejects hour = 0."""
         with pytest.raises(
-            ValueError, match="12-hour format requires hour in 1..12"
+            ValueError, match="12-hour clock requires hour in 1..12"
         ):
             Time.parse("00:30 AM", pattern="ii:mm aa")
 
@@ -1839,3 +1839,23 @@ class TestDunderFormat:
     def test_zoned_datetime_empty_spec(self):
         zdt = ZonedDateTime(2024, 3, 15, 14, 30, tz="Europe/Paris")
         assert f"{zdt}" == str(zdt)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            Time(13),
+            PlainDateTime(2024, 3, 15, 13),
+            Instant.from_utc(2024, 3, 15, 13),
+            OffsetDateTime(2024, 3, 15, 13, offset=hours(2)),
+            ZonedDateTime(2024, 3, 15, 13, tz="Europe/Paris"),
+        ],
+        ids=lambda v: type(v).__name__,
+    )
+    def test_warnings_point_at_the_f_string(self, value):
+        """A pattern warning raised through __format__ names the caller's
+        line, as it does through format(). Date is absent because it has
+        no deprecated or ambiguous specifier."""
+        with warns_here(WheneverDeprecationWarning):
+            f"{value:hh}"
+        with warns_here(WheneverWarning):
+            f"{value:ii}"

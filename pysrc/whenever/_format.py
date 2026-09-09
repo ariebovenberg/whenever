@@ -477,7 +477,7 @@ class _Hour12(_DigitField):
         state.hour, pos = _parse_digits(s, pos, 2)
         if not (1 <= state.hour <= 12):
             raise ValueError(
-                f"12-hour format requires hour in 1..12, got {state.hour}"
+                f"12-hour clock requires hour in 1..12, got {state.hour}"
             )
         return pos
 
@@ -495,7 +495,7 @@ class _Hour12Unpadded(_UnpaddedDigitField):
         state.hour, pos = _parse_1or2_digits(s, pos)
         if not (1 <= state.hour <= 12):
             raise ValueError(
-                f"12-hour format requires hour in 1..12, got {state.hour}"
+                f"12-hour clock requires hour in 1..12, got {state.hour}"
             )
         return pos
 
@@ -1138,8 +1138,8 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
 
     if has_24h and has_ampm:
         raise ValueError(
-            "24-hour format (H/HH) cannot be combined with "
-            "AM/PM (a/aa). Use 12-hour format (i/ii) instead."
+            "24-hour clock (H/HH) cannot be combined with "
+            "AM/PM (a/aa). Use the 12-hour clock (i/ii) instead."
         )
 
     for el, follower in pairwise(elements):
@@ -1153,17 +1153,17 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
             )
         ):
             raise ValueError(
-                f"pattern field {el!r} cannot be followed by an element "
+                f"specifier {el!r} cannot be followed by an element "
                 "that starts with a digit"
             )
         if el.needs_colon_terminator and follower.can_start_with_colon:
             raise ValueError(
-                f"pattern field {el!r} cannot be followed by an element "
+                f"specifier {el!r} cannot be followed by an element "
                 "that starts with ':'"
             )
         if el.needs_dot_terminator and follower.can_start_with_dot:
             raise ValueError(
-                f"pattern field {el!r} cannot be followed by an element "
+                f"specifier {el!r} cannot be followed by an element "
                 "that starts with '.'"
             )
         if isinstance(el, _TzId) and (
@@ -1396,9 +1396,7 @@ def validate_fields(
     """Validate fields and emit non-error pattern warnings."""
     for el in elements:
         if isinstance(el, _Field) and el.category not in allowed_categories:
-            raise ValueError(
-                f"{type_name} does not support pattern field {el!r}"
-            )
+            raise ValueError(f"{type_name} does not support specifier {el!r}")
 
     has_12h = any(
         isinstance(el, (_Hour12, _Hour12Unpadded)) for el in elements
@@ -1417,13 +1415,13 @@ def validate_fields(
     for i, el in enumerate(elements):
         if isinstance(el, _Hour24UnpaddedLegacy):
             warnings.warn(
-                "The pattern field `h` is deprecated; use `H` instead.",
+                "The specifier `h` is deprecated; use `H` instead.",
                 WheneverDeprecationWarning,
                 stacklevel=warning_stacklevel,
             )
         elif isinstance(el, _Hour24Legacy):
             warnings.warn(
-                "The pattern field `hh` is deprecated; use `HH` instead.",
+                "The specifier `hh` is deprecated; use `HH` instead.",
                 WheneverDeprecationWarning,
                 stacklevel=warning_stacklevel,
             )
@@ -1443,7 +1441,7 @@ def validate_fields(
                     replacement = f"[{separator}ss.{'f' * frac_el.width}]"
             legacy = f"{separator}SS"
             warnings.warn(
-                f"The pattern field `{legacy}` is deprecated; use "
+                f"The specifier `{legacy}` is deprecated; use "
                 f"`{replacement}` instead.",
                 WheneverDeprecationWarning,
                 stacklevel=warning_stacklevel,
