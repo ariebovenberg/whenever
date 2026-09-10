@@ -64,6 +64,14 @@ timezone ID
   *tz*.
   See {ref}`timezone-database`.
 
+timezone search path
+  The ordered directories in which timezone IDs are looked up. Read with
+  `get_tzpath()`, which returns a snapshot; set with `reset_tzpath()`, or
+  initially by `PYTHONTZPATH`. The `tzdata` package is a fallback after the
+  path, not part of it.
+  Preferred over *tzpath*, *TZPATH*, *timezone path*, and *zoneinfo path*.
+  See {ref}`timezone-database`.
+
 system timezone
   The timezone the operating system is configured with. Requested with
   `SYSTEM_TZ` wherever a timezone ID is accepted. Each call resolves it and
@@ -97,9 +105,12 @@ disambiguation
 offset mismatch
   A numeric offset in the input that identifies no occurrence of the written
   local time in the named timezone. Resolved by `offset_mismatch=`, before
-  disambiguation can apply.
-  Preferred over *offset conflict* and *offset disagreement*.
-  See {ref}`offset-mismatch`.
+  disambiguation can apply. A `ZonedDateTime` pickle loaded under changed
+  timezone rules is one too; unpickling resolves it as `keep_instant` and
+  emits `PickleOffsetMismatchWarning`.
+  Preferred over *offset conflict*, *offset disagreement*, and *pickle
+  reconciliation*.
+  See {ref}`offset-mismatch` and {ref}`pickling`.
 
 offset-preserving resolution
   How `replace()` and calendar arithmetic on a `ZonedDateTime` resolve their

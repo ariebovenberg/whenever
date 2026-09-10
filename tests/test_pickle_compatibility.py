@@ -1,13 +1,15 @@
+import pickle
 import struct
 import warnings
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import cast
 
 import pytest
 import whenever as w
 from whenever import _pywhenever as py
 
-from .common import warns_here
+from .common import AMS_TZ_RAWFILE_DST_LATE, tz_rules_from_file, warns_here
 
 _ReduceResult = tuple[Callable[..., object], tuple[object, ...]]
 
@@ -223,6 +225,39 @@ def test_zoned_pickle_reconciles_changed_offset_rules():
     assert "instant to 2023-07-01 13:00:00 with offset +02:00" in message
     assert "instant was preserved" in message
     assert "local datetime and offset were updated" in message
+
+
+def test_zoned_pickle_loads_reconciles_under_changed_rules(tmp_path: Path):
+    # The real rules ended DST on October 25, 2020; the week-late file ends
+    # it on November 1, so this instant sits in the one week they disagree on.
+    original = w.ZonedDateTime(2020, 10, 28, 12, tz="Europe/Amsterdam")
+    assert original.offset == w.TimeDelta(hours=1)
+    payload = pickle.dumps(original)
+
+    with tz_rules_from_file(
+        "Europe/Amsterdam", AMS_TZ_RAWFILE_DST_LATE, tmp_path
+    ):
+        with warns_here(w.PickleOffsetMismatchWarning) as caught:
+            restored = pickle.loads(payload)
+
+    assert restored.to_instant() == original.to_instant()
+    assert restored.offset == w.TimeDelta(hours=2)
+    assert restored.to_plain() == w.PlainDateTime(2020, 10, 28, 13)
+    assert restored.tz_id == "Europe/Amsterdam"
+    message = str(caught[0].message)
+    assert "stored 2020-10-28 12:00:00 with offset +01:00" in message
+    assert "instant to 2020-10-28 13:00:00 with offset +02:00" in message
+
+
+def test_zoned_pickle_loads_unchanged_rules_do_not_warn():
+    original = w.ZonedDateTime(
+        2023, 7, 1, 12, nanosecond=123, tz="Europe/Amsterdam"
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        restored = pickle.loads(pickle.dumps(original))
+
+    assert restored.strict_eq(original)
 
 
 def test_zoned_pickle_unchanged_rules_do_not_warn():

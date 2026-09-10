@@ -2,18 +2,19 @@
 myst:
   html_meta:
     description: >-
-      How whenever finds IANA timezone data: the timezone search path and
-      tzdata fallback, case-insensitive timezone IDs, reset_tzpath(), and the
-      definition cache with clear_tzcache().
+      How whenever finds IANA timezone data: the timezone search path from
+      PYTHONTZPATH and its tzdata fallback, case-insensitive timezone IDs,
+      get_tzpath() and reset_tzpath(), and the definition cache with
+      clear_tzcache().
 ---
 
 (timezone-database)=
 # Working with the timezone database
 
 `whenever` loads named timezones from the IANA timezone database installed on
-your system. It uses the configured timezone search path (see
-`get_tzpath()`) first and falls back to the `tzdata` package when it is
-installed.
+your system. It uses the configured **timezone search path** (see
+{func}`~whenever.get_tzpath`) first and falls back to the `tzdata` package
+when it is installed.
 
 ## Timezone identifiers
 
@@ -45,6 +46,13 @@ The configured directories are trusted database locations. A database that
 contains identifiers differing only by ASCII case is unsupported; the selected
 entry is unspecified. Lookup examines only the directory components of the
 requested identifier rather than indexing the complete database.
+
+The initial search path comes from the `PYTHONTZPATH` environment variable,
+falling back to the interpreter's compiled-in `TZPATH`: the same sources
+{mod}`zoneinfo` reads. Entries that are not absolute paths are ignored.
+Calling {func}`~whenever.reset_tzpath` with no argument reads them again.
+{func}`~whenever.get_tzpath` returns a snapshot: the tuple it returned does
+not change when the path is reset later.
 
 ## Cache behavior
 

@@ -225,8 +225,8 @@ def available_timezones() -> set[str]:
     """Gather the set of all available timezones.
 
     Each call to this function will recalculate the available timezone names
-    depending on the currently configured ``TZPATH``, and the
-    presence of the ``tzdata`` package.
+    depending on the current timezone search path (see :func:`get_tzpath`),
+    and the presence of the ``tzdata`` package.
 
     Warning
     -------
