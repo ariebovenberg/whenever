@@ -2895,7 +2895,7 @@ integrations = [
 test = [
     { name = "hypothesis", specifier = ">=6,<7" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
-    { name = "pytest-benchmark", extras = ["histogram"], specifier = ">=5.2.3,<6" },
+    { name = "pytest-benchmark", extras = ["histogram"], specifier = ">=5.3.0,<6" },
     { name = "pytest-cov", specifier = ">=7.1.0,<8" },
     { name = "pytest-order", specifier = ">=1.4.0,<2" },
 ]

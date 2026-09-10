@@ -42,7 +42,7 @@ keywords = [
 
 [dependency-groups]
 test = [
-    "pytest-benchmark[histogram]>=5.2.3,<6",
+    "pytest-benchmark[histogram]>=5.3.0,<6",
     "pytest-cov>=7.1.0,<8",
     "pytest-order>=1.4.0,<2",
     "pytest>=9.0.3,<10",
