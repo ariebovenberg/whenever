@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import importlib.metadata
 import re
+import warnings
 
 import sphinx
 
 sphinx.SPHINX_RUNNING = True
+
+# viewcode resolves the deprecated ``.. data:: TZPATH`` reference entry by
+# attribute access, which is exactly what the deprecation warns about.
+# Remove together with the entry in 1.0.
+warnings.filterwarnings("ignore", message="TZPATH is deprecated")
 
 # -- Project information -----------------------------------------------------
 

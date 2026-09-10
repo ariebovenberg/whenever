@@ -53,7 +53,9 @@ deprecated interfaces are removed.
   values: `"required"` says the call can raise, `"if_available"` says when
   the ID is written, and `"omit"` says what happens instead; `"always"`,
   `"auto"`, and `"never"` each needed the docstring to say which of those
-  it meant.
+  it meant. `TZPATH` was a module attribute that `from whenever import
+  TZPATH` froze at import time, so a later `reset_tzpath()` was invisible to
+  it; `get_tzpath()` reads the current path on every call.
 
 - Custom format and parse patterns now use `H`/`HH` for the 24-hour clock.
   The previous `h`/`hh` spellings are deprecated. Optional seconds use a
@@ -87,6 +89,9 @@ deprecated interfaces are removed.
   **Rationale**: timezone databases change. Preserving the instant avoids
   silently changing when the stored event occurred while still reconciling
   its local representation with the current rules.
+
+- Scheduled for 1.0: `Instant` pickles written before 0.8.0 stop loading.
+  Pickles written by 0.8.0 or later keep loading in 1.0.
 
 **Added and improved**
 

@@ -60,6 +60,7 @@ from .common import (
     system_tz,
     system_tz_ams,
     system_tz_nyc,
+    tz_rules_from_file,
     warns_here,
 )
 
@@ -3991,18 +3992,8 @@ class TestInitFromPyResolution:
     def disagreeing_tz(self, tmp_path: Path):
         """A ``ZoneInfo`` that calls itself ``Europe/Amsterdam`` but reads its
         rules from a file whenever never sees, so the two disagree."""
-        zone = tmp_path / "Europe" / "Amsterdam"
-        zone.parent.mkdir(parents=True)
-        shutil.copyfile(TEST_DIR / "tzif" / "Amsterdam.tzif", zone)
-
-        previous = get_tzpath()
-        reset_tzpath([tmp_path])
-        clear_tzcache()
-        try:
+        with tz_rules_from_file("Europe/Amsterdam", AMS_TZ_RAWFILE, tmp_path):
             yield self._keyed_zoneinfo
-        finally:
-            clear_tzcache()
-            reset_tzpath(previous)
 
     @staticmethod
     def _keyed_zoneinfo(path: str) -> ZoneInfo:

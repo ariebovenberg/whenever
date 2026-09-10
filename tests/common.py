@@ -1,5 +1,7 @@
 import os
+import shutil
 import warnings
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from sys import _getframe
@@ -11,7 +13,10 @@ from whenever import (
     SYSTEM_TZ,
     PlainDateTime,
     ZonedDateTime,
+    clear_tzcache,
+    get_tzpath,
     reset_system_tz,
+    reset_tzpath,
 )
 
 MAX_I64 = 1 << 64
@@ -179,6 +184,28 @@ def system_tz_nyc():
             yield
     finally:
         reset_system_tz()  # don't forget to reset the timezone after the patch!
+
+
+@contextmanager
+def tz_rules_from_file(tz_id: str, path: str, tmp_dir: Path) -> Iterator[None]:
+    """Serve ``path`` as the rules for ``tz_id`` until the block exits.
+
+    The file is copied under ``tz_id`` into ``tmp_dir``, which becomes the
+    only entry of the timezone search path; the cache is cleared on entry
+    and on exit so lookups before and after the block see their own rules.
+    """
+    zone = tmp_dir / tz_id
+    zone.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(path, zone)
+
+    previous = get_tzpath()
+    reset_tzpath([tmp_dir])
+    clear_tzcache()
+    try:
+        yield
+    finally:
+        clear_tzcache()
+        reset_tzpath(previous)
 
 
 with system_tz(AMS_TZ_POSIX):
