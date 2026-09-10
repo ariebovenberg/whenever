@@ -2390,14 +2390,14 @@ wheels = [
 
 [[package]]
 name = "slotscheck"
-version = "0.20.1"
+version = "0.21.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/dc/46346431b07aefd028e48569b8b4a067a7604f98559a14e848d90febaea0/slotscheck-0.20.1.tar.gz", hash = "sha256:f590fddcea4b673f6ef3ee0010a545df1cad96941ef09906b28b2ee31c38c66b", size = 14747, upload-time = "2026-07-05T13:23:28.803Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/33/34/811f9588dbd55e3adee986e53cd1bcdfabc6c5b6919b9cf1ff208f2878cd/slotscheck-0.21.0.tar.gz", hash = "sha256:0a5296300c5d5d9663e597861d7b3ef16abc74c851498a648116d868960c12c2", size = 15354, upload-time = "2026-09-06T19:08:07.131Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/59/e9/232563e90b04c3ddd93af1a6ecf8ff8566ad7bb80e46843c472c36f2578c/slotscheck-0.20.1-py3-none-any.whl", hash = "sha256:e8ec875fc40e37660babb28805294615d5631bb09c51ee75db08d03d4b6c156e", size = 17634, upload-time = "2026-07-05T13:23:27.53Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/51/778abe936884e73944d43267bed0eae1da0658b11c7d6eb7e10ce83a646b/slotscheck-0.21.0-py3-none-any.whl", hash = "sha256:c109206db56ee48b3862feccd8c44ca480bb4d102ec39f6cc0f8a9695ef17eb0", size = 18076, upload-time = "2026-09-06T19:08:05.937Z" },
 ]
 
 [[package]]
@@ -2874,7 +2874,7 @@ dev-extra = [
     { name = "packaging", specifier = ">=26.2" },
     { name = "ruff", specifier = ">=0.16,<0.17" },
     { name = "setuptools-rust" },
-    { name = "slotscheck", specifier = ">=0.20,<0.21" },
+    { name = "slotscheck", specifier = ">=0.21.0,<0.22" },
     { name = "twine", specifier = ">=7,<8" },
 ]
 docs = [
