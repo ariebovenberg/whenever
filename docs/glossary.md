@@ -153,4 +153,44 @@ optional seconds
   and `a`/`aa`. A pattern with one but not the other warns.
   Preferred over *12-hour format*, *12-hour time*, and *AM/PM time*.
   See {ref}`pattern-format`.
+
+itemized delta
+  A delta that keeps every component as it was given: `ItemizedDelta` and
+  `ItemizedDateDelta`. Ninety minutes stays ninety minutes.
+  Preferred over *unnormalized delta*, *period*, and *span*.
+  See {ref}`delta-norm`.
+
+normalized delta
+  A delta reduced to one exact duration, whatever components built it:
+  `TimeDelta`. Ninety minutes and an hour and a half are the same value.
+  Preferred over *duration* as a type name.
+  See {ref}`delta-norm`.
+
+component
+  One unit's value in an itemized delta, such as `months` or `nanoseconds`.
+  A component is present when the delta was given it, an explicit zero
+  included; `==` ignores presence, iteration and `strict_eq()` do not.
+  Preferred over *field* and *part*.
+  See {ref}`delta-norm`.
+
+balancing
+  Redistributing a delta over a chosen set of units with `in_units()`, such
+  as 150 minutes into 2 hours and 30 minutes. Calendar units need a
+  `relative_to` reference.
+  Preferred over *normalizing into units* and *rebalancing*.
+  See {ref}`delta-in-units`.
+
+component-wise composition
+  Adding or subtracting two itemized deltas by combining like components,
+  which is what `+`, `-`, and `add()`/`subtract()` without `relative_to`
+  do. Flagged by `CalendarUnitCompositionWarning` when a calendar unit is
+  involved. Passing `relative_to=` gives calendar-aware composition instead.
+  Preferred over *field-wise composition* and *literal addition*.
+  See {ref}`delta-add-sub`.
+
+partial type
+  A type that holds part of a datetime: `Date`, `Time`, `YearMonth`,
+  `MonthDay`, and `IsoWeekDate`. *Partial* is the short form.
+  Preferred over *smaller types*, *date-only types*, and *component types*.
+  See {ref}`partial-api`.
 ```

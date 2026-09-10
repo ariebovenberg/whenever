@@ -136,23 +136,23 @@ def _resolve_rounding(
 
 
 CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG = (
-    "Using `+` or `-` between two itemized deltas combines their fields instead "
+    "Using `+` or `-` between two itemized deltas combines their components instead "
     "of applying the deltas one after another. With calendar units such as "
     "months or days, the combined delta can produce a different date because "
     "calendar arithmetic may clamp at month boundaries. To apply the deltas "
     "sequentially, apply each one to the date or datetime in a separate step. "
     "To create one delta relative to a starting point, use the corresponding "
     "`.add()` or `.subtract()` method with `relative_to=...` and "
-    "`in_units=...`. If field-wise composition is intentional, use that method "
+    "`in_units=...`. If component-wise composition is intentional, use that method "
     "with `cal_unit_composition_ok=True`. " + WARNING_HANDLING_DOCS_MSG
 )
 
 CALENDAR_UNIT_METHOD_COMPOSITION_MSG = (
     "Calling `.add()` or `.subtract()` without `relative_to` combines the "
-    "itemized deltas field by field. With calendar units such as months or "
+    "itemized deltas component by component. With calendar units such as months or "
     "days, the resulting delta may behave differently from applying the deltas "
     "one after another. Pass `relative_to=...` and `in_units=...` to create a "
-    "delta relative to a specific starting point. If field-wise composition is "
+    "delta relative to a specific starting point. If component-wise composition is "
     "intentional, pass `cal_unit_composition_ok=True`. "
     + WARNING_HANDLING_DOCS_MSG
 )
@@ -165,12 +165,12 @@ def _has_nonzero_calendar_units(
 
 
 class CalendarUnitCompositionWarning(WheneverWarning):
-    """Warn when itemized deltas are composed field by field.
+    """Warn when itemized deltas are composed component by component.
 
-    Itemized deltas preserve the fields they were given:
+    Itemized deltas preserve the components they were given:
     ``1 month`` remains ``1 month`` rather than being normalized to days.
     Composing two itemized deltas without a ``relative_to`` reference therefore
-    performs literal field-wise arithmetic, such as
+    performs literal component-wise arithmetic, such as
     ``ItemizedDateDelta(months=1) + ItemizedDateDelta(months=1)`` becoming
     ``ItemizedDateDelta(months=2)``.
 
@@ -182,9 +182,13 @@ class CalendarUnitCompositionWarning(WheneverWarning):
     The warning is only emitted when either operand contains a nonzero calendar
     unit; exact-only composition does not warn.
 
+    Composition is flagged rather than refused (Temporal's ``Duration.add()``
+    throws without a reference) because a warning serves strict, accepting,
+    and unaware callers alike: see :ref:`flagged-not-forbidden`.
+
     To preserve calendar-aware semantics, pass ``relative_to=...`` and
     ``in_units=...`` to :meth:`~whenever.ItemizedDelta.add` or
-    :meth:`~whenever.ItemizedDateDelta.add`. If field-wise composition is
+    :meth:`~whenever.ItemizedDateDelta.add`. If component-wise composition is
     intentional, pass ``cal_unit_composition_ok=True`` or use Python's
     standard warning filters.
     """
@@ -200,6 +204,10 @@ _MAX_DELTA_HOURS = _MAX_DELTA_DAYS * 24
 _MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
 _MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
 _MAX_SUBSEC_NANOS = 999_999_999
+_OUT_OF_RANGE_MSG = "delta out of range"
+_NANOS_OUT_OF_RANGE_MSG = (
+    "nanoseconds must be within ±999,999,999; put whole seconds in seconds="
+)
 
 _MAX_DDELTA_DIGITS = 8  # consistent with Rust extension
 
@@ -221,9 +229,9 @@ def _parse_datedelta_component(s: str, exc: Exception) -> tuple[str, int, str]:
     return rest, int(raw), unit
 
 
-def _check_bound(i: int | None, max_value: int) -> int | None:
+def _check_bound(i: int | None, max_value: int, err: str) -> int | None:
     if i and i > max_value:
-        raise ValueError("delta out of range")
+        raise ValueError(err)
     return i
 
 
@@ -231,6 +239,7 @@ def _check_component(
     value: int,
     sign: Sign,
     max_value: int,  # may also be UNSET
+    err: str,
 ) -> tuple[int | None, Sign]:
     if value is UNSET:
         return None, sign
@@ -241,19 +250,19 @@ def _check_component(
             raise ValueError("mixed sign in delta")
         sign = -1
         if -value > max_value:
-            raise ValueError("delta out of range")
+            raise ValueError(err)
     else:  # value > 0
         if sign == -1:
             raise ValueError("mixed sign in delta")
         sign = 1
         if value > max_value:
-            raise ValueError("delta out of range")
+            raise ValueError(err)
     return value, sign
 
 
 @final
 class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
-    """A duration that preserves the fields it was given.
+    """A duration that preserves the components it was given.
     It closely models the ISO 8601 duration format for durations.
 
     >>> d = ItemizedDelta(weeks=2, days=3, hours=14)
@@ -279,9 +288,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     ``ItemizedDelta`` also supports other dictionary-like operations:
 
-    >>> "months" in d  # check for presence of a field
+    >>> "months" in d  # check for presence of a component
     False
-    >>> len(d)  # number of fields set
+    >>> len(d)  # number of components set
     3
 
     Zero values are considered distinct from "missing" values:
@@ -296,14 +305,20 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     >>> d3 = ItemizedDelta(months=24, minutes=90)
     ItemizedDelta("P24mT90m")
 
-    Empty durations are not allowed. At least one field must be set (but it can be zero):
+    Seconds and nanoseconds are one quantity in two components:
+    ``nanoseconds`` is bounded to 999,999,999, and setting it also sets
+    ``seconds``. There are no millisecond or microsecond components; use
+    :meth:`total` for those units. See the
+    `subsecond rules <https://whenever.rtfd.io/en/latest/reference/deltas.html#delta-subsecond>`_.
+
+    Empty durations are not allowed. At least one component must be set (but it can be zero):
 
     >>> ItemizedDelta()
-    ValueError: at least one field must be set
+    ValueError: at least one component must be set
     >>> ItemizedDelta(seconds=0)
     ItemizedDelta("PT0s")
 
-    Negative durations are supported, but all fields must have the same sign:
+    Negative durations are supported, but all components must have the same sign:
 
     >>> d4 = ItemizedDelta(years=-1, weeks=-2, days=0)
     ItemizedDelta("-P1y2w0d")
@@ -313,7 +328,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     Note
     ----
     Unlike :class:`TimeDelta`, ``ItemizedDelta`` does not normalize
-    its fields. This means that ``ItemizedDelta(hours=90)`` and
+    its components. This means that ``ItemizedDelta(hours=90)`` and
     ``ItemizedDelta(days=3, hours=18)`` are considered different values.
     To convert to a normalized form, use :meth:`in_units`.
     See also the `delta documentation <https://whenever.rtfd.io/en/latest/guide/deltas.html>`_.
@@ -323,7 +338,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     __slots__ = (
         # Values are stored as signed integers (or None if not set).
-        # All non-zero fields must have the same sign.
+        # All non-zero components must have the same sign.
         "_years",
         "_months",
         "_weeks",
@@ -331,7 +346,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         "_hours",
         "_minutes",
         "_seconds",
-        # FUTURE: allow nanoseconds to exceed 999,999,999?
         "_nanoseconds",
     )
 
@@ -390,19 +404,29 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         if nanoseconds is not UNSET and seconds is UNSET:
             seconds = 0
 
-        self._years, sign = _check_component(years, sign, _MAX_DELTA_YEARS)
-        self._months, sign = _check_component(months, sign, _MAX_DELTA_MONTHS)
-        self._weeks, sign = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
-        self._days, sign = _check_component(days, sign, _MAX_DELTA_DAYS)
-        self._hours, sign = _check_component(hours, sign, _MAX_DELTA_HOURS)
+        self._years, sign = _check_component(
+            years, sign, _MAX_DELTA_YEARS, _OUT_OF_RANGE_MSG
+        )
+        self._months, sign = _check_component(
+            months, sign, _MAX_DELTA_MONTHS, _OUT_OF_RANGE_MSG
+        )
+        self._weeks, sign = _check_component(
+            weeks, sign, _MAX_DELTA_WEEKS, _OUT_OF_RANGE_MSG
+        )
+        self._days, sign = _check_component(
+            days, sign, _MAX_DELTA_DAYS, _OUT_OF_RANGE_MSG
+        )
+        self._hours, sign = _check_component(
+            hours, sign, _MAX_DELTA_HOURS, _OUT_OF_RANGE_MSG
+        )
         self._minutes, sign = _check_component(
-            minutes, sign, _MAX_DELTA_MINUTES
+            minutes, sign, _MAX_DELTA_MINUTES, _OUT_OF_RANGE_MSG
         )
         self._seconds, sign = _check_component(
-            seconds, sign, _MAX_DELTA_SECONDS
+            seconds, sign, _MAX_DELTA_SECONDS, _OUT_OF_RANGE_MSG
         )
         self._nanoseconds, sign = _check_component(
-            nanoseconds, sign, _MAX_SUBSEC_NANOS
+            nanoseconds, sign, _MAX_SUBSEC_NANOS, _NANOS_OUT_OF_RANGE_MSG
         )
         if (
             years is UNSET
@@ -415,8 +439,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             and nanoseconds is UNSET
         ):
             # This is to ensure ISO8601 formatting/parsing is round-trip safe.
-            # There is no "empty" duration in ISO8601; at least one field must be present.
-            raise ValueError("at least one field must be set")
+            # There is no "empty" duration in ISO8601; at least one component must be present.
+            raise ValueError("at least one component must be set")
 
     __init__ = add_alternate_constructors(__init__, None)
 
@@ -439,7 +463,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     # FUTURE: a float_seconds method that combines seconds and nanoseconds into a single float value?
 
     def __iter__(self) -> Iterator[DeltaUnitStr]:
-        """Iterate over all non-missing fields, ordered from largest to smallest unit."""
+        """Iterate over all non-missing components, ordered from largest to smallest unit."""
         if self._years is not None:
             yield "years"
         if self._months is not None:
@@ -463,16 +487,16 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         if SPHINX_RUNNING:
 
             def keys(self) -> KeysView[DeltaUnitStr]:
-                """The names of all defined fields, in order of largest to smallest unit.
+                """The names of all defined components, in order of largest to smallest unit.
 
                 Part of the mapping protocol
                 """
                 ...
 
             # FUTURE: an optimized ValuesView class that defers to the internal
-            # fields directly instead of going through __getitem__
+            # components directly instead of going through __getitem__
             def values(self) -> ValuesView[int]:
-                """Return all defined field values, in order
+                """Return all defined component values, in order
                 of largest to smallest unit.
 
                 >>> d = ItemizedDelta(years=3, hours=12, days=0)
@@ -486,7 +510,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 ...
 
             def items(self) -> ItemsView[DeltaUnitStr, int]:
-                """Return all defined fields as (unit, value) pairs
+                """Return all defined components as (unit, value) pairs
                 ordered from largest to smallest unit.
 
                 >>> d = ItemizedDelta(years=3, hours=12, days=0)
@@ -506,7 +530,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             def get(
                 self, key: DeltaUnitStr, default: object = None, /
             ) -> object:
-                """Get the value of a specific field by name, or return default if not set.
+                """Get the value of a specific component by name, or return default if not set.
 
                 Part of the mapping protocol
                 """
@@ -514,7 +538,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             ...
 
     def __getitem__(self, key: str) -> int:
-        """Get the value of a specific field by name.
+        """Get the value of a specific component by name.
 
         >>> d = ItemizedDelta(weeks=1, days=3)
         >>> d["weeks"]
@@ -550,7 +574,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         raise KeyError(key)
 
     def __len__(self) -> int:
-        """Get the number of fields that are set.
+        """Get the number of components that are set.
 
         >>> d = ItemizedDelta(weeks=1, days=3)
         >>> len(d)
@@ -568,7 +592,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         )
 
     def __contains__(self, key: object) -> bool:
-        """Check if a specific field is set.
+        """Check if a specific component is set.
 
         >>> d = ItemizedDelta(weeks=1, days=3)
         >>> "weeks" in d
@@ -671,9 +695,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 parts.append(f"{abs(self._seconds)}.0{s}")
 
         joined = "".join(parts)
-        if joined.endswith("T"):  # skip the T if no time fields
+        if joined.endswith("T"):  # skip the T if no time components
             return joined[:-1]
-        # NOTE: we always have at least one field,
+        # NOTE: we always have at least one component,
         # so we don't need to check for "empty" durations.
         return joined
 
@@ -780,7 +804,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ):
             sign = 0
 
-        # NOTE: we've implicitly validated that at least one field is set
+        # NOTE: we've implicitly validated that at least one component is set
         return cls._from_signed(
             sign,
             years,
@@ -798,8 +822,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     ) -> tuple[ItemizedDateDelta | None, _whenever.TimeDelta | None]:
         """Split into date and time parts.
 
-        Either part may be None if no fields were set of that type.
-        At least one part will be non-None, since at least one field must be set.
+        Either part may be None if no components were set of that type.
+        At least one part will be non-None, since at least one component must be set.
 
         >>> d = ItemizedDelta(
         ...     years=1,
@@ -858,7 +882,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         return date_part, time_part
 
     # A private constructor that bypasses sign/presence validation.
-    # All field values must be non-negative; `sign` is applied when storing.
+    # All component values must be non-negative; `sign` is applied when storing.
     @classmethod
     def _from_signed(
         cls,
@@ -874,22 +898,24 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     ) -> ItemizedDelta:
         self = _object_new(cls)
 
-        def _apply(v: int | None, max_val: int) -> int | None:
-            v = _check_bound(v, max_val)
+        def _apply(v: int | None, max_val: int, err: str) -> int | None:
+            v = _check_bound(v, max_val, err)
             return -v if v and sign < 0 else v
 
-        self._years = _apply(years, _MAX_DELTA_YEARS)
-        self._months = _apply(months, _MAX_DELTA_MONTHS)
-        self._weeks = _apply(weeks, _MAX_DELTA_WEEKS)
-        self._days = _apply(days, _MAX_DELTA_DAYS)
-        self._hours = _apply(hours, _MAX_DELTA_HOURS)
-        self._minutes = _apply(minutes, _MAX_DELTA_MINUTES)
-        self._seconds = _apply(seconds, _MAX_DELTA_SECONDS)
-        self._nanoseconds = _apply(nanoseconds, _MAX_SUBSEC_NANOS)
+        self._years = _apply(years, _MAX_DELTA_YEARS, _OUT_OF_RANGE_MSG)
+        self._months = _apply(months, _MAX_DELTA_MONTHS, _OUT_OF_RANGE_MSG)
+        self._weeks = _apply(weeks, _MAX_DELTA_WEEKS, _OUT_OF_RANGE_MSG)
+        self._days = _apply(days, _MAX_DELTA_DAYS, _OUT_OF_RANGE_MSG)
+        self._hours = _apply(hours, _MAX_DELTA_HOURS, _OUT_OF_RANGE_MSG)
+        self._minutes = _apply(minutes, _MAX_DELTA_MINUTES, _OUT_OF_RANGE_MSG)
+        self._seconds = _apply(seconds, _MAX_DELTA_SECONDS, _OUT_OF_RANGE_MSG)
+        self._nanoseconds = _apply(
+            nanoseconds, _MAX_SUBSEC_NANOS, _NANOS_OUT_OF_RANGE_MSG
+        )
         return self
 
     def __eq__(self, other: object) -> bool:
-        """Compare for equality. Each field is individually compared.
+        """Compare for equality. Each component is individually compared.
         No normalization is performed. Zero values are considered equivalent
         to missing values.
 
@@ -901,7 +927,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> d == ItemizedDelta(weeks=2, minutes=91)
         False
 
-        If you want strict equality (including presence of fields),
+        If you want strict equality (including presence of components),
         use :meth:`strict_eq`.
 
         """
@@ -1081,7 +1107,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     ) -> ItemizedDelta:
         """Add time to this delta, returning a new delta.
 
-        Without a `relative_to` reference, composition is field-wise and warns
+        Without a `relative_to` reference, composition is component-wise and warns
         when nonzero calendar units are involved. The warning can be suppressed
         with `cal_unit_composition_ok=True`.
         """
@@ -1512,7 +1538,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ) -> ItemizedDelta: ...
 
     def replace(self, **kwargs: int | None) -> ItemizedDelta:
-        """Return a new delta with specific fields replaced.
+        """Return a new delta with specific components replaced.
         Fields set to ``None`` will be removed.
 
         All normal validation rules apply.
@@ -1524,10 +1550,10 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         kwargs_w_sentinel = {
             k: UNSET if v is None else v for k, v in kwargs.items()
         }
-        fields = {**self, **kwargs_w_sentinel}
-        if all(v is UNSET for v in fields.values()):
-            raise ValueError("at least one field must remain set")
-        return ItemizedDelta(**fields)
+        components = {**self, **kwargs_w_sentinel}
+        if all(v is UNSET for v in components.values()):
+            raise ValueError("at least one component must remain set")
+        return ItemizedDelta(**components)
 
     @no_type_check
     def __reduce__(self):
@@ -1603,7 +1629,7 @@ _unpkl_idelta.__module__ = "whenever"
 
 @final
 class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
-    """A date duration that preserves the fields it was given.
+    """A date duration that preserves the components it was given.
     It closely models the ISO 8601 duration format for date-only durations.
 
     >>> d = ItemizedDateDelta(years=2, weeks=3)
@@ -1628,9 +1654,9 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     ``ItemizedDateDelta`` also supports other dictionary-like operations:
 
-    >>> "days" in d  # check for presence of a field
+    >>> "days" in d  # check for presence of a component
     False
-    >>> len(d)  # number of fields set
+    >>> len(d)  # number of components set
     2
 
     Zero values are considered distinct from "missing" values:
@@ -1645,14 +1671,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     >>> d3 = ItemizedDateDelta(months=24, days=100)
     ItemizedDateDelta("P24m100d")
 
-    Empty durations are not allowed. At least one field must be set (but it can be zero):
+    Empty durations are not allowed. At least one component must be set (but it can be zero):
 
     >>> ItemizedDateDelta()
-    ValueError: at least one field must be set
+    ValueError: at least one component must be set
     >>> ItemizedDateDelta(days=0)
     ItemizedDateDelta("P0d")
 
-    Negative durations are supported, but all fields must have the same sign:
+    Negative durations are supported, but all components must have the same sign:
 
     >>> d4 = ItemizedDateDelta(years=-1, weeks=-2, days=0)
     ItemizedDateDelta("-P1y2w0d")
@@ -1661,7 +1687,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     Note
     ----
-    ``ItemizedDateDelta`` does not normalize its fields. This means that
+    ``ItemizedDateDelta`` does not normalize its components. This means that
     ``ItemizedDateDelta(months=14)`` and
     ``ItemizedDateDelta(years=1, months=2)`` are considered different values.
     To convert to a normalized form, use :meth:`in_units`.
@@ -1672,7 +1698,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     __slots__ = (
         # Values are stored as signed integers (or None if not set).
-        # All non-zero fields must have the same sign.
+        # All non-zero components must have the same sign.
         "_years",
         "_months",
         "_weeks",
@@ -1705,10 +1731,18 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         days: int = UNSET,
     ) -> None:
         sign: Sign = 0
-        self._years, sign = _check_component(years, sign, _MAX_DELTA_YEARS)
-        self._months, sign = _check_component(months, sign, _MAX_DELTA_MONTHS)
-        self._weeks, sign = _check_component(weeks, sign, _MAX_DELTA_WEEKS)
-        self._days, sign = _check_component(days, sign, _MAX_DELTA_DAYS)
+        self._years, sign = _check_component(
+            years, sign, _MAX_DELTA_YEARS, _OUT_OF_RANGE_MSG
+        )
+        self._months, sign = _check_component(
+            months, sign, _MAX_DELTA_MONTHS, _OUT_OF_RANGE_MSG
+        )
+        self._weeks, sign = _check_component(
+            weeks, sign, _MAX_DELTA_WEEKS, _OUT_OF_RANGE_MSG
+        )
+        self._days, sign = _check_component(
+            days, sign, _MAX_DELTA_DAYS, _OUT_OF_RANGE_MSG
+        )
         if (
             years is UNSET
             and months is UNSET
@@ -1716,8 +1750,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             and days is UNSET
         ):
             # This is to ensure ISO8601 formatting/parsing is round-trip safe.
-            # There is no "empty" duration in ISO8601; at least one field must be present.
-            raise ValueError("at least one field must be set")
+            # There is no "empty" duration in ISO8601; at least one component must be present.
+            raise ValueError("at least one component must be set")
 
     __init__ = add_alternate_constructors(__init__, None)
 
@@ -1772,7 +1806,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         ) -> ItemizedDateDelta: ...
 
     def replace(self, **kwargs: int | None) -> ItemizedDateDelta:
-        """Return a new delta with specific fields replaced.
+        """Return a new delta with specific components replaced.
         Fields set to ``None`` will be removed.
 
         All normal validation rules apply.
@@ -1785,13 +1819,13 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             k: UNSET if v is None else v for k, v in kwargs.items()
         }
         # Keys may be invalid here, but the constructor will catch that.
-        fields: dict[str, object] = {
+        components: dict[str, object] = {
             **{key: value for key, value in self.items()},
             **kwargs_w_sentinel,
         }
-        if all(v is UNSET for v in fields.values()):
-            raise ValueError("at least one field must remain set")
-        return ItemizedDateDelta(**cast(Any, fields))
+        if all(v is UNSET for v in components.values()):
+            raise ValueError("at least one component must remain set")
+        return ItemizedDateDelta(**cast(Any, components))
 
     def format_iso(self, *, lowercase_units: bool = False) -> str:
         """Convert to the canionical ISO 8601 string representation:
@@ -1826,7 +1860,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         if self._days is not None:
             parts.append(f"{abs(self._days)}{d}")
 
-        # NOTE: we always have at least one field,
+        # NOTE: we always have at least one component,
         # so we don't need to check for "empty" durations.
         return "".join(parts)
 
@@ -1892,7 +1926,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         if not (years or months or weeks or days):
             sign = 0
 
-        # NOTE: we've implicitly validated that at least one field is set
+        # NOTE: we've implicitly validated that at least one component is set
         return cls._from_signed(sign, years, months, weeks, days)
 
     # These methods defer to the base class implementations, but need to be
@@ -1901,16 +1935,16 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         if SPHINX_RUNNING:
 
             def keys(self) -> KeysView[DateDeltaUnitStr]:
-                """The names of all defined fields, ordered from largest to smallest unit.
+                """The names of all defined components, ordered from largest to smallest unit.
 
                 Part of the mapping protocol
                 """
                 ...
 
             # FUTURE: an optimized ValuesView class that defers to the internal
-            # fields directly instead of going through __getitem__
+            # components directly instead of going through __getitem__
             def values(self) -> ValuesView[int]:
-                """Return all defined field values, in order
+                """Return all defined component values, in order
                 of largest to smallest unit.
 
                 >>> d = ItemizedDateDelta(years=3, days=12, months=0)
@@ -1922,7 +1956,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 ...
 
             def items(self) -> ItemsView[DateDeltaUnitStr, int]:
-                """Return all defined fields as (unit, value) pairs
+                """Return all defined components as (unit, value) pairs
                 ordered from largest to smallest unit.
 
                 >>> d = ItemizedDateDelta(years=3, days=12, months=0)
@@ -1940,14 +1974,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             def get(
                 self, key: DateDeltaUnitStr, default: object = None, /
             ) -> object:
-                """Get the value of a specific field by name, or return default if not set.
+                """Get the value of a specific component by name, or return default if not set.
 
                 Part of the mapping protocol
                 """
                 ...
 
     def __iter__(self) -> Iterator[DateDeltaUnitStr]:
-        """Iterate over all unit names for fields that are set, ordered from largest to smallest unit."""
+        """Iterate over all unit names for components that are set, ordered from largest to smallest unit."""
         if self._years is not None:
             yield "years"
         if self._months is not None:
@@ -1958,7 +1992,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             yield "days"
 
     def __getitem__(self, key: DateDeltaUnitStr) -> int:
-        """Get the value of a specific field by name.
+        """Get the value of a specific component by name.
 
         >>> d = ItemizedDateDelta(weeks=1, days=0)
         >>> d["weeks"]
@@ -1986,7 +2020,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         raise KeyError(key)
 
     def __len__(self) -> int:
-        """Get the number of fields that are set.
+        """Get the number of components that are set.
 
         >>> d = ItemizedDateDelta(weeks=1, days=0)
         >>> len(d)
@@ -2000,7 +2034,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         )
 
     def __contains__(self, key: object) -> bool:
-        """Check if a specific field is set.
+        """Check if a specific component is set.
 
         >>> d = ItemizedDateDelta(weeks=1, days=0)
         >>> "weeks" in d
@@ -2035,12 +2069,12 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         return bool(self._years or self._months or self._weeks or self._days)
 
     def __eq__(self, other: object) -> bool:
-        """Compare each field for equality, under the following rules:
+        """Compare each component for equality, under the following rules:
 
         - No normalization is performed. 12 months is not equal to 1 year, etc.
         - Zero values are considered equivalent to missing values.
 
-        If you want strict equality (including presence of fields),
+        If you want strict equality (including presence of components),
         use :meth:`strict_eq`.
 
         >>> d = ItemizedDateDelta(weeks=2, days=3)
@@ -2546,7 +2580,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         ) * sgn
 
     # A private constructor that bypasses sign/presence validation.
-    # All field values must be non-negative; `sign` is applied when storing.
+    # All component values must be non-negative; `sign` is applied when storing.
     @classmethod
     def _from_signed(
         cls,
@@ -2558,14 +2592,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     ) -> ItemizedDateDelta:
         self = _object_new(cls)
 
-        def _apply(v: int | None, max_val: int) -> int | None:
-            v = _check_bound(v, max_val)
+        def _apply(v: int | None, max_val: int, err: str) -> int | None:
+            v = _check_bound(v, max_val, err)
             return -v if v and sign < 0 else v
 
-        self._years = _apply(years, _MAX_DELTA_YEARS)
-        self._months = _apply(months, _MAX_DELTA_MONTHS)
-        self._weeks = _apply(weeks, _MAX_DELTA_WEEKS)
-        self._days = _apply(days, _MAX_DELTA_DAYS)
+        self._years = _apply(years, _MAX_DELTA_YEARS, _OUT_OF_RANGE_MSG)
+        self._months = _apply(months, _MAX_DELTA_MONTHS, _OUT_OF_RANGE_MSG)
+        self._weeks = _apply(weeks, _MAX_DELTA_WEEKS, _OUT_OF_RANGE_MSG)
+        self._days = _apply(days, _MAX_DELTA_DAYS, _OUT_OF_RANGE_MSG)
         return self
 
     @no_type_check

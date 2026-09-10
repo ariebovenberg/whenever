@@ -35,6 +35,7 @@ different arithmetic rules.
 Keeping them as separate types prevents mixing operations
 that don't make sense together.
 
+(flagged-not-forbidden)=
 ## Footguns are flagged, not forbidden
 
 Some operations are potential footguns—but not *always* wrong.
