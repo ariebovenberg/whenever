@@ -3,7 +3,8 @@ import re
 from copy import copy, deepcopy
 
 import pytest
-from whenever import Date, YearMonth
+from typing_extensions import assert_type
+from whenever import Date, ItemizedDateDelta, YearMonth
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
@@ -75,6 +76,21 @@ class TestShift:
         value = YearMonth(2021, 1)
         assert value.add() == value
         assert value.subtract() == value
+
+    # mypy rejects `**` unpacking of a mapping whose keys are str literals
+    # ("must have string keys"), so the idiom needs an ignore.
+    def test_delta_unpacks(self):
+        delta = ItemizedDateDelta(years=1, months=2)
+        result = YearMonth(2024, 3).add(**delta)  # type: ignore[arg-type]
+        assert_type(result, YearMonth)
+        assert result == YearMonth(2025, 5)
+        assert YearMonth(2024, 3).subtract(**delta) == YearMonth(  # type: ignore[arg-type]
+            2023, 1
+        )
+
+    def test_delta_with_day_units(self):
+        with pytest.raises(TypeError, match="days"):
+            YearMonth(2024, 3).add(**ItemizedDateDelta(months=1, days=1))  # type: ignore[arg-type]
 
     @pytest.mark.parametrize(
         "operation",

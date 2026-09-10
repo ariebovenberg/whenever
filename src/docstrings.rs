@@ -6,12 +6,12 @@ use std::ffi::CStr;
 
 pub(crate) const PYDANTIC_SCHEMA: &CStr = c"__get_pydantic_core_schema__(source_type, handler)\n--\n\n";
 pub(crate) const CALENDARUNITCOMPOSITIONWARNING: &CStr = c"\
-Warn when itemized deltas are composed field by field.
+Warn when itemized deltas are composed component by component.
 
-Itemized deltas preserve the fields they were given:
+Itemized deltas preserve the components they were given:
 ``1 month`` remains ``1 month`` rather than being normalized to days.
 Composing two itemized deltas without a ``relative_to`` reference therefore
-performs literal field-wise arithmetic, such as
+performs literal component-wise arithmetic, such as
 ``ItemizedDateDelta(months=1) + ItemizedDateDelta(months=1)`` becoming
 ``ItemizedDateDelta(months=2)``.
 
@@ -23,9 +23,13 @@ there can differ from adding two months to January 31 in one step.
 The warning is only emitted when either operand contains a nonzero calendar
 unit; exact-only composition does not warn.
 
+Composition is flagged rather than refused (Temporal's ``Duration.add()``
+throws without a reference) because a warning serves strict, accepting,
+and unaware callers alike: see :ref:`flagged-not-forbidden`.
+
 To preserve calendar-aware semantics, pass ``relative_to=...`` and
 ``in_units=...`` to :meth:`~whenever.ItemizedDelta.add` or
-:meth:`~whenever.ItemizedDateDelta.add`. If field-wise composition is
+:meth:`~whenever.ItemizedDateDelta.add`. If component-wise composition is
 intentional, pass ``cal_unit_composition_ok=True`` or use Python's
 standard warning filters.
 ";

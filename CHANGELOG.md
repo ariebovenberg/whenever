@@ -104,6 +104,8 @@ deprecated interfaces are removed.
 - Added millisecond and microsecond totals to datetime differences and
   `ItemizedDelta.total()`.
 - Added `YearMonth.add()` and `subtract()`, and `MonthDay.is_leap_day()`.
+- An out-of-range `nanoseconds` component in an itemized delta now names
+  the bound and the remedy instead of `delta out of range`.
 - Stabilized `patch_current_time()` and exposed its `TimePatch` handle with
   `shift()` and `move_to()`.
 - `patch_current_time()` now supports pre-1970 instants.

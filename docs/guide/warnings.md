@@ -10,7 +10,7 @@ myst:
 # Handling warnings
 
 `whenever` emits warnings when operations may produce incorrect results,
-for example due to DST transitions, missing context, or field-wise
+for example due to DST transitions, missing context, or component-wise
 composition of calendar units. This is intentional: the operations
 are classic "footguns", but forbidding them entirely would be too strict.
 Warnings are an ideal mechanism to ensure the potential issues don't pass unnoticed.

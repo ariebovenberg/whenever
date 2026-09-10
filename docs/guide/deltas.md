@@ -55,14 +55,9 @@ TimeDelta("PT2h30m")          # normalized: 2 hours 30 minutes
 ItemizedDelta("PT1h90m")      # itemized: components kept as-is
 ```
 
-Itemized deltas preserve calendar units and whole-second-or-larger exact
-units. Subsecond values use one canonical `nanoseconds` component.
-Milliseconds and microseconds are available as scalar totals but are not
-itemized fields, so itemized mappings never silently replace a requested
-component with a differently named one.
-
-Use {meth}`~whenever.ItemizedDelta.total` to express the same duration in a
-scalar subsecond unit:
+Subsecond values use one `nanoseconds` component, bounded to 999,999,999;
+there are no `milliseconds` or `microseconds` components. Use
+{meth}`~whenever.ItemizedDelta.total` for a scalar in any unit:
 
 ```python
 >>> d = ItemizedDelta(seconds=1, nanoseconds=234_567_890)
@@ -76,7 +71,7 @@ scalar subsecond unit:
 ```
 
 Nanosecond totals are integers to preserve precision; other totals are
-floating-point values.
+floating-point values. See {ref}`delta-subsecond` for the full rules.
 
 ## Calendar units need context
 
@@ -102,9 +97,9 @@ The same rule also means that calendar units do not reliably compose. Adding
 may change the reference date for the second step.
 
 When you call `add()` or `subtract()` on itemized deltas **without** a
-`relative_to` reference, the operation is field-wise and emits
+`relative_to` reference, the operation is component-wise and emits
 {class}`~whenever.CalendarUnitCompositionWarning` when nonzero calendar units
-are involved. Exact-only composition does not warn. Field-wise composition is
+are involved. Exact-only composition does not warn. Component-wise composition is
 literal and sometimes useful, but it should not be confused with sequential
 application to a date or datetime.
 
@@ -116,7 +111,7 @@ For example, month-end clamping makes the two operations differ:
 
 >>> start + one_month + one_month
 Date("2023-03-28")
->>> # Summing fieldwise first applies two months in a single step
+>>> # Summing component-wise first applies two months in a single step
 >>> summed = one_month + one_month  # P2M
 >>> start + summed
 Date("2023-03-31")

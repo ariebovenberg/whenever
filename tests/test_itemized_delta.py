@@ -1,4 +1,5 @@
 import pickle
+import re
 import warnings
 from collections import Counter
 from collections.abc import ItemsView, KeysView, Mapping, Sequence, ValuesView
@@ -75,7 +76,9 @@ class TestInit:
             assert d.get(unit, 0) == kwargs.get(unit, 0)
 
     def test_no_components(self):
-        with pytest.raises(ValueError, match="[Aa]t least one"):
+        with pytest.raises(
+            ValueError, match="at least one component must be set"
+        ):
             ItemizedDelta()
 
     @pytest.mark.parametrize(
@@ -107,14 +110,36 @@ class TestInit:
             (-10_000 * 366 * 24 * 60, "minutes"),
             (10_000 * 366 * 24 * 60 * 60, "seconds"),
             (-10_000 * 366 * 24 * 60 * 60, "seconds"),
-            (1_000_000_000, "nanoseconds"),
-            (-1_000_000_000, "nanoseconds"),
         ],
     )
     def test_range(self, value, unit):
         kwargs = {unit: value}
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises(ValueError, match="delta out of range"):
             ItemizedDelta(**kwargs)
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            lambda: ItemizedDelta(nanoseconds=1_000_000_000),
+            lambda: ItemizedDelta(nanoseconds=-1_000_000_000),
+            lambda: ItemizedDelta(seconds=1, nanoseconds=999_999_999).add(
+                nanoseconds=1
+            ),
+            lambda: (
+                ItemizedDelta(nanoseconds=999_999_999)
+                + ItemizedDelta(nanoseconds=1)
+            ),
+        ],
+    )
+    def test_nanoseconds_range(self, make):
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "nanoseconds must be within ±999,999,999; "
+                "put whole seconds in seconds="
+            ),
+        ):
+            make()
 
     def test_nanoseconds_implies_seconds(self):
         d = ItemizedDelta(nanoseconds=500_000_000)

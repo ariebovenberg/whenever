@@ -60,9 +60,7 @@ and {ref}`guide-deltas` for choosing a delta type.
 {class}`ItemizedDateDelta` and {class}`ItemizedDelta` store their individual
 components
 (years, months, weeks, days, hours, minutes, seconds, nanoseconds) separately,
-without normalizing them into each other. Subsecond values have one canonical
-itemized field: `nanoseconds`. Milliseconds and microseconds are available as
-scalar totals, not as itemized fields.
+without normalizing them into each other.
 
 You can imagine this working like a `dict` or {class}`~collections.Counter` of components,
 where each unit is a key and its value is the corresponding amount:
@@ -73,15 +71,70 @@ where each unit is a key and its value is the corresponding amount:
 ```
 
 Iteration always runs from the largest unit to the smallest and includes only
-fields that were explicitly supplied. Explicit zeroes remain present:
+the components you gave. Explicit zeroes remain present:
 
 ```python
 >>> list(ItemizedDelta(seconds=0, hours=2))
 ['hours', 'seconds']
 ```
 
+The one exception is `seconds`, which `nanoseconds` brings with it; see
+{ref}`delta-subsecond`.
+
 {class}`TimeDelta` instead normalizes all its components into one exact
 duration. See {ref}`guide-deltas` for a side-by-side example.
+
+(delta-subsecond)=
+### Seconds and nanoseconds
+
+Seconds and nanoseconds are one quantity written as two components, the way
+ISO 8601 writes `PT1.5S` as one number. Keeping `90 minutes` unbalanced
+against hours preserves something you asked for; keeping nanoseconds
+unbalanced against seconds would preserve nothing. Four rules follow:
+
+- There are no `milliseconds` or `microseconds` components. Use
+  {meth}`~ItemizedDelta.total` for a scalar in those units. It returns a
+  `float`, except for `"nanoseconds"`, which returns an `int`:
+
+  ```python
+  >>> d = ItemizedDelta(seconds=1, nanoseconds=234_567_890)
+  >>> reference = PlainDateTime(2024, 1, 1)
+  >>> d.total("milliseconds", relative_to=reference)
+  1234.56789
+  >>> d.total("microseconds", relative_to=reference)
+  1234567.89
+  >>> d.total("nanoseconds", relative_to=reference)
+  1234567890
+  ```
+
+- `nanoseconds` is bounded to 999,999,999, under the delta's single sign.
+  Whole seconds go in `seconds`:
+
+  ```python
+  >>> ItemizedDelta(nanoseconds=1_500_000_000)
+  ValueError: nanoseconds must be within ±999,999,999; put whole seconds in seconds=
+  ```
+
+- A present `nanoseconds` brings a present `seconds`, because the ISO 8601
+  fraction needs a seconds value to attach to:
+
+  ```python
+  >>> dict(ItemizedDelta(nanoseconds=5))
+  {'seconds': 0, 'nanoseconds': 5}
+  ```
+
+- Presence survives the ISO 8601 round trip. `seconds=0` formats as `PT0S`,
+  while `nanoseconds=0` formats as `PT0.0S`, and parsing reads the fraction
+  back as a present `nanoseconds`:
+
+  ```python
+  >>> ItemizedDelta(seconds=0).format_iso()
+  'PT0S'
+  >>> ItemizedDelta(nanoseconds=0).format_iso()
+  'PT0.0S'
+  >>> dict(ItemizedDelta.parse_iso("PT0.0S"))
+  {'seconds': 0, 'nanoseconds': 0}
+  ```
 
 (delta-eq)=
 ## Equality
@@ -103,10 +156,10 @@ if their total duration is the same, regardless of how their components are repr
 True  # normalized durations are the same
 ```
 
-Use {meth}`~ItemizedDelta.strict_eq` when explicit field presence also matters
+Use {meth}`~ItemizedDelta.strict_eq` when explicit component presence also matters
 (see {ref}`strict-equality`).
 Constructors currently require at least one component, so construct an
-itemized zero with an explicit field such as `ItemizedDelta(seconds=0)` or
+itemized zero with an explicit component such as `ItemizedDelta(seconds=0)` or
 `ItemizedDateDelta(days=0)`. Allowing empty constructors may be considered as
 an additive change after 1.0.
 
@@ -189,14 +242,8 @@ returns a `float`.
 When the total duration is requested in `"nanoseconds"` (the smallest
 supported unit), {meth}`~TimeDelta.total` returns an `int` instead of a `float`
 to avoid precision issues. {meth}`~ItemizedDelta.total` also accepts
-`"milliseconds"` and `"microseconds"`.
-
-See {ref}`guide-deltas` for millisecond, microsecond, and nanosecond examples.
-
-The `nanoseconds` constructor argument is a component field and is bounded to
-999,999,999 under the normal itemized sign rules. It is not a total-duration
-limit: use `delta.total("nanoseconds", relative_to=...)` to obtain the aggregate
-scalar value.
+`"milliseconds"` and `"microseconds"`, which have no itemized component; see
+{ref}`delta-subsecond`.
 
 ```{note}
 For {class}`ItemizedDelta` and {class}`ItemizedDateDelta`,
@@ -265,8 +312,8 @@ ItemizedDateDelta("P2m2d")
 ItemizedDateDelta("P1m30d")
 ```
 
-Without a `relative_to` reference, itemized-delta composition is field-wise.
-That preserves the literal fields, but it can change the meaning of later
+Without a `relative_to` reference, itemized-delta composition is
+component-wise. That preserves the literal components, but it can change the meaning of later
 application to a datetime because calendar units do not reliably compose.
 The operation emits
 {class}`~whenever.CalendarUnitCompositionWarning` when either operand contains
@@ -288,7 +335,7 @@ TimeDelta("PT1h15m")
 ```
 
 Itemized deltas also support `+` and `-`, but those operators perform
-field-wise composition and emit
+component-wise composition and emit
 {class}`~whenever.CalendarUnitCompositionWarning` when either operand contains
 nonzero calendar units. Exact-only composition does not warn.
 Use the method forms if you want to pass `cal_unit_composition_ok=True`

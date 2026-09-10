@@ -191,7 +191,21 @@ class YearMonth(_Base):
         return YearMonth._from_py_unchecked(self._py.replace(**kwargs))
 
     def add(self, *, years: int = 0, months: int = 0) -> YearMonth:
-        """Shift this year-month by a number of years and months."""
+        """Shift this year-month by a number of years and months.
+
+        >>> YearMonth(2021, 11).add(months=3)
+        YearMonth("2022-02")
+        >>> YearMonth(2021, 1).add(years=-1, months=-1)
+        YearMonth("2019-12")
+
+        An :class:`ItemizedDateDelta` is a mapping, so it unpacks into the
+        keyword arguments:
+
+        >>> YearMonth(2024, 3).add(**ItemizedDateDelta(years=1, months=2))
+        YearMonth("2025-05")
+
+        Raises ``ValueError`` if the result falls outside ``MIN``..``MAX``.
+        """
         year, month = divmod(
             self.year * 12 + self.month - 1 + years * 12 + months,
             12,
@@ -201,7 +215,12 @@ class YearMonth(_Base):
         )
 
     def subtract(self, *, years: int = 0, months: int = 0) -> YearMonth:
-        """Shift this year-month backwards by a number of years and months."""
+        """Shift this year-month backwards by a number of years and months.
+        Equivalent to :meth:`add` with negated arguments.
+
+        >>> YearMonth(2021, 1).subtract(months=1)
+        YearMonth("2020-12")
+        """
         return self.add(years=-years, months=-months)
 
     def on_day(self, day: int, /) -> Date:
