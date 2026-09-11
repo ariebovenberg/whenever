@@ -8,6 +8,8 @@ import pytest
 from hypothesis import given
 from hypothesis.strategies import floats, integers, text
 from whenever import (
+    MONDAY,
+    SATURDAY,
     SYSTEM_TZ,
     Date,
     Instant,
@@ -65,6 +67,30 @@ class TestInit:
         assert PlainDateTime("2020-08-15T05:12:30.000000450") == PlainDateTime(
             2020, 8, 15, 5, 12, 30, nanosecond=450
         )
+
+    def test_single_argument_wrong_type(self):
+        with pytest.raises(
+            TypeError,
+            match=r"^PlainDateTime\(\) requires an ISO 8601 string or datetime.datetime$",
+        ):
+            PlainDateTime(None)  # type: ignore[call-overload]
+
+    def test_defaults(self):
+        assert PlainDateTime(2020, 8, 15) == PlainDateTime(
+            2020, 8, 15, 0, 0, 0, nanosecond=0
+        )
+
+    @pytest.mark.parametrize(
+        "args, kwargs",
+        [
+            ((2020, 8, 15, 5, 12, 30, 450), {}),
+            ((), {"iso_string": "2020-08-15T05:12:30"}),
+            ((), {"py_datetime": py_datetime(2020, 8, 15)}),
+        ],
+    )
+    def test_parameter_kinds(self, args, kwargs):
+        with pytest.raises(TypeError):
+            PlainDateTime(*args, **kwargs)
 
     def test_leap_seconds_parsing(self):
         # Leap second (60) should be parsed and normalized to 59
@@ -1528,6 +1554,11 @@ class TestSince:
             round_increment=1 << 65,
             round_mode="ceil",
         ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
+
+
+def test_day_of_week():
+    assert PlainDateTime(2024, 3, 9, 22).day_of_week() is SATURDAY
+    assert PlainDateTime(2024, 12, 30).day_of_week() is MONDAY
 
 
 class TestDayOfYear:

@@ -90,7 +90,8 @@ system time zone
 
 repeated local time
   A local time that occurs twice in a time zone because the clock moved
-  backward. Resolved by a disambiguation policy.
+  backward. Resolved by a disambiguation policy; `is_repeated()` on a
+  `ZonedDateTime` reports one.
   Preferred over *fold* and *ambiguous time*.
   See {ref}`ambiguity`.
 

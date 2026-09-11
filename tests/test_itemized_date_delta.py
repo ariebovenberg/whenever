@@ -27,6 +27,17 @@ UNITS = cast(
 
 class TestInit:
     @pytest.mark.parametrize(
+        "args, kwargs",
+        [
+            ((1, 2), {}),  # components are keyword-only
+            ((), {"iso_string": "P1Y2D"}),
+        ],
+    )
+    def test_parameter_kinds(self, args, kwargs):
+        with pytest.raises(TypeError):
+            ItemizedDateDelta(*args, **kwargs)
+
+    @pytest.mark.parametrize(
         "kwargs, expect_sign",
         [
             ({"days": 5}, 1),

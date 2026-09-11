@@ -194,7 +194,7 @@ class Date(_DateOrTimeMixin):
     MIN: ClassVar[Date]
     MAX: ClassVar[Date]
     @classmethod
-    @deprecated("use Date.today(SYSTEM_TZ) instead")
+    @deprecated("use today(SYSTEM_TZ) instead")
     def today_in_system_tz(cls) -> Date: ...
     @classmethod
     def today(cls, tz: str | SYSTEM_TZ, /) -> Self: ...  # type: ignore[valid-type]
@@ -1351,6 +1351,7 @@ class _LocalTime:
     def nanosecond(self) -> int: ...
     def date(self) -> Date: ...
     def time(self) -> Time: ...
+    def day_of_week(self) -> Weekday: ...
     def day_of_year(self) -> int: ...
     def days_in_month(self) -> int: ...
     def days_in_year(self) -> int: ...
@@ -1561,7 +1562,7 @@ class _ExactTime:
     @overload
     def to_fixed_offset(self, offset: TimeDelta, /) -> OffsetDateTime: ...
     @overload
-    @deprecated("use a TimeDelta, e.g. hours(2), instead of a bare int")
+    @deprecated("pass a TimeDelta instead, for example hours(2)")
     def to_fixed_offset(self, offset: int, /) -> OffsetDateTime: ...
     def to_tz(self, tz: str | SYSTEM_TZ, /) -> ZonedDateTime: ...  # type: ignore[valid-type]
     @deprecated("use to_tz(SYSTEM_TZ) instead")
@@ -1760,7 +1761,6 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
     @overload
-    @overload
     def __init__(
         self,
         year: int,
@@ -1774,7 +1774,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         offset: TimeDelta,
     ) -> None: ...
     @overload
-    @deprecated("use a TimeDelta, e.g. hours(2), instead of a bare int")
+    @deprecated("pass a TimeDelta instead, for example hours(2)")
     def __init__(
         self,
         year: int,
@@ -1793,7 +1793,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         cls, offset: TimeDelta, /, *, stale_offset_ok: bool = ...
     ) -> Self: ...
     @overload
-    @deprecated("use a TimeDelta, e.g. hours(2), instead of a bare int")
+    @deprecated("pass a TimeDelta instead, for example hours(2)")
     @classmethod
     def now(cls, offset: int, /, *, stale_offset_ok: bool = ...) -> Self: ...
     @classmethod
@@ -1857,7 +1857,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         stale_offset_ok: bool = ...,
     ) -> Self: ...
     @overload
-    @deprecated("use a TimeDelta, e.g. hours(2), instead of a bare int")
+    @deprecated("pass a TimeDelta instead, for example hours(2)")
     def replace(
         self,
         *,
@@ -2100,6 +2100,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     def tz(self) -> str | None: ...
     @property
     def tz_id(self) -> str | None: ...
+    @overload
     @classmethod
     @deprecated("use ZonedDateTime(..., tz=SYSTEM_TZ) instead")
     def from_system_tz(
@@ -2115,6 +2116,20 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
+    ) -> Self: ...
+    @overload
+    @classmethod
+    @deprecated("use disambiguation= instead")
+    def from_system_tz(
+        cls,
+        year: int,
+        month: int,
+        day: int,
+        hour: int = 0,
+        minute: int = 0,
+        second: int = 0,
+        *,
+        nanosecond: int = 0,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @classmethod
@@ -2335,6 +2350,8 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
+    def is_repeated(self) -> bool: ...
+    @deprecated("use is_repeated() instead")
     def is_ambiguous(self) -> bool: ...
     def next_transition(self) -> ZonedDateTime | None: ...
     def prev_transition(self) -> ZonedDateTime | None: ...
@@ -2534,7 +2551,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     @overload
     def assume_fixed_offset(self, offset: TimeDelta, /) -> OffsetDateTime: ...
     @overload
-    @deprecated("use a TimeDelta, e.g. hours(2), instead of a bare int")
+    @deprecated("pass a TimeDelta instead, for example hours(2)")
     def assume_fixed_offset(self, offset: int, /) -> OffsetDateTime: ...
     @overload
     def assume_tz(

@@ -86,6 +86,29 @@ If you need to access calendar fields, convert to a datetime type first:
 5
 ```
 
+The same reasoning applies to construction: {meth}`~whenever.Instant.from_utc`
+is the field constructor of {class}`~whenever.Instant`, named for the input it
+takes. There is no `Instant(2020, 1, 1)`, because it would silently mean UTC,
+the one reading the other exact types make you state with `offset=` or `tz=`.
+
+(faq-no-plain-now)=
+## Why is there no `PlainDateTime.now()` or `Time.now()`?
+
+A clock factory takes exactly what its type needs to localize the clock, and
+nothing it would discard: {meth}`Instant.now() <whenever.Instant.now>` takes
+nothing, {meth}`ZonedDateTime.now(tz) <whenever.ZonedDateTime.now>` a time
+zone, {meth}`OffsetDateTime.now(offset) <whenever.OffsetDateTime.now>` an
+offset, and {meth}`Date.today(tz) <whenever.Date.today>` a time zone.
+A `PlainDateTime.now(tz)` would take a time zone only to throw it away.
+Spell the discarding out instead:
+
+```python
+>>> ZonedDateTime.now("Europe/Amsterdam").to_plain()
+PlainDateTime("2026-01-23 06:30:15")
+>>> ZonedDateTime.now("Europe/Amsterdam").time()
+Time("06:30:15")
+```
+
 (faq-why-offset-dt)=
 ## Why does {class}`~whenever.OffsetDateTime` exist?
 

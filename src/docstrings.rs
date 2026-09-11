@@ -44,6 +44,7 @@ or a standard library :class:`~datetime.date`:
 
 >>> Date(\"2021-01-02\")
 Date(\"2021-01-02\")
+>>> from datetime import date
 >>> Date(date(2021, 1, 2))
 Date(\"2021-01-02\")
 
@@ -123,7 +124,7 @@ Instant(\"2022-10-24 17:00:00Z\")
 >>> py311_release.add(hours=3).timestamp()
 1666641600
 
-Can also be constructed from an ISO 8601 string, a UNIX timestamp,
+Can also be constructed from an ISO 8601 string
 or a standard library :class:`~datetime.datetime`:
 
 >>> Instant(\"2022-10-24T17:00:00Z\")
@@ -138,7 +139,7 @@ Note
 ----
 Although the debug representation uses UTC, ``Instant`` does *not* have
 ``.year``, ``.hour``, or other calendar attributes—it is not a UTC datetime.
-See the `FAQ <https://whenever.rtfd.io/en/latest/faq.html#why-doesn-t-instant-have-year-hour-etc>`_.
+See the :ref:`FAQ <faq-instant-no-local>`.
 ";
 pub(crate) const INVALIDOFFSETERROR: &CStr = c"\
 A string has an invalid offset for the given zone";
@@ -226,7 +227,7 @@ time zone's current rules.
 pub(crate) const PLAINDATETIME: &CStr = c"\
 A date and time-of-day without any time zone information.
 
-Represents \"wall clock\" time as people observe it locally.
+Represents a local time as people observe it, without saying where.
 It can't be mixed with exact-time types (e.g. ``Instant``,
 ``ZonedDateTime``) without explicitly assuming a time zone or offset.
 
@@ -250,7 +251,7 @@ OffsetDateTime(\"2024-03-10 15:30:00+05:00\")
 When to use this type:
 
 - You need to express a date and time as it would appear on a
-  wall clock, independent of time zone.
+  local time, independent of time zone.
 - You receive a datetime without time zone information and need
   to represent this lack of information in the type system.
 - You're working in a context where time zones and DST
@@ -304,6 +305,7 @@ Time(\"12:30:00\")
 
 Or a standard library :class:`~datetime.time`:
 
+>>> from datetime import time
 >>> Time(time(12, 30, 0))
 Time(\"12:30:00\")
 
@@ -340,11 +342,9 @@ or a standard library :class:`~datetime.timedelta`:
 
 >>> TimeDelta(\"PT2h30m\")
 TimeDelta(\"PT2h30m\")
-
-Note
-----
-Subclasses of :class:`~datetime.timedelta` are not accepted,
-because they often add additional state that cannot be represented.
+>>> from datetime import timedelta
+>>> TimeDelta(timedelta(hours=2, minutes=30))
+TimeDelta(\"PT2h30m\")
 
 ``TimeDelta`` can be added to or subtracted from datetime types
 to shift them by an exact amount of time:
@@ -721,12 +721,12 @@ Get the current date in the given time zone.
 Pass ``SYSTEM_TZ`` for the system time zone.
 ";
 pub(crate) const DATE_TODAY_IN_SYSTEM_TZ: &CStr = c"\
-Get the current date in the system's local time zone.
+Get the current date in the system time zone.
 
 .. deprecated:: 0.11
    Use ``Date.today(SYSTEM_TZ)`` instead.
 
-Alias for ``Instant.now().to_system_tz().date()``.
+Equivalent to ``today(SYSTEM_TZ)``.
 
 >>> Date.today_in_system_tz()
 Date(\"2021-01-02\")
@@ -820,7 +820,13 @@ pub(crate) const INSTANT_FROM_UTC: &CStr = c"\
 from_utc(year, month, day, hour=0, minute=0, second=0, *, nanosecond=0)
 --
 
-Create an Instant defined by a UTC date and time.";
+Create an Instant from a date and time-of-day in UTC.
+This is the field constructor of ``Instant``; see the
+:ref:`FAQ <faq-instant-no-local>` for why ``Instant(...)`` takes no fields.
+
+>>> Instant.from_utc(2022, 10, 24, hour=17)
+Instant(\"2022-10-24 17:00:00Z\")
+";
 pub(crate) const INSTANT_NOW: &CStr = c"\
 Create an Instant from the current time.
 
@@ -1012,7 +1018,10 @@ pub(crate) const OFFSETDATETIME_NOW: &CStr = c"\
 now(offset, /, *, stale_offset_ok=...)
 --
 
-Create an instance from the current time.
+Create an instance from the current time at the given offset.
+
+>>> OffsetDateTime.now(hours(2), stale_offset_ok=True)
+OffsetDateTime(\"2024-03-09 23:00:00+02:00\")
 
 Warning
 -------
@@ -1477,6 +1486,7 @@ Time(\"00:00:00\")
 ";
 pub(crate) const TIME_SECOND: &CStr = c"\
 The second component of the time
+
 >>> Time(12, 30, 0).second
 0
 ";
@@ -1647,7 +1657,7 @@ TimeDelta(\"PT24h\")
 TimeDelta(\"PT25h\")
 ";
 pub(crate) const ZONEDDATETIME_DST_OFFSET: &CStr = c"\
-The DST offset (adjustment) as a :class:`TimeDelta`.
+The DST offset (adjustment) of the datetime
 
 >>> ZonedDateTime(2020, 8, 15, tz=\"Europe/London\").dst_offset()
 TimeDelta(\"PT1h\")
@@ -1737,9 +1747,7 @@ Create an instance in the system time zone.
 .. deprecated:: 0.11
    Use ``ZonedDateTime(..., tz=SYSTEM_TZ)`` instead.
 
-Equivalent to ``ZonedDateTime(..., tz=<the system time zone>)``,
-except it also works for system time zones whose corresponding
-IANA time zone ID is unknown.
+Equivalent to ``ZonedDateTime(..., tz=SYSTEM_TZ)``.
 
 >>> ZonedDateTime.from_system_tz(2020, 8, 15, hour=23, minute=12)
 ZonedDateTime(\"2020-08-15 23:12:00+02:00[Europe/Berlin]\")
@@ -1778,11 +1786,19 @@ Create an instance from a UNIX timestamp (in nanoseconds).
 The inverse of the ``timestamp_nanos()`` method.
 ";
 pub(crate) const ZONEDDATETIME_IS_AMBIGUOUS: &CStr = c"\
-Whether the date and time-of-day are ambiguous, e.g. due to a DST transition.
+Whether this local time occurs twice in its time zone.
 
->>> ZonedDateTime(2020, 8, 15, 23, tz=\"Europe/London\").is_ambiguous()
+.. deprecated:: 0.11
+   Use :meth:`is_repeated` instead.
+";
+pub(crate) const ZONEDDATETIME_IS_REPEATED: &CStr = c"\
+Whether this local time occurs twice in its time zone
+(a :term:`repeated local time`), for example on the night
+daylight saving time ends.
+
+>>> ZonedDateTime(2020, 8, 15, 23, tz=\"Europe/London\").is_repeated()
 False
->>> ZonedDateTime(2023, 10, 29, 2, 15, tz=\"Europe/Amsterdam\").is_ambiguous()
+>>> ZonedDateTime(2023, 10, 29, 2, 15, tz=\"Europe/Amsterdam\").is_repeated()
 True
 ";
 pub(crate) const ZONEDDATETIME_NEXT_TRANSITION: &CStr = c"\
@@ -1796,14 +1812,19 @@ Returns ``None`` if the time zone has no further transitions
 ZonedDateTime(\"2024-03-10 03:00:00-04:00[America/New_York]\")
 ";
 pub(crate) const ZONEDDATETIME_NOW: &CStr = c"\
-Create an instance from the current time in the given time zone.";
+Create an instance from the current time in the given time zone.
+Pass ``SYSTEM_TZ`` for the system time zone.
+
+>>> ZonedDateTime.now(\"Europe/Amsterdam\")
+ZonedDateTime(\"2024-03-09 23:00:00+01:00[Europe/Amsterdam]\")
+";
 pub(crate) const ZONEDDATETIME_NOW_IN_SYSTEM_TZ: &CStr = c"\
 Create an instance from the current time in the system time zone.
 
 .. deprecated:: 0.11
    Use ``ZonedDateTime.now(SYSTEM_TZ)`` instead.
 
-Equivalent to ``Instant.now().to_system_tz()``.
+Equivalent to ``now(SYSTEM_TZ)``.
 ";
 pub(crate) const ZONEDDATETIME_PARSE: &CStr = c"\
 parse(s, /, *, pattern=..., disambiguation=..., offset_mismatch='raise')
@@ -2005,8 +2026,8 @@ Use the time zone ID (e.g. ``\"Europe/London\"``) for unambiguous identification
 ";
 pub(crate) const ZONEDDATETIME_TZ_ID: &CStr = c"\
 The time zone ID. In rare cases, this may be ``None``,
-if the ``ZonedDateTime`` was created from a system time zone
-without a known IANA key.
+if the ``ZonedDateTime`` was created from a :ref:`system time zone
+<systemtime>` without a time zone ID.
 ";
 pub(crate) const ZONEDDATETIME_UNTIL: &CStr = c"\
 until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
@@ -2150,6 +2171,12 @@ ZonedDateTime(\"2020-01-02 03:04:05+00:00[Europe/London]\")
 ";
 pub(crate) const LOCALTIME_DAY: &CStr = c"\
 The day component of the datetime";
+pub(crate) const LOCALTIME_DAY_OF_WEEK: &CStr = c"\
+The day of the week
+
+>>> PlainDateTime(2021, 1, 2, 12).day_of_week()
+Weekday.SATURDAY
+";
 pub(crate) const LOCALTIME_DAY_OF_YEAR: &CStr = c"\
 Ordinal day in the year (1--366)
 
@@ -2171,7 +2198,7 @@ Number of days in the current year (365 or 366)
 pub(crate) const LOCALTIME_HOUR: &CStr = c"\
 The hour component of the datetime";
 pub(crate) const LOCALTIME_IN_LEAP_YEAR: &CStr = c"\
-Whether this date's year is a leap year
+Whether the year of this datetime is a leap year
 
 >>> PlainDateTime(2024, 1, 1).in_leap_year()
 True

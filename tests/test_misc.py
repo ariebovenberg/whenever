@@ -8,15 +8,24 @@ import warnings
 from collections.abc import Callable
 from contextlib import nullcontext
 from copy import copy, deepcopy
+from datetime import (
+    datetime as py_datetime,
+    timedelta as py_timedelta,
+    timezone as py_timezone,
+)
 from pathlib import Path
 from time import sleep
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from typing_extensions import assert_type
 from whenever import (
     _EXTENSION_LOADED,
+    MONDAY,
+    SUNDAY,
     SYSTEM_TZ,
+    TUESDAY,
     CalendarUnitCompositionWarning,
     Date,
     DaysAssumed24HoursWarning,
@@ -823,6 +832,118 @@ def test_itemized_date_delta_accepts_a_plain_reference():
             days=1, relative_to=reference, in_units=["months", "days"]
         )
     assert result == ItemizedDelta(months=1, days=1)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        Date(2020, 1, 1),
+        YearMonth(2020, 1),
+        MonthDay(1, 1),
+        IsoWeekDate(2020, 1, Weekday.MONDAY),
+        Time(),
+        Instant.from_utc(2020, 1, 1),
+        OffsetDateTime(2020, 1, 1, offset=hours(1)),
+        ZonedDateTime(2020, 1, 1, tz="Europe/Amsterdam"),
+        PlainDateTime(2020, 1, 1),
+        TimeDelta(hours=1),
+        ItemizedDelta(months=1),
+        ItemizedDateDelta(months=1),
+    ],
+)
+def test_value_types_have_no_dict(value):
+    # slotscheck can't check this: the lazy module __getattr__ hides
+    # the classes from it
+    assert not hasattr(value, "__dict__")
+
+
+def test_weekday_contract():
+    assert Weekday(7) is SUNDAY
+    assert Weekday.MONDAY.value == 1
+    assert MONDAY != 1  # type: ignore[comparison-overlap]
+    assert not (MONDAY == 1)  # type: ignore[comparison-overlap]
+    with pytest.raises(TypeError):
+        MONDAY < TUESDAY  # type: ignore[operator]
+    with pytest.raises(TypeError):
+        int(MONDAY)  # type: ignore[call-overload]
+
+
+class TestLossyStdlibSubclass:
+    """A pandas or pendulum object read through the stdlib fields warns."""
+
+    @staticmethod
+    def _datetime_subclass(module: str) -> type[py_datetime]:
+        class Subclass(py_datetime):
+            pass
+
+        Subclass.__module__ = module
+        return Subclass
+
+    @staticmethod
+    def _timedelta_subclass(module: str) -> type[py_timedelta]:
+        class Subclass(py_timedelta):
+            pass
+
+        Subclass.__module__ = module
+        return Subclass
+
+    def test_pandas_timestamp(self):
+        cls = self._datetime_subclass("pandas._libs.tslibs.timestamps")
+        aware = cls(2020, 8, 15, 12, tzinfo=py_timezone.utc)
+        match = (
+            r"^pandas\.TestLossyStdlibSubclass\._datetime_subclass\.<locals>"
+            r"\.Subclass contains data that cannot be reliably read through "
+            r"the datetime\.datetime fields; convert it explicitly$"
+        )
+        with warns_here(WheneverWarning, match=match):
+            assert Instant(aware) == Instant.from_utc(2020, 8, 15, 12)
+        with warns_here(WheneverWarning, match=match):
+            assert OffsetDateTime(aware) == OffsetDateTime(
+                2020, 8, 15, 12, offset=hours(0)
+            )
+        with warns_here(WheneverWarning, match=match):
+            assert ZonedDateTime(
+                cls(2020, 8, 15, 12, tzinfo=ZoneInfo("Europe/Amsterdam"))
+            ) == ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam")
+        with warns_here(WheneverWarning, match=match):
+            assert PlainDateTime(cls(2020, 8, 15, 12)) == PlainDateTime(
+                2020, 8, 15, 12
+            )
+
+    @pytest.mark.parametrize("module", ["pandas._libs", "pendulum.duration"])
+    def test_lossy_timedelta(self, module: str):
+        cls = self._timedelta_subclass(module)
+        with warns_here(
+            WheneverWarning,
+            match=(
+                r"Subclass contains data that cannot be reliably read "
+                r"through the datetime\.timedelta fields; convert it explicitly$"
+            ),
+        ):
+            assert TimeDelta(cls(days=1, seconds=2)) == TimeDelta(
+                hours=24, seconds=2
+            )
+
+    def test_harmless_subclass_is_silent(self):
+        cls = self._datetime_subclass("freezegun.api")
+        aware = cls(2020, 8, 15, 12, tzinfo=py_timezone.utc)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert Instant(aware) == Instant.from_utc(2020, 8, 15, 12)
+            assert PlainDateTime(cls(2020, 8, 15, 12)) == PlainDateTime(
+                2020, 8, 15, 12
+            )
+            assert TimeDelta(
+                self._timedelta_subclass("freezegun.api")(days=1)
+            ) == TimeDelta(hours=24)
+
+    def test_pendulum_datetime_is_silent(self):
+        cls = self._datetime_subclass("pendulum.datetime")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert PlainDateTime(cls(2020, 8, 15, 12)) == PlainDateTime(
+                2020, 8, 15, 12
+            )
 
 
 def test_tz_store_rejects_non_string_key():

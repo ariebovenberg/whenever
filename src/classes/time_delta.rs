@@ -11,7 +11,7 @@ use crate::{
         plain_datetime::{plain_since_inner, resolve_local_relative_to, total_calendar_plain},
         zoned_datetime::{ZonedDateTime, zoned_since_in_units, zoned_target},
     },
-    common::{pickle, round_args as round},
+    common::{compat::warn_lossy_stdlib_subclass, pickle, round_args as round},
     docstrings as doc,
     domain::{
         difference::{
@@ -173,10 +173,8 @@ fn __new__(cls: PyClass<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> Py
             let arg = args.iter().next().unwrap();
             if PyStr::isinstance(arg) {
                 parse_iso(cls, arg)
-            } else if arg.cast_allow_subclass::<PyTimeDelta>().is_some() {
-                let d = arg
-                    .cast_exact::<PyTimeDelta>()
-                    .ok_or_type_err("argument must be datetime.timedelta exactly")?;
+            } else if let Some(d) = arg.cast_allow_subclass::<PyTimeDelta>() {
+                warn_lossy_stdlib_subclass::<PyTimeDelta>(state, arg, "timedelta")?;
                 TimeDelta::from_stdlib_timedelta(d)
                     .ok_or_range_err()?
                     .to_obj(cls)

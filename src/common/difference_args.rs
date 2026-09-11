@@ -95,10 +95,9 @@ impl ExactUnit {
     pub(crate) fn parse_py_number(self, v: PyObj) -> PyResult<TimeDelta> {
         if let Some(i) = v.cast_allow_subclass::<PyInt>() {
             self.parse_py_int(i)
+        } else if self == Self::Nanoseconds {
+            raise_type_err("nanoseconds must be an integer")
         } else if let Some(f) = v.cast_allow_subclass::<PyFloat>() {
-            if self == Self::Nanoseconds {
-                raise_type_err("nanoseconds must be an integer")?;
-            }
             self.parse_py_float(f)
         } else {
             raise_type_err(format!("{} must be an integer or float", self.name()))

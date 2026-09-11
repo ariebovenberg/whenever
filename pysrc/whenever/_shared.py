@@ -63,10 +63,14 @@ class Weekday(enum.Enum):
     >>> MONDAY is Weekday.MONDAY
     True
 
-    :class:`~whenever.Date` and other date-carrying types return
-    ``Weekday`` from their :meth:`~whenever.Date.day_of_week` method:
+    :class:`~whenever.Date` and the three datetimes with a local date
+    return ``Weekday`` from their :meth:`~whenever.Date.day_of_week` method;
+    :class:`~whenever.IsoWeekDate` exposes it as its
+    :attr:`~whenever.IsoWeekDate.weekday` attribute:
 
     >>> Date(2024, 12, 25).day_of_week()
+    Weekday.WEDNESDAY
+    >>> IsoWeekDate("2024-W52-3").weekday
     Weekday.WEDNESDAY
     """
 
@@ -279,7 +283,7 @@ class YearMonth(_Base):
         return hash(self._py)
 
     def days_in_month(self) -> int:
-        """Number of days in this year-month
+        """Number of days in this year-month (28--31)
 
         >>> YearMonth(2024, 2).days_in_month()
         29
@@ -372,7 +376,10 @@ class MonthDay(_Base):
         def __init__(self, month: int, day: int) -> None: ...
 
     def __init__(self, month: int, day: int) -> None:
-        self._py = _date(_DUMMY_LEAP_YEAR, month, day)
+        try:
+            self._py = _date(_DUMMY_LEAP_YEAR, month, day)
+        except ValueError:
+            raise ValueError("invalid date") from None
 
     __init__ = add_alternate_constructors(__init__, None)
 
@@ -458,7 +465,7 @@ class MonthDay(_Base):
         return Date(self._py.replace(year=year))
 
     def is_leap_day(self) -> bool:
-        """Check if the month-day is February 29th
+        """Whether the month-day is February 29th
 
         >>> MonthDay(2, 29).is_leap_day()
         True

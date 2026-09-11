@@ -61,6 +61,7 @@ from ._common import (
     timestamp_from_parts,
     tzid_display,
     warn_deprecated,
+    warn_lossy_stdlib_subclass,
 )
 from ._format import (
     compile_pattern,
@@ -136,6 +137,7 @@ from ._tz import (  # noqa: F401
 from ._tz.ambiguity import (
     _resolve_ambiguity_from_mapping,
     _resolve_ambiguity_using_prev_offset_from_mapping,
+    check_disambiguation,
 )
 
 CalendarUnitCompositionWarning = _ideltas.CalendarUnitCompositionWarning
@@ -514,6 +516,7 @@ class Date(_Base):
 
     >>> Date("2021-01-02")
     Date("2021-01-02")
+    >>> from datetime import date
     >>> Date(date(2021, 1, 2))
     Date("2021-01-02")
 
@@ -557,12 +560,12 @@ class Date(_Base):
 
     @classmethod
     def today_in_system_tz(cls) -> Date:
-        """Get the current date in the system's local time zone.
+        """Get the current date in the system time zone.
 
         .. deprecated:: 0.11
            Use ``Date.today(SYSTEM_TZ)`` instead.
 
-        Alias for ``Instant.now().to_system_tz().date()``.
+        Equivalent to ``today(SYSTEM_TZ)``.
 
         >>> Date.today_in_system_tz()
         Date("2021-01-02")
@@ -1325,6 +1328,7 @@ class Time(_Base):
 
     Or a standard library :class:`~datetime.time`:
 
+    >>> from datetime import time
     >>> Time(time(12, 30, 0))
     Time("12:30:00")
 
@@ -1363,7 +1367,7 @@ class Time(_Base):
         def __init__(self, iso_string: str, /) -> None: ...
 
         @overload
-        def __init__(self, t: _time, /) -> None: ...
+        def __init__(self, py_time: _time, /) -> None: ...
 
         @overload
         def __init__(
@@ -1412,6 +1416,7 @@ class Time(_Base):
     @property
     def second(self) -> int:
         """The second component of the time
+
         >>> Time(12, 30, 0).second
         0
         """
@@ -1456,15 +1461,11 @@ class Time(_Base):
         return self._py.replace(microsecond=self._nanos // 1_000)
 
     def _init_from_py(self, t: _time, /) -> None:
-        if type(t) is _time:
-            t = t.replace(tzinfo=None, fold=0)
-        elif isinstance(t, _time):
-            # subclass-safe way to ensure we have exactly a datetime.time
-            t = _time(t.hour, t.minute, t.second, t.microsecond)
-        else:  # pragma: no cover
-            raise TypeError(f"Expected datetime.time, got {type(t)!r}")
+        if t.tzinfo is not None:
+            raise ValueError(f"time must be naive, got tzinfo={t.tzinfo!r}")
+        # Rebuilding from the fields drops a subclass and the fold
         return self._init_from_inner(
-            (t.replace(microsecond=0), t.microsecond * 1_000)
+            (_time(t.hour, t.minute, t.second), t.microsecond * 1_000)
         )
 
     def format_iso(
@@ -1797,11 +1798,9 @@ class TimeDelta(_Base):
 
     >>> TimeDelta("PT2h30m")
     TimeDelta("PT2h30m")
-
-    Note
-    ----
-    Subclasses of :class:`~datetime.timedelta` are not accepted,
-    because they often add additional state that cannot be represented.
+    >>> from datetime import timedelta
+    >>> TimeDelta(timedelta(hours=2, minutes=30))
+    TimeDelta("PT2h30m")
 
     ``TimeDelta`` can be added to or subtracted from datetime types
     to shift them by an exact amount of time:
@@ -2154,8 +2153,7 @@ class TimeDelta(_Base):
         return _timedelta(microseconds=self._total_ns // 1_000)
 
     def _init_from_py(self, td: _timedelta, /) -> None:
-        if type(td) is not _timedelta:
-            raise TypeError("Expected datetime.timedelta exactly")
+        warn_lossy_stdlib_subclass(td, _timedelta, stacklevel=3)
         self._total_ns = ns = (
             td.microseconds * 1_000
             + td.seconds * 1_000_000_000
@@ -2753,6 +2751,14 @@ class _LocalTime(_BasicConversions):
         """
         return Time._from_py_unchecked(self._py_dt.time(), self._nanos)
 
+    def day_of_week(self) -> Weekday:
+        """The day of the week
+
+        >>> PlainDateTime(2021, 1, 2, 12).day_of_week()
+        Weekday.SATURDAY
+        """
+        return self.date().day_of_week()
+
     def day_of_year(self) -> int:
         """Ordinal day in the year (1--366)
 
@@ -2778,7 +2784,7 @@ class _LocalTime(_BasicConversions):
         return 366 if is_leap(self._py_dt.year) else 365
 
     def in_leap_year(self) -> bool:
-        """Whether this date's year is a leap year
+        """Whether the year of this datetime is a leap year
 
         >>> PlainDateTime(2024, 1, 1).in_leap_year()
         True
@@ -3118,7 +3124,7 @@ class Instant(_ExactTime):
     >>> py311_release.add(hours=3).timestamp()
     1666641600
 
-    Can also be constructed from an ISO 8601 string, a UNIX timestamp,
+    Can also be constructed from an ISO 8601 string
     or a standard library :class:`~datetime.datetime`:
 
     >>> Instant("2022-10-24T17:00:00Z")
@@ -3133,7 +3139,7 @@ class Instant(_ExactTime):
     ----
     Although the debug representation uses UTC, ``Instant`` does *not* have
     ``.year``, ``.hour``, or other calendar attributes—it is not a UTC datetime.
-    See the `FAQ <https://whenever.rtfd.io/en/latest/faq.html#why-doesn-t-instant-have-year-hour-etc>`_.
+    See the :ref:`FAQ <faq-instant-no-local>`.
     """
 
     __slots__ = ()
@@ -3144,15 +3150,24 @@ class Instant(_ExactTime):
     MAX: ClassVar[Instant]
     """The maximum possible value of this type."""
 
+    # Overloads for a nice autodoc.
+    # Proper typing of the constructors is handled in the type stubs
+    if not TYPE_CHECKING:
+
+        @overload
+        def __init__(self, iso_string: str, /) -> None: ...
+
+        @overload
+        def __init__(self, py_datetime: _datetime, /) -> None: ...
+
     def __init__(self, arg: str | _datetime, /) -> None:
-        """Create an Instant from an ISO 8601 string or a standard library datetime."""
         if isinstance(arg, str):
             self._init_from_iso(arg)
         elif isinstance(arg, _datetime):
             self._init_from_py(arg)
         else:
             raise TypeError(
-                "Instant constructor requires an ISO string or stdlib datetime"
+                "Instant() requires an ISO 8601 string or datetime.datetime"
             )
 
     @classmethod
@@ -3167,7 +3182,13 @@ class Instant(_ExactTime):
         *,
         nanosecond: int = 0,
     ) -> Instant:
-        """Create an Instant defined by a UTC date and time."""
+        """Create an Instant from a date and time-of-day in UTC.
+        This is the field constructor of ``Instant``; see the
+        :ref:`FAQ <faq-instant-no-local>` for why ``Instant(...)`` takes no fields.
+
+        >>> Instant.from_utc(2022, 10, 24, hour=17)
+        Instant("2022-10-24 17:00:00Z")
+        """
         return cls._from_py_unchecked(
             _datetime(year, month, day, hour, minute, second, 0, _UTC),
             check_nanos(nanosecond),
@@ -3233,9 +3254,10 @@ class Instant(_ExactTime):
         return cls.from_timestamp(value, unit="nanosecond")
 
     def _init_from_py(self, d: _datetime) -> None:
+        warn_lossy_stdlib_subclass(d, _datetime, stacklevel=3)
         if d.tzinfo is None or d.utcoffset() is None:
             raise ValueError("datetime is naive; use PlainDateTime() instead")
-        as_utc = d.astimezone(_UTC)
+        as_utc = check_utc_bounds(d).astimezone(_UTC)
         self._py_dt = _strip_subclasses(as_utc.replace(microsecond=0))
         self._nanos = as_utc.microsecond * 1_000
 
@@ -3696,7 +3718,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         def __init__(self, iso_string: str, /) -> None: ...
 
         @overload
-        def __init__(self, py_dt: _datetime, /) -> None: ...
+        def __init__(self, py_datetime: _datetime, /) -> None: ...
 
         @overload
         def __init__(
@@ -3709,7 +3731,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             second: int = 0,
             *,
             nanosecond: int = 0,
-            offset: int | TimeDelta,
+            offset: TimeDelta,
         ) -> None: ...
 
     def __init__(
@@ -3722,7 +3744,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        offset: int | TimeDelta,
+        offset: TimeDelta,
     ) -> None:
         self._py_dt = check_utc_bounds(
             _datetime(
@@ -3743,12 +3765,15 @@ class OffsetDateTime(_ExactAndLocalTime):
     @classmethod
     def now(
         cls,
-        offset: int | TimeDelta,
+        offset: TimeDelta,
         /,
         *,
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
-        """Create an instance from the current time.
+        """Create an instance from the current time at the given offset.
+
+        >>> OffsetDateTime.now(hours(2), stale_offset_ok=True)
+        OffsetDateTime("2024-03-09 23:00:00+02:00")
 
         Warning
         -------
@@ -3942,6 +3967,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         )
 
     def _init_from_py(self, d: _datetime) -> None:
+        warn_lossy_stdlib_subclass(d, _datetime, stacklevel=3)
         if d.tzinfo is None or (offset := d.utcoffset()) is None:
             raise ValueError("datetime is naive; use PlainDateTime() instead")
         elif offset.microseconds:
@@ -4742,7 +4768,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         @overload
         def __init__(
             self,
-            py_dt: _datetime,
+            py_datetime: _datetime,
             /,
             *,
             disambiguation: DisambiguationStr = ...,
@@ -4816,9 +4842,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         .. deprecated:: 0.11
            Use ``ZonedDateTime(..., tz=SYSTEM_TZ)`` instead.
 
-        Equivalent to ``ZonedDateTime(..., tz=<the system time zone>)``,
-        except it also works for system time zones whose corresponding
-        IANA time zone ID is unknown.
+        Equivalent to ``ZonedDateTime(..., tz=SYSTEM_TZ)``.
 
         >>> ZonedDateTime.from_system_tz(2020, 8, 15, hour=23, minute=12)
         ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Berlin]")
@@ -4850,7 +4874,12 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     @classmethod
     def now(cls, tz: str | _SystemTZ, /) -> ZonedDateTime:
-        """Create an instance from the current time in the given time zone."""
+        """Create an instance from the current time in the given time zone.
+        Pass ``SYSTEM_TZ`` for the system time zone.
+
+        >>> ZonedDateTime.now("Europe/Amsterdam")
+        ZonedDateTime("2024-03-09 23:00:00+01:00[Europe/Amsterdam]")
+        """
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         _tz = _load_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
@@ -4862,7 +4891,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         .. deprecated:: 0.11
            Use ``ZonedDateTime.now(SYSTEM_TZ)`` instead.
 
-        Equivalent to ``Instant.now().to_system_tz()``.
+        Equivalent to ``now(SYSTEM_TZ)``.
         """
         warn_deprecated(
             "now_in_system_tz() is deprecated; use now(SYSTEM_TZ) instead",
@@ -5014,6 +5043,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         **kwargs: Any,
     ) -> None:
         check_no_kwargs(kwargs, "ZonedDateTime")
+        if disambiguation is not UNSET:
+            check_disambiguation(disambiguation)
         written = zdt_parts_from_iso(s)
         self._py_dt = _resolve_zoned_local(
             written,
@@ -5256,6 +5287,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         from zoneinfo import ZoneInfo
 
         check_no_kwargs(kwargs, "ZonedDateTime")
+        warn_lossy_stdlib_subclass(d, _datetime, stacklevel=3)
+        if disambiguation is not UNSET:
+            check_disambiguation(disambiguation)
         if d.tzinfo is None:
             raise ValueError("datetime is naive; use PlainDateTime() instead")
         if type(d.tzinfo) is not ZoneInfo:
@@ -5483,8 +5517,8 @@ class ZonedDateTime(_ExactAndLocalTime):
     @property
     def tz_id(self) -> str | None:
         """The time zone ID. In rare cases, this may be ``None``,
-        if the ``ZonedDateTime`` was created from a system time zone
-        without a known IANA key.
+        if the ``ZonedDateTime`` was created from a :ref:`system time zone
+        <systemtime>` without a time zone ID.
         """
         return self._tz.key
 
@@ -5798,12 +5832,14 @@ class ZonedDateTime(_ExactAndLocalTime):
             round_increment,
         )
 
-    def is_ambiguous(self) -> bool:
-        """Whether the date and time-of-day are ambiguous, e.g. due to a DST transition.
+    def is_repeated(self) -> bool:
+        """Whether this local time occurs twice in its time zone
+        (a :term:`repeated local time`), for example on the night
+        daylight saving time ends.
 
-        >>> ZonedDateTime(2020, 8, 15, 23, tz="Europe/London").is_ambiguous()
+        >>> ZonedDateTime(2020, 8, 15, 23, tz="Europe/London").is_repeated()
         False
-        >>> ZonedDateTime(2023, 10, 29, 2, 15, tz="Europe/Amsterdam").is_ambiguous()
+        >>> ZonedDateTime(2023, 10, 29, 2, 15, tz="Europe/Amsterdam").is_repeated()
         True
         """
         return (
@@ -5812,6 +5848,18 @@ class ZonedDateTime(_ExactAndLocalTime):
             )
             is not Unique
         )
+
+    def is_ambiguous(self) -> bool:
+        """Whether this local time occurs twice in its time zone.
+
+        .. deprecated:: 0.11
+           Use :meth:`is_repeated` instead.
+        """
+        warn_deprecated(
+            "is_ambiguous() is deprecated; use is_repeated() instead",
+            stacklevel=2,
+        )
+        return self.is_repeated()
 
     def next_transition(self) -> ZonedDateTime | None:
         """The next time zone transition after this datetime, if any.
@@ -5850,7 +5898,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     def dst_offset(self) -> TimeDelta:
-        """The DST offset (adjustment) as a :class:`TimeDelta`.
+        """The DST offset (adjustment) of the datetime
 
         >>> ZonedDateTime(2020, 8, 15, tz="Europe/London").dst_offset()
         TimeDelta("PT1h")
@@ -6291,7 +6339,7 @@ _EXACT_TIME_TYPES = (Instant, OffsetDateTime, ZonedDateTime)
 class PlainDateTime(_LocalTime):
     """A date and time-of-day without any time zone information.
 
-    Represents "wall clock" time as people observe it locally.
+    Represents a local time as people observe it, without saying where.
     It can't be mixed with exact-time types (e.g. ``Instant``,
     ``ZonedDateTime``) without explicitly assuming a time zone or offset.
 
@@ -6315,12 +6363,14 @@ class PlainDateTime(_LocalTime):
     When to use this type:
 
     - You need to express a date and time as it would appear on a
-      wall clock, independent of time zone.
+      local time, independent of time zone.
     - You receive a datetime without time zone information and need
       to represent this lack of information in the type system.
     - You're working in a context where time zones and DST
       transitions truly don't apply (e.g. a simulation).
     """
+
+    __slots__ = ()
 
     # Overloads are for a nice autodoc
     # Proper typing is done in the stubs
@@ -6330,7 +6380,7 @@ class PlainDateTime(_LocalTime):
         def __init__(self, iso_string: str, /) -> None: ...
 
         @overload
-        def __init__(self, py_dt: _datetime, /) -> None: ...
+        def __init__(self, py_datetime: _datetime, /) -> None: ...
 
         @overload
         def __init__(
@@ -6480,6 +6530,7 @@ class PlainDateTime(_LocalTime):
         return result
 
     def _init_from_py(self, d: _datetime) -> None:
+        warn_lossy_stdlib_subclass(d, _datetime, stacklevel=3)
         if d.tzinfo is not None:
             raise ValueError(
                 f"datetime must be naive, got tzinfo={d.tzinfo!r}"

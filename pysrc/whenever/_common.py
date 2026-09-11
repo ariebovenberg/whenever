@@ -11,8 +11,9 @@ from datetime import (  # noqa: F401
     timedelta as _timedelta,
     timezone as _timezone,
 )
-from functools import lru_cache
+from functools import lru_cache, wraps
 from math import isfinite as _isfinite
+from operator import index as _index
 from typing import TYPE_CHECKING, Any, TypeVar, no_type_check
 from warnings import warn
 
@@ -156,6 +157,30 @@ class WheneverDeprecationWarning(WheneverWarning):
     """
 
 
+# Stdlib subclasses known to carry more than the stdlib fields, keyed on the
+# top-level package. A subclass that adds nothing (freezegun) passes silently.
+_LOSSY_STDLIB_SUBCLASSES = frozenset(
+    [("pandas", _datetime), ("pandas", _timedelta), ("pendulum", _timedelta)]
+)
+
+
+def warn_lossy_stdlib_subclass(
+    obj: Any, base: type, /, *, stacklevel: int
+) -> None:
+    cls = type(obj)
+    if cls is base:
+        return
+    package = cls.__module__.partition(".")[0]
+    if (package, base) in _LOSSY_STDLIB_SUBCLASSES:
+        warn(
+            f"{package}.{cls.__qualname__} contains data that cannot be "
+            f"reliably read through the datetime.{base.__name__} fields; "
+            "convert it explicitly",
+            WheneverWarning,
+            stacklevel=stacklevel + 1,
+        )
+
+
 def warn_deprecated(message: str, /, *, stacklevel: int) -> None:
     warn(
         message,
@@ -215,11 +240,13 @@ def invalid(name: str, value: Any, /) -> ValueError:
 
 
 def check_nanos(nanosecond: Any, /) -> int:
-    if not isinstance(nanosecond, int):
-        raise TypeError("nanosecond must be an integer")
-    if not 0 <= nanosecond < 1_000_000_000:
+    try:
+        nanos: int = _index(nanosecond)
+    except TypeError:
+        raise TypeError("nanosecond must be an integer") from None
+    if not 0 <= nanos < 1_000_000_000:
         raise ValueError("invalid time")
-    return nanosecond
+    return nanos
 
 
 def tzid_display(tzid: str | None, /) -> str:
@@ -340,13 +367,19 @@ def add_alternate_constructors(
     py_type: type | None,
 ) -> _Tcall:
     """Add alternate constructors to a class's __init__ method."""
+    accepted = "an ISO 8601 string" + (
+        "" if py_type is None else f" or datetime.{py_type.__name__}"
+    )
 
+    @wraps(init_default)
     def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
         match args:
             case [str() as iso_string]:
                 self._init_from_iso(iso_string, **kwargs)
             case [obj] if py_type is not None and isinstance(obj, py_type):
                 self._init_from_py(obj, **kwargs)
+            case [obj] if not isinstance(obj, int):
+                raise TypeError(f"{type(self).__name__}() requires {accepted}")
             case _:
                 init_default(self, *args, **kwargs)
 

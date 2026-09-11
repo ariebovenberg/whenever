@@ -2,7 +2,6 @@ import pickle
 import re
 from datetime import (
     time as py_time,
-    timedelta as py_timedelta,
     timezone as py_timezone,
 )
 
@@ -33,6 +32,18 @@ class TestInit:
     def test_defaults(self):
         assert Time() == Time(0, 0, 0, nanosecond=0)
 
+    @pytest.mark.parametrize(
+        "args, kwargs",
+        [
+            ((1, 2, 3, 4), {}),  # nanosecond is keyword-only
+            ((), {"iso_string": "01:02:03"}),
+            ((), {"py_time": py_time(1, 2, 3)}),
+        ],
+    )
+    def test_parameter_kinds(self, args, kwargs):
+        with pytest.raises(TypeError):
+            Time(*args, **kwargs)
+
     def test_out_of_range(self):
         with pytest.raises(ValueError):
             Time(24, 0, 0, nanosecond=0)
@@ -42,6 +53,13 @@ class TestInit:
             Time(0, 0, 60, nanosecond=0)
         with pytest.raises(ValueError):
             Time(0, 0, 0, nanosecond=1_000_000_000)
+
+    def test_single_argument_wrong_type(self):
+        with pytest.raises(
+            TypeError,
+            match=r"^Time\(\) requires an ISO 8601 string or datetime.time$",
+        ):
+            Time(b"x")  # type: ignore[call-overload]
 
     def test_iso(self):
         assert Time("01:02:03.000004") == Time(1, 2, 3, nanosecond=4_000)
@@ -291,11 +309,11 @@ class TestInitFromPy:
         assert Time(py_time(1, 2, 3, 4)) == Time(1, 2, 3, nanosecond=4_000)
 
     def test_tzinfo(self):
-        assert Time(
-            py_time(
-                1, 2, 3, 4, tzinfo=py_timezone(py_timedelta(hours=1)), fold=1
-            )
-        ) == Time(1, 2, 3, nanosecond=4_000)
+        with pytest.raises(
+            ValueError,
+            match=r"^time must be naive, got tzinfo=datetime\.timezone\.utc$",
+        ):
+            Time(py_time(1, tzinfo=py_timezone.utc))
 
     def test_fold_ignored(self):
         assert Time(py_time(1, 2, 3, 4, fold=1)) == Time(

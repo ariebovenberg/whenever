@@ -47,6 +47,11 @@ def _local_display(d: _datetime, nanos: int) -> str:
     return base + (f".{nanos:09d}".rstrip("0") if nanos else "")
 
 
+def check_disambiguation(disambiguation: object, /) -> None:
+    if disambiguation not in ("compatible", "earlier", "later", "raise"):
+        raise invalid("disambiguation", disambiguation)
+
+
 def resolve_ambiguity(
     dt: _datetime,
     tz: TimeZone,
@@ -67,8 +72,7 @@ def _resolve_ambiguity_from_mapping(
     nanos: int,
     /,
 ) -> _datetime:
-    if disambiguation not in ("compatible", "earlier", "later", "raise"):
-        raise invalid("disambiguation", disambiguation)
+    check_disambiguation(disambiguation)
     match ambiguity:
         case Unique(offset):
             pass

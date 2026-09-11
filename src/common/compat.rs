@@ -6,6 +6,41 @@ pub(crate) fn warn_deprecated(state: &State, message: &CStr, stacklevel: isize) 
     warn_with_class(*state.warn_deprecation, message, stacklevel)
 }
 
+/// Warn when a stdlib subclass known to carry more than the stdlib fields
+/// (`base` names the stdlib type) is read through those fields. An exact
+/// stdlib instance returns at once; the module check is allowed to be imperfect.
+pub(crate) fn warn_lossy_stdlib_subclass<T: PyStaticType>(
+    state: &State,
+    obj: PyObj,
+    base: &str,
+) -> PyResult<()> {
+    if obj.cast_exact::<T>().is_some() {
+        return Ok(());
+    }
+    let cls = obj.type_();
+    let module = cls.getattr(c"__module__")?;
+    let Ok(module) = module.cast_allow_subclass::<PyStr>() else {
+        return Ok(());
+    };
+    let package = module.as_str()?.split('.').next().unwrap_or("");
+    if !matches!(
+        (package, base),
+        ("pandas", "datetime") | ("pandas", "timedelta") | ("pendulum", "timedelta")
+    ) {
+        return Ok(());
+    }
+    let qualname = cls.getattr(c"__qualname__")?;
+    let Ok(qualname) = qualname.cast_allow_subclass::<PyStr>() else {
+        return Ok(());
+    };
+    let message = format!(
+        "{package}.{} contains data that cannot be reliably read through the datetime.{base} fields; convert it explicitly",
+        qualname.as_str()?,
+    )
+    .to_py()?;
+    warn_with_class_obj(*state.warn_whenever, *message, 1)
+}
+
 #[derive(Default)]
 pub(crate) struct RenamedKeyword {
     new: Option<PyObj>,
@@ -65,5 +100,5 @@ pub(crate) fn parse_pattern_keyword(kwargs: &mut IterKwargs, state: &State) -> P
             c"'format' is deprecated; use 'pattern' instead",
             1,
         )?
-        .ok_or_type_err("parse() missing required keyword argument 'pattern'")
+        .ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")
 }

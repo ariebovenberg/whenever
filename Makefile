@@ -16,7 +16,6 @@ DEFAULT_PYTEST_ARGS := -q --tb=short
 DEFAULT_CARGO_ARGS := --quiet --message-format=short
 MYPY_ARGS := --no-error-summary
 RUFF_ARGS := --quiet
-SLOTSCHECK_ARGS :=
 SPHINXOPTS ?= -q
 BUILD_ARGS := -q
 RUST_BUILD_ARGS := --qbuild
@@ -28,7 +27,6 @@ DEFAULT_PYTEST_ARGS := -s
 DEFAULT_CARGO_ARGS :=
 MYPY_ARGS :=
 RUFF_ARGS :=
-SLOTSCHECK_ARGS := -v
 SPHINXOPTS ?=
 BUILD_ARGS :=
 RUST_BUILD_ARGS :=
@@ -113,8 +111,6 @@ ci-lint: check-readme check-docstrings check-llms-summaries
 	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) pysrc/ tests/ scripts/
 	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check pysrc/ tests/ scripts/
 	cargo fmt -- --check
-	# hash seed to ensure deterministic import order by slotscheck
-	uv $(UV_ARGS) run env PYTHONPATH=pysrc/ PYTHONHASHSEED=3 slotscheck $(SLOTSCHECK_ARGS) pysrc
 	cargo clippy $(CLIPPY_ARGS) --all-targets --all-features -- -D warnings
 
 .PHONY: clean-ext

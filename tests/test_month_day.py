@@ -20,13 +20,14 @@ class TestInit:
         [
             (13, 1),
             (2, 30),
+            (4, 31),
             (8, 32),
             (0, 3),
             (10_000, 3),
         ],
     )
     def test_invalid_combinations(self, month, day):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"^invalid date$"):
             MonthDay(month, day)
 
     def test_invalid(self):
@@ -38,6 +39,10 @@ class TestInit:
 
         with pytest.raises(TypeError):
             MonthDay()  # type: ignore[call-overload]
+
+    def test_iso_string_is_positional_only(self):
+        with pytest.raises(TypeError):
+            MonthDay(iso_string="--12-25")  # type: ignore[call-overload]
 
     def test_iso(self):
         assert MonthDay("--12-25") == MonthDay(12, 25)

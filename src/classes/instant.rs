@@ -13,7 +13,7 @@ use crate::{
         time_delta::{DeltaIncrement, TimeDelta, timedelta_from_kwargs},
     },
     common::{
-        compat::{parse_pattern_keyword, warn_deprecated},
+        compat::{parse_pattern_keyword, warn_deprecated, warn_lossy_stdlib_subclass},
         fmt,
         format_args::{self, Suffix},
         instant::{TimestampUnit, extract_instant, parse_instant_arg},
@@ -91,6 +91,7 @@ fn __new__(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyRe
             return parse_iso(cls, arg);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
+            warn_lossy_stdlib_subclass::<PyDateTime>(cls.state(), arg, "datetime")?;
             return Instant::from_stdlib_datetime(dt)?
                 .ok_or_range_err()?
                 .to_obj(cls);
