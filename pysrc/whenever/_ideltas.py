@@ -281,7 +281,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     >>> d['weeks']
     2
-    >>> d.get('minutes')
+    >>> print(d.get('minutes'))
     None
     >>> dict(d)
     {"weeks": 2, "days": 3, "hours": 14}
@@ -1657,7 +1657,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     >>> d['weeks']
     3
-    >>> d.get('days')
+    >>> print(d.get('days'))
     None
     >>> dict(d)
     {"years": 2, "weeks": 3}

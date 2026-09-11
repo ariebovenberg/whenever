@@ -2389,18 +2389,6 @@ wheels = [
 ]
 
 [[package]]
-name = "slotscheck"
-version = "0.20.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "tomli", marker = "python_full_version < '3.11'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/dc/46346431b07aefd028e48569b8b4a067a7604f98559a14e848d90febaea0/slotscheck-0.20.1.tar.gz", hash = "sha256:f590fddcea4b673f6ef3ee0010a545df1cad96941ef09906b28b2ee31c38c66b", size = 14747, upload-time = "2026-07-05T13:23:28.803Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/59/e9/232563e90b04c3ddd93af1a6ecf8ff8566ad7bb80e46843c472c36f2578c/slotscheck-0.20.1-py3-none-any.whl", hash = "sha256:e8ec875fc40e37660babb28805294615d5631bb09c51ee75db08d03d4b6c156e", size = 17634, upload-time = "2026-07-05T13:23:27.53Z" },
-]
-
-[[package]]
 name = "snowballstemmer"
 version = "3.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2825,7 +2813,6 @@ dev-extra = [
     { name = "packaging" },
     { name = "ruff" },
     { name = "setuptools-rust" },
-    { name = "slotscheck" },
     { name = "twine" },
 ]
 docs = [
@@ -2876,7 +2863,6 @@ dev-extra = [
     { name = "packaging", specifier = ">=26.2" },
     { name = "ruff", specifier = ">=0.16,<0.17" },
     { name = "setuptools-rust" },
-    { name = "slotscheck", specifier = ">=0.20,<0.21" },
     { name = "twine", specifier = ">=7,<8" },
 ]
 docs = [

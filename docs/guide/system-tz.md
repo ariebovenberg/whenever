@@ -15,12 +15,14 @@ Pass {data}`~whenever.SYSTEM_TZ` anywhere a named time zone is accepted to
 resolve the system time zone at call time:
 
 ```python
->>> from whenever import PlainDateTime, Instant, SYSTEM_TZ
+>>> from whenever import Date, PlainDateTime, Instant, SYSTEM_TZ
 >>> plain = PlainDateTime(2020, 8, 15, hour=8)
 >>> d = plain.assume_tz(SYSTEM_TZ)
 ZonedDateTime("2020-08-15 08:00:00-04:00[America/New_York]")
 >>> Instant.now().to_tz(SYSTEM_TZ)
 ZonedDateTime("2023-12-28 11:30:00-05:00[America/New_York]")
+>>> Date.today(SYSTEM_TZ)
+Date("2023-12-28")
 ```
 
 When working with the time zone of the current system, there

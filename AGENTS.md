@@ -90,6 +90,16 @@ CI runs this coverage check on Python 3.14.
   `_ok`, named in its message; `ImplicitDisambiguationWarning` is escaped by
   stating `disambiguation=`.
 - **Spelling**: *time zone* in prose, `timezone` in identifiers.
+- **Attribute or method**: a field of the value's own notation (`year`,
+  `offset`, `tz_id`, `week`) is an attribute; everything derived
+  (`day_of_week()`, `days_in_month()`, `is_repeated()`) is a method.
+- **Clock factories**: `now()`/`today()` take exactly what the type needs to
+  localize the clock and nothing it would discard; no system default.
+- **Constructor defaults**: time-of-day fields default to zero; calendar
+  fields never default.
+- **Stdlib overloads** accept subclasses and read them through the stdlib
+  attributes; `warn_lossy_stdlib_subclass` flags the families known to
+  carry more than those attributes hold.
 
 ## Tests
 

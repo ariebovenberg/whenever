@@ -269,6 +269,11 @@ impl Typed<TimeTag> {
         unsafe { PyDateTime_TIME_GET_HOUR(self.as_ptr()) }
     }
 
+    pub(crate) fn tzinfo(&self) -> PyObj {
+        // SAFETY: calling CPython API with valid arguments
+        unsafe { PyObj::from_ptr_unchecked(PyDateTime_TIME_GET_TZINFO(self.as_ptr())) }
+    }
+
     pub(crate) fn minute(&self) -> i32 {
         unsafe { PyDateTime_TIME_GET_MINUTE(self.as_ptr()) }
     }

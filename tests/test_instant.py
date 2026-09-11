@@ -52,9 +52,18 @@ def test_init_parses_iso():
     with pytest.raises(TypeError):
         Instant(2020, 3, 4)  # type: ignore[call-overload]
 
-    # __init__ takes no invalid types
+    # the alternate constructors are positional-only
     with pytest.raises(TypeError):
-        Instant(0)  # type: ignore[call-overload]
+        Instant(iso_string="2020-08-15T12:08:30Z")  # type: ignore[call-overload]
+    with pytest.raises(TypeError):
+        Instant(py_datetime=py_datetime(2020, 8, 15, tzinfo=timezone.utc))  # type: ignore[call-overload]
+
+    # __init__ takes no invalid types
+    with pytest.raises(
+        TypeError,
+        match=r"^Instant\(\) requires an ISO 8601 string or datetime.datetime$",
+    ):
+        Instant(None)  # type: ignore[call-overload]
 
 
 class TestFromUTC:
@@ -119,6 +128,10 @@ class TestFromUTC:
     def test_wrong_types(self):
         with pytest.raises(TypeError):
             Instant.from_utc("2020", 8, 15, 5, 12, 30)  # type: ignore[arg-type]
+
+    def test_nanosecond_is_keyword_only(self):
+        with pytest.raises(TypeError):
+            Instant.from_utc(2020, 8, 15, 5, 12, 30, 450)  # type: ignore[call-arg]
 
     @given(
         integers(),
@@ -721,9 +734,14 @@ class TestInitFromPy:
     def test_valid(self, dt: py_datetime, expected: Instant):
         assert Instant(dt).strict_eq(expected)
 
-    def test_out_of_range(self):
-        d = py_datetime(1, 1, 1, tzinfo=timezone(timedelta(hours=5)))
-        with pytest.raises((ValueError, OverflowError), match="range"):
+    @pytest.mark.parametrize("offset_hours", [5, 1])
+    def test_out_of_range(self, offset_hours):
+        d = py_datetime(
+            1, 1, 1, tzinfo=timezone(timedelta(hours=offset_hours))
+        )
+        with pytest.raises(
+            ValueError, match=r"^value or calculation out of range$"
+        ):
             Instant(d)
 
     def test_naive(self):

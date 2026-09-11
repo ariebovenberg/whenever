@@ -21,6 +21,8 @@ from hypothesis import given
 from hypothesis.strategies import text
 from whenever import (
     _EXTENSION_LOADED,
+    MONDAY,
+    SATURDAY,
     SYSTEM_TZ,
     Date,
     ImplicitDisambiguationWarning,
@@ -43,6 +45,7 @@ from whenever import (
     hours,
     milliseconds,
     minutes,
+    patch_current_time,
     reset_system_tz,
     reset_tzpath,
 )
@@ -594,8 +597,60 @@ class TestInit:
         )
 
     def test_tz_required(self):
-        with pytest.raises(TypeError):
+        with pytest.raises(
+            TypeError, match=r"missing 1 required keyword-only argument: 'tz'$"
+        ):
             ZonedDateTime(2020, 8, 15, 12)  # type: ignore[call-overload]
+
+    def test_single_argument_wrong_type(self):
+        with pytest.raises(
+            TypeError,
+            match=r"^ZonedDateTime\(\) requires an ISO 8601 string or datetime.datetime$",
+        ):
+            ZonedDateTime(None)  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize(
+        "args, kwargs",
+        [
+            ((2020, 8, 15, 5, 12, 30, 450), {"tz": "Europe/Amsterdam"}),
+            ((2020, 8, 15, 5, 12, 30, "Europe/Amsterdam"), {}),
+            (
+                (),
+                {"iso_string": "2020-08-15T05:12:30+02:00[Europe/Amsterdam]"},
+            ),
+            (
+                (),
+                {
+                    "py_datetime": py_datetime(
+                        2020, 8, 15, tzinfo=ZoneInfo("Europe/Amsterdam")
+                    )
+                },
+            ),
+        ],
+    )
+    def test_parameter_kinds(self, args, kwargs):
+        with pytest.raises(TypeError):
+            ZonedDateTime(*args, **kwargs)
+
+    def test_invalid_disambiguation_with_settled_offset(self):
+        # the written offset settles the instant, but the policy is
+        # still validated
+        with pytest.raises(
+            ValueError, match=r"^invalid disambiguation: 'bogus'$"
+        ):
+            ZonedDateTime(
+                "2023-10-29T02:30:00+01:00[Europe/Amsterdam]",
+                disambiguation="bogus",  # type: ignore[call-overload]
+            )
+        with pytest.raises(
+            ValueError, match=r"^invalid disambiguation: 'bogus'$"
+        ):
+            ZonedDateTime(
+                py_datetime(
+                    2023, 10, 29, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam")
+                ),
+                disambiguation="bogus",  # type: ignore[call-overload]
+            )
 
     def test_out_of_range_due_to_offset(self):
         with pytest.raises((ValueError, OverflowError), match="range|year"):
@@ -748,12 +803,6 @@ def test_offset(d: ZonedDateTime, expected: TimeDelta):
     assert d.offset == expected
 
 
-def test_immutable():
-    d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
-    with pytest.raises(AttributeError):
-        d.year = 2021  # type: ignore[misc]
-
-
 @pytest.mark.parametrize(
     "d, expected",
     [
@@ -802,6 +851,12 @@ def test_to_plain(d: ZonedDateTime):
     assert plain.minute == d.minute
     assert plain.second == d.second
     assert plain.nanosecond == d.nanosecond
+
+
+def test_immutable():
+    d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
+    with pytest.raises(AttributeError):
+        d.year = 2021  # type: ignore[misc]
 
 
 class TestReplaceDate:
@@ -1429,14 +1484,18 @@ class TestStrictEq:
             assert b.strict_eq(a)
 
 
-class TestIsAmbiguous:
+class TestIsRepeated:
+    def test_fixed_offset_zone(self):
+        d = ZonedDateTime(2020, 8, 15, tz="Etc/GMT+3")
+        assert d.is_repeated() is False
+
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
     )
     def test_unambiguous(self, tz: str):
         d = create_zdt(2020, 8, 15, 12, 8, 30, tz=tz)
-        assert not d.is_ambiguous()
+        assert not d.is_repeated()
 
     @pytest.mark.parametrize(
         "tz",
@@ -1453,10 +1512,10 @@ class TestIsAmbiguous:
             tz=tz,
             disambiguation="earlier",
         )
-        assert d.is_ambiguous()
+        assert d.is_repeated()
 
         d2 = d.replace(disambiguation="later")
-        assert d2.is_ambiguous()
+        assert d2.is_repeated()
 
     @pytest.mark.parametrize(
         "tz",
@@ -1465,13 +1524,13 @@ class TestIsAmbiguous:
     def test_gap(self, tz: str):
         d = create_zdt(2023, 3, 26, 2, 15, 30, tz=tz)
         # skipped times are shifted into non-ambiguous times
-        assert not d.is_ambiguous()
+        assert not d.is_repeated()
 
         # same for different disambiguation
         d2 = create_zdt(
             2023, 3, 26, 2, 15, 30, tz=tz, disambiguation="earlier"
         )
-        assert not d2.is_ambiguous()
+        assert not d2.is_repeated()
 
 
 class TestNextTransition:
@@ -1832,6 +1891,10 @@ class TestPrevTransition:
 
 
 class TestDstOffset:
+    def test_fixed_offset_zone(self):
+        d = ZonedDateTime(2020, 8, 15, tz="Etc/GMT+3")
+        assert d.dst_offset() == TimeDelta.ZERO
+
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
@@ -2242,6 +2305,10 @@ class TestDstOffset:
 
 
 class TestTzAbbrev:
+    def test_fixed_offset_zone(self):
+        d = ZonedDateTime(2020, 8, 15, tz="Etc/GMT+3")
+        assert d.tz_abbrev() == "-03"
+
     @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
@@ -3012,8 +3079,11 @@ class TestParseIso:
                 "1900-01-01T00:00:00-00:25:00[Europe/Dublin]"
             )
 
-    def test_keep_instant_on_offset_mismatch(self):
-        assert ZonedDateTime.parse_iso(
+    @pytest.mark.parametrize(
+        "construct", [ZonedDateTime.parse_iso, ZonedDateTime]
+    )
+    def test_keep_instant_on_offset_mismatch(self, construct):
+        assert construct(
             "2020-08-15T12:00:00+03:00[Europe/Amsterdam]",
             offset_mismatch="keep_instant",
         ).strict_eq(ZonedDateTime(2020, 8, 15, 11, tz="Europe/Amsterdam"))
@@ -3044,9 +3114,12 @@ class TestParseIso:
             disambiguation="raise",
         ).strict_eq(expected)
 
-    def test_invalid_offset_mismatch(self):
+    @pytest.mark.parametrize(
+        "construct", [ZonedDateTime.parse_iso, ZonedDateTime]
+    )
+    def test_invalid_offset_mismatch(self, construct):
         with pytest.raises(ValueError, match="offset_mismatch"):
-            ZonedDateTime.parse_iso(  # type: ignore[call-overload]
+            construct(
                 "2020-08-15T12:00:00+02:00[Europe/Amsterdam]",
                 offset_mismatch="ignore",
             )
@@ -3203,11 +3276,14 @@ class TestParseIso:
         assert (parsed.hour, parsed.minute) == (12, 15)
         assert constructed.strict_eq(parsed)
 
-    def test_keep_instant_ignores_disambiguation(self):
+    @pytest.mark.parametrize(
+        "construct", [ZonedDateTime.parse_iso, ZonedDateTime]
+    )
+    def test_keep_instant_ignores_disambiguation(self, construct):
         value = "2023-03-26T02:15:30+03:00[Europe/Amsterdam]"
         expected = OffsetDateTime("2023-03-26 02:15:30+03:00").to_instant()
         assert (
-            ZonedDateTime.parse_iso(
+            construct(
                 value,
                 offset_mismatch="keep_instant",
                 disambiguation="raise",
@@ -4150,6 +4226,14 @@ def test_now():
     assert now.tz_id == "Iceland"
     py_now = py_datetime.now(ZoneInfo("Iceland"))
     assert py_now - now.to_stdlib() < py_timedelta(seconds=1)
+
+
+def test_now_patched():
+    instant = Instant.from_utc(2020, 8, 15, 12, 30, 45, nanosecond=5)
+    with patch_current_time(instant, keep_ticking=False):
+        assert ZonedDateTime.now("Europe/Amsterdam").strict_eq(
+            instant.to_tz("Europe/Amsterdam")
+        )
 
 
 @system_tz_ams()
@@ -5965,6 +6049,17 @@ def test_copy(tz: str):
     d = create_zdt(2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz=tz)
     assert copy(d) is d
     assert deepcopy(d) is d
+
+
+def test_day_of_week():
+    assert (
+        ZonedDateTime(2024, 3, 9, 22, tz="America/New_York").day_of_week()
+        is SATURDAY
+    )
+    assert (
+        ZonedDateTime(2024, 12, 30, tz="America/New_York").day_of_week()
+        is MONDAY
+    )
 
 
 class TestDayOfYear:

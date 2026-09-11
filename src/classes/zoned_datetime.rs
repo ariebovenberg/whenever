@@ -8,7 +8,7 @@ use crate::{
         time_delta::TimeDelta,
     },
     common::{
-        compat::{RenamedKeyword, warn_deprecated},
+        compat::{RenamedKeyword, warn_deprecated, warn_lossy_stdlib_subclass},
         disambiguation::*,
         fmt,
         format_args::{self, Suffix},
@@ -239,6 +239,7 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
             return parse_iso_inner(cls, arg, dis, mismatch);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
+            warn_lossy_stdlib_subclass::<PyDateTime>(cls.state(), arg, "datetime")?;
             let (dis, mismatch) = match kwargs {
                 Some(d) => parse_iso_kwargs(d.iteritems(), "ZonedDateTime", false, cls.state())?,
                 None => parse_iso_kwargs(
@@ -290,10 +291,11 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
         disambiguate
     );
 
-    let tz = state.load_tz(
-        tz.borrow_opt()
-            .ok_or_type_err("`tz` argument is required")?,
-    )?;
+    let tz =
+        state
+            .load_tz(tz.borrow_opt().ok_or_type_err(
+                "ZonedDateTime() missing 1 required keyword-only argument: 'tz'",
+            )?)?;
     let date = Date::from_i64_components(year, month, day).ok_or_value_err("invalid date")?;
     let time = Time::from_i64_components(hour, minute, second, nanosecond)
         .ok_or_value_err("invalid time")?;
@@ -545,6 +547,11 @@ fn date(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 
 fn time(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     slf.time.to_obj(*cls.state().time_type)
+}
+
+fn day_of_week(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+    let members = cls.state().weekday_enum_members.get()?;
+    Ok(members[(slf.date.day_of_week() as u8 - 1) as usize].newref())
 }
 
 fn day_of_year(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -1149,12 +1156,21 @@ fn from_timestamp_nanos(
         .into_zoned_obj(tz, cls)
 }
 
-fn is_ambiguous(_: PyType, slf: &ZonedDateTime) -> PyReturn {
+fn is_repeated(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     matches!(
         slf.tz.mapping_for_local(slf.to_plain().local_seconds()),
         LocalMapping::Fold { .. }
     )
     .to_py()
+}
+
+fn is_ambiguous(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
+    warn_deprecated(
+        cls.state(),
+        c"is_ambiguous() is deprecated; use is_repeated() instead",
+        1,
+    )?;
+    is_repeated(cls.into(), slf)
 }
 
 fn next_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -1481,7 +1497,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
             c"'format' is deprecated; use 'pattern' instead",
             1,
         )?
-        .ok_or_type_err("parse() missing required keyword argument 'pattern'")?;
+        .ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
@@ -1557,6 +1573,7 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     method0!(ZonedDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
     method0!(ZonedDateTime, date, doc::LOCALTIME_DATE),
     method0!(ZonedDateTime, time, doc::LOCALTIME_TIME),
+    method0!(ZonedDateTime, day_of_week, doc::LOCALTIME_DAY_OF_WEEK),
     method0!(ZonedDateTime, day_of_year, doc::LOCALTIME_DAY_OF_YEAR),
     method0!(ZonedDateTime, days_in_month, doc::LOCALTIME_DAYS_IN_MONTH),
     method0!(ZonedDateTime, days_in_year, doc::LOCALTIME_DAYS_IN_YEAR),
@@ -1607,6 +1624,7 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
         timestamp_nanos,
         doc::EXACTTIME_TIMESTAMP_NANOS
     ),
+    method0!(ZonedDateTime, is_repeated, doc::ZONEDDATETIME_IS_REPEATED),
     method0!(ZonedDateTime, is_ambiguous, doc::ZONEDDATETIME_IS_AMBIGUOUS),
     method0!(
         ZonedDateTime,

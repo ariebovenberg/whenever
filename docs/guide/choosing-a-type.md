@@ -195,6 +195,10 @@ preserving it is intentional:
 OffsetDateTime("2024-03-10 12:00:00+05:00")
 ```
 
+{meth}`OffsetDateTime.now(offset) <whenever.OffsetDateTime.now>` warns by
+default for the same reason: it is the one call where you choose the offset
+rather than receive it, and "now at +02:00" nearly always means a place.
+
 Use `stale_offset_ok=True` when fixed-offset arithmetic is deliberate or the
 provenance risk is accepted. If the entire domain uses permanently fixed
 offsets, configure {class}`~whenever.StaleOffsetWarning` globally as described

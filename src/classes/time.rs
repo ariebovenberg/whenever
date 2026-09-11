@@ -145,7 +145,15 @@ fn __new__(cls: PyClass<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
             return parse_iso(cls, obj);
         }
         if let Some(t) = obj.cast_allow_subclass::<PyTime>() {
+            let tzinfo = t.tzinfo();
+            if !tzinfo.is_none() {
+                raise_value_err(format!("time must be naive, got tzinfo={tzinfo}"))?
+            }
             return Time::from_stdlib_time(t).to_obj(cls);
+        }
+        // An integer is the hour of the field constructor
+        if obj.cast_allow_subclass::<PyInt>().is_none() {
+            return raise_type_err("Time() requires an ISO 8601 string or datetime.time");
         }
     }
     let mut hour: i64 = 0;

@@ -9,6 +9,8 @@ import pytest
 from hypothesis import given
 from hypothesis.strategies import floats, integers, text
 from whenever import (
+    MONDAY,
+    SATURDAY,
     SYSTEM_TZ,
     Date,
     ImplicitDisambiguationWarning,
@@ -29,6 +31,7 @@ from whenever import (
     milliseconds,
     minutes,
     nanoseconds,
+    patch_current_time,
     seconds,
 )
 
@@ -59,8 +62,34 @@ class TestInit:
         assert d.offset == hours(5)
 
     def test_offset_missing(self):
-        with pytest.raises(TypeError, match="required.*offset"):
+        with pytest.raises(
+            TypeError,
+            match=r"missing 1 required keyword-only argument: 'offset'$",
+        ):
             OffsetDateTime(2020, 8, 15, 5, 12, 30, nanosecond=450)  # type: ignore[call-overload]
+
+    def test_single_argument_wrong_type(self):
+        with pytest.raises(
+            TypeError,
+            match=r"^OffsetDateTime\(\) requires an ISO 8601 string or datetime.datetime$",
+        ):
+            OffsetDateTime(1.5)  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize(
+        "args, kwargs",
+        [
+            ((2020, 8, 15, 5, 12, 30, 450), {"offset": hours(5)}),
+            ((2020, 8, 15, 5, 12, 30, hours(5)), {}),
+            ((), {"iso_string": "2020-08-15T05:12:30+05:00"}),
+            (
+                (),
+                {"py_datetime": py_datetime(2020, 8, 15, tzinfo=timezone.utc)},
+            ),
+        ],
+    )
+    def test_parameter_kinds(self, args, kwargs):
+        with pytest.raises(TypeError):
+            OffsetDateTime(*args, **kwargs)
 
     def test_invalid_offset_delta(self):
         # too large
@@ -1054,6 +1083,20 @@ class TestNow:
         assert now.offset == hours(-5)
         py_now = py_datetime.now(timezone.utc)
         assert py_now - now.to_stdlib() < timedelta(seconds=1)
+
+    def test_warns_by_default(self):
+        with warns_here(StaleOffsetWarning):
+            OffsetDateTime.now(hours(5))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            OffsetDateTime.now(hours(5), stale_offset_ok=True)
+
+    def test_patched(self):
+        instant = Instant.from_utc(2020, 8, 15, 12, 30, 45, nanosecond=5)
+        with patch_current_time(instant, keep_ticking=False):
+            assert OffsetDateTime.now(
+                hours(1), stale_offset_ok=True
+            ).strict_eq(instant.to_fixed_offset(hours(1)))
 
 
 class TestAddSubtractOperators:
@@ -2496,6 +2539,16 @@ class TestSince:
         b = OffsetDateTime(2021, 7, 3, offset=hours(2))
         with pytest.raises(TypeError, match="in_units"):
             a.since(b)  # type: ignore[call-overload]
+
+
+def test_day_of_week():
+    assert (
+        OffsetDateTime(2024, 3, 9, 22, offset=hours(-5)).day_of_week()
+        is SATURDAY
+    )
+    assert (
+        OffsetDateTime(2024, 12, 30, offset=hours(5)).day_of_week() is MONDAY
+    )
 
 
 class TestDayOfYear:

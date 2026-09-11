@@ -89,6 +89,7 @@ local date and time values:
 |    |   |   |
 | `start_of()`, `end_of()`    | {meth}`🔗 <PlainDateTime.start_of>`, {meth}`🔗 <PlainDateTime.end_of>`    | {meth}`🔗 <ZonedDateTime.start_of>`, {meth}`🔗 <ZonedDateTime.end_of>`    | {meth}`🔗 <OffsetDateTime.start_of>`, {meth}`🔗 <OffsetDateTime.end_of>`    |
 |    |   |   |
+| `day_of_week()`              | {meth}`🔗 <PlainDateTime.day_of_week>`                                 | {meth}`🔗 <ZonedDateTime.day_of_week>`                                 | {meth}`🔗 <OffsetDateTime.day_of_week>`                                  |
 | `day_of_year()`              | {meth}`🔗 <PlainDateTime.day_of_year>`                                 | {meth}`🔗 <ZonedDateTime.day_of_year>`                                 | {meth}`🔗 <OffsetDateTime.day_of_year>`                                  |
 | `days_in_month()`            | {meth}`🔗 <PlainDateTime.days_in_month>`                               | {meth}`🔗 <ZonedDateTime.days_in_month>`                               | {meth}`🔗 <OffsetDateTime.days_in_month>`                                |
 | `days_in_year()`             | {meth}`🔗 <PlainDateTime.days_in_year>`                                | {meth}`🔗 <ZonedDateTime.days_in_year>`                                | {meth}`🔗 <OffsetDateTime.days_in_year>`                                 |
@@ -109,7 +110,7 @@ Several other methods are unique to one or more classes:
 |--------------------------------------------|-----------------------------------------|----------------------------------------|-------------------------------------------------------|
 | {attr}`~Instant.MIN`, {attr}`~Instant.MAX` |                                         |                                        | {attr}`~PlainDateTime.MIN`, {attr}`~PlainDateTime.MAX` |
 | {meth}`~Instant.from_utc`                  |                                         |                                        |                                                        |
-| {attr}`~Instant.format_rfc2822`            |                                         | {meth}`~OffsetDateTime.format_rfc2822` |                                                        |
+| {meth}`~Instant.format_rfc2822`            |                                         | {meth}`~OffsetDateTime.format_rfc2822` |                                                        |
 |                                            | {meth}`~ZonedDateTime.to_instant`       | {meth}`~OffsetDateTime.to_instant`     |                                                        |
 |                                            | {meth}`~ZonedDateTime.to_plain`         | {meth}`~OffsetDateTime.to_plain`       |                                                        |
 |                                            | {attr}`~ZonedDateTime.offset`           | {attr}`~OffsetDateTime.offset`         |                                                        |
@@ -120,7 +121,7 @@ Several other methods are unique to one or more classes:
 |                                            |                                         | {meth}`~OffsetDateTime.assume_tz`      | {meth}`~PlainDateTime.assume_tz`                       |
 |                                            |                                         |                                        | {meth}`~PlainDateTime.assume_fixed_offset`             |
 |                                            | {attr}`~ZonedDateTime.tz_id`            |                                        |                                                        |
-|                                            | {meth}`~ZonedDateTime.is_ambiguous`     |                                        |                                                        |
+|                                            | {meth}`~ZonedDateTime.is_repeated`      |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.dst_offset`       |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.tz_abbrev`        |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.day_length`       |                                        |                                                        |
@@ -129,6 +130,12 @@ Several other methods are unique to one or more classes:
 
 {class}`OffsetDateTime` and {class}`ZonedDateTime` have no `MIN` and `MAX`:
 their earliest and latest values depend on the offset or the time zone.
+
+:::{note}
+{meth}`~Instant.from_utc` is the field constructor of {class}`Instant`:
+`Instant(2020, 1, 1)` does not exist because it would silently mean UTC.
+See the {ref}`FAQ <faq-instant-no-local>`.
+:::
 
 
 [^2]: Prefer {meth}`Instant.from_timestamp`; then convert it with `to_tz()`

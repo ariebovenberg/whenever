@@ -30,14 +30,16 @@ deprecated interfaces are removed.
   while `Instant` is the natural type for constructing an exact time from a
   timestamp.
 
-- The convenience methods specific to the system time zone are deprecated. `SYSTEM_TZ`
-  is now a public sentinel accepted wherever a named time zone is accepted,
-  including `Date.today()`, `ZonedDateTime`, `now()`, `to_tz()`, and
-  `assume_tz()`.
+- The convenience methods specific to the system time zone are deprecated:
+  `to_system_tz()`, `assume_system_tz()`, `Date.today_in_system_tz()`,
+  `ZonedDateTime.now_in_system_tz()`, and `ZonedDateTime.from_system_tz()`.
+  `SYSTEM_TZ` is now a public sentinel accepted wherever a named time zone is
+  accepted, including `Date.today()`, `ZonedDateTime`, `now()`, `to_tz()`,
+  and `assume_tz()`.
 
   **Rationale**: one sentinel lets the regular time zone APIs cover the system
   time zone without duplicating every operation. It also makes call-time
-  system-timezone resolution explicit and takes advantage of the sentinel
+  system time zone resolution explicit and takes advantage of the sentinel
   pattern recently standardized by [PEP 661](https://peps.python.org/pep-0661/).
 
 - Several public names have been clarified: `disambiguate=` becomes
@@ -45,8 +47,9 @@ deprecated interfaces are removed.
   `format=` becomes `pattern=`, ISO-format `tz=` becomes `tz_id_display=`
   with the values `"required"`, `"if_available"`, and `"omit"` replacing
   `"always"`, `"auto"`, and `"never"`, `ZonedDateTime.tz` becomes `tz_id`,
-  `MonthDay.is_leap()` becomes `is_leap_day()`, and `TZPATH` becomes
-  `get_tzpath()`. The old spellings are deprecated.
+  `MonthDay.is_leap()` becomes `is_leap_day()`, `ZonedDateTime.is_ambiguous()`
+  becomes `is_repeated()`, and `TZPATH` becomes `get_tzpath()`. The old
+  spellings are deprecated.
 
   **Rationale**: the new names describe their concepts and behavior more
   precisely and use consistent terminology across the API. For the display
@@ -109,6 +112,14 @@ deprecated interfaces are removed.
 - Added millisecond and microsecond totals to datetime differences and
   `ItemizedDelta.total()`.
 - Added `YearMonth.add()` and `subtract()`, and `MonthDay.is_leap_day()`.
+- Added `day_of_week()` to `PlainDateTime`, `OffsetDateTime`, and
+  `ZonedDateTime`.
+- `TimeDelta()` accepts `timedelta` subclasses, like the other standard
+  library overloads. `Time()` rejects a `time` with a tzinfo, as
+  `PlainDateTime()` rejects an aware `datetime`.
+- Added a `WheneverWarning` when a `pandas` or `pendulum` object is read
+  through the standard library fields, which cannot represent all of its
+  data.
 - An out-of-range `nanoseconds` component in an itemized delta now names
   the bound and the remedy instead of `delta out of range`.
 - Stabilized `patch_current_time()` and exposed its `TimePatch` handle with
@@ -206,6 +217,7 @@ Migration summary:
 | separator-free pattern `SS` | `[ss]` |
 | `offset=2` | `offset=hours(2)` |
 | `MonthDay.is_leap()` | `MonthDay.is_leap_day()` |
+| `ZonedDateTime.is_ambiguous()` | `ZonedDateTime.is_repeated()` |
 | `TZPATH` | `get_tzpath()` |
 
 `[:ss.fff]` isn't a pure rename of `:SS.fff`: with zero seconds and fraction,

@@ -47,8 +47,20 @@ datetime.datetime(2025, 4, 19, 15, 30, tzinfo=datetime.timezone.utc)
 * There are some exceptions where the conversion is not exact; see the individual method documentation for details.
 * Converting to the standard library is not always lossless.
   Nanoseconds will be truncated to microseconds.
-* The constructor also accepts subclasses, so you can also ingest types
-  from `pendulum` and `arrow` libraries.
+```
+
+```{warning}
+Subclasses of the standard library types are accepted and read through the
+standard library attributes, so data those attributes cannot represent is
+lost. `pandas.Timestamp` and `pandas.Timedelta` carry nanoseconds;
+`pendulum.Duration` carries months and years (and folds them into 30-day
+days). Passing one of these emits a {class}`~whenever.WheneverWarning`.
+Convert explicitly instead:
+`Instant.from_timestamp(ts.value, unit="nanosecond")` for a
+`pandas.Timestamp`, `TimeDelta(nanoseconds=td.value)` for a
+`pandas.Timedelta`, and an {class}`~whenever.ItemizedDelta` built from the
+`pendulum.Duration`'s components. Subclasses that add no data, such as
+freezegun's `FakeDatetime`, pass silently.
 ```
 
 ```{admonition} Converting a datetime with a ZoneInfo
@@ -75,5 +87,5 @@ There are no Python equivalents for the following classes:
 - {class}`ItemizedDelta` and {class}`ItemizedDateDelta` cannot be converted to {class}`~datetime.timedelta`
   because they may contain calendar units,
   and because they store their components in unnormalized form, unlike {class}`~datetime.timedelta`.
-- {class}`YearMonth` and {class}`MonthDay` cannot be converted
-  because there is no direct equivalent in the standard library.
+- {class}`YearMonth`, {class}`MonthDay`, and {class}`IsoWeekDate` cannot be
+  converted because there is no direct equivalent in the standard library.

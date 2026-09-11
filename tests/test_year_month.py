@@ -40,6 +40,15 @@ class TestInit:
         with pytest.raises(TypeError):
             YearMonth()  # type: ignore[call-overload]
 
+        with pytest.raises(
+            TypeError, match=r"^YearMonth\(\) requires an ISO 8601 string$"
+        ):
+            YearMonth(None)  # type: ignore[call-overload]
+
+    def test_iso_string_is_positional_only(self):
+        with pytest.raises(TypeError):
+            YearMonth(iso_string="2021-12")  # type: ignore[call-overload]
+
     def test_iso(self):
         assert YearMonth("2021-12") == YearMonth(2021, 12)
 

@@ -8,7 +8,7 @@ use crate::classes::plain_datetime::DateTimeBoundaryUnit;
 use crate::{
     classes::{date::Date, plain_datetime, time::Time, time_delta::TimeDelta},
     common::{
-        compat::{parse_pattern_keyword, warn_deprecated},
+        compat::{parse_pattern_keyword, warn_deprecated, warn_lossy_stdlib_subclass},
         disambiguation::Disambiguation,
         fmt,
         format_args::{self, Suffix},
@@ -89,6 +89,7 @@ fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
             return parse_iso(cls, arg);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
+            warn_lossy_stdlib_subclass::<PyDateTime>(cls.state(), arg, "datetime")?;
             return OffsetDateTime::from_stdlib_datetime(dt)?.to_obj(cls);
         }
         return raise_type_err("OffsetDateTime() requires an ISO 8601 string or datetime.datetime");
@@ -113,7 +114,7 @@ fn __new__(cls: PyClass<OffsetDateTime>, args: PyTuple, kwargs: Option<PyDict>) 
 
     let offset_obj = offset
         .borrow_opt()
-        .ok_or_type_err("missing required keyword argument: 'offset'")?;
+        .ok_or_type_err("OffsetDateTime() missing 1 required keyword-only argument: 'offset'")?;
     let offset = Offset::from_py(offset_obj, cls.state())?;
     Date::from_i64_components(year, month, day)
         .ok_or_value_err("invalid date")?
@@ -391,6 +392,11 @@ fn date(cls: PyClass<OffsetDateTime>, OffsetDateTime { date, .. }: OffsetDateTim
 
 fn time(cls: PyClass<OffsetDateTime>, OffsetDateTime { time, .. }: OffsetDateTime) -> PyReturn {
     time.to_obj(*cls.state().time_type)
+}
+
+fn day_of_week(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
+    let members = cls.state().weekday_enum_members.get()?;
+    Ok(members[(slf.date.day_of_week() as u8 - 1) as usize].newref())
 }
 
 fn day_of_year(_: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
@@ -737,7 +743,9 @@ fn check_from_timestamp_args_return_offset(
         offset_stale_warning(state, doc::OFFSET_FROM_TIMESTAMP_STALE_MSG)?;
     }
 
-    offset.ok_or_type_err("missing required keyword argument: 'offset'")
+    offset.ok_or_else_type_err(|| {
+        format!("{fname}() missing 1 required keyword-only argument: 'offset'")
+    })
 }
 
 fn from_timestamp(
@@ -1048,6 +1056,7 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     method_kwargs!(OffsetDateTime, assume_tz, doc::OFFSETDATETIME_ASSUME_TZ),
     method0!(OffsetDateTime, date, doc::LOCALTIME_DATE),
     method0!(OffsetDateTime, time, doc::LOCALTIME_TIME),
+    method0!(OffsetDateTime, day_of_week, doc::LOCALTIME_DAY_OF_WEEK),
     method0!(OffsetDateTime, day_of_year, doc::LOCALTIME_DAY_OF_YEAR),
     method0!(OffsetDateTime, days_in_month, doc::LOCALTIME_DAYS_IN_MONTH),
     method0!(OffsetDateTime, days_in_year, doc::LOCALTIME_DAYS_IN_YEAR),

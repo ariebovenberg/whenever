@@ -16,12 +16,18 @@ whenever\.RoundModeStr
 whenever\.TimestampUnitStr
 
 # The constructors dispatch on their arguments. The stub spells them as
-# overloads of `__init__`; the runtime is a `*args` dispatcher (pure Python)
-# or a `__new__` without a text signature (Rust), and stubtest asks for
-# stubs written for `__new__` instead.
+# overloads of `__init__`; the runtime is a `*args` dispatcher that wraps
+# the field constructor (pure Python) or a `__new__` without a text
+# signature (Rust), and stubtest asks for stubs written for `__new__`
+# instead.
 whenever\.Date\.__init__
+whenever\.YearMonth\.__init__
+whenever\.MonthDay\.__init__
+whenever\.IsoWeekDate\.__init__
 whenever\.Time\.__init__
 whenever\.TimeDelta\.__init__
+whenever\.ItemizedDelta\.__init__
+whenever\.ItemizedDateDelta\.__init__
 whenever\.Instant\.__init__
 whenever\.OffsetDateTime\.__init__
 whenever\.ZonedDateTime\.__init__

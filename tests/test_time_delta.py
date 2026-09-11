@@ -161,6 +161,24 @@ class TestInit:
         with pytest.raises(TypeError):
             TimeDelta(1)  # type: ignore[call-overload]
 
+        with pytest.raises(
+            TypeError,
+            match=r"^TimeDelta\(\) requires an ISO 8601 string or datetime.timedelta$",
+        ):
+            TimeDelta(None)  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize(
+        "args, kwargs",
+        [
+            ((1, 2), {}),  # components are keyword-only
+            ((), {"iso_string": "PT1H"}),
+            ((), {"py_timedelta": py_timedelta(hours=1)}),
+        ],
+    )
+    def test_parameter_kinds(self, args, kwargs):
+        with pytest.raises(TypeError):
+            TimeDelta(*args, **kwargs)
+
         with pytest.raises(TypeError):
             TimeDelta(**{1: 43})  # type: ignore[arg-type,call-overload]
 
@@ -171,6 +189,11 @@ class TestInit:
 
         with pytest.raises(TypeError, match="nanoseconds"):
             TimeDelta(nanoseconds=1.5)  # type: ignore[call-overload]
+
+        with pytest.raises(
+            TypeError, match=r"^nanoseconds must be an integer$"
+        ):
+            TimeDelta(nanoseconds="1")  # type: ignore[call-overload]
 
     def test_iso(self):
         assert TimeDelta("PT1H2M3.000004S") == TimeDelta(
@@ -1467,12 +1490,10 @@ def test_init_from_py_timedelta():
         py_timedelta(weeks=8, hours=1, minutes=2, seconds=3, microseconds=4)
     ) == TimeDelta(hours=1 + 7 * 24 * 8, minutes=2, seconds=3, microseconds=4)
 
-    # subclass not allowed
     class SubclassTimedelta(py_timedelta):
         pass
 
-    with pytest.raises(TypeError, match="timedelta.*exact"):
-        TimeDelta(SubclassTimedelta(1))
+    assert TimeDelta(SubclassTimedelta(1)) == TimeDelta(hours=24)
 
     with pytest.raises(ValueError, match="range"):
         TimeDelta(py_timedelta.max)

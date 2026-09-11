@@ -38,6 +38,19 @@ class TestConstructor:
         with pytest.raises(TypeError):
             IsoWeekDate(2024, 1, MONDAY, era="CE")  # type: ignore[call-overload]
 
+    def test_iso_string_is_positional_only(self):
+        with pytest.raises(TypeError):
+            IsoWeekDate(iso_string="2024-W01-1")  # type: ignore[call-overload]
+
+    def test_no_defaults(self):
+        with pytest.raises(TypeError):
+            IsoWeekDate()  # type: ignore[call-overload]
+
+    def test_one_day_past_max(self):
+        assert IsoWeekDate(9999, 52, FRIDAY).date() == Date.MAX
+        with pytest.raises(ValueError):
+            IsoWeekDate(9999, 52, SATURDAY)
+
     def test_from_string(self):
         iwd = IsoWeekDate("2024-W01-1")
         assert iwd.year == 2024

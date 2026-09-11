@@ -9,6 +9,7 @@ import pytest
 from whenever import (
     SYSTEM_TZ,
     Date,
+    Instant,
     IsoWeekDate,
     ItemizedDateDelta,
     MonthDay,
@@ -16,6 +17,7 @@ from whenever import (
     Time,
     Weekday,
     YearMonth,
+    patch_current_time,
 )
 
 from .common import (
@@ -23,6 +25,7 @@ from .common import (
     AlwaysLarger,
     AlwaysSmaller,
     NeverEqual,
+    system_tz,
 )
 
 MAX_I64 = 1 << 63
@@ -72,6 +75,21 @@ class TestInit:
     def test_invalid_arg_kwargs(self, args, kwargs):
         with pytest.raises(TypeError):
             Date(*args, **kwargs)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"iso_string": "2021-01-02"}, {"py_date": py_date(2021, 1, 2)}],
+    )
+    def test_alternate_constructors_are_positional_only(self, kwargs):
+        with pytest.raises(TypeError):
+            Date(**kwargs)
+
+    def test_single_argument_wrong_type(self):
+        with pytest.raises(
+            TypeError,
+            match=r"^Date\(\) requires an ISO 8601 string or datetime.date$",
+        ):
+            Date(None)  # type: ignore[call-overload]
 
     def test_not_enough_args(self):
         with pytest.raises(TypeError, match=r"day"):
@@ -158,6 +176,14 @@ def test_today():
     # NOTE: this may fail if the test is run *exactly* at midnight.
     # Mocking this out would make things more complicated than it's worth.
     assert Date.today(SYSTEM_TZ) == Date(py_date.today())
+
+
+def test_today_differs_from_utc():
+    instant = Instant.from_utc(2020, 8, 15, 1)
+    with patch_current_time(instant, keep_ticking=False):
+        assert Date.today("Etc/UTC") == Date(2020, 8, 15)
+        with system_tz("Pacific/Midway"):
+            assert Date.today(SYSTEM_TZ) == Date(2020, 8, 14)
 
 
 def test_init_from_py_date():

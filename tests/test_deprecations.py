@@ -25,7 +25,9 @@ from whenever import (
 )
 
 from .common import (
+    AMS_TZ_POSIX,
     suppress,
+    system_tz,
     system_tz_ams,
     warns_here,
 )
@@ -427,7 +429,7 @@ def test_system_timezone_wrappers():
             TypeError,
             match="both 'disambiguation' and deprecated 'disambiguate'",
         ):
-            ZonedDateTime.from_system_tz(  # type: ignore[deprecated]
+            ZonedDateTime.from_system_tz(  # type: ignore[call-overload]
                 2020, 8, 15, disambiguation="raise", disambiguate="raise"
             )
 
@@ -466,6 +468,31 @@ def test_system_timezone_wrappers():
         assert actual.strict_eq(ZonedDateTime.now(SYSTEM_TZ))
 
 
+@pytest.mark.parametrize(
+    "zdt",
+    [
+        ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            tz="Europe/Amsterdam",
+            disambiguation="earlier",
+        ),
+        ZonedDateTime(2020, 8, 15, 23, tz="Europe/London"),
+    ],
+)
+def test_is_ambiguous(zdt: ZonedDateTime):
+    assert (
+        deprecated(
+            zdt.is_ambiguous,  # type: ignore[deprecated]
+            match=r"is_ambiguous\(\) is deprecated; use is_repeated\(\) instead",
+        )
+        == zdt.is_repeated()
+    )
+
+
 @system_tz_ams()
 @pytest.mark.parametrize(
     "method",
@@ -483,6 +510,11 @@ def test_deprecated_timestamp_factories_accept_system_tz(method):
 def test_zoned_tz_property():
     dt = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
     assert deprecated(lambda: dt.tz, match="tz is deprecated") == dt.tz_id  # type: ignore[deprecated]
+
+    with system_tz(AMS_TZ_POSIX):
+        no_id = ZonedDateTime(2020, 8, 15, tz=SYSTEM_TZ)
+    assert no_id.tz_id is None
+    assert deprecated(lambda: no_id.tz, match="tz is deprecated") is None  # type: ignore[deprecated]
 
 
 def test_month_day_is_leap():
@@ -647,7 +679,7 @@ def test_from_system_tz_argument_parsing():
     )
 
     with pytest.raises(TypeError):
-        ZonedDateTime.from_system_tz(2020, 8, 15, tz="America/New_York")  # type: ignore[call-arg, deprecated]
+        ZonedDateTime.from_system_tz(2020, 8, 15, tz="America/New_York")  # type: ignore[call-overload]
 
     with pytest.raises(ValueError):
         ZonedDateTime.from_system_tz(2020, 8, 15, nanosecond=1_000_000_000)  # type: ignore[deprecated]

@@ -206,3 +206,22 @@ pub(crate) fn warn_with_class(warning_cls: PyObj, msg: &CStr, stacklevel: isize)
         _ => Err(PyErrMarker),
     }
 }
+
+/// Like `warn_with_class`, with a Python `str` as the message.
+pub(crate) fn warn_with_class_obj(
+    warning_cls: PyObj,
+    msg: PyObj,
+    stacklevel: isize,
+) -> PyResult<()> {
+    match unsafe {
+        PyErr_WarnFormat(
+            warning_cls.as_ptr(),
+            stacklevel as _,
+            c"%U".as_ptr(),
+            msg.as_ptr(),
+        )
+    } {
+        0 => Ok(()),
+        _ => Err(PyErrMarker),
+    }
+}
