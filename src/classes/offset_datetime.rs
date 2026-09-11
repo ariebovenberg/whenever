@@ -51,7 +51,7 @@ impl Offset {
                     py_delta.days_component() * S_PER_DAY + py_delta.seconds_component(),
                 )
             } else if offset.is_none() {
-                raise_value_err("datetime is naive")?
+                raise_value_err("datetime is naive; use PlainDateTime() instead")?
             } else {
                 raise_value_err("datetime utcoffset() returned non-delta value")?
             }
@@ -71,9 +71,7 @@ impl Offset {
                 raise_value_err("offset must be a whole number of seconds")?
             }
         } else {
-            raise_type_err(format!(
-                "offset must be an integer or TimeDelta instance, got {obj}"
-            ))?
+            raise_type_err("offset must be a TimeDelta")?
         }
     }
 }
@@ -329,7 +327,7 @@ fn assume_tz(
 
     let tz = state.load_tz(tz_obj)?;
 
-    // Compute what offset the timezone has at this instant
+    // Compute what offset the time zone has at this instant
     let instant = slf.to_instant();
     let actual_offset = tz.offset_for_instant(instant.epoch);
 
@@ -342,9 +340,9 @@ fn assume_tz(
         OffsetMismatch::Raise => raise(
             *state.exc_invalid_offset,
             format!(
-                "Offset mismatch: timezone '{}' has offset {actual_offset}, but offset {} was expected",
-                tz.key.as_deref().unwrap_or("(unknown)"),
+                "offset {} does not match {}",
                 slf.offset,
+                crate::classes::zoned_datetime::tz_err_display(&tz.key)
             ),
         ),
         OffsetMismatch::KeepLocal => slf
@@ -493,16 +491,14 @@ fn replace_date(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
+    let date = handle_one_arg("replace_date", args)?
+        .extract(*state.date_type)
+        .ok_or_type_err("replace_date() argument must be a Date")?;
     check_stale_offset("replace_date", kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
-    let arg = handle_one_arg("replace_date", args)?;
-    if let Some(date) = arg.extract(*state.date_type) {
-        date.at(time)
-            .assume_offset(offset)
-            .ok_or_range_err()?
-            .to_obj(cls)
-    } else {
-        raise_type_err("date must be a whenever.Date instance")
-    }
+    date.at(time)
+        .assume_offset(offset)
+        .ok_or_range_err()?
+        .to_obj(cls)
 }
 
 fn replace_time(
@@ -512,16 +508,14 @@ fn replace_time(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
+    let time = handle_one_arg("replace_time", args)?
+        .extract(*state.time_type)
+        .ok_or_type_err("replace_time() argument must be a Time")?;
     check_stale_offset("replace_time", kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
-    let arg = handle_one_arg("replace_time", args)?;
-    if let Some(time) = arg.extract(*state.time_type) {
-        date.at(time)
-            .assume_offset(offset)
-            .ok_or_range_err()?
-            .to_obj(cls)
-    } else {
-        raise_type_err("time must be a whenever.Time instance")
-    }
+    date.at(time)
+        .assume_offset(offset)
+        .ok_or_range_err()?
+        .to_obj(cls)
 }
 
 fn format_iso(
@@ -545,10 +539,10 @@ fn parse_iso(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
         arg.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
-            .ok_or_type_err("when parsing from ISO format, the argument must be str")?
+            .ok_or_type_err("parse_iso() argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
+    .ok_or_else_value_err(|| format!("invalid format: {arg}"))?
     .to_obj(cls)
 }
 
@@ -816,7 +810,7 @@ fn parse_rfc2822(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("expected a string")?;
     let (date, time, offset) =
-        rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
+        rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("invalid format: {arg}"))?;
     date.at(time)
         .assume_offset(offset)
         .ok_or_range_err()?
@@ -890,7 +884,7 @@ fn offset_since(
 
     let other = handle_one_arg(fname, args)?
         .extract(cls)
-        .ok_or_type_err("argument must be a whenever.OffsetDateTime")?;
+        .ok_or_else_type_err(|| format!("{fname}() argument must be an OffsetDateTime"))?;
 
     let same_offset = slf.offset == other.offset;
 
@@ -975,7 +969,7 @@ fn offset_since(
 fn format(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format() argument must be str")?;
+        .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(
@@ -999,13 +993,13 @@ fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("parse() argument must be str")?;
+        .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
     let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("pattern must be str")?;
+        .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;

@@ -39,5 +39,5 @@ it provides explicit tools to handle ambiguity:
 >>> dt = ZonedDateTime(2024, 10, 27, 2, 30, tz="Europe/Amsterdam", disambiguation="raise")
 Traceback (most recent call last):
   ...
-RepeatedTime: 2024-10-27 02:30:00 is repeated in timezone 'Europe/Amsterdam'
+RepeatedTime: 2024-10-27 02:30:00 is repeated in time zone 'Europe/Amsterdam'
 ```

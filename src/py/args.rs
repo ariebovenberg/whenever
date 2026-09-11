@@ -168,7 +168,7 @@ pub(crate) fn handle_one_arg(fname: &str, args: &[PyObj]) -> PyResult<PyObj> {
 #[cold]
 pub(crate) fn raise_unexpected_kwarg<T>(fname: &str, key: PyObj) -> PyResult<T> {
     raise_type_err(format!(
-        "{fname}() got an unexpected keyword argument: {key}"
+        "{fname}() got an unexpected keyword argument {key}"
     ))
 }
 
@@ -216,8 +216,7 @@ pub(crate) fn match_interned_str<T: Copy>(
     value: PyObj,
     choices: &[(PyObj, T)],
 ) -> PyResult<T> {
-    find_interned(value, choices)
-        .ok_or_else_value_err(|| format!("Invalid value for {name}: {value}"))
+    find_interned(value, choices).ok_or_else_value_err(|| format!("invalid {name}: {value}"))
 }
 
 #[inline]
@@ -225,8 +224,7 @@ pub(crate) fn match_interned_str_with<T, F>(name: &str, value: PyObj, handler: F
 where
     F: FnMut(PyObj, StrEqFn) -> Option<T>,
 {
-    find_interned_with(value, handler)
-        .ok_or_else_value_err(|| format!("Invalid value for {name}: {value}"))
+    find_interned_with(value, handler).ok_or_else_value_err(|| format!("invalid {name}: {value}"))
 }
 
 pub(crate) use parse_args_kwargs;

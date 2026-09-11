@@ -370,12 +370,6 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
     let warn_deprecation = common_module.getattr(c"WheneverDeprecationWarning")?;
     warn_deprecation.setattr(c"__module__", *module_name)?;
     module.setattr(c"WheneverDeprecationWarning", *warn_deprecation)?;
-    let warn_calendar_unit_composition = new_exception(
-        module,
-        c"whenever.CalendarUnitCompositionWarning",
-        doc::CALENDARUNITCOMPOSITIONWARNING,
-        *warn_whenever,
-    )?;
 
     let tz_store = TzStore::new(*exc_tz_notfound);
     let time_patch = SyncCell::new(Patch::new()?);
@@ -441,7 +435,6 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
         warn_potentially_stale_offset,
         warn_naive_arithmetic,
         warn_deprecation,
-        warn_calendar_unit_composition,
 
         unpickle_date,
         unpickle_time,
@@ -566,7 +559,6 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         *state.warn_potentially_stale_offset,
         *state.warn_naive_arithmetic,
         *state.warn_deprecation,
-        *state.warn_calendar_unit_composition,
     ] {
         exc.gc_traverse(visit, arg)?;
     }
@@ -645,7 +637,6 @@ pub(crate) struct State {
     pub(crate) warn_potentially_stale_offset: Owned<PyObj>,
     pub(crate) warn_naive_arithmetic: Owned<PyObj>,
     pub(crate) warn_deprecation: Owned<PyObj>,
-    pub(crate) warn_calendar_unit_composition: Owned<PyObj>,
 
     // unpickling functions
     pub(crate) unpickle_date: Owned<PyObj>,

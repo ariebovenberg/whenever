@@ -191,7 +191,7 @@ impl ParseState {
         let year = self.year.ok_or_value_err(required_fields_message)?;
         let month = self.month.ok_or_value_err(required_fields_message)?;
         let day = self.day.ok_or_value_err(required_fields_message)?;
-        Date::new(year, month, day).ok_or_value_err("Invalid date")
+        Date::new(year, month, day).ok_or_value_err("invalid date")
     }
 
     pub(crate) fn time(&self) -> PyResult<Time> {
@@ -201,7 +201,7 @@ impl ParseState {
             self.second.unwrap_or(0),
             self.nanos,
         )
-        .ok_or_value_err("Invalid time")
+        .ok_or_value_err("invalid time")
     }
 
     pub(crate) fn validate_weekday(&self, date: Date) -> PyResult<()> {
@@ -998,7 +998,7 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
             && !matches!(follower, Element::Literal(s) if !is_tz_id_char(s[0]))
         {
             return Err(
-                "timezone ID field VV must be followed by a literal delimiter that is not valid in a timezone ID".into(),
+                "time zone ID field VV must be followed by a literal delimiter that is not valid in a time zone ID".into(),
             );
         }
     }
@@ -1334,13 +1334,13 @@ fn write_field<S: Sink>(field: Field, vals: &PatternValues, sink: &mut S) -> Res
         Field::TzId => {
             let id = vals
                 .tz_id
-                .ok_or("Cannot format timezone ID: not available for this type")?;
+                .ok_or("Cannot format time zone ID: not available for this type")?;
             sink.write(id.as_bytes());
         }
         Field::TzAbbrev => {
             let abbrev = vals
                 .tz_abbrev
-                .ok_or("Cannot format timezone abbreviation: not available for this type")?;
+                .ok_or("Cannot format time zone abbreviation: not available for this type")?;
             sink.write(abbrev.as_bytes());
         }
     }
@@ -1951,7 +1951,7 @@ fn parse_field(
                 p += 1;
             }
             if p == start {
-                return Err(format!("Expected timezone ID at position {}", pos));
+                return Err(format!("Expected time zone ID at position {}", pos));
             }
             // SAFETY: is_tz_id_char only passes ASCII bytes
             state.tz_id = Some(unsafe { std::str::from_utf8_unchecked(&s[start..p]) }.to_string());
@@ -2001,7 +2001,7 @@ fn warn_pattern(
     if has_12h_without_ampm(elements) {
         warn_with_class(
             warning_cls,
-            c"The pattern uses a 12-hour clock (`i` or `ii`) without an AM/PM field (`a` or `aa`). A value such as `03:00` could mean either 3 AM or 3 PM. Add `a` or `aa`, or use the 24-hour fields `H` or `HH`.",
+            c"The pattern uses a 12-hour clock (`i` or `ii`) without an AM/PM specifier (`a` or `aa`). A value such as `03:00` could mean either 3 AM or 3 PM. Add `a` or `aa`, or use the 24-hour specifiers `H` or `HH`.",
             1,
         )?;
     }

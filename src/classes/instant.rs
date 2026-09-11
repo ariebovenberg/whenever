@@ -59,7 +59,7 @@ impl Instant {
                 // SAFETY: Python offsets are already bounded to +/- 24 hours: well within TimeDelta range.
                 inst.shift(-TimeDelta::from_stdlib_timedelta_unchecked(py_delta))
             } else if offset.is_none() {
-                raise_value_err("datetime is naive")?
+                raise_value_err("datetime is naive; use PlainDateTime() instead")?
             } else {
                 raise_value_err("datetime utcoffset() returned non-delta value")?
             }
@@ -366,10 +366,10 @@ fn parse_iso(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
             .cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
-            .ok_or_type_err("when parsing from ISO format, the argument must be str")?
+            .ok_or_type_err("parse_iso() argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?
+    .ok_or_else_value_err(|| format!("invalid format: {s_obj}"))?
     .to_instant()
     .to_obj(cls)
 }
@@ -465,7 +465,7 @@ fn parse_rfc2822(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("expected a string")?;
     let (date, time, offset) =
-        rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("Invalid format: {s_obj}"))?;
+        rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("invalid format: {s_obj}"))?;
     date.at(time)
         .assume_offset(offset)
         .ok_or_range_err()?
@@ -498,7 +498,7 @@ fn round(cls: PyClass<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterK
 fn format(cls: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format() argument must be str")?;
+        .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(
@@ -526,13 +526,13 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("parse() argument must be str")?;
+        .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
     let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("pattern must be str")?;
+        .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;

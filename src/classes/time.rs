@@ -161,7 +161,7 @@ fn __new__(cls: PyClass<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
     parse_args_kwargs!(args, kwargs, fmt, hour, minute, second, nanosecond);
 
     Time::from_i64_components(hour, minute, second, nanosecond)
-        .ok_or_value_err("invalid time component value")?
+        .ok_or_value_err("invalid time")?
         .to_obj(cls)
 }
 
@@ -233,10 +233,10 @@ fn parse_iso(cls: PyClass<Time>, s: PyObj) -> PyReturn {
         s.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
-            .ok_or_type_err("when parsing from ISO format, the argument must be str")?
+            .ok_or_type_err("parse_iso() argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {s}"))?
+    .ok_or_else_value_err(|| format!("invalid format: {s}"))?
     .to_obj(cls)
 }
 
@@ -255,7 +255,7 @@ fn on(cls: PyClass<Time>, slf: Time, arg: PyObj) -> PyReturn {
     if let Some(date) = arg.extract(*state.date_type) {
         slf.on(date).to_obj(*state.plain_datetime_type)
     } else {
-        raise_type_err("argument must be a date")
+        raise_type_err("on() argument must be a Date")
     }
 }
 
@@ -281,7 +281,7 @@ fn replace(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwarg
         Ok(true)
     })?;
     Time::from_i64_components(hour, minute, second, nanos)
-        .ok_or_value_err("invalid time component value")?
+        .ok_or_value_err("invalid time")?
         .to_obj(cls)
 }
 
@@ -299,7 +299,7 @@ fn round(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs)
 fn format(cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format() argument must be str")?;
+        .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(
@@ -323,13 +323,13 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("parse() argument must be str")?;
+        .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
     let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("pattern must be str")?;
+        .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;

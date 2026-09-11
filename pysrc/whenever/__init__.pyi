@@ -7,7 +7,6 @@
 # - Aliases are used sparingly, since they obscure the signature in some popular IDEs.
 #   You'll notice lots of repetition in string literals, for example.
 import enum
-from abc import ABC
 from collections.abc import Iterator, Mapping
 from datetime import (
     date as _date,
@@ -34,7 +33,7 @@ from typing import (
 
 from typing_extensions import Self, deprecated, override, sentinel
 
-__all__ = [
+__all__ = (
     # Date and time
     "Date",
     "YearMonth",
@@ -88,7 +87,7 @@ __all__ = [
     "clear_tzcache",
     "available_timezones",
     "AnyDelta",
-]
+)
 
 _EXTENSION_LOADED: bool
 __version__: str
@@ -175,8 +174,6 @@ class _ISOMixin:
 
 @type_check_only
 class _OrderMixin:
-    MIN: ClassVar[Self]
-    MAX: ClassVar[Self]
     def __lt__(self, other: Self, /) -> bool: ...
     def __le__(self, other: Self, /) -> bool: ...
     def __gt__(self, other: Self, /) -> bool: ...
@@ -194,9 +191,11 @@ class Date(_DateOrTimeMixin):
     def __init__(self, iso_string: str, /) -> None: ...
     @overload
     def __init__(self, py_date: _date, /) -> None: ...
-    @staticmethod
+    MIN: ClassVar[Date]
+    MAX: ClassVar[Date]
+    @classmethod
     @deprecated("use Date.today(SYSTEM_TZ) instead")
-    def today_in_system_tz() -> Date: ...
+    def today_in_system_tz(cls) -> Date: ...
     @classmethod
     def today(cls, tz: str | SYSTEM_TZ, /) -> Self: ...  # type: ignore[valid-type]
     @property
@@ -329,6 +328,8 @@ class YearMonth(_DateOrTimeMixin):
     def __init__(self, year: int, month: int) -> None: ...
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
+    MIN: ClassVar[YearMonth]
+    MAX: ClassVar[YearMonth]
     @property
     def year(self) -> int: ...
     @property
@@ -347,6 +348,8 @@ class MonthDay(_DateOrTimeMixin):
     def __init__(self, month: int, day: int) -> None: ...
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
+    MIN: ClassVar[MonthDay]
+    MAX: ClassVar[MonthDay]
     @property
     def month(self) -> int: ...
     @property
@@ -363,8 +366,8 @@ class IsoWeekDate(_DateOrTimeMixin):
     def __init__(self, year: int, week: int, weekday: Weekday) -> None: ...
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
-    MIN: ClassVar[Self]
-    MAX: ClassVar[Self]
+    MIN: ClassVar[IsoWeekDate]
+    MAX: ClassVar[IsoWeekDate]
     @property
     def year(self) -> int: ...
     @property
@@ -393,8 +396,10 @@ class Time(_DateOrTimeMixin):
         *,
         nanosecond: int = 0,
     ) -> None: ...
-    MIDNIGHT: ClassVar[Self]
-    NOON: ClassVar[Self]
+    MIN: ClassVar[Time]
+    MAX: ClassVar[Time]
+    MIDNIGHT: ClassVar[Time]
+    NOON: ClassVar[Time]
     @property
     def hour(self) -> int: ...
     @property
@@ -416,7 +421,7 @@ class Time(_DateOrTimeMixin):
     @overload
     def round(
         self,
-        delta: TimeDelta,
+        unit: TimeDelta,
         /,
         *,
         mode: Literal[
@@ -483,7 +488,6 @@ class Time(_DateOrTimeMixin):
 
 @type_check_only
 class _DeltaMixin(_ISOMixin):
-    ZERO: ClassVar[Self]
     def __bool__(self) -> bool: ...
     def __neg__(self) -> Self: ...
     def __pos__(self) -> Self: ...
@@ -511,6 +515,9 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         nanoseconds: int = 0,
         days_assumed_24h_ok: bool = ...,
     ) -> None: ...
+    ZERO: ClassVar[TimeDelta]
+    MIN: ClassVar[TimeDelta]
+    MAX: ClassVar[TimeDelta]
     @overload
     def total(
         self,
@@ -643,7 +650,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
     @overload
     def round(
         self,
-        other: Self,
+        unit: Self,
         /,
         *,
         mode: Literal[
@@ -660,7 +667,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         days_assumed_24h_ok: bool = ...,
     ) -> Self: ...
     @overload
-    def add(self, other: TimeDelta, /) -> Self: ...
+    def add(self, delta: TimeDelta, /) -> Self: ...
     @overload
     def add(
         self,
@@ -675,7 +682,7 @@ class TimeDelta(_DeltaMixin, _OrderMixin):
         nanoseconds: int = ...,
     ) -> Self: ...
     @overload
-    def subtract(self, other: TimeDelta, /) -> Self: ...
+    def subtract(self, delta: TimeDelta, /) -> Self: ...
     @overload
     def subtract(
         self,
@@ -796,7 +803,7 @@ class ItemizedDelta(
     @overload
     def add(
         self,
-        other: ItemizedDelta | ItemizedDateDelta,
+        delta: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         relative_to: ZonedDateTime,
@@ -882,7 +889,7 @@ class ItemizedDelta(
     @overload
     def add(
         self,
-        other: ItemizedDelta | ItemizedDateDelta,
+        delta: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         cal_unit_composition_ok: bool = ...,
@@ -890,7 +897,7 @@ class ItemizedDelta(
     @overload
     def subtract(
         self,
-        other: ItemizedDelta | ItemizedDateDelta,
+        delta: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         relative_to: ZonedDateTime,
@@ -976,7 +983,7 @@ class ItemizedDelta(
     @overload
     def subtract(
         self,
-        other: ItemizedDelta | ItemizedDateDelta,
+        delta: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         cal_unit_composition_ok: bool = ...,
@@ -1024,7 +1031,7 @@ class ItemizedDelta(
     def __len__(self) -> int: ...
     def __getitem__(
         self,
-        item: Literal[
+        key: Literal[
             "years",
             "months",
             "weeks",
@@ -1034,6 +1041,7 @@ class ItemizedDelta(
             "seconds",
             "nanoseconds",
         ],
+        /,
     ) -> int: ...
     def __abs__(self) -> Self: ...
     def __neg__(self) -> Self: ...
@@ -1052,6 +1060,7 @@ class ItemizedDelta(
     @overload
     def __sub__(self, other: ItemizedDateDelta, /) -> ItemizedDelta: ...
     def __bool__(self) -> bool: ...
+    def __hash__(self) -> int: ...
     def sign(self) -> Literal[1, 0, -1]: ...
 
 @final
@@ -1106,7 +1115,7 @@ class ItemizedDateDelta(
     @overload
     def add(
         self,
-        other: ItemizedDateDelta,
+        delta: ItemizedDateDelta,
         /,
         *,
         relative_to: Date,
@@ -1127,7 +1136,7 @@ class ItemizedDateDelta(
     @overload
     def add(
         self,
-        other: ItemizedDelta,
+        delta: ItemizedDelta,
         /,
         *,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
@@ -1183,7 +1192,7 @@ class ItemizedDateDelta(
     @overload
     def add(
         self,
-        other: ItemizedDateDelta,
+        delta: ItemizedDateDelta,
         /,
         *,
         cal_unit_composition_ok: bool = ...,
@@ -1191,7 +1200,7 @@ class ItemizedDateDelta(
     @overload
     def add(
         self,
-        other: ItemizedDelta,
+        delta: ItemizedDelta,
         /,
         *,
         cal_unit_composition_ok: bool = ...,
@@ -1199,7 +1208,7 @@ class ItemizedDateDelta(
     @overload
     def subtract(
         self,
-        other: ItemizedDateDelta,
+        delta: ItemizedDateDelta,
         /,
         *,
         relative_to: Date,
@@ -1220,7 +1229,7 @@ class ItemizedDateDelta(
     @overload
     def subtract(
         self,
-        other: ItemizedDelta,
+        delta: ItemizedDelta,
         /,
         *,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
@@ -1276,7 +1285,7 @@ class ItemizedDateDelta(
     @overload
     def subtract(
         self,
-        other: ItemizedDateDelta,
+        delta: ItemizedDateDelta,
         /,
         *,
         cal_unit_composition_ok: bool = ...,
@@ -1284,7 +1293,7 @@ class ItemizedDateDelta(
     @overload
     def subtract(
         self,
-        other: ItemizedDelta,
+        delta: ItemizedDelta,
         /,
         *,
         cal_unit_composition_ok: bool = ...,
@@ -1301,7 +1310,7 @@ class ItemizedDateDelta(
     ) -> Iterator[Literal["years", "months", "weeks", "days"]]: ...
     def __len__(self) -> int: ...
     def __getitem__(
-        self, item: Literal["years", "months", "weeks", "days"]
+        self, key: Literal["years", "months", "weeks", "days"], /
     ) -> int: ...
     def __abs__(self) -> Self: ...
     def __neg__(self) -> Self: ...
@@ -1322,8 +1331,10 @@ class ItemizedDateDelta(
     @overload
     def __sub__(self, other: ItemizedDelta, /) -> ItemizedDelta: ...
     def __bool__(self) -> bool: ...
+    def __hash__(self) -> int: ...
 
-class _LocalTime(ABC):
+@type_check_only
+class _LocalTime:
     @property
     def year(self) -> int: ...
     @property
@@ -1489,7 +1500,7 @@ class _LocalTime(ABC):
     @overload
     def round(
         self,
-        delta: TimeDelta,
+        unit: TimeDelta,
         /,
         *,
         mode: Literal[
@@ -1532,7 +1543,8 @@ class _LocalTime(ABC):
         ] = "half_even",
     ) -> Self: ...
 
-class _ExactTime(ABC):
+@type_check_only
+class _ExactTime:
     def timestamp(
         self,
         *,
@@ -1554,21 +1566,34 @@ class _ExactTime(ABC):
     def to_tz(self, tz: str | SYSTEM_TZ, /) -> ZonedDateTime: ...  # type: ignore[valid-type]
     @deprecated("use to_tz(SYSTEM_TZ) instead")
     def to_system_tz(self) -> ZonedDateTime: ...
-    def difference(self, other: _ExactTime, /) -> TimeDelta: ...
-    def __lt__(self, other: _ExactTime, /) -> bool: ...
-    def __le__(self, other: _ExactTime, /) -> bool: ...
-    def __gt__(self, other: _ExactTime, /) -> bool: ...
-    def __ge__(self, other: _ExactTime, /) -> bool: ...
+    def difference(
+        self, other: Instant | OffsetDateTime | ZonedDateTime, /
+    ) -> TimeDelta: ...
+    def __lt__(
+        self, other: Instant | OffsetDateTime | ZonedDateTime, /
+    ) -> bool: ...
+    def __le__(
+        self, other: Instant | OffsetDateTime | ZonedDateTime, /
+    ) -> bool: ...
+    def __gt__(
+        self, other: Instant | OffsetDateTime | ZonedDateTime, /
+    ) -> bool: ...
+    def __ge__(
+        self, other: Instant | OffsetDateTime | ZonedDateTime, /
+    ) -> bool: ...
     @deprecated("use strict_eq() instead")
     def exact_eq(self, other: Self, /) -> bool: ...
     def strict_eq(self, other: Self, /) -> bool: ...
     def __add__(self, delta: TimeDelta, /) -> Self: ...
     @overload
-    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
+    def __sub__(
+        self, other: Instant | OffsetDateTime | ZonedDateTime, /
+    ) -> TimeDelta: ...
     @overload
     def __sub__(self, other: TimeDelta, /) -> Self: ...
 
-class _ExactAndLocalTime(_ExactTime, _LocalTime, ABC):
+@type_check_only
+class _ExactAndLocalTime(_ExactTime, _LocalTime):
     def to_instant(self) -> Instant: ...
     def to_plain(self) -> PlainDateTime: ...
     @property
@@ -1611,8 +1636,8 @@ class Instant(_PyDateTimeMixin, _ExactTime):
         *,
         nanosecond: int = 0,
     ) -> Self: ...
-    MIN: ClassVar[Self]
-    MAX: ClassVar[Self]
+    MIN: ClassVar[Instant]
+    MAX: ClassVar[Instant]
     @classmethod
     def now(cls) -> Self: ...
     @overload
@@ -1652,7 +1677,7 @@ class Instant(_PyDateTimeMixin, _ExactTime):
     @deprecated("use pattern= instead")
     def parse(cls, s: str, /, *, format: str) -> Instant: ...
     @overload
-    def add(self, d: TimeDelta, /) -> Self: ...
+    def add(self, delta: TimeDelta, /) -> Self: ...
     @overload
     def add(
         self,
@@ -1668,7 +1693,7 @@ class Instant(_PyDateTimeMixin, _ExactTime):
         days_assumed_24h_ok: bool = False,
     ) -> Self: ...
     @overload
-    def subtract(self, d: TimeDelta, /) -> Self: ...
+    def subtract(self, delta: TimeDelta, /) -> Self: ...
     @overload
     def subtract(
         self,
@@ -1686,7 +1711,7 @@ class Instant(_PyDateTimeMixin, _ExactTime):
     @overload
     def round(
         self,
-        delta: TimeDelta,
+        unit: TimeDelta,
         /,
         *,
         mode: Literal[
@@ -1911,7 +1936,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @overload
     def add(
         self,
-        d: ItemizedDelta | ItemizedDateDelta | TimeDelta,
+        delta: ItemizedDelta | ItemizedDateDelta | TimeDelta,
         /,
         *,
         stale_offset_ok: bool = ...,
@@ -1935,7 +1960,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @overload
     def subtract(
         self,
-        d: ItemizedDelta | ItemizedDateDelta | TimeDelta,
+        delta: ItemizedDelta | ItemizedDateDelta | TimeDelta,
         /,
         *,
         stale_offset_ok: bool = ...,
@@ -1943,7 +1968,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @overload
     def round(
         self,
-        delta: TimeDelta,
+        unit: TimeDelta,
         /,
         *,
         mode: Literal[
@@ -2003,7 +2028,9 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         self, delta: TimeDelta | ItemizedDelta | ItemizedDateDelta, /
     ) -> Self: ...
     @overload  # type: ignore[override]
-    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
+    def __sub__(
+        self, other: Instant | OffsetDateTime | ZonedDateTime, /
+    ) -> TimeDelta: ...
     @overload
     def __sub__(
         self, other: TimeDelta | ItemizedDelta | ItemizedDateDelta, /
@@ -2232,11 +2259,11 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     ) -> Self: ...
     # FUTURE: allow disambiguate here for API consistency
     @overload
-    def add(self, d: TimeDelta, /) -> Self: ...
+    def add(self, delta: TimeDelta, /) -> Self: ...
     @overload
     def add(
         self,
-        d: ItemizedDelta | ItemizedDateDelta,
+        delta: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         disambiguation: Literal[
@@ -2247,7 +2274,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @deprecated("use disambiguation= instead")
     def add(
         self,
-        d: ItemizedDelta | ItemizedDateDelta,
+        delta: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
@@ -2288,11 +2315,11 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
-    def subtract(self, d: TimeDelta, /) -> Self: ...
+    def subtract(self, delta: TimeDelta, /) -> Self: ...
     @overload
     def subtract(
         self,
-        d: ItemizedDelta | ItemizedDateDelta,
+        delta: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         disambiguation: Literal[
@@ -2303,7 +2330,7 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     @deprecated("use disambiguation= instead")
     def subtract(
         self,
-        d: ItemizedDelta | ItemizedDateDelta,
+        delta: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
@@ -2473,11 +2500,14 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         /,
     ) -> Self: ...
     @overload  # type: ignore[override]
-    def __sub__(self, other: _ExactTime) -> TimeDelta: ...
+    def __sub__(
+        self, other: Instant | OffsetDateTime | ZonedDateTime, /
+    ) -> TimeDelta: ...
     @overload
     def __sub__(
         self,
         other: TimeDelta | ItemizedDelta | ItemizedDateDelta,
+        /,
     ) -> Self: ...
 
 @final
@@ -2498,6 +2528,8 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         *,
         nanosecond: int = 0,
     ) -> None: ...
+    MIN: ClassVar[PlainDateTime]
+    MAX: ClassVar[PlainDateTime]
     def assume_utc(self) -> Instant: ...
     @overload
     def assume_fixed_offset(self, offset: TimeDelta, /) -> OffsetDateTime: ...
@@ -2693,7 +2725,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     @overload
     def add(
         self,
-        d: TimeDelta | ItemizedDelta | ItemizedDateDelta,
+        delta: TimeDelta | ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         naive_arithmetic_ok: bool = ...,
@@ -2717,7 +2749,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     @overload
     def subtract(
         self,
-        d: TimeDelta | ItemizedDelta | ItemizedDateDelta,
+        delta: TimeDelta | ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         naive_arithmetic_ok: bool = ...,
@@ -2743,13 +2775,8 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     @overload
     def __sub__(self, other: Self, /) -> TimeDelta: ...
 
-@final
 class RepeatedTime(ValueError): ...
-
-@final
 class SkippedTime(ValueError): ...
-
-@final
 class InvalidOffsetError(ValueError): ...
 
 # Why not a subclass of KeyError? Because:
@@ -2757,7 +2784,6 @@ class InvalidOffsetError(ValueError): ...
 #   about it being valid or not (ValueError).
 # - It can be raised during parsing. Keeping this a ValueError means that
 #   the user can catch all parsing exceptions consistently.
-@final
 class TimeZoneNotFoundError(ValueError): ...
 
 class Weekday(enum.Enum):

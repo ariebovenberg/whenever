@@ -30,7 +30,7 @@ The main types are:
 ## {class}`~whenever.Instant`
 
 This is the simplest way to represent a moment on the timeline,
-independent of human complexities like timezones or calendars.
+independent of human complexities like time zones or calendars.
 An {class}`~whenever.Instant` maps 1:1 to UTC or a UNIX timestamp.
 It's great for storing when something happened (or will happen)
 regardless of location.
@@ -46,7 +46,7 @@ True
 
 The value of this type is in its simplicity. It's straightforward to compare,
 add, and subtract. It's always clear what moment in time
-you're referring to—without having to worry about timezones,
+you're referring to—without having to worry about time zones,
 Daylight Saving Time (DST), or the calendar.
 
 ## {class}`~whenever.PlainDateTime`
@@ -59,7 +59,7 @@ This is because this date and time-of-day occur at different moments
 depending on whether you're in Australia or Mexico, for example.
 
 Another limitation is that you can't account for Daylight Saving Time
-if you only have a date and time-of-day without a timezone.
+if you only have a date and time-of-day without a time zone.
 Therefore, adding exact time units to "plain" datetimes will emit a
 `NaiveArithmeticWarning` to prevent you from accidentally introducing DST bugs.
 This is because—strictly speaking—you don't know what the
@@ -86,7 +86,7 @@ That's what the next type is for.
 ## {class}`~whenever.ZonedDateTime`
 
 This is a combination of an exact *and* a local time at a specific location,
-with rules about Daylight Saving Time and other timezone changes.
+with rules about Daylight Saving Time and other time zone changes.
 
 ```python
 >>> bedtime = ZonedDateTime(2024, 3, 9, 22, tz="America/New_York")
@@ -96,7 +96,7 @@ ZonedDateTime("2024-03-09 22:00:00-05:00[America/New_York]")
 ZonedDateTime("2024-03-10 07:00:00-04:00[America/New_York]")
 ```
 
-A timezone defines a UTC offset for each point on the timeline.
+A time zone defines a UTC offset for each point on the timeline.
 As a result, any {class}`~whenever.Instant` can
 be converted to a {class}`~whenever.ZonedDateTime`.
 Converting from a {class}`~whenever.PlainDateTime`, however,
@@ -127,7 +127,7 @@ meaning of your data more accurately.
 An {class}`~whenever.OffsetDateTime` sits between a local datetime and a zoned
 datetime:
 
-| Type | Local fields | Exact instant | Regional timezone rules |
+| Type | Local fields | Exact instant | Regional time zone rules |
 |---|:---:|:---:|:---:|
 | {class}`~whenever.Instant` | ❌ | ✅ | ❌ |
 | {class}`~whenever.PlainDateTime` | ✅ | ❌ | ❌ |
@@ -144,14 +144,14 @@ past or future daylight-saving and political changes.
 
 Most interchange formats—including ISO 8601, RFC 2822, RFC 3339, API payloads,
 database records, and logs—commonly carry local fields and an offset but no
-timezone ID. {class}`~whenever.OffsetDateTime` represents exactly that input.
+time zone ID. {class}`~whenever.OffsetDateTime` represents exactly that input.
 Converting it to an {class}`~whenever.Instant` would discard the source's local
 representation; turning it into a {class}`~whenever.ZonedDateTime` would
 require regional rules the source never provided.
 
-An offset also does **not** identify a timezone. Many regions can share
+An offset also does **not** identify a time zone. Many regions can share
 `+02:00` at one instant and follow different rules later. Even putting a fixed
-offset in timezone brackets does not add those missing rules.
+offset in time zone brackets does not add those missing rules.
 
 ### The stale-offset footgun
 
@@ -159,12 +159,12 @@ In common data, a numeric offset is a *snapshot*: the offset a location used
 at one instant. Arithmetic on an {class}`~whenever.OffsetDateTime` is
 mathematically valid and preserves that fixed offset, but it cannot update the
 offset when the location's rules change. The result may therefore be stale
-relative to the timezone the original value came from—even after an exact
+relative to the time zone the original value came from—even after an exact
 shift.
 
-When the intended meaning depends on that original timezone, shifting or
+When the intended meaning depends on that original time zone, shifting or
 modifying an {class}`~whenever.OffsetDateTime` is roughly as unsafe as doing
-timezone-sensitive arithmetic on a naive
+arithmetic that depends on the time zone on a naive
 {class}`~whenever.PlainDateTime`: both lack the regional rules needed to
 account for transitions. The offset pins down the original instant, but it
 does not make a later or modified local time safe.
@@ -180,7 +180,7 @@ OffsetDateTime("2024-03-10 12:00:00-07:00")
 ZonedDateTime("2024-03-10 12:00:00-06:00[America/Denver]")
 ```
 
-When the originating timezone is known, associate it **before** doing the
+When the originating time zone is known, associate it **before** doing the
 arithmetic using {meth}`~whenever.OffsetDateTime.assume_tz`; see the complete
 {ref}`offset mismatch <offset-mismatch>` flow. Whenever emits
 {class}`~whenever.StaleOffsetWarning` for operations that preserve an offset

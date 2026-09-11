@@ -11,7 +11,7 @@ pub(crate) enum TimestampUnit {
 /// The message for a timestamp that falls outside `Instant.MIN..MAX`.
 /// Deliberately distinct from the generic range error: both backends raise a
 /// `ValueError` with exactly this text, on every platform.
-const TIMESTAMP_RANGE_MSG: &str = "timestamp out of range";
+const TIMESTAMP_RANGE_MSG: &str = "value or calculation out of range";
 
 impl TimestampUnit {
     pub(crate) fn name(self) -> &'static str {
@@ -33,7 +33,7 @@ impl TimestampUnit {
                 (*state.strs.nanosecond, Self::Nanosecond),
             ],
         )
-        .ok_or_value_err("invalid timestamp unit")
+        .ok_or_else_value_err(|| format!("invalid unit: {obj}"))
     }
 
     pub(crate) fn timestamp(self, instant: Instant) -> i128 {
@@ -85,7 +85,7 @@ pub(crate) fn extract_instant(obj: PyObj, state: &State) -> Option<Instant> {
 
 pub(crate) fn parse_instant_arg(fname: &str, obj: PyObj, state: &State) -> PyResult<Instant> {
     extract_instant(obj, state).ok_or_else_raise(exc_type_error(), || {
-        format!("{fname}() argument must be an OffsetDateTime, Instant, or ZonedDateTime")
+        format!("{fname}() argument must be an Instant, OffsetDateTime, or ZonedDateTime")
     })
 }
 

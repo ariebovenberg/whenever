@@ -1,36 +1,36 @@
 # Unpickling preserves the instant
 
 A `ZonedDateTime` pickle stores the local fields, the nanoseconds, the
-offset that was observed, and the timezone ID. It does not store the
-timezone's rules. When the pickle is loaded, the stored offset may no longer
+offset that was observed, and the time zone ID. It does not store the
+time zone's rules. When the pickle is loaded, the stored offset may no longer
 be what the rules in the loading environment give for that local time: the
-timezone database was updated, or the pickle crossed machines. That is an
+time zone database was updated, or the pickle crossed machines. That is an
 **offset mismatch** in the glossary's sense, arriving through `pickle.loads()`
 instead of `parse_iso()`. The unpickler resolves it as `keep_instant`: it
 recovers the instant from the stored local fields and offset, resolves that
 instant with the current rules, and emits `PickleOffsetMismatchWarning` when
 the resulting offset differs from the stored one. The value that comes back
-never carries an offset its own timezone rules contradict.
+never carries an offset its own time zone rules contradict.
 
 ## Semantics
 
-- Decode the stored local fields, nanoseconds, offset, and timezone ID;
-  reject malformed payloads, unknown timezone IDs, and out-of-range values
+- Decode the stored local fields, nanoseconds, offset, and time zone ID;
+  reject malformed payloads, unknown time zone IDs, and out-of-range values
   with the exceptions that already apply.
 - Recover the original instant from the stored local fields and offset.
-- Resolve that instant with the current rules for the timezone ID. No
+- Resolve that instant with the current rules for the time zone ID. No
   disambiguation policy is consulted: an instant identifies one occurrence.
 - Emit `PickleOffsetMismatchWarning` after the value is built, only when the
   resolved offset differs from the stored one. The message names the
-  timezone ID, the stored and current offsets, the stored and resulting
+  time zone ID, the stored and current offsets, the stored and resulting
   local datetimes, and states that the instant was preserved.
 - Unchanged rules give no warning and a value that is `strict_eq()` to the
   one pickled. Python and Rust pickles are mutually readable.
 - `PickleOffsetMismatchWarning` subclasses `WheneverWarning` directly, not
   `PotentialDstBugWarning`: it reports drift between two environments'
-  timezone data, not a mistake in the user's code. A test suite that turns
+  time zone data, not a mistake in the user's code. A test suite that turns
   the DST-bug family into errors must not fail every unpickle after a
-  timezone-data update.
+  time zone data update.
 
 ## Considered options
 
@@ -47,9 +47,9 @@ never carries an offset its own timezone rules contradict.
   process-wide setting (a `ContextVar`) would be needed only to support
   `keep_local`, which the option above rejects.
 - **Embed a snapshot of the rules in the payload.** Rejected: it makes every
-  pickle carry a copy of the timezone data, the loaded value would then
+  pickle carry a copy of the time zone data, the loaded value would then
   disagree under arithmetic with values built in the same process, and
-  `strict_eq()` compares timezone definitions, so the copy would never be
+  `strict_eq()` compares time zone definitions, so the copy would never be
   strictly equal to anything.
 - **Store the instant instead of the local fields and offset.** Rejected: a
   new payload format for no gain, since the instant is recoverable from the

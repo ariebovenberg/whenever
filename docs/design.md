@@ -4,7 +4,7 @@ myst:
     description: >-
       The API design principles behind whenever: separate types for separate
       meanings, footguns flagged rather than forbidden, and no implicit system
-      timezone.
+      time zone.
 ---
 
 (design)=
@@ -17,7 +17,7 @@ For concrete questions, see the {ref}`FAQ <faq>`.
 
 If two concepts carry different semantics,
 they get different types—even when they look similar on the surface.
-For example, a datetime with a timezone ({class}`~whenever.ZonedDateTime`)
+For example, a datetime with a time zone ({class}`~whenever.ZonedDateTime`)
 and one with a fixed offset ({class}`~whenever.OffsetDateTime`) both
 represent a moment in time with a local clock reading,
 but only the former can track DST transitions.
@@ -60,13 +60,13 @@ Raising would serve only the first audience. Staying silent would serve only
 the second. See {ref}`the guide to handling warnings <warnings>` for the
 filters.
 
-## No system timezone by default
+## No system time zone by default
 
-Many datetime libraries silently use the system timezone as a default,
+Many datetime libraries silently use the system time zone as a default,
 but this couples your code to the machine's configuration—a
 common source of surprises, especially in servers and containers
-where the system timezone is often UTC or undefined.
-In `whenever`, the system timezone is never used implicitly;
+where the system time zone is often UTC or undefined.
+In `whenever`, the system time zone is never used implicitly;
 you must pass {data}`~whenever.SYSTEM_TZ` explicitly
 (for example to {meth}`~whenever.Instant.to_tz` or
 {meth}`~whenever.PlainDateTime.assume_tz`)

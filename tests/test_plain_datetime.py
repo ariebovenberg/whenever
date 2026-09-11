@@ -423,7 +423,7 @@ def test_equality():
     assert d != d.assume_utc()  # type: ignore[comparison-overlap]
     assert d != d.assume_fixed_offset(hours(3))  # type: ignore[comparison-overlap]
 
-    # Ambiguity in system timezone doesn't affect equality
+    # Ambiguity in system time zone doesn't affect equality
     with system_tz_ams():
         assert PlainDateTime(2023, 10, 29, 2, 15) == PlainDateTime(
             py_datetime(2023, 10, 29, 2, 15, fold=1)
@@ -921,7 +921,7 @@ class TestRound:
 
     def test_invalid_mode(self):
         d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
+        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
             d.round("second", mode="foo")  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
@@ -948,7 +948,7 @@ class TestRound:
 
     def test_invalid_unit(self):
         d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
             d.round("foo")  # type: ignore[call-overload]
 
     def test_out_of_range(self):
@@ -1410,7 +1410,7 @@ class TestSince:
             )  # type: ignore[call-overload]
 
         # round_mode is still valid with in_units
-        with pytest.raises(ValueError, match="round.*mode.*foobar"):
+        with pytest.raises(ValueError, match="invalid (round_)?mode.*foobar"):
             PlainDateTime(2021, 1, 1).since(
                 PlainDateTime(2020, 1, 1),
                 in_units=["years"],
@@ -1530,13 +1530,6 @@ class TestSince:
         ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
 
 
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class Subclass(PlainDateTime):  # type: ignore[misc]
-            pass
-
-
 class TestDayOfYear:
     def test_basic(self):
         assert PlainDateTime(2024, 2, 29, 12, 30).day_of_year() == 60
@@ -1645,7 +1638,7 @@ class TestStartOf:
         assert result == PlainDateTime(2024, 8, 15, 14, 30, 45)
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+        with pytest.raises(ValueError, match="invalid unit"):
             PlainDateTime(2024, 8, 15, 14, 30).start_of("invalid")  # type: ignore[arg-type]
 
     def test_week_value_error(self):
@@ -1764,7 +1757,7 @@ class TestEndOf:
         )
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+        with pytest.raises(ValueError, match="invalid unit"):
             PlainDateTime(2024, 8, 15, 14, 30).end_of("invalid")  # type: ignore[arg-type]
 
     def test_week_value_error(self):

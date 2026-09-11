@@ -12,6 +12,10 @@ myst:
 All types support equality and comparison.
 However, {class}`~whenever.PlainDateTime` instances are
 never equal or comparable to the "exact" types.
+`hash()` agrees with `==` on every type: values that compare equal hash alike,
+across {class}`~whenever.Instant`, {class}`~whenever.OffsetDateTime`, and
+{class}`~whenever.ZonedDateTime` too, so equal values collapse in a `set` or
+share a `dict` key.
 
 ## Exact time
 
@@ -41,7 +45,7 @@ offset—use {meth}`~whenever.ZonedDateTime.strict_eq`. See
 ## Local time
 
 For {class}`~whenever.PlainDateTime`, equality is simply based on
-whether the values are the same, since there is no concept of timezones or UTC offset:
+whether the values are the same, since there is no concept of time zones or UTC offset:
 
 ```python
 >>> d = PlainDateTime(2023, 12, 28, 11, 30)
@@ -74,8 +78,8 @@ compares exactly that in addition:
 - {class}`~whenever.OffsetDateTime`: the type, the local datetime, and the
   offset.
 - {class}`~whenever.ZonedDateTime`: the type, the local datetime, the offset,
-  and the timezone—meaning its identifier (or the absence of one, for the
-  system timezone) and its definition. Two values with the same timezone ID
+  and the time zone—meaning its identifier (or the absence of one, for the
+  system time zone) and its definition. Two values with the same time zone ID
   can carry different rules after a {func}`~whenever.clear_tzcache` or a
   {func}`~whenever.reset_tzpath`, and they are then not strictly equal.
 - {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta`:

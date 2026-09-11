@@ -10,7 +10,7 @@
 //! | Instant | `i64 epoch seconds, u32 nanos` | 12 |
 //! | TimeDelta | `i64 seconds, u32 nanos` | 12 |
 //! | OffsetDateTime | PlainDateTime + `i32 offset seconds` | 15 |
-//! | ZonedDateTime | OffsetDateTime + separate timezone ID | 15 + ID |
+//! | ZonedDateTime | OffsetDateTime + separate time zone ID | 15 + ID |
 
 use crate::domain::{
     date::Date,

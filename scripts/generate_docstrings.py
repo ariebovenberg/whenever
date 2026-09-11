@@ -102,35 +102,35 @@ PYDANTIC_DOCSTRING = 'pub(crate) const PYDANTIC_SCHEMA: &CStr = c"__get_pydantic
 
 MANUALLY_DEFINED_SIGS: dict[object, str] = {
     W.ZonedDateTime.add: """\
-($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, \
+($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, hours=0, \
 minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
 disambiguation=...)""",
     W.ZonedDateTime.replace: """\
-($self, /, *, year=None, month=None, day=None, hour=None, \
-minute=None, second=None, nanosecond=None, tz=None, disambiguation=...)""",
+($self, /, *, year=..., month=..., day=..., hour=..., \
+minute=..., second=..., nanosecond=..., tz=..., disambiguation=...)""",
     W.OffsetDateTime.add: """\
-($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
+($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
 stale_offset_ok=False)""",
     W.OffsetDateTime.replace: """\
-($self, /, *, year=None, month=None, day=None, hour=None, \
-minute=None, second=None, nanosecond=None, offset=None, \
+($self, /, *, year=..., month=..., day=..., hour=..., \
+minute=..., second=..., nanosecond=..., offset=..., \
 stale_offset_ok=False)""",
     W.PlainDateTime.add: """\
-($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
+($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
 naive_arithmetic_ok=False)""",
     W.PlainDateTime.replace: """\
-($self, /, *, year=None, month=None, day=None, hour=None, \
-minute=None, second=None, nanosecond=None)""",
-    W.Date.replace: "($self, /, *, year=None, month=None, day=None)",
-    W.MonthDay.replace: "($self, /, *, month=None, day=None)",
-    W.Time.replace: "($self, /, *, hour=None, minute=None, second=None, nanosecond=None)",
-    W.YearMonth.replace: "($self, /, *, year=None, month=None)",
+($self, /, *, year=..., month=..., day=..., hour=..., \
+minute=..., second=..., nanosecond=...)""",
+    W.Date.replace: "($self, /, *, year=..., month=..., day=...)",
+    W.MonthDay.replace: "($self, /, *, month=..., day=...)",
+    W.Time.replace: "($self, /, *, hour=..., minute=..., second=..., nanosecond=...)",
+    W.YearMonth.replace: "($self, /, *, year=..., month=...)",
     W.Instant.add: """\
-($self, delta=None, /, *, hours=0, minutes=0, seconds=0, \
-milliseconds=0, microseconds=0, nanoseconds=0)""",
-    W.Date.add: "($self, delta=None, /, *, years=0, months=0, weeks=0, days=0)",
+($self, delta=..., /, *, weeks=0, days=0, hours=0, minutes=0, seconds=0, \
+milliseconds=0, microseconds=0, nanoseconds=0, days_assumed_24h_ok=False)""",
+    W.Date.add: "($self, delta=..., /, *, years=0, months=0, weeks=0, days=0)",
 }
 MANUALLY_DEFINED_SIGS.update(
     {

@@ -17,18 +17,31 @@ from typing_extensions import assert_type
 from whenever import (
     _EXTENSION_LOADED,
     SYSTEM_TZ,
+    CalendarUnitCompositionWarning,
     Date,
+    DaysAssumed24HoursWarning,
+    ImplicitDisambiguationWarning,
     Instant,
+    InvalidOffsetError,
     IsoWeekDate,
     ItemizedDateDelta,
     ItemizedDelta,
     MonthDay,
+    NaiveArithmeticWarning,
     OffsetDateTime,
+    PickleOffsetMismatchWarning,
     PlainDateTime,
+    PotentialDstBugWarning,
+    RepeatedTime,
+    SkippedTime,
+    StaleOffsetWarning,
     Time,
     TimeDelta,
     TimePatch,
     TimeZoneNotFoundError,
+    Weekday,
+    WheneverDeprecationWarning,
+    WheneverWarning,
     YearMonth,
     ZonedDateTime,
     clear_tzcache,
@@ -193,7 +206,7 @@ def test_stub_exports_match_runtime():
         and isinstance(node.targets[0], ast.Name)
         and node.targets[0].id == "__all__"
     ]
-    assert isinstance(value, ast.List)
+    assert isinstance(value, ast.Tuple)
     names = [ast.literal_eval(element) for element in value.elts]
     assert names == list(whenever.__all__)
 
@@ -275,7 +288,7 @@ def test_no_attr_on_module():
     not _EXTENSION_LOADED, reason="only relevant when extension is active"
 )
 def test_extension_doesnt_import_tz_modules():
-    # When the Rust extension is active, the Python timezone subsystem
+    # When the Rust extension is active, the Python time zone subsystem
     # (_tz, calendar, platform) and _shared must not be imported just by doing
     # `import whenever`. Violations here mean slow startup for all users.
     result = subprocess.run(
@@ -465,7 +478,7 @@ def test_time_patch_is_not_constructable():
 def test_time_patch_move_to_rejects_non_exact_time():
     i = Instant.from_utc(1980, 3, 2, hour=2)
     with patch_current_time(i, keep_ticking=False) as p:
-        with pytest.raises(TypeError, match="exact time"):
+        with pytest.raises(TypeError, match="must be an Instant"):
             p.move_to(Date(2020, 8, 15))  # type: ignore[arg-type]
 
 
@@ -542,7 +555,7 @@ def test_reset_system_tz():
     assert d1.tz_id == "Europe/Amsterdam"
 
     with patch.dict(os.environ, {"TZ": "America/New_York"}):
-        # The system timezone is now set to America/New_York
+        # The system time zone is now set to America/New_York
         # ...but the cache isn't updated until we call reset_system_tz()
         assert plain.assume_tz(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
 
@@ -567,9 +580,9 @@ class TestUnresolvableSystemTz:
         not_tzif.write_bytes(b"this is not a TZif file")
         # absolute on every platform: a bare `/x` is not absolute on Windows
         return [
-            (str(tmp_path / "missing"), "No time zone found at path"),
-            (str(not_tzif), "No time zone found at path"),
-            ("Foo1Bar", "No time zone found with key or posix TZ string"),
+            (str(tmp_path / "missing"), "no time zone found at path"),
+            (str(not_tzif), "no time zone found at path"),
+            ("Foo1Bar", "is not a time zone ID or POSIX TZ string"),
         ]
 
     @system_tz_ams()
@@ -578,7 +591,7 @@ class TestUnresolvableSystemTz:
             with pytest.raises(TimeZoneNotFoundError, match=message):
                 with system_tz(value):
                     pass  # pragma: no cover
-            # the failed reset left the cached timezone in place
+            # the failed reset left the cached time zone in place
             assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
 
 
@@ -600,8 +613,11 @@ def test_tzid_from_path(path, expect):
 
 
 class TestOutOfRangeIsValueError:
-    """A result that falls outside the supported range must raise
-    ``ValueError``, never a bare ``OverflowError`` from the stdlib.
+    """A result that falls outside the supported range raises ``ValueError``
+    with the message ``value or calculation out of range``, never a bare
+    ``OverflowError`` from the stdlib. Only an integer too large for the
+    backend's machine integer may raise ``OverflowError`` instead, and the
+    backends need not agree there (ADR 0002).
 
     ``TimeZoneNotFoundError`` is a ``ValueError`` for the same reason: callers
     should be able to catch everything parsing and conversion can raise with a
@@ -711,3 +727,106 @@ def test_strict_eq_refines_eq(a, b):
     else:
         with pytest.raises(TypeError, match="same-type"):
             a.strict_eq(b)
+
+
+def test_weekday_repr_rebuilds_the_member():
+    namespace: dict[str, object] = {}
+    exec("from whenever import *", namespace)
+    for w in Weekday:
+        assert repr(w) == f"Weekday.{w.name}"
+        assert eval(repr(w), namespace) is w
+
+
+def test_runtime_mixins_are_not_exported():
+    """The exact and local mixins are typing scaffolding: the stub marks them
+    ``@type_check_only`` and nothing may ``isinstance`` against them."""
+    import whenever
+
+    for name in ("_LocalTime", "_ExactTime", "_ExactAndLocalTime"):
+        assert not hasattr(whenever, name)
+
+
+@pytest.mark.parametrize(
+    "cls",
+    [
+        Date,
+        YearMonth,
+        MonthDay,
+        IsoWeekDate,
+        Time,
+        TimeDelta,
+        ItemizedDelta,
+        ItemizedDateDelta,
+        Instant,
+        OffsetDateTime,
+        ZonedDateTime,
+        PlainDateTime,
+    ],
+)
+def test_types_are_final(cls):
+    with pytest.raises(
+        TypeError,
+        match=f"type 'whenever.{cls.__name__}' is not an acceptable base type",
+    ):
+        type("Sub", (cls,), {})
+
+
+def test_warning_and_exception_hierarchy():
+    assert issubclass(WheneverWarning, UserWarning)
+    assert issubclass(PotentialDstBugWarning, WheneverWarning)
+    assert issubclass(PickleOffsetMismatchWarning, WheneverWarning)
+    assert issubclass(CalendarUnitCompositionWarning, WheneverWarning)
+    assert issubclass(WheneverDeprecationWarning, WheneverWarning)
+    assert not issubclass(WheneverDeprecationWarning, DeprecationWarning)
+    assert issubclass(DaysAssumed24HoursWarning, PotentialDstBugWarning)
+    assert issubclass(StaleOffsetWarning, PotentialDstBugWarning)
+    assert issubclass(NaiveArithmeticWarning, PotentialDstBugWarning)
+    assert issubclass(ImplicitDisambiguationWarning, PotentialDstBugWarning)
+    assert issubclass(RepeatedTime, ValueError)
+    assert issubclass(SkippedTime, ValueError)
+    assert issubclass(InvalidOffsetError, ValueError)
+    assert issubclass(TimeZoneNotFoundError, ValueError)
+
+
+def test_deprecation_warning_is_shown_by_default():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("default")
+        Date.today_in_system_tz()  # type: ignore[deprecated]
+    assert len(caught) == 1
+    assert caught[0].category is WheneverDeprecationWarning
+
+
+def test_naive_arithmetic_warning_names_its_escape():
+    with warns_here(NaiveArithmeticWarning) as caught:
+        PlainDateTime(2024, 1, 1).add(hours=1)
+    assert "naive_arithmetic_ok=True" in str(caught[0].message)
+
+
+def test_time_patch_shift_warning_location():
+    i = Instant.from_utc(2024, 1, 1)
+    with patch_current_time(i, keep_ticking=False) as p:
+        with warns_here(DaysAssumed24HoursWarning):
+            p.shift(days=1)
+        assert Instant.now() == i.add(hours=24)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            p.shift(days=1, days_assumed_24h_ok=True)
+            p.shift(hours(1))
+        assert Instant.now() == i.add(hours=49)
+
+
+def test_itemized_date_delta_accepts_a_plain_reference():
+    reference = PlainDateTime(2024, 3, 30, 12)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = ItemizedDateDelta(months=1).add(  # type: ignore[call-overload]
+            days=1, relative_to=reference, in_units=["months", "days"]
+        )
+    assert result == ItemizedDelta(months=1, days=1)
+
+
+def test_tz_store_rejects_non_string_key():
+    from whenever._tz.store import get_tz as store_get_tz
+
+    with pytest.raises(TypeError, match="tz must be a string"):
+        store_get_tz(1)  # type: ignore[arg-type]

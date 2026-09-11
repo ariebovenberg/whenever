@@ -2,7 +2,7 @@
 myst:
   html_meta:
     description: >-
-      Reference for custom format patterns: date, time, offset, and timezone
+      Reference for custom format patterns: date, time, offset, and time zone
       specifiers, literal text rules, parsing requirements, migrating patterns
       in 0.11, and how it differs from strftime.
 ---
@@ -32,6 +32,11 @@ Date("2024-03-15")
 ... )
 'Fri, 15 Mar 2024 14:30:00+02:00'
 ```
+
+The same six types—{class}`Date`, {class}`Time`, and the four datetime
+types—have a `__format__` that takes a pattern, so `f"{d:YYYY/MM/DD}"` works
+too, and an empty format spec gives `str()`. The other types have no patterns
+and keep `object.__format__`, which accepts only the empty spec.
 
 ## Specifiers
 
@@ -111,16 +116,16 @@ literal period.
 
 :::
 
-### Offset and timezone specifiers
+### Offset and time zone specifiers
 
-See {ref}`timezones-explained` for background on timezones, offsets, and abbreviations.
+See {ref}`timezones-explained` for background on time zones, offsets, and abbreviations.
 
 | Symbol  | Meaning                    | Pattern | Example output |
 |:---------|:---------------------------|:---------------|:--------------|
 | `x` | Numeric offset; precision depends on width | `x` <br/> `xx` <br/> `xxx` <br/> `xxxx` <br/> `xxxxx` | `+02` <br/> `+0230` <br/> `+02:30` <br/> `+023045` <br/> `+02:30:45` |
 | `X` | Numeric offset, with `Z` for zero offset; precision depends on width | `X` <br/> `XX` <br/> `XXX` <br/> `XXXX` <br/> `XXXXX` | `+02` <br/> `+0230` <br/> `+02:30` <br/> `+023045` <br/> `+02:30:45` or `Z` when zero |
-| `V` | IANA timezone ID | `VV` | `Europe/Paris` |
-| `z` | Timezone abbreviation [^6] | `zz` | `CET`, `CEST` |
+| `V` | IANA time zone ID | `VV` | `Europe/Paris` |
+| `z` | Time zone abbreviation [^6] | `zz` | `CET`, `CEST` |
 
 For `x` and `X`, widths `xx` and `xxx` round offset seconds to the nearest
 minute, with half values rounded away from zero. Widths `x` and `X` apply the
@@ -129,10 +134,10 @@ formatting raises {class}`ValueError`. Widths `xxxx` and `xxxxx` include offset
 seconds when nonzero and therefore preserve them exactly.
 
 When parsing a {class}`ZonedDateTime`, an offset without seconds is matched
-against the timezone offset rounded in the same way. An offset that includes
+against the time zone offset rounded in the same way. An offset that includes
 seconds, and `Z`, must match exactly.
 
-`VV` requires an IANA timezone ID. Formatting a timezone without one raises
+`VV` requires an IANA time zone ID. Formatting a time zone without one raises
 {class}`ValueError`.
 
 ```{admonition} Choosing between x and X
@@ -212,13 +217,13 @@ Variable-width numeric fields must be separated from following digits. The
 same rule applies to fields that omit optional digits, such as trimmed
 fractions and the seconds component of `xxxx`/`xxxxx` offsets. `VV` must be
 the final field or be followed by a literal delimiter that cannot occur in an
-IANA timezone ID. A dotted trimmed fraction cannot be followed by another
+IANA time zone ID. A dotted trimmed fraction cannot be followed by another
 dot. Ambiguous patterns raise {class}`ValueError` when compiled.
 
 Some types require specific fields in the parse pattern:
 
 - {meth}`OffsetDateTime.parse() <OffsetDateTime.parse>` requires an offset (`x`/`X`)
-- {meth}`ZonedDateTime.parse() <ZonedDateTime.parse>` requires `VV` (timezone ID).
+- {meth}`ZonedDateTime.parse() <ZonedDateTime.parse>` requires `VV` (time zone ID).
   An offset (`x`/`X`) is optional but recommended for DST disambiguation.
 - {meth}`Instant.parse() <Instant.parse>` requires an offset (`x`/`X`)
 
@@ -275,4 +280,4 @@ The following table maps common `strftime` directives to Whenever patterns:
 [^3]: The complete bracketed group is omitted when both seconds and nanoseconds are zero.
 [^4]: Omitted when the value is zero, with preceding `.` also omitted.
 [^5]: AM/PM is determined by the hour value. Using `i`/`ii` without `a`/`aa` emits a warning about ambiguity.
-[^6]: Timezone abbreviations are ambiguous and not supported for parsing. Use `VV` (IANA timezone ID) instead. See {ref}`timezones-explained` for details.
+[^6]: Time zone abbreviations are ambiguous and not supported for parsing. Use `VV` (IANA time zone ID) instead. See {ref}`timezones-explained` for details.

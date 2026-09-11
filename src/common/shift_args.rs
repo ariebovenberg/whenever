@@ -33,7 +33,9 @@ pub(crate) fn parse_datetime_shift_arg(
     } else if let Some(delta) = ItemizedDelta::extract(obj, state)? {
         delta.to_shift().ok_or_range_err()
     } else {
-        raise_type_err(format!("{fname}() argument must be a delta"))
+        raise_type_err(format!(
+            "{fname}() argument must be a TimeDelta, ItemizedDelta, or ItemizedDateDelta"
+        ))
     }
 }
 

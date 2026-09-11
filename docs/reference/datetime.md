@@ -127,6 +127,9 @@ Several other methods are unique to one or more classes:
 |                                            | {meth}`~ZonedDateTime.next_transition`  |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.prev_transition`  |                                        |                                                        |
 
+{class}`OffsetDateTime` and {class}`ZonedDateTime` have no `MIN` and `MAX`:
+their earliest and latest values depend on the offset or the time zone.
+
 
 [^2]: Prefer {meth}`Instant.from_timestamp`; then convert it with `to_tz()`
     or `to_fixed_offset()` when another exact representation is needed.

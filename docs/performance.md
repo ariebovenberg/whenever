@@ -61,7 +61,7 @@ Why is `whenever` faster?
 
 - **Front-loaded computation.** Every `ZonedDateTime` stores its UTC offset at
   construction time. Operations like "normalize to UTC" or "subtract two instants"
-  become simple integer arithmetic with no timezone database lookup at operation
+  become simple integer arithmetic with no time zone database lookup at operation
   time.
 
 - **Compiled core.** The default wheel is a Rust extension, giving C-level
@@ -74,8 +74,8 @@ Why is `whenever` faster?
 
 For simple operations — `now()`, ISO parsing,
 UTC normalization — it is noticeably faster than Arrow and Pendulum. For
-timezone-heavy operations such as `ZonedDateTime` construction or timezone
-conversion it is slower, as those use pure-Python timezone code instead
+operations that lean on time zone data, such as `ZonedDateTime` construction or time zone
+conversion it is slower, as those use pure-Python time zone code instead
 of the C-optimized `zoneinfo` module.
 Overall it is in the same ballpark as Arrow and Pendulum.
 ```

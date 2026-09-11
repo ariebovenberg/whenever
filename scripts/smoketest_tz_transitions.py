@@ -1,4 +1,4 @@
-"""Compare Whenever's timezone transitions against ``zdump -i``.
+"""Compare Whenever's time zone transitions against ``zdump -i``.
 
 Requires tzcode 2026b. On macOS, install it with ``brew install tzdb``.
 """
@@ -95,7 +95,7 @@ def zdump_transitions(
             rows_by_path[current_path].append(line.split())
 
     if rows_by_path.keys() != set(paths):
-        raise ValueError("zdump did not return all requested timezones")
+        raise ValueError("zdump did not return all requested time zones")
     return {
         path: parse_zdump_rows(path, rows)
         for path, rows in rows_by_path.items()

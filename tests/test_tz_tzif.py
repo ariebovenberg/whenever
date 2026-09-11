@@ -135,7 +135,7 @@ class TestTZifFiles:
         assert tzif.offset_for_instant(ymdhms(2008, 12, 1)) == hhmm(11)
 
     def test_utc(self):
-        """Test UTC timezone file"""
+        """Test UTC time zone file"""
         test_file = TZIF_DIR / "UTC.tzif"
         tzif = TimeZone.parse_tzif(test_file.read_bytes())
         assert tzif._utc_epochs == (EPOCH_SECS_MIN,)
@@ -146,7 +146,7 @@ class TestTZifFiles:
         assert ambiguity(tzif, 2216250000) == Unique(0)
 
     def test_fixed(self):
-        """Test fixed offset timezone file"""
+        """Test fixed offset time zone file"""
         test_file = TZIF_DIR / "GMT-13.tzif"
         tzif = TimeZone.parse_tzif(test_file.read_bytes())
         assert tzif._utc_epochs == (EPOCH_SECS_MIN,)
@@ -246,7 +246,7 @@ class TestTZifFiles:
         ],
     )
     def test_offset_for_instant(self, t, expected):
-        """Test comprehensive example with Amsterdam timezone"""
+        """Test comprehensive example with Amsterdam time zone"""
         assert AMS.offset_for_instant(t) == expected
 
     @pytest.mark.parametrize(

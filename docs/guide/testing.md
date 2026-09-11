@@ -4,7 +4,7 @@ myst:
     description: >-
       Testing code that uses whenever: patch_current_time and its TimePatch
       handle, the time-machine package, dependency injection instead of
-      patching, and setting the system timezone via TZ.
+      patching, and setting the system time zone via TZ.
 ---
 
 # Testing
@@ -77,10 +77,10 @@ greet('alice', now=lambda: Instant.from_utc(2023, 1, 1))
 :::
 
 
-## Patching the system timezone
+## Patching the system time zone
 
-For changing the system timezone in tests, set the `TZ` environment variable
-and use the {func}`~whenever.reset_system_tz` helper function to update the timezone cache.
+For changing the system time zone in tests, set the `TZ` environment variable
+and use the {func}`~whenever.reset_system_tz` helper function to update the time zone cache.
 Do note that this function only affects `whenever`, and not the standard library's
 behavior.
 
@@ -97,8 +97,8 @@ from whenever import reset_system_tz
 def system_tz_ams():
     try:
         with patch.dict(os.environ, {"TZ": "Europe/Amsterdam"}):
-            reset_system_tz()  # update the timezone cache
+            reset_system_tz()  # update the time zone cache
             yield
     finally:
-        reset_system_tz()  # don't forget to set the old timezone back!
+        reset_system_tz()  # don't forget to set the old time zone back!
 ```

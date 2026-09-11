@@ -221,7 +221,7 @@ def test_zoned_pickle_reconciles_changed_offset_rules():
     message = str(caught[0].message)
     assert "Europe/Amsterdam" in message
     assert "pickle stored 2023-07-01 12:00:00 with offset +01:00" in message
-    assert "current timezone rules" in message
+    assert "current time zone rules" in message
     assert "instant to 2023-07-01 13:00:00 with offset +02:00" in message
     assert "instant was preserved" in message
     assert "local datetime and offset were updated" in message

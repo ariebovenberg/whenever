@@ -5,7 +5,7 @@ myst:
     description: >-
       Entry point to the practical guide, grouped by task: choosing a type,
       comparison and conversion, resolving local times, arithmetic and deltas,
-      parsing, standard library and timezone data, pickling, and testing.
+      parsing, standard library and time zone data, pickling, and testing.
 ---
 
 (guide)=

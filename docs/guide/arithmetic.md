@@ -107,7 +107,7 @@ DST transitions never affect them: two hours is always two hours of real elapsed
 ZonedDateTime("2023-03-26 13:00:00+02:00[Europe/Amsterdam]")
 ```
 
-{class}`PlainDateTime` has no timezone context, so exact-unit operations
+{class}`PlainDateTime` has no time zone context, so exact-unit operations
 emit a {class}`NaiveArithmeticWarning`.
 
 (arith-cal-diff)=
@@ -153,7 +153,7 @@ vs. calendar units.
 ### Instant
 
 {class}`Instant` represents a single point in time with no calendar or
-timezone context. It only supports exact units: `hours`, `minutes`, `seconds`, and
+time zone context. It only supports exact units: `hours`, `minutes`, `seconds`, and
 `nanoseconds`. 
 
 ```python
@@ -178,7 +178,7 @@ Instant("2023-03-26 12:00:00Z")
 The `days_assumed_24h_ok` opt-in also covers exact weeks. See
 {ref}`the rounding distinction <rounding-instant-day>`.
 
-Because {class}`Instant` has no calendar or timezone context,
+Because {class}`Instant` has no calendar or time zone context,
 it doesn't support `since()`/`until()`.
 Use {meth}`~TimeDelta.in_units`/{meth}`~TimeDelta.total` 
 on the result of `-`/`difference()` instead:
@@ -194,7 +194,7 @@ ItemizedDelta("P2dT18h")
 ### ZonedDateTime
 
 {class}`ZonedDateTime` is the recommended type for all arithmetic. It carries
-full timezone rules and handles DST correctly — all four arithmetic operations are
+full time zone rules and handles DST correctly — all four arithmetic operations are
 fully supported.
 
 ```python
@@ -209,17 +209,17 @@ ItemizedDelta("P3y5m14d")
 ```
 
 When using `since()`/`until()` with calendar units (`years`, `months`, `weeks`,
-`days`), both datetimes must share the same timezone — or a {exc}`ValueError` is
-raised. Exact units work freely across different timezones:
+`days`), both datetimes must share the same time zone — or a {exc}`ValueError` is
+raised. Exact units work freely across different time zones:
 
 ```python
 >>> tokyo = ZonedDateTime(2023, 6, 15, tz="Asia/Tokyo")
->>> d2.since(tokyo, total="hours")         # exact units: works across timezones
+>>> d2.since(tokyo, total="hours")         # exact units: works across time zones
 7.0
 >>> d2.since(tokyo, total="days")          # calendar units: raises ValueError
 Traceback (most recent call last):
   ...
-ValueError: Calendar units can only be used to compare ZonedDateTimes with the same timezone
+ValueError: Calendar units can only be used to compare ZonedDateTimes with the same time zone
 ```
 
 When adding calendar units, the result may land in a DST transition.
@@ -232,7 +232,7 @@ ZonedDateTime("2024-11-03 01:15:00-06:00[America/Denver]")
 >>> d.add(months=1, disambiguation="raise")
 Traceback (most recent call last):
   ...
-whenever.RepeatedTime: 2024-11-03 01:15:00 is repeated in timezone 'America/Denver'
+whenever.RepeatedTime: 2024-11-03 01:15:00 is repeated in time zone 'America/Denver'
 ```
 
 The difference between `days` and `hours` is most visible during a DST transition:
@@ -271,19 +271,19 @@ ValueError: Calendar units can only be used to compare OffsetDateTimes with the 
 ```
 
 ```{attention}
-Even in a timezone without DST, prefer {class}`ZonedDateTime` for arithmetic.
+Even in a time zone without DST, prefer {class}`ZonedDateTime` for arithmetic.
 Political decisions can change a region's UTC offset in the future.
 ```
 
 :::{admonition} Why allow operations that can be wrong?
 :class: hint
 
-DST-safe arithmetic requires full timezone rules. When you have an
+DST-safe arithmetic requires full time zone rules. When you have an
 {class}`OffsetDateTime` or {class}`PlainDateTime`, that context
 isn't available.
 
 Rather than making these operations impossible—frustrating when you genuinely don't
-have a timezone or know there is no DST—`whenever` allows them but emits a warning.
+have a time zone or know there is no DST—`whenever` allows them but emits a warning.
 The warning points to the safer alternative ({class}`ZonedDateTime`) while
 leaving an escape hatch for cases where you understand the trade-off.
 :::
@@ -292,7 +292,7 @@ leaving an escape hatch for cases where you understand the trade-off.
 (arithmetic-plain)=
 ### PlainDateTime
 
-{class}`PlainDateTime` has no timezone, so it cannot account for DST
+{class}`PlainDateTime` has no time zone, so it cannot account for DST
 in exact-time operations. Calendar units (`years`, `months`, `weeks`, `days`) are
 fully supported without any caveats. Exact units — including the `-` operator and
 `since()`/`until()` with time-of-day units — emit
@@ -312,8 +312,8 @@ ItemizedDelta("P3m14d")
 ```python
 >>> d = PlainDateTime(2023, 10, 29, 1, 30)
 >>> d.add(hours=2)                                # emits NaiveArithmeticWarning
-PlainDateTime("2023-10-29 03:30:00")              # may not exist in your timezone
->>> d.assume_tz("Europe/Amsterdam").add(hours=2)  # timezone-aware alternative
+PlainDateTime("2023-10-29 03:30:00")              # may not exist in your time zone
+>>> d.assume_tz("Europe/Amsterdam").add(hours=2)  # alternative that respects the time zone
 ZonedDateTime("2023-10-29 02:30:00+01:00[Europe/Amsterdam]")
 >>> d.add(hours=2, naive_arithmetic_ok=True)      # suppress if intentional
 PlainDateTime("2023-10-29 03:30:00")

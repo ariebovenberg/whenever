@@ -65,7 +65,7 @@ as `PYTHONWARNINGS=error` but scoped to `whenever`'s warning hierarchy only.
 To target a specific warning type instead:
 
 ```python
-# Only error on timezone-unaware arithmetic (PlainDateTime):
+# Only error on arithmetic that ignores time zones (PlainDateTime):
 warnings.filterwarnings("error", category=whenever.NaiveArithmeticWarning)
 
 # Only error on potentially stale offset operations (OffsetDateTime):
@@ -127,15 +127,23 @@ warnings.filterwarnings(
 ## Suppress specific calls
 
 Sometimes an operation is deliberately imprecise — and that's fine, as long as
-the decision is conscious and documented. Each method that may emit a
-DST-related warning accepts a boolean keyword argument that suppresses it:
+the decision is conscious and documented. Each warning that a single call can
+justify has a {term}`call-local escape`: a boolean keyword ending in `_ok`
+that suppresses it for that one call, and is named in the warning's message.
+The exceptions are the `relative_to` forms of `TimeDelta.total()`,
+`TimeDelta.in_units()`, `ItemizedDelta.total()`, and `ItemizedDelta.in_units()`
+with a {class}`~whenever.PlainDateTime` or {class}`~whenever.OffsetDateTime`
+reference: they warn without an escape for now, so filter the category there.
 
 | Keyword argument | Suppresses | Used on |
 |---|---|---|
-| `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | {class}`~whenever.TimeDelta` methods, {class}`~whenever.Instant` `add`/`subtract` |
+| `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | {class}`~whenever.TimeDelta` methods, {class}`~whenever.Instant` `add`/`subtract`, {meth}`TimePatch.shift() <whenever.TimePatch.shift>` |
 | `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` methods |
 | `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods |
 | `cal_unit_composition_ok=True` | {class}`~whenever.CalendarUnitCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
+| `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `replace()`, `add`/`subtract`, and `assume_tz()` |
+| none: filter the category | {class}`~whenever.PickleOffsetMismatchWarning` | `pickle.loads()` of a {class}`~whenever.ZonedDateTime` |
+| none: fix the pattern | the 12-hour {class}`~whenever.WheneverWarning` | `format()` and `parse()`: add `a`/`aa`, or use `H`/`HH` |
 
 For example:
 

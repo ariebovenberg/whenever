@@ -1,4 +1,4 @@
-"""Posix TZ string parser and timezone implementation.
+"""Posix TZ string parser and time zone implementation.
 
 This is pretty much a reimplementation of the Rust version located in the
 `src/tz/posix.rs` file.
@@ -377,7 +377,7 @@ class TzStr:
 
 
 def parse_tzname(s: str) -> tuple[str, str]:
-    """Parse the timezone name, returning (name, rest_of_string)."""
+    """Parse the time zone name, returning (name, rest_of_string)."""
     if s[:1] == "<":  # bracketed format
         stop = s.find(">") + 1
         if stop < 3:  # not found or empty name

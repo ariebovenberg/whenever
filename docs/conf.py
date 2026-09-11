@@ -151,7 +151,7 @@ def _hide_shim_kwargs(
 #
 # - an alias from `autodoc_type_aliases` nested in a generic or union prints
 #   as `TypeAliasForwardRef('DeltaUnitStr')` instead of `DeltaUnitStr`;
-# - the system timezone sentinel is annotated with its private class
+# - the system time zone sentinel is annotated with its private class
 #   `_SystemTZ`, which should read (and link) as `SYSTEM_TZ`.
 _SYSTEM_TZ_CLASS = re.compile(r"(?:whenever\.(?:_common\.)?)?_SystemTZ")
 

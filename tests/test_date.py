@@ -275,7 +275,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
+            match=r"invalid format.*" + re.escape(repr(s)),
         ):
             Date.parse_iso(s)
 
@@ -731,7 +731,7 @@ class TestSinceAndUntil:
             d.since(Date(2020, 1, 1), total="years", round_increment=1)  # type: ignore[call-overload]
 
         # round_mode is still valid with in_units
-        with pytest.raises(ValueError, match="round.*mode.*foobar"):
+        with pytest.raises(ValueError, match="invalid (round_)?mode.*foobar"):
             d.since(Date(2020, 1, 1), in_units=["years"], round_mode="foobar")  # type: ignore[call-overload]
 
     # `until` behaves very similarly to `since`,
@@ -873,13 +873,6 @@ def test_singletons():
     assert Date.MAX == Date(9999, 12, 31)
 
 
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class SubclassDate(Date):  # type: ignore[misc]
-            pass
-
-
 MONDAY = Weekday.MONDAY
 TUESDAY = Weekday.TUESDAY
 WEDNESDAY = Weekday.WEDNESDAY
@@ -993,7 +986,7 @@ class TestNextDay:
         assert d.next_day() == expected
 
     def test_at_max(self):
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             Date.MAX.next_day()
 
 
@@ -1013,7 +1006,7 @@ class TestPrevDay:
         assert d.prev_day() == expected
 
     def test_at_min(self):
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             Date.MIN.prev_day()
 
 
@@ -1184,11 +1177,11 @@ class TestStartOf:
         assert Date(2024, 12, 25).start_of("month") == Date(2024, 12, 1)
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid"):
+        with pytest.raises(ValueError, match="invalid unit"):
             Date(2024, 8, 15).start_of("day")  # type: ignore[arg-type]
 
     def test_invalid_unit_arbitrary(self):
-        with pytest.raises(ValueError, match="Invalid"):
+        with pytest.raises(ValueError, match="invalid unit"):
             Date(2024, 8, 15).start_of("invalid")  # type: ignore[arg-type]
 
     def test_week_value_error(self):
@@ -1282,11 +1275,11 @@ class TestEndOf:
         assert Date(2024, 8, 31).end_of("month") == Date(2024, 8, 31)
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid"):
+        with pytest.raises(ValueError, match="invalid unit"):
             Date(2024, 8, 15).end_of("day")  # type: ignore[arg-type]
 
     def test_invalid_unit_arbitrary(self):
-        with pytest.raises(ValueError, match="Invalid"):
+        with pytest.raises(ValueError, match="invalid unit"):
             Date(2024, 8, 15).end_of("hour")  # type: ignore[arg-type]
 
     def test_week_value_error(self):

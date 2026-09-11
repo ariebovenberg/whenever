@@ -58,7 +58,7 @@ INVALID_DDELTAS = [
 
 
 @contextmanager
-def warns_here(warning_class):
+def warns_here(warning_class, *, match=None):
     """Like ``pytest.warns``, but also assert the warning points at this very
     ``with`` block instead of at whenever's own internals.
 
@@ -74,7 +74,7 @@ def warns_here(warning_class):
     then contextlib's __enter__, then the caller.
     """
     caller_file = _getframe(2).f_code.co_filename
-    with pytest.warns(warning_class) as caught:
+    with pytest.warns(warning_class, match=match) as caught:
         yield caught
     for w in caught:
         assert w.filename == caller_file, (
@@ -104,9 +104,9 @@ def suppress(*warning_classes):
         yield
 
 
-# The POSIX TZ string for the Amsterdam timezone.
+# The POSIX TZ string for the Amsterdam time zone.
 AMS_TZ_POSIX = "CET-1CEST,M3.5.0,M10.5.0/3"
-# A non-standard path to the Amsterdam timezone file, that can't be traced
+# A non-standard path to the Amsterdam time zone file, that can't be traced
 # back to the zoneinfo database.
 AMS_TZ_RAWFILE = str(Path(__file__).parent / "tzif" / "Amsterdam.tzif")
 # The same file, with the 2020 DST end moved from October 25 to November 1
@@ -163,7 +163,7 @@ def system_tz_ams():
             reset_system_tz()
             yield
     finally:
-        reset_system_tz()  # don't forget to reset the timezone after the patch!
+        reset_system_tz()  # don't forget to reset the time zone after the patch!
 
 
 @contextmanager
@@ -173,7 +173,7 @@ def system_tz(name):
             reset_system_tz()
             yield
     finally:
-        reset_system_tz()  # don't forget to reset the timezone after the patch!
+        reset_system_tz()  # don't forget to reset the time zone after the patch!
 
 
 @contextmanager
@@ -183,7 +183,7 @@ def system_tz_nyc():
             reset_system_tz()
             yield
     finally:
-        reset_system_tz()  # don't forget to reset the timezone after the patch!
+        reset_system_tz()  # don't forget to reset the time zone after the patch!
 
 
 @contextmanager
@@ -191,7 +191,7 @@ def tz_rules_from_file(tz_id: str, path: str, tmp_dir: Path) -> Iterator[None]:
     """Serve ``path`` as the rules for ``tz_id`` until the block exits.
 
     The file is copied under ``tz_id`` into ``tmp_dir``, which becomes the
-    only entry of the timezone search path; the cache is cleared on entry
+    only entry of the time zone search path; the cache is cleared on entry
     and on exit so lookups before and after the block see their own rules.
     """
     zone = tmp_dir / tz_id
@@ -234,7 +234,7 @@ def create_zdt(
     ] = "compatible",
 ) -> ZonedDateTime:
     """Convenience method to create a ZonedDateTime object, potentially
-    with system timezone."""
+    with system time zone."""
     # A special check that is only useful in tests of course
     if tz == AMS_TZ_POSIX:
         return _AMS_POSIX_DT.replace(

@@ -71,7 +71,7 @@ True
 True
 ```
 
-## Missing timezone information becomes UTC
+## Missing time zone information becomes UTC
 
 When parsing a datetime without an offset, Pendulum assumes UTC:
 
@@ -202,7 +202,7 @@ behavior in dictionaries, sets, caches, and deduplication code.
 ## `Time` arithmetic can discard information
 
 Pendulum exposes aware `Time` values, but its arithmetic converts through an
-epoch datetime and returns only the clock fields. The timezone is silently
+epoch datetime and returns only the clock fields. The time zone is silently
 lost:
 
 ```python
@@ -414,7 +414,7 @@ reference. A request for a usable reference has remained open since 2018
 
 Several published examples no longer match version 3.2.0:
 
-- the timezone guide still recommends `dst_rule`, `PRE_TRANSITION`,
+- the time zone guide still recommends `dst_rule`, `PRE_TRANSITION`,
   `POST_TRANSITION`, and `TRANSITION_ERROR`, all removed in 3.0
   ([#789](https://github.com/python-pendulum/pendulum/issues/789));
 - parts of the documentation still call the result of `diff()` a `Period`,

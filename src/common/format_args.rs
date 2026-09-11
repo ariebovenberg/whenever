@@ -154,7 +154,7 @@ pub(crate) fn format_time_iso(
     PyAsciiStrBuilder::format(time.iso_format(unit, basic))
 }
 
-/// Format a date and time with an optional timezone suffix.
+/// Format a date and time with an optional time zone suffix.
 pub(crate) fn format_datetime_iso(
     date: Date,
     time: Time,

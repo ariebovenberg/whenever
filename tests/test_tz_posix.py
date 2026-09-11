@@ -399,7 +399,7 @@ class TestCalculateOffsets:
         std_abbrev="STD",
     )
 
-    # Some timezones have DST end before start
+    # Some time zones have DST end before start
     TZ_INVERTED = TzStr(
         std=4800,
         dst=Dst(
@@ -411,7 +411,7 @@ class TestCalculateOffsets:
         std_abbrev="STD",
     )
 
-    # Some timezones appear to be "always DST", like Africa/Casablanca
+    # Some time zones appear to be "always DST", like Africa/Casablanca
     TZ_ALWAYS_DST = TzStr(
         std=7200,
         dst=Dst(
