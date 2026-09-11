@@ -4,7 +4,10 @@
 ``Time``
 ========
 
+``Time.MIDNIGHT`` is another name for ``Time.MIN``, and ``Time.NOON`` is
+twelve o'clock.
+
 .. autoclass:: whenever.Time
    :members:
-   :special-members: __eq__, __lt__, __le__, __gt__, __ge__
+   :special-members:
 

@@ -1,39 +1,25 @@
 //! Functions for dealing with Python tuples.
-use super::{base::*, exc::*, refs::*};
+use super::{base::*, exc::*, refs::*, typed::*};
 use pyo3_ffi::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PyTuple {
-    obj: PyObj,
-}
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TupleTag;
 
-impl PyBase for PyTuple {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyTuple {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyTuple {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+impl TypeTag for TupleTag {
+    fn check_exact(obj: PyObj) -> bool {
         unsafe { PyTuple_CheckExact(obj.as_ptr()) != 0 }
     }
 
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn check(obj: PyObj) -> bool {
         unsafe { PyTuple_Check(obj.as_ptr()) != 0 }
     }
 }
 
-impl PyTuple {
+pub(crate) type PyTuple = Typed<TupleTag>;
+
+impl Typed<TupleTag> {
     pub(crate) fn len(&self) -> Py_ssize_t {
-        unsafe { PyTuple_GET_SIZE(self.obj.as_ptr()) }
+        unsafe { PyTuple_GET_SIZE(self.as_ptr()) }
     }
 
     pub(crate) fn iter(&self) -> PyTupleIter {

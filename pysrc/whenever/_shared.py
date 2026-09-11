@@ -20,6 +20,7 @@ from ._common import (
     _Base,
     add_alternate_constructors,
     final,
+    warn_deprecated,
 )
 from ._math import days_in_month, is_leap
 from ._parse import _strict_int, monthday_from_iso, yearmonth_from_iso
@@ -77,6 +78,9 @@ class Weekday(enum.Enum):
     SATURDAY = 6
     SUNDAY = 7
 
+    def __repr__(self) -> str:
+        return f"Weekday.{self.name}"
+
 
 # Convenience constants, also available as top-level whenever.MONDAY etc.
 MONDAY = Weekday.MONDAY
@@ -110,9 +114,9 @@ class YearMonth(_Base):
     __slots__ = ("_py",)
 
     MIN: ClassVar[YearMonth]
-    """The minimum possible year-month"""
+    """The minimum possible value of this type."""
     MAX: ClassVar[YearMonth]
-    """The maximum possible year-month"""
+    """The maximum possible value of this type."""
 
     # Overloads for a nice autodoc.
     # Proper typing of the constructors is handled in the type stubs
@@ -127,7 +131,7 @@ class YearMonth(_Base):
     def __init__(self, year: int, month: int) -> None:
         self._py = _date(year, month, 1)
 
-    __init__ = add_alternate_constructors(__init__)
+    __init__ = add_alternate_constructors(__init__, None)
 
     def _init_from_iso(self, s: str) -> None:
         self._py = yearmonth_from_iso(s)
@@ -189,6 +193,39 @@ class YearMonth(_Base):
             )
         return YearMonth._from_py_unchecked(self._py.replace(**kwargs))
 
+    def add(self, *, years: int = 0, months: int = 0) -> YearMonth:
+        """Shift this year-month by a number of years and months.
+
+        >>> YearMonth(2021, 11).add(months=3)
+        YearMonth("2022-02")
+        >>> YearMonth(2021, 1).add(years=-1, months=-1)
+        YearMonth("2019-12")
+
+        An :class:`ItemizedDateDelta` is a mapping, so it unpacks into the
+        keyword arguments:
+
+        >>> YearMonth(2024, 3).add(**ItemizedDateDelta(years=1, months=2))
+        YearMonth("2025-05")
+
+        Raises ``ValueError`` if the result falls outside ``MIN``..``MAX``.
+        """
+        year, month = divmod(
+            self.year * 12 + self.month - 1 + years * 12 + months,
+            12,
+        )
+        return YearMonth._from_py_unchecked(
+            self._py.replace(year=year, month=month + 1)
+        )
+
+    def subtract(self, *, years: int = 0, months: int = 0) -> YearMonth:
+        """Shift this year-month backwards by a number of years and months.
+        Equivalent to :meth:`add` with negated arguments.
+
+        >>> YearMonth(2021, 1).subtract(months=1)
+        YearMonth("2020-12")
+        """
+        return self.add(years=-years, months=-months)
+
     def on_day(self, day: int, /) -> Date:
         """Create a date from this year-month with a given day
 
@@ -199,12 +236,13 @@ class YearMonth(_Base):
 
         return Date(self._py.replace(day=day))
 
-    __str__ = format_iso
+    def __str__(self) -> str:
+        return self.format_iso()
 
     def __repr__(self) -> str:
         return f'YearMonth("{self}")'
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: object, /) -> bool:
         """Compare for equality
 
         >>> ym = YearMonth(2021, 1)
@@ -217,22 +255,22 @@ class YearMonth(_Base):
             return NotImplemented
         return self._py == other._py
 
-    def __lt__(self, other: YearMonth) -> bool:
+    def __lt__(self, other: YearMonth, /) -> bool:
         if not isinstance(other, YearMonth):
             return NotImplemented
         return self._py < other._py
 
-    def __le__(self, other: YearMonth) -> bool:
+    def __le__(self, other: YearMonth, /) -> bool:
         if not isinstance(other, YearMonth):
             return NotImplemented
         return self._py <= other._py
 
-    def __gt__(self, other: YearMonth) -> bool:
+    def __gt__(self, other: YearMonth, /) -> bool:
         if not isinstance(other, YearMonth):
             return NotImplemented
         return self._py > other._py
 
-    def __ge__(self, other: YearMonth) -> bool:
+    def __ge__(self, other: YearMonth, /) -> bool:
         if not isinstance(other, YearMonth):
             return NotImplemented
         return self._py >= other._py
@@ -319,9 +357,9 @@ class MonthDay(_Base):
     __slots__ = ("_py",)
 
     MIN: ClassVar[MonthDay]
-    """The minimum possible month-day"""
+    """The minimum possible value of this type."""
     MAX: ClassVar[MonthDay]
-    """The maximum possible month-day"""
+    """The maximum possible value of this type."""
 
     # Overloads for a nice autodoc.
     # Proper typing of the constructors is handled in the type stubs
@@ -336,7 +374,7 @@ class MonthDay(_Base):
     def __init__(self, month: int, day: int) -> None:
         self._py = _date(_DUMMY_LEAP_YEAR, month, day)
 
-    __init__ = add_alternate_constructors(__init__)
+    __init__ = add_alternate_constructors(__init__, None)
 
     def _init_from_iso(self, s: str) -> None:
         self._py = monthday_from_iso(s)
@@ -419,22 +457,35 @@ class MonthDay(_Base):
 
         return Date(self._py.replace(year=year))
 
-    def is_leap(self) -> bool:
+    def is_leap_day(self) -> bool:
         """Check if the month-day is February 29th
 
-        >>> MonthDay(2, 29).is_leap()
+        >>> MonthDay(2, 29).is_leap_day()
         True
-        >>> MonthDay(3, 1).is_leap()
+        >>> MonthDay(3, 1).is_leap_day()
         False
         """
         return self._py.month == 2 and self._py.day == 29
 
-    __str__ = format_iso
+    def is_leap(self) -> bool:
+        """Check if the month-day is February 29th.
+
+        .. deprecated:: 0.11
+           Use :meth:`is_leap_day` instead.
+        """
+        warn_deprecated(
+            "is_leap() is deprecated; use is_leap_day() instead",
+            stacklevel=2,
+        )
+        return self.is_leap_day()
+
+    def __str__(self) -> str:
+        return self.format_iso()
 
     def __repr__(self) -> str:
         return f'MonthDay("{self}")'
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: object, /) -> bool:
         """Compare for equality
 
         >>> md = MonthDay(10, 1)
@@ -447,22 +498,22 @@ class MonthDay(_Base):
             return NotImplemented
         return self._py == other._py
 
-    def __lt__(self, other: MonthDay) -> bool:
+    def __lt__(self, other: MonthDay, /) -> bool:
         if not isinstance(other, MonthDay):
             return NotImplemented
         return self._py < other._py
 
-    def __le__(self, other: MonthDay) -> bool:
+    def __le__(self, other: MonthDay, /) -> bool:
         if not isinstance(other, MonthDay):
             return NotImplemented
         return self._py <= other._py
 
-    def __gt__(self, other: MonthDay) -> bool:
+    def __gt__(self, other: MonthDay, /) -> bool:
         if not isinstance(other, MonthDay):
             return NotImplemented
         return self._py > other._py
 
-    def __ge__(self, other: MonthDay) -> bool:
+    def __ge__(self, other: MonthDay, /) -> bool:
         if not isinstance(other, MonthDay):
             return NotImplemented
         return self._py >= other._py
@@ -529,9 +580,9 @@ class IsoWeekDate(_Base):
     __slots__ = ("_year", "_week", "_weekday")
 
     MIN: ClassVar[IsoWeekDate]
-    """The minimum possible ISO week date"""
+    """The minimum possible value of this type."""
     MAX: ClassVar[IsoWeekDate]
-    """The maximum possible ISO week date"""
+    """The maximum possible value of this type."""
 
     if not TYPE_CHECKING:
 
@@ -539,11 +590,9 @@ class IsoWeekDate(_Base):
         def __init__(self, iso_string: str, /) -> None: ...
 
         @overload
-        def __init__(
-            self, year: int, week: int, weekday: Weekday, /
-        ) -> None: ...
+        def __init__(self, year: int, week: int, weekday: Weekday) -> None: ...
 
-    def __init__(self, year: int, week: int, weekday: Weekday, /) -> None:
+    def __init__(self, year: int, week: int, weekday: Weekday) -> None:
         if not isinstance(weekday, Weekday):
             raise TypeError("weekday must be a Weekday")
         max_weeks = 53 if _is_long_year(year) else 52
@@ -555,7 +604,7 @@ class IsoWeekDate(_Base):
         self._week = week
         self._weekday = weekday
 
-    __init__ = add_alternate_constructors(__init__)
+    __init__ = add_alternate_constructors(__init__, None)
 
     def _init_from_iso(self, s: str) -> None:
         year, week, day = _parse_iso_week_date(s)
@@ -670,7 +719,7 @@ class IsoWeekDate(_Base):
     def __repr__(self) -> str:
         return f'IsoWeekDate("{self}")'
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: object, /) -> bool:
         """Compare for equality
 
         >>> IsoWeekDate(2024, 1, Weekday.MONDAY) == IsoWeekDate(2024, 1, Weekday.MONDAY)
@@ -684,7 +733,7 @@ class IsoWeekDate(_Base):
             and self._weekday is other._weekday
         )
 
-    def __lt__(self, other: IsoWeekDate) -> bool:
+    def __lt__(self, other: IsoWeekDate, /) -> bool:
         if not isinstance(other, IsoWeekDate):
             return NotImplemented
         return (self._year, self._week, self._weekday.value) < (
@@ -693,7 +742,7 @@ class IsoWeekDate(_Base):
             other._weekday.value,
         )
 
-    def __le__(self, other: IsoWeekDate) -> bool:
+    def __le__(self, other: IsoWeekDate, /) -> bool:
         if not isinstance(other, IsoWeekDate):
             return NotImplemented
         return (self._year, self._week, self._weekday.value) <= (
@@ -702,7 +751,7 @@ class IsoWeekDate(_Base):
             other._weekday.value,
         )
 
-    def __gt__(self, other: IsoWeekDate) -> bool:
+    def __gt__(self, other: IsoWeekDate, /) -> bool:
         if not isinstance(other, IsoWeekDate):
             return NotImplemented
         return (self._year, self._week, self._weekday.value) > (
@@ -711,7 +760,7 @@ class IsoWeekDate(_Base):
             other._weekday.value,
         )
 
-    def __ge__(self, other: IsoWeekDate) -> bool:
+    def __ge__(self, other: IsoWeekDate, /) -> bool:
         if not isinstance(other, IsoWeekDate):
             return NotImplemented
         return (self._year, self._week, self._weekday.value) >= (
@@ -739,7 +788,7 @@ def _unpkl_iwd(data: bytes) -> IsoWeekDate:
 def _parse_iso_week_date(s: str) -> tuple[int, int, int]:
     """Parse an ISO 8601 week date string like '2024-W01-1' or '2024W011'"""
     if not s.isascii():
-        raise ValueError(f"Invalid ISO 8601 week date: {s!r}")
+        raise ValueError(f"invalid format: {s!r}")
     if len(s) == 10 and s[4] == "-" and s[5] == "W" and s[8] == "-":
         # Extended format: YYYY-Www-D
         year = _strict_int(s[:4])
@@ -751,7 +800,7 @@ def _parse_iso_week_date(s: str) -> tuple[int, int, int]:
         week = _strict_int(s[5:7])
         day = _strict_int(s[7])
     else:
-        raise ValueError(f"Invalid ISO 8601 week date: {s!r}")
+        raise ValueError(f"invalid format: {s!r}")
     if not 1 <= day <= 7:
         raise ValueError(f"Invalid ISO weekday: {day}")
     max_weeks = 53 if _is_long_year(year) else 52

@@ -1,5 +1,5 @@
 .. meta::
-   :description: Reference for whenever's enums, unions, and string literal types, including Weekday, RoundModeStr, and DisambiguateStr.
+   :description: Reference for whenever's enums, unions, and string literal types, including Weekday, RoundModeStr, DisambiguationStr, and OffsetMismatchStr.
 
 Other types
 ===========
@@ -17,12 +17,18 @@ i.e. enums, unions, and literals.
 
    See :ref:`rounding-modes` for more information.
 
-.. autotype:: DisambiguateStr
+.. autotype:: DisambiguationStr
 
    See :ref:`ambiguity` for more information.
 
+.. autotype:: DisambiguateStr
+
+   Deprecated alias of :class:`DisambiguationStr`.
+
 
 .. autotype:: DeltaUnitStr
+.. autotype:: DeltaTotalUnitStr
 .. autotype:: DateDeltaUnitStr
 .. autotype:: ExactDeltaUnitStr
 .. autotype:: OffsetMismatchStr
+.. autotype:: TimestampUnitStr

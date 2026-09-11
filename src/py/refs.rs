@@ -37,7 +37,7 @@ impl<T: PyBase> Owned<T> {
     }
 
     pub(crate) fn cast_exact<U: PyStaticType>(self) -> Result<Owned<U>, Self> {
-        if U::isinstance_exact(self.inner) {
+        if U::isinstance_exact(self.inner.as_py_obj()) {
             let ptr = self.into_raw();
             // SAFETY: the exact type check succeeded and ownership is transferred unchanged.
             Ok(unsafe { Owned::from_owned_ptr(ptr) })
@@ -47,7 +47,7 @@ impl<T: PyBase> Owned<T> {
     }
 
     pub(crate) fn cast_allow_subclass<U: PyStaticType>(self) -> Result<Owned<U>, Self> {
-        if U::isinstance(self.inner) {
+        if U::isinstance(self.inner.as_py_obj()) {
             let ptr = self.into_raw();
             // SAFETY: the type check succeeded and ownership is transferred unchanged.
             Ok(unsafe { Owned::from_owned_ptr(ptr) })

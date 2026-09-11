@@ -5,82 +5,105 @@ from datetime import (
     timedelta as _timedelta,
 )
 
-from .._common import UTC, mk_fixed_tzinfo
-from .._typing import DisambiguateStr
-from .common import Fold, Gap, Unambiguous
+from .._common import check_utc_bounds, invalid, mk_fixed_tzinfo, tzid_display
+from .._typing import DisambiguationStr
+from .common import Fold, Gap, LocalMapping, Unique
 from .tzif import TimeZone
 
 
 class RepeatedTime(ValueError):
-    """A datetime is repeated in a timezone, e.g. because of DST"""
+    """A local time that is repeated in a time zone, e.g. because of DST.
+
+    See :term:`repeated local time`.
+    """
 
     @classmethod
-    def _for_tz(cls, d: _datetime, tzid: str | None) -> RepeatedTime:
-        return cls(f"{d} is repeated in {_tzid_display(tzid)}")
+    def _for_tz(
+        cls, d: _datetime, nanos: int, tzid: str | None
+    ) -> RepeatedTime:
+        return cls(
+            f"{_local_display(d, nanos)} is repeated in {tzid_display(tzid)}"
+        )
 
 
 class SkippedTime(ValueError):
-    """A datetime is skipped in a timezone, e.g. because of DST"""
+    """A local time that is skipped in a time zone, e.g. because of DST.
+
+    See :term:`skipped local time`.
+    """
 
     @classmethod
-    def _for_tz(cls, d: _datetime, tzid: str | None) -> SkippedTime:
-        return cls(f"{d} is skipped in {_tzid_display(tzid)}")
+    def _for_tz(
+        cls, d: _datetime, nanos: int, tzid: str | None
+    ) -> SkippedTime:
+        return cls(
+            f"{_local_display(d, nanos)} is skipped in {tzid_display(tzid)}"
+        )
 
 
-def _tzid_display(tzid: str | None) -> str:
-    if tzid is None:
-        return "system timezone (with unknown ID)"
-    else:
-        return f"timezone '{tzid}'"
+def _local_display(d: _datetime, nanos: int) -> str:
+    """The local datetime as messages show it: subseconds only when nonzero."""
+    base = f"{d.date()} {d.hour:02d}:{d.minute:02d}:{d.second:02d}"
+    return base + (f".{nanos:09d}".rstrip("0") if nanos else "")
 
 
 def resolve_ambiguity(
-    dt: _datetime, tz: TimeZone, disambiguate: DisambiguateStr | _timedelta
+    dt: _datetime,
+    tz: TimeZone,
+    disambiguation: DisambiguationStr,
+    nanos: int,
 ) -> _datetime:
     assert dt.tzinfo is None, "dt must be naive"
-    if isinstance(disambiguate, _timedelta):
-        return resolve_ambiguity_using_prev_offset(dt, disambiguate, tz)
-    elif disambiguate not in ("compatible", "earlier", "later", "raise"):
-        raise ValueError(
-            "disambiguate must be 'compatible', 'earlier', 'later', or 'raise'"
-        )
+    return _resolve_ambiguity_from_mapping(
+        dt, tz, disambiguation, tz.ambiguity_for_local(dt), nanos
+    )
 
-    ambiguity = tz.ambiguity_for_local(dt)
+
+def _resolve_ambiguity_from_mapping(
+    dt: _datetime,
+    tz: TimeZone,
+    disambiguation: DisambiguationStr,
+    ambiguity: LocalMapping,
+    nanos: int,
+    /,
+) -> _datetime:
+    if disambiguation not in ("compatible", "earlier", "later", "raise"):
+        raise invalid("disambiguation", disambiguation)
     match ambiguity:
-        case Unambiguous(offset):
+        case Unique(offset):
             pass
         case Fold(_, earlier_offset, later_offset):
-            if disambiguate in ("compatible", "earlier"):
+            if disambiguation in ("compatible", "earlier"):
                 offset = earlier_offset
-            elif disambiguate == "later":
+            elif disambiguation == "later":
                 offset = later_offset
-            else:  # disambiguate == "raise"
-                raise RepeatedTime._for_tz(dt, tz.key)
+            else:  # disambiguation == "raise"
+                raise RepeatedTime._for_tz(dt, nanos, tz.key)
         case Gap(_, later_offset, earlier_offset):  # pragma: no branch
-            if disambiguate in ("compatible", "later"):
+            if disambiguation in ("compatible", "later"):
                 offset = later_offset
                 shift = later_offset - earlier_offset
-            elif disambiguate == "earlier":
+            elif disambiguation == "earlier":
                 offset = earlier_offset
                 shift = earlier_offset - later_offset
-            else:  # disambiguate == "raise"
-                raise SkippedTime._for_tz(dt, tz.key)
+            else:  # disambiguation == "raise"
+                raise SkippedTime._for_tz(dt, nanos, tz.key)
             # shift the datetime out of the gap
             dt += _timedelta(seconds=shift)
 
-    resolved = dt.replace(tzinfo=mk_fixed_tzinfo(offset))
     # This ensures we raise an exception if the instant is out of range,
     # even if the local time is valid.
-    resolved.astimezone(UTC)
-    return resolved
+    return check_utc_bounds(dt.replace(tzinfo=mk_fixed_tzinfo(offset)))
 
 
-def resolve_ambiguity_using_prev_offset(
-    dt: _datetime, prev_offset: _timedelta, tz: TimeZone
+def _resolve_ambiguity_using_prev_offset_from_mapping(
+    dt: _datetime,
+    prev_offset: _timedelta,
+    ambiguity: LocalMapping,
+    /,
 ) -> _datetime:
-    ambiguity = tz.ambiguity_for_local(dt)
     offset = int(prev_offset.total_seconds())
-    if isinstance(ambiguity, Unambiguous):
+    if isinstance(ambiguity, Unique):
         offset = ambiguity.offset
     elif isinstance(ambiguity, Fold):
         # If the offset is already valid, there's nothing to do

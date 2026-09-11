@@ -4,7 +4,7 @@ use super::{
     instant::Instant,
     itemized_date_delta::ItemizedDateDelta,
     itemized_delta::ItemizedDelta,
-    local::{Disambiguation, ResolveError, ResolvePolicy},
+    local::{LocalMapping, ResolveError, ResolvePolicy},
     offset_datetime::OffsetDateTime,
     plain_datetime::PlainDateTime,
     round,
@@ -65,36 +65,41 @@ impl ZonedDateTime {
         self.to_fixed_offset().with_date_in_tz(date, &self.tz)
     }
 
+    /// The start of this value's day and of the next, resolved the way
+    /// `start_of("day")` resolves a boundary. `day_length()` and day rounding
+    /// both read them from here, so neither can drift from the boundary.
+    pub(crate) fn day_bounds(&self) -> Option<(OffsetDateTime, OffsetDateTime)> {
+        let Self { date, ref tz, .. } = *self;
+        Some((
+            date.at(Time::MIN).resolve_derived(tz, None)?,
+            date.tomorrow()?.at(Time::MIN).resolve_derived(tz, None)?,
+        ))
+    }
+
     pub(crate) fn round_day(&self, mode: round::Mode) -> Option<OffsetDateTime> {
-        let Self {
-            date, time, ref tz, ..
-        } = *self;
-        let get_floor = || date.at(Time::MIN).resolve_compatible(tz);
-        let get_ceil = || date.tomorrow()?.at(Time::MIN).resolve_compatible(tz);
-        match mode {
-            round::Mode::Ceil | round::Mode::Expand => {
-                if time == Time::MIN {
-                    Some(self.to_fixed_offset())
-                } else {
-                    get_ceil()
-                }
+        // A day is not a fixed length, so the fraction to round is the time
+        // elapsed since the start of the day over the day's own length.
+        let (day_start, next_day_start) = self.day_bounds()?;
+        let day_ns = next_day_start
+            .to_instant()
+            .diff(day_start.to_instant())
+            .total_nanos() as u64;
+        debug_assert!(day_ns > 1);
+        let elapsed_ns = self
+            .to_fixed_offset()
+            .to_instant()
+            .diff(day_start.to_instant())
+            .total_nanos() as u64;
+        let expand = match mode {
+            round::Mode::Floor | round::Mode::Trunc => false,
+            round::Mode::Ceil | round::Mode::Expand => elapsed_ns > 0,
+            round::Mode::HalfCeil | round::Mode::HalfExpand => elapsed_ns * 2 >= day_ns,
+            // A tie rounds to the even multiple, which is the start of the day.
+            round::Mode::HalfFloor | round::Mode::HalfTrunc | round::Mode::HalfEven => {
+                elapsed_ns * 2 > day_ns
             }
-            round::Mode::Floor | round::Mode::Trunc => get_floor(),
-            _ => {
-                let time_ns = time.total_nanos();
-                let floor = get_floor()?;
-                let ceil = get_ceil()?;
-                let day_ns = ceil.to_instant().diff(floor.to_instant()).total_nanos() as u64;
-                debug_assert!(day_ns > 1);
-                let threshold = match mode {
-                    round::Mode::HalfEven => day_ns / 2 + (time_ns % 2 == 0) as u64,
-                    round::Mode::HalfFloor | round::Mode::HalfTrunc => day_ns / 2 + 1,
-                    round::Mode::HalfCeil | round::Mode::HalfExpand => day_ns / 2,
-                    _ => unreachable!(),
-                };
-                Some(if time_ns >= threshold { ceil } else { floor })
-            }
-        }
+        };
+        Some(if expand { next_day_start } else { day_start })
     }
 }
 
@@ -110,12 +115,6 @@ impl PlainDateTime {
     }
 
     #[inline]
-    pub(crate) fn resolve_compatible(self, tz: &TimeZone) -> Option<OffsetDateTime> {
-        self.resolve_in(tz, ResolvePolicy::Disambiguate(Disambiguation::Compatible))
-            .ok()
-    }
-
-    #[inline]
     pub(crate) fn resolve_preserving_offset(
         self,
         tz: &TimeZone,
@@ -123,6 +122,35 @@ impl PlainDateTime {
     ) -> Option<OffsetDateTime> {
         self.resolve_in(tz, ResolvePolicy::PreserveOffset(offset))
             .ok()
+    }
+
+    /// Resolve a local time derived from an existing value--a unit boundary or
+    /// a rounded result--rather than one the caller wrote.
+    ///
+    /// A repeated local time keeps `current` while it is still valid, and
+    /// takes the earlier occurrence otherwise. Pass `None` for a boundary that
+    /// every value on the date must share, so that the value's own offset
+    /// cannot influence it. A skipped local time snaps to the edge of the gap,
+    /// so that successive intervals stay contiguous.
+    #[inline]
+    pub(crate) fn resolve_derived(
+        self,
+        tz: &TimeZone,
+        current: Option<Offset>,
+    ) -> Option<OffsetDateTime> {
+        match tz.mapping_for_local(self.local_seconds()) {
+            LocalMapping::Unique { offset } => self.assume_offset(offset),
+            LocalMapping::Fold { before, after, .. } => {
+                self.assume_offset(if current == Some(after) {
+                    after
+                } else {
+                    before
+                })
+            }
+            LocalMapping::Gap {
+                transition, after, ..
+            } => transition.datetime(self.time.subsec).assume_offset(after),
+        }
     }
 }
 
@@ -163,7 +191,8 @@ impl Instant {
 }
 
 pub(crate) enum OffsetInIsoString {
-    Some(Offset),
+    MinutePrecision(Offset),
+    SecondPrecision(Offset),
     Z,
     Missing,
 }
@@ -175,7 +204,14 @@ pub(crate) fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(OffsetInIso
             s.take_unchecked(1);
             OffsetInIsoString::Z
         }
-        _ => OffsetInIsoString::Some(Offset::read_iso(s)?),
+        _ => {
+            let (offset, exact) = Offset::read_iso_with_precision(s)?;
+            if exact {
+                OffsetInIsoString::SecondPrecision(offset)
+            } else {
+                OffsetInIsoString::MinutePrecision(offset)
+            }
+        }
     };
     let tz = s.rest();
     (tz.len() > 2
@@ -196,7 +232,7 @@ pub(crate) struct TzFormat<'a> {
 
 impl fmt::Chunk for TzFormat<'_> {
     fn len(&self) -> usize {
-        self.tz.key.as_ref().map_or(0, |key| key.len() + 2)
+        self.tz.key.as_ref().map_or(0, |k| k.len() + 2)
     }
 
     fn write(&self, sink: &mut impl Sink) {

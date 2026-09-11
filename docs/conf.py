@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import importlib.metadata
+import re
+import warnings
 
 import sphinx
 
 sphinx.SPHINX_RUNNING = True
+
+# viewcode resolves the deprecated ``.. data:: TZPATH`` reference entry by
+# attribute access, which is exactly what the deprecation warns about.
+# Remove together with the entry in 1.0.
+warnings.filterwarnings("ignore", message="TZPATH is deprecated")
 
 # -- Project information -----------------------------------------------------
 
@@ -20,6 +27,7 @@ release = metadata["Version"]
 nitpicky = True
 nitpick_ignore = [
     ("py:class", "whenever._pywhenever._T"),
+    ("py:class", "_SystemTZ"),
     (
         "py:class",
         "TypeAliasForwardRef",
@@ -46,8 +54,9 @@ redirects = {
     "api": "reference/datetime.html",
     "benchmarks": "performance.html",
     "deltas": "reference/deltas.html",
+    "guide/ambiguity": "resolving-local-times.html",
     "overview": "guide/index.html",
-    "reference/deprecated": "changelog.html",
+    "reference/deprecated": "../changelog.html",
 }
 html_static_path = ["_static"]
 html_title = "Whenever"
@@ -58,7 +67,7 @@ html_context = {"homepage_title": "Whenever — type-safe datetimes for Python"}
 html_baseurl = "https://whenever.readthedocs.io/en/latest/"
 
 master_doc = "index"
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "adr", "internal", "Thumbs.db", ".DS_Store"]
 myst_heading_anchors = 2
 myst_enable_extensions = [
     "colon_fence",
@@ -94,8 +103,89 @@ maximum_signature_line_length = 150
 autodoc_type_aliases = {
     "RoundModeStr": "RoundModeStr",
     "DeltaUnitStr": "DeltaUnitStr",
+    "DeltaTotalUnitStr": "DeltaTotalUnitStr",
     "DateDeltaUnitStr": "DateDeltaUnitStr",
     "ExactDeltaUnitStr": "ExactDeltaUnitStr",
+    "DisambiguationStr": "DisambiguationStr",
     "DisambiguateStr": "DisambiguateStr",
     "OffsetMismatchStr": "OffsetMismatchStr",
+    "TimestampUnitStr": "TimestampUnitStr",
 }
+
+
+# The 0.11 compatibility shims absorb their old keyword through a `**kwargs`
+# catch-all. That's an implementation detail, so hide it from the rendered
+# signature. Remove along with the shims in 1.0.
+_SHIM_KWARGS_MEMBERS = frozenset(
+    {
+        "whenever.Date.parse",
+        "whenever.Instant.parse",
+        "whenever.OffsetDateTime.parse",
+        "whenever.PlainDateTime.parse",
+        "whenever.PlainDateTime.assume_tz",
+        "whenever.PlainDateTime.assume_system_tz",
+        "whenever.Time.parse",
+        "whenever.ZonedDateTime.parse",
+        "whenever.ZonedDateTime.parse_iso",
+        "whenever.ZonedDateTime.from_system_tz",
+        "whenever.ZonedDateTime.format_iso",
+        "whenever.ZonedDateTime.replace_date",
+        "whenever.ZonedDateTime.replace_time",
+    }
+)
+_SHIM_KWARGS_PARAM = re.compile(r",\s*\*\*kwargs(?::[^,)]*)?")
+
+
+def _hide_shim_kwargs(
+    app, what, name, obj, options, signature, return_annotation
+):
+    if name in _SHIM_KWARGS_MEMBERS and signature:
+        stripped = _SHIM_KWARGS_PARAM.sub("", signature)
+        assert stripped != signature, f"no catch-all to hide in {name}"
+        return stripped, return_annotation
+    return None
+
+
+# Two renderings Sphinx 9.1 gets wrong inside signatures, fixed on the doctree
+# because `@overload` variants never pass through `autodoc-process-signature`:
+#
+# - an alias from `autodoc_type_aliases` nested in a generic or union prints
+#   as `TypeAliasForwardRef('DeltaUnitStr')` instead of `DeltaUnitStr`;
+# - the system time zone sentinel is annotated with its private class
+#   `_SystemTZ`, which should read (and link) as `SYSTEM_TZ`.
+_SYSTEM_TZ_CLASS = re.compile(r"(?:whenever\.(?:_common\.)?)?_SystemTZ")
+
+
+def _fix_signature_nodes(app, doctree):
+    from docutils import nodes
+    from sphinx import addnodes
+
+    for sig in doctree.findall(addnodes.desc_signature):
+        for xref in list(sig.findall(addnodes.pending_xref)):
+            if _SYSTEM_TZ_CLASS.fullmatch(xref.get("reftarget", "")):
+                xref["reftarget"] = "whenever.SYSTEM_TZ"
+                xref["reftype"] = "data"
+        for text in list(sig.findall(nodes.Text)):
+            if _SYSTEM_TZ_CLASS.fullmatch(text.astext()):
+                text.parent.replace(text, nodes.Text("SYSTEM_TZ"))
+        # The forward reference is tokenized into four siblings:
+        # `TypeAliasForwardRef`, `(`, `'Name'`, and `)`.
+        for text in list(sig.findall(nodes.Text)):
+            if text.astext() != "TypeAliasForwardRef":
+                continue
+            node, parent = text, text.parent
+            if len(parent) == 1:
+                node, parent = parent, parent.parent
+            i = parent.index(node)
+            tokens = [n.astext() for n in parent[i : i + 4]]
+            if len(tokens) < 4 or tokens[1] != "(" or tokens[3] != ")":
+                continue  # pragma: no cover
+            name = tokens[2].strip("'\"")
+            for _ in range(4):
+                parent.remove(parent[i])
+            parent.insert(i, addnodes.desc_sig_name(name, name))
+
+
+def setup(app):
+    app.connect("autodoc-process-signature", _hide_shim_kwargs)
+    app.connect("doctree-read", _fix_signature_nodes)

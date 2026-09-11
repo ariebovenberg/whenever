@@ -1,5 +1,5 @@
 .. meta::
-   :description: Reference for miscellaneous API: patch_current_time, TZPATH, clear_tzcache(), reset_tzpath(), available_timezones(), and reset_system_tz().
+   :description: Reference for miscellaneous API: patch_current_time and TimePatch, the SYSTEM_TZ sentinel, get_tzpath(), clear_tzcache(), reset_tzpath(), available_timezones(), and reset_system_tz().
 
 Miscellaneous
 =============
@@ -13,24 +13,40 @@ This section contains API documentation for miscellaneous functions and data
 
     other-types
     exceptions
-    deprecated
 
 
 Context managers
 ----------------
 
-.. autoclass:: patch_current_time
+.. autofunction:: patch_current_time
+
+.. autoclass:: TimePatch
+   :members:
 
 
-Timezone data
--------------
+System time zone
+----------------
+
+.. data:: SYSTEM_TZ
+
+   A public sentinel that requests the system time zone. Pass it where a named
+   time zone is accepted to resolve the system time zone at call time, for
+   example ``ZonedDateTime.now(SYSTEM_TZ)`` or
+   ``plain.assume_tz(SYSTEM_TZ)``. The returned datetime stores the resolved
+   time zone, not the sentinel itself.
+
+   See :ref:`systemtime` for caching, reset behavior, and system time zones
+   without a time zone ID.
+
+
+Time zone data
+--------------
+
+.. autofunction:: get_tzpath
 
 .. data:: TZPATH
-   :type: tuple[str, ...]
 
-   The paths in which ``whenever`` will search for timezone data.
-   By default, this is determined the same way as :data:`zoneinfo.TZPATH`,
-   although you can override it using :func:`reset_tzpath` for ``whenever`` specifically.
+   Deprecated: use :func:`get_tzpath`. Removed in 1.0.
 
 .. autofunction:: clear_tzcache
 .. autofunction:: reset_tzpath

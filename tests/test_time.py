@@ -12,14 +12,9 @@ from whenever import (
     PlainDateTime,
     Time,
     TimeDelta,
-    WheneverDeprecationWarning,
 )
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
-
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 class TestInit:
@@ -115,7 +110,7 @@ class TestFormatIso:
 
     def test_invalid(self):
         t = Time(1, 2, 3, nanosecond=40_000_000)
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
             t.format_iso(unit="foo")  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="unit"):
@@ -267,7 +262,7 @@ class TestParseIso:
     def test_invalid(self, input):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(input)),
+            match=r"invalid format.*" + re.escape(repr(input)),
         ):
             Time.parse_iso(input)
 
@@ -314,19 +309,6 @@ class TestInitFromPy:
         assert Time(SubclassTime(1, 2, 3, 4)) == Time(
             1, 2, 3, nanosecond=4_000
         )
-
-
-class TestDeprecations:
-    def test_py_time(self):
-        t = Time(1, 2, 3, nanosecond=4_000_000)
-        with pytest.warns(WheneverDeprecationWarning):
-            result = t.py_time()
-        assert result == py_time(1, 2, 3, 4_000)
-
-    def test_from_py_time(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = Time.from_py_time(py_time(1, 2, 3, 4))
-        assert result == Time(1, 2, 3, nanosecond=4_000)
 
 
 def test_comparison():
@@ -560,7 +542,7 @@ class TestRound:
 
     def test_invalid_mode(self):
         t = Time(1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
+        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
             t.round("second", mode="foo")  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
@@ -582,7 +564,7 @@ class TestRound:
 
     def test_invalid_unit(self):
         t = Time(1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
             t.round("foo")  # type: ignore[call-overload]
 
     def test_no_day_unit(self):
@@ -630,10 +612,3 @@ def test_compatible_unpickle():
         b"kl_time\x94\x93\x94C\x07\x01\x02\x03\xa0\x0f\x00\x00\x94\x85\x94R\x94."
     )
     assert pickle.loads(dumped) == Time(1, 2, 3, nanosecond=4_000)
-
-
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class SubclassTime(Time):  # type: ignore[misc]
-            pass

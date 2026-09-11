@@ -7,10 +7,6 @@ from whenever import Date, MonthDay
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
-
 
 class TestInit:
     def test_valid(self):
@@ -53,12 +49,12 @@ def test_properties():
     assert md.day == 14
 
 
-def test_is_leap():
-    assert MonthDay(2, 29).is_leap()
-    assert not MonthDay(2, 28).is_leap()
-    assert not MonthDay(3, 1).is_leap()
-    assert not MonthDay(1, 1).is_leap()
-    assert not MonthDay(12, 31).is_leap()
+def test_is_leap_day():
+    assert MonthDay(2, 29).is_leap_day()
+    assert not MonthDay(2, 28).is_leap_day()
+    assert not MonthDay(3, 1).is_leap_day()
+    assert not MonthDay(1, 1).is_leap_day()
+    assert not MonthDay(12, 31).is_leap_day()
 
 
 def test_eq():
@@ -170,7 +166,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
+            match=r"invalid format.*" + re.escape(repr(s)),
         ):
             MonthDay.parse_iso(s)
 
@@ -250,10 +246,3 @@ def test_unpickle_compatibility():
         b"d\x94\x93\x94C\x02\x0b\x01\x94\x85\x94R\x94."
     )
     assert pickle.loads(dumped) == MonthDay(11, 1)
-
-
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class SubclassDate(MonthDay):  # type: ignore[misc]
-            pass

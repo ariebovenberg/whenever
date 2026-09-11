@@ -20,6 +20,24 @@ class TestConstructor:
         assert iwd.week == 1
         assert iwd.weekday == MONDAY
 
+    def test_keyword_arguments(self):
+        assert IsoWeekDate(year=2024, week=1, weekday=MONDAY) == IsoWeekDate(
+            2024, 1, MONDAY
+        )
+
+    def test_mixed_arguments(self):
+        assert IsoWeekDate(2024, week=1, weekday=MONDAY) == IsoWeekDate(
+            2024, 1, MONDAY
+        )
+
+    def test_duplicate_argument(self):
+        with pytest.raises(TypeError):
+            IsoWeekDate(2024, 1, MONDAY, year=2025)  # type: ignore[call-overload]
+
+    def test_unexpected_keyword_argument(self):
+        with pytest.raises(TypeError):
+            IsoWeekDate(2024, 1, MONDAY, era="CE")  # type: ignore[call-overload]
+
     def test_from_string(self):
         iwd = IsoWeekDate("2024-W01-1")
         assert iwd.year == 2024
@@ -294,9 +312,13 @@ class TestPickle:
 class TestMinMax:
     def test_min_exists(self):
         assert isinstance(IsoWeekDate.MIN, IsoWeekDate)
+        assert IsoWeekDate.MIN == IsoWeekDate(1, 1, Weekday.MONDAY)
+        assert IsoWeekDate.MIN.date() == Date.MIN
 
     def test_max_exists(self):
         assert isinstance(IsoWeekDate.MAX, IsoWeekDate)
+        assert IsoWeekDate.MAX == IsoWeekDate(9999, 52, Weekday.FRIDAY)
+        assert IsoWeekDate.MAX.date() == Date.MAX
 
     def test_min_le_max(self):
         assert IsoWeekDate.MIN <= IsoWeekDate.MAX

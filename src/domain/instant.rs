@@ -43,13 +43,6 @@ impl Instant {
             })
     }
 
-    pub(crate) fn from_timestamp_millis(millis: i64) -> Option<Self> {
-        Some(Self {
-            epoch: EpochSecs::new(millis.div_euclid(1_000))?,
-            subsec: SubSecNanos::new_unchecked(millis.rem_euclid(1_000) as i32 * 1_000_000),
-        })
-    }
-
     pub(crate) fn from_timestamp_nanos(timestamp: i128) -> Option<Self> {
         i64::try_from(timestamp.div_euclid(1_000_000_000))
             .ok()

@@ -1,4 +1,5 @@
 //! Module with reusable components used elsewhere in the crate
+pub mod compat;
 pub mod difference_args;
 pub mod disambiguation;
 pub mod fmt;

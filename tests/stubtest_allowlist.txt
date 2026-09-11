@@ -1,0 +1,57 @@
+# Findings that name a limit of stubtest, never a defect. Anything else
+# stubtest reports is a stub or a runtime bug.
+
+# The private submodules are not part of the stub.
+whenever\._.*
+
+# Literal aliases are not unions (stubtest wants a Union for a TypeAlias).
+whenever\.DateDeltaUnitStr
+whenever\.DeltaTotalUnitStr
+whenever\.DeltaUnitStr
+whenever\.DisambiguateStr
+whenever\.DisambiguationStr
+whenever\.ExactDeltaUnitStr
+whenever\.OffsetMismatchStr
+whenever\.RoundModeStr
+whenever\.TimestampUnitStr
+
+# The constructors dispatch on their arguments. The stub spells them as
+# overloads of `__init__`; the runtime is a `*args` dispatcher (pure Python)
+# or a `__new__` without a text signature (Rust), and stubtest asks for
+# stubs written for `__new__` instead.
+whenever\.Date\.__init__
+whenever\.Time\.__init__
+whenever\.TimeDelta\.__init__
+whenever\.Instant\.__init__
+whenever\.OffsetDateTime\.__init__
+whenever\.ZonedDateTime\.__init__
+whenever\.PlainDateTime\.__init__
+
+# Session 9 of GRILLING_SCHEDULE.md decides whether these belong in the stub.
+whenever\..*\.__copy__
+whenever\..*\.__deepcopy__
+whenever\..*\.__get_pydantic_core_schema__
+
+# Session 6 of GRILLING_SCHEDULE.md decides the operator declarations of
+# `Date` and the reflected operators of the itemized deltas.
+whenever\.Date\.__add__
+whenever\.Date\.__sub__
+whenever\.ItemizedDelta\.__radd__
+whenever\.ItemizedDelta\.__rsub__
+whenever\.ItemizedDateDelta\.__radd__
+whenever\.ItemizedDateDelta\.__rsub__
+
+# The 0.11 deprecation shims absorb their old keyword (`format=`,
+# `disambiguate=`, `tz=`) through a catch-all that the Rust text signatures
+# do not list. Remove with the shims in 1.0.
+whenever\..*\.parse
+whenever\.PlainDateTime\.assume_system_tz
+whenever\.PlainDateTime\.assume_tz
+whenever\.ZonedDateTime\.add
+whenever\.ZonedDateTime\.format_iso
+whenever\.ZonedDateTime\.from_system_tz
+whenever\.ZonedDateTime\.parse_iso
+whenever\.ZonedDateTime\.replace
+whenever\.ZonedDateTime\.replace_date
+whenever\.ZonedDateTime\.replace_time
+whenever\.ZonedDateTime\.subtract

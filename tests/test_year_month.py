@@ -3,13 +3,10 @@ import re
 from copy import copy, deepcopy
 
 import pytest
-from whenever import Date, YearMonth
+from typing_extensions import assert_type
+from whenever import Date, ItemizedDateDelta, YearMonth
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
-
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 class TestInit:
@@ -51,6 +48,60 @@ def test_properties():
     ym = YearMonth(2021, 12)
     assert ym.year == 2021
     assert ym.month == 12
+
+
+class TestShift:
+    @pytest.mark.parametrize(
+        ("start", "kwargs", "expected"),
+        [
+            (YearMonth(2021, 1), {"years": 2}, YearMonth(2023, 1)),
+            (YearMonth(2021, 1), {"months": 13}, YearMonth(2022, 2)),
+            (YearMonth(2021, 1), {"months": -1}, YearMonth(2020, 12)),
+            (
+                YearMonth(2021, 6),
+                {"years": -1, "months": 7},
+                YearMonth(2021, 1),
+            ),
+        ],
+    )
+    def test_add(self, start, kwargs, expected):
+        assert start.add(**kwargs) == expected
+
+    def test_subtract(self):
+        assert YearMonth(2021, 1).subtract(years=1, months=2) == YearMonth(
+            2019, 11
+        )
+
+    def test_noop(self):
+        value = YearMonth(2021, 1)
+        assert value.add() == value
+        assert value.subtract() == value
+
+    # mypy rejects `**` unpacking of a mapping whose keys are str literals
+    # ("must have string keys"), so the idiom needs an ignore.
+    def test_delta_unpacks(self):
+        delta = ItemizedDateDelta(years=1, months=2)
+        result = YearMonth(2024, 3).add(**delta)  # type: ignore[arg-type]
+        assert_type(result, YearMonth)
+        assert result == YearMonth(2025, 5)
+        assert YearMonth(2024, 3).subtract(**delta) == YearMonth(  # type: ignore[arg-type]
+            2023, 1
+        )
+
+    def test_delta_with_day_units(self):
+        with pytest.raises(TypeError, match="days"):
+            YearMonth(2024, 3).add(**ItemizedDateDelta(months=1, days=1))  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "operation",
+        [
+            lambda: YearMonth.MAX.add(months=1),
+            lambda: YearMonth.MIN.subtract(months=1),
+        ],
+    )
+    def test_out_of_range(self, operation):
+        with pytest.raises(ValueError):
+            operation()
 
 
 def test_eq():
@@ -158,7 +209,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
+            match=r"invalid format.*" + re.escape(repr(s)),
         ):
             YearMonth.parse_iso(s)
 
@@ -235,13 +286,6 @@ def test_unpickle_compatibility():
         b"m\x94\x93\x94C\x03\xe5\x07\x01\x94\x85\x94R\x94."
     )
     assert pickle.loads(dumped) == YearMonth(2021, 1)
-
-
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class SubclassDate(YearMonth):  # type: ignore[misc]
-            pass
 
 
 class TestDaysInMonth:

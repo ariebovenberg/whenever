@@ -1,5 +1,7 @@
 //! Functionality related to Python type objects
-use super::{base::*, dict::PyDict, exc::*, misc::not_implemented, module::*, refs::*};
+use super::{
+    base::*, defs::PyDefSlice, dict::PyDict, exc::*, misc::not_implemented, module::*, refs::*,
+};
 use crate::pymodule::State;
 use core::{
     ffi::{CStr, c_int},
@@ -9,7 +11,7 @@ use pyo3_ffi::*;
 
 /// Wrapper around PyTypeObject.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct PyType {
     obj: PyObj,
 }
@@ -95,7 +97,7 @@ fn binary_call<'a, T: PyPayload>(
     type_a: PyType,
     type_b: PyType,
 ) -> BinaryCall<'a, T> {
-    if type_a == type_b {
+    if type_a.ptr_eq(type_b) {
         // SAFETY: binary_operation's type parameter matches the slot's left type,
         // and equal types mean the right operand has the same representation.
         return BinaryCall::SameType {
@@ -107,10 +109,15 @@ fn binary_call<'a, T: PyPayload>(
     let (Some(module_a), Some(module_b)) = (type_a.get_module(), type_b.get_module()) else {
         return BinaryCall::OtherTypes;
     };
-    if module_a.is(module_b) {
-        // SAFETY: whenever binary slots never return NotImplemented for two extension types,
-        // so equal modules imply that the left operand is this slot's declared type.
+    if module_a.ptr_eq(module_b) {
+        // SAFETY: `state()` only requires the type to belong to our module—just verified—
+        // not that its instances actually embed `T`. No payload data is touched before
+        // the class check below rules out a mismatch.
         let cls: PyClass<T> = unsafe { type_a.assume_class() };
+        if !cls.as_type().ptr_eq(T::class(cls.state()).as_type()) {
+            return BinaryCall::OtherTypes;
+        }
+        // SAFETY: the left operand's type is this slot's declared class.
         let slf = unsafe { PyRef::from_obj_unchecked(a) };
         BinaryCall::ExtTypes { cls, slf, other: b }
     } else {
@@ -163,10 +170,10 @@ impl FromPy for PyType {
 }
 
 impl PyStaticType for PyType {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+    fn isinstance_exact(obj: PyObj) -> bool {
         unsafe { PyType_CheckExact(obj.as_ptr()) != 0 }
     }
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn isinstance(obj: PyObj) -> bool {
         unsafe { PyType_Check(obj.as_ptr()) != 0 }
     }
 }
@@ -214,7 +221,7 @@ impl std::fmt::Display for PyType {
 /// `#[repr(transparent)]` so that `*mut PyClass<T>` can be cast to
 /// `*mut *mut PyObject` in `module_clear` (same as PyType → PyObj chain).
 #[repr(transparent)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct PyClass<T: PyPayload> {
     py_type: PyType,
     type_rust: std::marker::PhantomData<T>,
@@ -272,6 +279,9 @@ impl<T: PyPayload> From<PyClass<T>> for PyType {
 
 /// A trait for Rust structs that can be embedded in a Python heap object.
 pub(crate) trait PyPayload: Sized {
+    /// The class in this module whose instances embed `Self`.
+    fn class(state: &State) -> PyClass<Self>;
+
     /// Allocate a new Python object wrapping this data.
     #[inline]
     fn to_obj(self, cls: PyClass<Self>) -> PyReturn {
@@ -364,7 +374,7 @@ pub(crate) struct PyObjectLayout<T: PyPayload> {
 
 pub(crate) const fn type_spec<T: PyPayload>(
     name: &CStr,
-    slots: &'static [PyType_Slot],
+    slots: &'static PyDefSlice<PyType_Slot>,
 ) -> PyType_Spec {
     PyType_Spec {
         name: name.as_ptr().cast(),
@@ -374,17 +384,16 @@ pub(crate) const fn type_spec<T: PyPayload>(
         // between the class and the instance.
         // This allows us to keep our types GC-free.
         flags: (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_IMMUTABLETYPE) as _,
-        slots: slots.as_ptr().cast_mut(),
+        slots: slots.as_mut_ptr(),
     }
 }
 
-pub(crate) extern "C" fn generic_dealloc(slf: PyObj) {
+pub(crate) extern "C" fn generic_dealloc<T: PyPayload>(slf: PyObj) {
     let cls = slf.type_().as_ptr().cast::<PyTypeObject>();
+    // Run the payload's destructor before freeing. Compiles to nothing for Copy payloads.
+    unsafe { core::ptr::drop_in_place(&raw mut (*slf.as_ptr().cast::<PyObjectLayout<T>>()).data) };
     unsafe {
-        let tp_free = PyType_GetSlot(cls, Py_tp_free);
-        debug_assert_ne!(tp_free, core::ptr::null_mut());
-        let tp_free: freefunc = std::mem::transmute(tp_free);
-        tp_free(slf.as_ptr().cast());
+        (*cls).tp_free.unwrap()(slf.as_ptr().cast());
         Py_DECREF(cls.cast());
     }
 }

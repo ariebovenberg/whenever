@@ -24,9 +24,9 @@ myst:
    isoweekdate
 ```
 
-This section describes the "smaller" date & time types provided by
-`whenever`: {class}`Date`, {class}`Time`, {class}`YearMonth`, {class}`MonthDay`,
-and {class}`IsoWeekDate`.
+This section describes the **partial types**: the types that hold part of
+a datetime. They are {class}`Date`, {class}`Time`, {class}`YearMonth`,
+{class}`MonthDay`, and {class}`IsoWeekDate`.
 
 ## Overview
 
@@ -60,7 +60,7 @@ PlainDateTime("2023-06-15T09:00:00")
 
 ## Time
 
-{class}`Time` represents a time of day, independent of any date or timezone.
+{class}`Time` represents a time of day, independent of any date or time zone.
 Sub-second precision is supported down to nanoseconds.
 
 ```python
@@ -76,6 +76,21 @@ partial date specifications (e.g. a birthday or an annual deadline):
 ```python
 >>> YearMonth(2024, 3).on_day(22)
 Date("2024-03-22")
+>>> YearMonth(2024, 3).add(months=10)
+YearMonth("2025-01")
 >>> MonthDay(2, 29).in_year(2024)
 Date("2024-02-29")
+>>> MonthDay(2, 29).is_leap_day()
+True
+```
+
+{meth}`YearMonth.add` and {meth}`~YearMonth.subtract` take `years` and
+`months` as keywords. An {class}`ItemizedDateDelta` is a mapping, so it
+unpacks into them; a delta carrying `weeks` or `days` raises `TypeError`,
+since a year-month has no day to shift:
+
+```python
+>>> delta = ItemizedDateDelta(years=1, months=2)
+>>> YearMonth(2024, 3).add(**delta)
+YearMonth("2025-05")
 ```

@@ -81,11 +81,6 @@ macro_rules! parse_args_kwargs {
 }
 
 #[inline]
-fn ptr_eq(a: PyObj, b: PyObj) -> bool {
-    a == b
-}
-
-#[inline]
 fn unicode_eq_known(a: PyObj, b: PyObj) -> bool {
     debug_assert!(unsafe { PyUnicode_Check(a.as_ptr()) != 0 });
     debug_assert!(unsafe { PyUnicode_Check(b.as_ptr()) != 0 });
@@ -112,7 +107,7 @@ where
         // This is actually the common case, as static strings are interned.
         // In the rare case they aren't, we fall back to value comparison.
         // Doing it this way is faster than always doing value comparison outright.
-        if !handler(key, value, ptr_eq)? && !handler(key, value, unicode_eq)? {
+        if !handler(key, value, |a, b| a.ptr_eq(b))? && !handler(key, value, unicode_eq)? {
             return raise_unexpected_kwarg(fname, key);
         }
     }
@@ -173,14 +168,14 @@ pub(crate) fn handle_one_arg(fname: &str, args: &[PyObj]) -> PyResult<PyObj> {
 #[cold]
 pub(crate) fn raise_unexpected_kwarg<T>(fname: &str, key: PyObj) -> PyResult<T> {
     raise_type_err(format!(
-        "{fname}() got an unexpected keyword argument: {key}"
+        "{fname}() got an unexpected keyword argument {key}"
     ))
 }
 
 #[cold]
 pub(crate) fn raise_mixed_args<T>(fname: &str) -> PyResult<T> {
     raise_type_err(format!(
-        "{fname}() can't mix positional and keyword arguments"
+        "{fname}() cannot mix positional and keyword arguments"
     ))
 }
 
@@ -190,7 +185,7 @@ pub(crate) fn find_interned_with<T, F>(value: PyObj, mut handler: F) -> Option<T
 where
     F: FnMut(PyObj, StrEqFn) -> Option<T>,
 {
-    handler(value, ptr_eq).or_else(|| {
+    handler(value, |a, b| a.ptr_eq(b)).or_else(|| {
         if unsafe { PyUnicode_Check(value.as_ptr()) } != 0 {
             handler(value, unicode_eq_known)
         } else {
@@ -221,8 +216,7 @@ pub(crate) fn match_interned_str<T: Copy>(
     value: PyObj,
     choices: &[(PyObj, T)],
 ) -> PyResult<T> {
-    find_interned(value, choices)
-        .ok_or_else_value_err(|| format!("Invalid value for {name}: {value}"))
+    find_interned(value, choices).ok_or_else_value_err(|| format!("invalid {name}: {value}"))
 }
 
 #[inline]
@@ -230,8 +224,7 @@ pub(crate) fn match_interned_str_with<T, F>(name: &str, value: PyObj, handler: F
 where
     F: FnMut(PyObj, StrEqFn) -> Option<T>,
 {
-    find_interned_with(value, handler)
-        .ok_or_else_value_err(|| format!("Invalid value for {name}: {value}"))
+    find_interned_with(value, handler).ok_or_else_value_err(|| format!("invalid {name}: {value}"))
 }
 
 pub(crate) use parse_args_kwargs;

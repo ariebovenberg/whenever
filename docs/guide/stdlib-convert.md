@@ -3,8 +3,8 @@ myst:
   html_meta:
     description: >-
       Converting between whenever types and their standard library equivalents
-      with to_stdlib() and the constructors, and which types have no stdlib
-      counterpart.
+      with to_stdlib() and the constructors, how a datetime with a ZoneInfo is
+      resolved, and which types have no stdlib counterpart.
 ---
 
 # Standard library conversions
@@ -49,6 +49,19 @@ datetime.datetime(2025, 4, 19, 15, 30, tzinfo=datetime.timezone.utc)
   Nanoseconds will be truncated to microseconds.
 * The constructor also accepts subclasses, so you can also ingest types
   from `pendulum` and `arrow` libraries.
+```
+
+```{admonition} Converting a datetime with a ZoneInfo
+:class: note
+
+{class}`~whenever.ZonedDateTime` reads such a datetime as local fields, the
+offset its {class}`~zoneinfo.ZoneInfo` computes for them, and a time zone ID.
+An ISO string with an offset and a time zone ID carries the same three things,
+so both go through the same
+{ref}`resolution flow <resolving-local-times>`. The constructor accepts
+`offset_mismatch=` and `disambiguation=`, and raises
+{exc}`~whenever.InvalidOffsetError` by default when the standard library's
+rules and *whenever*'s own rules disagree.
 ```
 
 ```{admonition} FAQ

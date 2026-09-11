@@ -6,7 +6,13 @@ from collections.abc import Sequence
 from datetime import date as _date, timedelta as _timedelta
 from typing import Literal, cast
 
-from ._typing import DateDeltaUnitStr, DeltaUnitStr, ExactDeltaUnitStr
+from ._common import INCREMENT_MSG, RANGE_MSG, invalid
+from ._typing import (
+    DateDeltaUnitStr,
+    DeltaUnitStr,
+    ExactDeltaUnitStr,
+    RoundModeStr,
+)
 
 DATE_DELTA_UNITS = cast(
     Sequence[DateDeltaUnitStr], ["years", "months", "weeks", "days"]
@@ -14,6 +20,11 @@ DATE_DELTA_UNITS = cast(
 EXACT_UNITS_STRICT = cast(
     Sequence[ExactDeltaUnitStr],
     ["hours", "minutes", "seconds", "nanoseconds"],
+)
+EXACT_TOTAL_UNITS = (
+    *EXACT_UNITS_STRICT,
+    "milliseconds",
+    "microseconds",
 )
 EXACT_UNITS = ["weeks", "days", *EXACT_UNITS_STRICT]
 DELTA_UNITS = cast(
@@ -197,23 +208,97 @@ NS_PER_UNIT_PLURAL = {
 }
 
 
+ROUND_MODES: frozenset[RoundModeStr] = frozenset(
+    (
+        "ceil",
+        "expand",
+        "floor",
+        "trunc",
+        "half_ceil",
+        "half_expand",
+        "half_floor",
+        "half_trunc",
+        "half_even",
+    )
+)
+
+
 def increment_to_ns_for_delta(unit: str, increment: int) -> int:
-    if increment < 1 or increment != int(increment):
-        raise ValueError("Invalid increment. Must be a positive integer.")
+    if not isinstance(increment, int):
+        raise TypeError("increment must be an integer")
+    if increment < 1:
+        raise ValueError(INCREMENT_MSG)
     try:
         ns_per_unit = NS_PER_UNIT_SINGULAR[unit]
     except KeyError:
-        raise ValueError(f"Invalid unit: {unit}")
+        raise invalid("unit", unit) from None
     return ns_per_unit * increment
 
 
 def increment_to_ns_for_datetime(unit: str, increment: int) -> int:
     increment_ns = increment_to_ns_for_delta(unit, increment)
     if 86_400_000_000_000 % increment_ns:
-        raise ValueError(
-            "Invalid increment. Must divide a 24-hour day evenly."
-        )
+        raise ValueError(INCREMENT_MSG)
     return increment_ns
+
+
+_FRACTIONAL_UNITS = (
+    "weeks",
+    "days",
+    "hours",
+    "minutes",
+    "seconds",
+    "milliseconds",
+    "microseconds",
+)
+
+
+def exact_units_to_nanos(
+    weeks: float = 0,
+    days: float = 0,
+    hours: float = 0,
+    minutes: float = 0,
+    seconds: float = 0,
+    milliseconds: float = 0,
+    microseconds: float = 0,
+    nanoseconds: int = 0,
+) -> int:
+    """The nanoseconds in the given exact time units.
+
+    The types are checked up front: multiplying a ``str`` would repeat it
+    instead of raising, and a float ``nanoseconds`` would leak into the sum.
+    """
+    fractional = (
+        weeks,
+        days,
+        hours,
+        minutes,
+        seconds,
+        milliseconds,
+        microseconds,
+    )
+    if not all(isinstance(v, (int, float)) for v in fractional):
+        name = next(
+            n
+            for n, v in zip(_FRACTIONAL_UNITS, fractional)
+            if not isinstance(v, (int, float))
+        )
+        raise TypeError(f"{name} must be an integer or float")
+    if not isinstance(nanoseconds, int):
+        raise TypeError("nanoseconds must be an integer")
+    try:
+        return (
+            int(weeks * 604_800_000_000_000)
+            + int(days * 86_400_000_000_000)
+            + int(hours * 3_600_000_000_000)
+            + int(minutes * 60_000_000_000)
+            + int(seconds * 1_000_000_000)
+            + int(milliseconds * 1_000_000)
+            + int(microseconds * 1_000)
+            + nanoseconds
+        )
+    except (OverflowError, ValueError):  # infinity or NaN
+        raise ValueError(RANGE_MSG) from None
 
 
 Sign = Literal[1, 0, -1]
@@ -276,6 +361,6 @@ def custom_round(
         case "half_expand":
             do_expand = remainder * 2 >= expanded
         case _:
-            raise ValueError(f"Invalid rounding mode: {mode!r}")
+            raise invalid("mode", mode)
 
     return trunc_value + (increment * do_expand)
