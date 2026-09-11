@@ -309,6 +309,35 @@ def test_strict_eq():
         d1.strict_eq(ItemizedDelta(years=2))  # type: ignore[arg-type]
 
 
+class TestHash:
+    """``hash()`` agrees with ``==``, which ignores explicit zeros."""
+
+    @pytest.mark.parametrize(
+        "a, b",
+        [
+            (
+                ItemizedDateDelta(weeks=1, days=2),
+                ItemizedDateDelta(weeks=1, days=2),
+            ),
+            (ItemizedDateDelta(weeks=1, days=0), ItemizedDateDelta(weeks=1)),
+            (ItemizedDateDelta(weeks=0, days=1), ItemizedDateDelta(days=1)),
+        ],
+    )
+    def test_equal_values_hash_alike(self, a, b):
+        assert a == b
+        assert hash(a) == hash(b)
+
+    def test_unequal_values(self):
+        assert hash(ItemizedDateDelta(weeks=1, days=2)) != hash(
+            ItemizedDateDelta(weeks=2, days=1)
+        )
+
+    def test_set_member(self):
+        s = {ItemizedDateDelta(weeks=1, days=0), ItemizedDateDelta(weeks=1)}
+        assert s == {ItemizedDateDelta(weeks=1)}
+        assert ItemizedDateDelta(weeks=1, days=0) in s
+
+
 class TestFormatIso:
     @pytest.mark.parametrize(
         "d, expected",
@@ -622,7 +651,7 @@ class TestAddSub:
             )
 
     def test_overflows(self):
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ItemizedDateDelta(years=5_000).add(
                 years=5_000,
                 relative_to=Date("2021-12-31"),
@@ -630,7 +659,7 @@ class TestAddSub:
             )
 
         # Overflow due to relative_to
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ItemizedDateDelta(years=5).add(
                 months=29,
                 relative_to=Date("9994-12-31"),
@@ -742,7 +771,9 @@ class TestAddSub:
         reference = Date("2024-01-01")
         with pytest.raises(TypeError, match="mix"):
             operation(ItemizedDateDelta(days=1), days=1)
-        with pytest.raises(TypeError, match="Expected an itemized delta"):
+        with pytest.raises(
+            TypeError, match="argument must be an ItemizedDelta"
+        ):
             operation(1)
         with pytest.raises(TypeError, match="foo"):
             operation(foo=1)
@@ -779,7 +810,7 @@ class TestAddSub:
                 **rounding,
             )
         with pytest.raises(TypeError, match="rounding"):
-            operation(**rounding)
+            operation(round_mode="ceil", round_increment=2)
 
     def test_subtract_no_op_and_date_result(self):
         delta = ItemizedDateDelta(days=1)
@@ -859,12 +890,12 @@ class TestTotal:
             ItemizedDateDelta(years=2).total("months")  # type: ignore[call-arg]
 
     def test_relative_to_overflows(self):
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ItemizedDateDelta(years=2).total(
                 "months", relative_to=Date("9998-04-30")
             )
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ItemizedDateDelta(years=-2).total(
                 "months", relative_to=Date("0001-12-31")
             )

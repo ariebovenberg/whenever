@@ -326,7 +326,7 @@ fn __repr__(_: PyType, slf: &ZonedDateTime) -> PyReturn {
         b'[',
         &tz.key
             .as_deref()
-            .unwrap_or("<system timezone without ID>")
+            .unwrap_or("<system time zone without ID>")
             .as_bytes(),
         b"]\")",
     ))
@@ -474,7 +474,7 @@ fn exact_eq(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> P
 
 fn to_tz(cls: PyClass<ZonedDateTime>, slf: PyRef<'_, ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     let tz = cls.state().load_tz(tz_obj)?;
-    // Cached timezones normally share an Arc. Avoid comparing every transition in that common case.
+    // Cached time zones normally share an Arc. Avoid comparing every transition in that common case.
     if Arc::ptr_eq(&tz, &slf.tz) || *tz == *slf.tz {
         Ok(slf.newref())
     } else {
@@ -492,11 +492,11 @@ pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     let result = stored.to_instant().in_timezone(tz).ok_or_range_err()?;
     if result.offset != stored.offset {
         let message = CString::new(format!(
-            "the ZonedDateTime pickle stored {} {} with offset {} for timezone {:?}, but the current timezone rules map that instant to {} {} with offset {}; the instant was preserved and the local datetime and offset were updated",
+            "the ZonedDateTime pickle stored {} {} with offset {} for {}, but the current time zone rules map that instant to {} {} with offset {}; the instant was preserved and the local datetime and offset were updated",
             stored.date,
             stored.time,
             stored.offset,
-            result.tz.key.as_deref().unwrap_or("<unknown>"),
+            tz_err_display(&result.tz.key),
             result.date,
             result.time,
             result.offset,
@@ -666,7 +666,7 @@ fn replace_date(
         ..
     } = *slf;
     arg.extract(*state.date_type)
-        .ok_or_type_err("date must be a whenever.Date")?
+        .ok_or_type_err("replace_date() argument must be a Date")?
         .at(time)
         .resolve_with_disambiguation_or_offset(tz, dis, offset, 1, state)?
         .into_zoned_obj_unchecked(tz.clone(), cls)
@@ -689,7 +689,7 @@ fn replace_time(
         ..
     } = *slf;
     arg.extract(*state.time_type)
-        .ok_or_type_err("time must be a whenever.Time instance")?
+        .ok_or_type_err("replace_time() argument must be a Time")?
         .on(date)
         .resolve_with_disambiguation_or_offset(tz, dis, offset, 1, state)?
         .into_zoned_obj_unchecked(tz.clone(), cls)
@@ -745,7 +745,7 @@ where
     Ok((dis_arg.finish(fname, state)?, mismatch))
 }
 
-/// What a written offset identifies about a local time in a timezone.
+/// What a written offset identifies about a local time in a time zone.
 enum OffsetMatch {
     /// The local time occurs at this offset.
     Occurrence(Offset),
@@ -754,7 +754,7 @@ enum OffsetMatch {
     Extrapolated(Offset),
 }
 
-/// The occurrence of `local` in the timezone that `parsed` identifies, if any.
+/// The occurrence of `local` in the time zone that `parsed` identifies, if any.
 ///
 /// A skipped local time has no occurrence, so no offset identifies one. A
 /// stdlib datetime in a gap does name an exact time, though: PEP 495
@@ -787,7 +787,7 @@ fn matching_local_offset(
     }
 }
 
-/// Resolve a written local time in a timezone to an exact time.
+/// Resolve a written local time in a time zone to an exact time.
 ///
 /// Shared by the ISO and stdlib-datetime constructors: an offset that
 /// identifies an occurrence wins outright, and otherwise `mismatch` decides
@@ -820,7 +820,7 @@ fn resolve_zoned_local(
         None => match mismatch {
             OffsetMismatch::Raise => raise(
                 *state.exc_invalid_offset,
-                format!("invalid offset for {tzid}"),
+                format!("offset {offset} does not match time zone '{tzid}'"),
             ),
             OffsetMismatch::KeepInstant => dt
                 .assume_offset(offset)
@@ -844,11 +844,11 @@ fn parse_iso_inner(
         .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
         // called through the constructor
-        .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
+        .ok_or_type_err("parse_iso() argument must be a string")?;
     let mut s = Scan::new(py_str.as_utf8()?);
     let (dt, (offset, tzstr)) = PlainDateTime::read_iso(&mut s)
         .zip(read_offset_and_tzname(&mut s))
-        .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?;
+        .ok_or_else_value_err(|| format!("invalid format: {arg}"))?;
     let state = cls.state();
     let tz = state.tz_store.get(tzstr)?;
     let (offset, exact) = match offset {
@@ -882,7 +882,7 @@ fn replace(
     handle_kwargs("replace", kwargs, |k, v, eq| {
         if eq(k, *state.strs.tz) {
             let tz_arg = state.load_tz(v)?;
-            // If we change timezones, forget about trying to preserve the offset.
+            // If we change time zones, forget about trying to preserve the offset.
             // Just use compatible disambiguation.
             if !Arc::ptr_eq(tz, &tz_arg) && **tz != *tz_arg {
                 tz_changed = true;
@@ -898,7 +898,7 @@ fn replace(
     let dis = dis_arg.finish("replace", state)?;
     let local = components.into_plain()?;
     if tz_changed {
-        // The old offset says nothing about the new timezone, so an omitted
+        // The old offset says nothing about the new time zone, so an omitted
         // disambiguation is genuinely implicit here.
         local.resolve_with_disambiguation(&tz, dis, state)?
     } else {
@@ -992,6 +992,9 @@ fn from_stdlib_datetime_inner(
     // NOTE: it has to be exactly a `ZoneInfo`, since
     // we *know* that this corresponds to a TZ database entry.
     // Other types could be making up their own rules.
+    if tzinfo.is_none() {
+        raise_value_err("datetime is naive; use PlainDateTime() instead")?;
+    }
     if tzinfo.type_().as_ptr() != state.zoneinfo_type.get()?.as_ptr() {
         raise_value_err(format!(
             "tzinfo must be of type ZoneInfo (exactly), got {tzinfo}"
@@ -1008,8 +1011,8 @@ fn from_stdlib_datetime_inner(
     let tz = state.tz_store.get(tzid)?;
 
     // The datetime is read the way its own tzinfo reads it: local fields, the
-    // offset ZoneInfo computes for them, and a timezone ID. That is the same
-    // shape as an ISO string with an offset and a timezone ID, so it goes
+    // offset ZoneInfo computes for them, and a time zone ID. That is the same
+    // shape as an ISO string with an offset and a time zone ID, so it goes
     // through the same resolution flow.
     let local = PlainDateTime {
         date: Date::from_stdlib_date(dt.date()),
@@ -1060,7 +1063,7 @@ fn __reduce__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
         .tz
         .key
         .as_ref()
-        .ok_or_value_err("cannot pickle ZonedDateTime without a timezone ID")?;
+        .ok_or_value_err("cannot pickle ZonedDateTime without a time zone ID")?;
     let data = pickle::encode_offset(slf.to_fixed_offset());
     [
         cls.state().unpickle_zoned_datetime.newref(),
@@ -1289,10 +1292,10 @@ fn round(
     .into_zoned_obj_unchecked(slf.tz.clone(), cls)
 }
 
-fn tz_err_display(k: &Option<Box<str>>) -> String {
+pub(crate) fn tz_err_display(k: &Option<Box<str>>) -> String {
     match k {
-        Some(key) => format!("timezone '{key}'"),
-        None => "the system timezone (with unknown ID)".to_string(),
+        Some(key) => format!("time zone '{key}'"),
+        None => "the system time zone (with unknown ID)".to_string(),
     }
 }
 
@@ -1372,13 +1375,13 @@ fn zoned_since(
     let other_obj = handle_one_arg(fname, args)?;
     let other = other_obj
         .extract_ref(cls)
-        .ok_or_type_err("argument must be a whenever.ZonedDateTime")?;
+        .ok_or_else_type_err(|| format!("{fname}() argument must be a ZonedDateTime"))?;
     let kwargs = DifferenceSpec::parse(fname, kwargs, state)?;
 
     if kwargs.has_calendar() && !slf.same_tz(other) {
         raise_value_err(
             "Calendar units can only be used to compare ZonedDateTimes \
-             with the same timezone",
+             with the same time zone",
         )?;
     }
     let (a, b) = if flip { (other, slf) } else { (slf, other) };
@@ -1415,7 +1418,7 @@ fn zoned_since(
 fn format(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format() argument must be str")?;
+        .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(
@@ -1447,7 +1450,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("parse() argument must be str")?;
+        .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
     let state = cls.state();
@@ -1481,7 +1484,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         .ok_or_type_err("parse() missing required keyword argument 'pattern'")?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("pattern must be str")?;
+        .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
@@ -1496,7 +1499,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let tz_id = parsed
         .tz_id
         .as_deref()
-        .ok_or_value_err("ZonedDateTime.parse() pattern must include a timezone ID field (VV)")?;
+        .ok_or_value_err("ZonedDateTime.parse() pattern must include a time zone ID field (VV)")?;
 
     let date = parsed.date("Pattern must include year, month, and day fields")?;
     parsed.validate_weekday(date)?;
@@ -1518,7 +1521,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
             match mismatch {
                 OffsetMismatch::Raise => raise(
                     *state.exc_invalid_offset,
-                    format!("Offset {}s does not match timezone '{tz_id}'", offset.get()),
+                    format!("offset {offset} does not match time zone '{tz_id}'"),
                 ),
                 OffsetMismatch::KeepInstant => dt
                     .assume_offset(offset)

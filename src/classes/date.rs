@@ -98,7 +98,7 @@ impl DateBoundaryUnit {
             }))
         })
         .transpose()?
-        .ok_or_else_value_err(|| format!("Invalid unit: {obj}"))
+        .ok_or_else_value_err(|| format!("invalid unit: {obj}"))
     }
 }
 
@@ -125,8 +125,9 @@ fn __new__(cls: PyClass<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
     let mut day: i64 = 0;
     let fmt = if IS_LP64 { c"lll:Date" } else { c"LLL:Date" };
     parse_args_kwargs!(args, kwargs, fmt, year, month, day);
+
     Date::from_i64_components(year, month, day)
-        .ok_or_value_err("invalid date value")?
+        .ok_or_value_err("invalid date")?
         .to_obj(cls)
 }
 
@@ -208,10 +209,10 @@ fn parse_iso(cls: PyClass<Date>, s: PyObj) -> PyReturn {
         s.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
-            .ok_or_type_err("when parsing from ISO format, the argument must be str")?
+            .ok_or_type_err("parse_iso() argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {s}"))?
+    .ok_or_else_value_err(|| format!("invalid format: {s}"))?
     .to_obj(cls)
 }
 
@@ -345,7 +346,7 @@ fn extract_weekday(state: &State, arg: PyObj) -> PyResult<Weekday> {
         .position(|m| m.ptr_eq(arg))
         // SAFETY: weekday_enum_members contains exactly seven entries.
         .map(|i| unsafe { Weekday::from_iso_unchecked(i as u8 + 1) })
-        .ok_or_type_err("weekday must be a Weekday enum member")
+        .ok_or_type_err("weekday must be a Weekday")
 }
 
 fn __reduce__(cls: PyClass<Date>, slf: Date) -> PyReturn {
@@ -378,9 +379,7 @@ fn shift_method(
     let shift = match (args, kwargs.original_len()) {
         (&[arg], 0) => parse_calendar_shift_arg(fname, arg, state)?,
         ([], _) => parse_calendar_shift_kwargs(fname, kwargs, state)?,
-        _ => raise_type_err(format!(
-            "{fname}() takes either only kwargs or 1 positional arg"
-        ))?,
+        _ => raise_mixed_args(fname)?,
     };
 
     slf.shift_by(shift.negate_if(negate))
@@ -409,7 +408,7 @@ fn since_inner(
 
     let other = handle_one_arg(fname, args)?
         .extract(cls)
-        .ok_or_type_err("argument must be a Date")?;
+        .ok_or_else_type_err(|| format!("{fname}() argument must be a Date"))?;
 
     let mut units: Option<difference::DateDifferenceUnits> = None;
     let mut round_mode = None;
@@ -523,7 +522,7 @@ fn replace(cls: PyClass<Date>, slf: Date, args: &[PyObj], kwargs: &mut IterKwarg
         Ok(true)
     })?;
     Date::from_i64_components(year, month, day)
-        .ok_or_value_err("invalid date components")?
+        .ok_or_value_err("invalid date")?
         .to_obj(cls)
 }
 
@@ -531,7 +530,7 @@ fn at(cls: PyClass<Date>, date: Date, time_obj: PyObj) -> PyReturn {
     let state = cls.state();
     let time = time_obj
         .extract(*state.time_type)
-        .ok_or_type_err("argument must be a whenever.Time")?;
+        .ok_or_type_err("at() argument must be a Time")?;
     date.at(time).to_obj(*state.plain_datetime_type)
 }
 
@@ -565,7 +564,7 @@ fn today(cls: PyClass<Date>, tz_obj: PyObj) -> PyReturn {
 fn format(cls: PyClass<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format() argument must be str")?;
+        .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(
@@ -589,13 +588,13 @@ fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("parse() argument must be str")?;
+        .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
     let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("pattern must be str")?;
+        .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;

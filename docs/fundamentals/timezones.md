@@ -2,12 +2,12 @@
 myst:
   html_meta:
     description: >-
-      What 'timezone' actually means: UTC offsets, abbreviations, and IANA
-      timezones, what each can and cannot express, and when to use which.
+      What 'time zone' actually means: UTC offsets, abbreviations, and IANA
+      time zones, what each can and cannot express, and when to use which.
 ---
 
 (timezones-explained)=
-# Timezones
+# Time zones
 
 {ref}`Exact time and local time <exact-vs-local>` are useful on their own, but most real programs need to move between them.
 We store events as precise instants, display them to users as local clock readings,
@@ -94,7 +94,7 @@ Time zones know the future only as long as the rules stay the same.
 None of these representations is "the true" time zone. Each answers a different question:
 
 * Offsets describe *where local time is relative to UTC at that moment*
-* Abbreviations describe *how humans commonly refer to a time in a timezone*
+* Abbreviations describe *how humans commonly refer to a time in a time zone*
 * IANA identifiers describe *the evolving rules of local time*
 
 Understanding their strengths and limitations helps avoid subtle bugs and incorrect assumptions.
@@ -121,10 +121,10 @@ Use {class}`~whenever.ZonedDateTime` when regional rules are known and matter.
 
 ## What comes next: resolving local times
 
-Converting an exact instant into a timezone is straightforward. Converting
+Converting an exact instant into a time zone is straightforward. Converting
 local fields back to an instant can require a decision: transitions make some
 local times occur twice and others not at all. Input containing both a numeric
-offset and a timezone can also contain a conflict.
+offset and a time zone can also contain a conflict.
 
 The next fundamental concept is {ref}`local-time ambiguity <ambiguity2>`.
 For Whenever's complete resolution flow, including offset conflicts, see

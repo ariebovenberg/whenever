@@ -16,12 +16,12 @@ pub(crate) struct TransitionMeta {
 
 type TransitionData = (Vec<(EpochSecs, Offset)>, Vec<TransitionMeta>);
 
-/// A complete timezone representation, enough to represent a TZif file.
+/// A complete time zone representation, enough to represent a TZif file.
 #[derive(Debug)]
 pub struct TimeZone {
     // The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
     // but essential because in our case we almost always associate a tzif file with a tz ID.
-    // Notable exception is the system timezone in some cases.
+    // Notable exception is the system time zone in some cases.
     pub(crate) key: Option<Box<str>>,
     // The following two fields are used to map UTC time to local time and vice versa.
     // For UTC -> local, the transition is unambiguous and simple.
@@ -34,7 +34,7 @@ pub struct TimeZone {
     // Invariant: if posix TZ isn't given, there must be at least one entry in each of the above
     // slices.
     end: Option<TzStr>,
-    // Timezone metadata (parallel to offsets_by_utc: same length, same indexing)
+    // Time zone metadata (parallel to offsets_by_utc: same length, same indexing)
     meta_by_utc: Box<[TransitionMeta]>,
     // NUL-terminated abbreviation strings from TZif
     abbrev_data: Box<[u8]>,
@@ -132,7 +132,7 @@ impl TimeZone {
         })
     }
 
-    /// Get timezone metadata (dst_saving, abbreviation) at the given instant.
+    /// Get time zone metadata (dst_saving, abbreviation) at the given instant.
     pub(crate) fn meta_for_instant(&self, t: EpochSecs) -> TzMetaResult {
         bisect(&self.offsets_by_utc, t)
             .map(|i| {
@@ -479,7 +479,7 @@ impl fmt::Display for ErrorCause {
 type ParseResult<T> = Result<T, ErrorCause>;
 
 /// Check whether a TZ ID has a valid format (not whether it actually exists though).
-/// Returns `true` for characters that can appear in an IANA timezone ID.
+/// Returns `true` for characters that can appear in an IANA time zone ID.
 pub(crate) fn is_tz_id_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'+' | b'.')
 }

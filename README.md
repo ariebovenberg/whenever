@@ -29,7 +29,7 @@ Rather not depend on a Rust extension? A **pure Python** version is available to
   </p>
 
   <p align="center" style="font-size: 14px">
-    <i>Parse, normalize, compare to now, shift, change timezone, and format (1M times)</i>
+    <i>Parse, normalize, compare to now, shift, change time zone, and format (1M times)</i>
   </p>
 
 <div align="center">
@@ -64,7 +64,7 @@ Two points stand out:
    ```
 
    Note this isn't a bug, but a design decision that DST is only considered
-   when calculations involve *two* timezones.
+   when calculations involve *two* time zones.
    If you think this is surprising, you
    [are](https://github.com/python/cpython/issues/91618)
    [not](https://github.com/python/cpython/issues/116035)
@@ -136,7 +136,7 @@ while many serious and long-standing issues remain unaddressed.
 ...    PlainDateTime,
 ... )
 
-# Identify moments in time, without timezone/calendar complexity
+# Identify moments in time, without time zone/calendar complexity
 >>> now = Instant.now()
 Instant("2024-07-04 10:36:56Z")
 
@@ -183,7 +183,7 @@ or [API reference](https://whenever.readthedocs.io/en/latest/reference/datetime.
 ## Limitations
 
 - Supports the proleptic Gregorian calendar between 1 and 9999 AD
-- Timezone offsets are limited to whole seconds (consistent with IANA TZ DB)
+- Time zone offsets are limited to whole seconds (consistent with IANA TZ DB)
 
 ## Stability policy
 

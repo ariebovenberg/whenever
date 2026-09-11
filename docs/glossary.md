@@ -36,7 +36,7 @@ calendar units
 
 strict equality
   Equality that also compares what `==` deliberately ignores: the argument's
-  type, the offset, the timezone, or a component given explicitly as zero.
+  type, the offset, the time zone, or a component given explicitly as zero.
   Provided by `strict_eq()` on exactly the types whose `==` ignores something.
   Preferred over *exact equality*.
   See {doc}`guide/comparison`.
@@ -56,47 +56,53 @@ ISO 8601 string
   short form.
   See {ref}`iso8601`.
 
-timezone ID
-  The IANA name of a timezone's rules, such as `Europe/Paris`. Exposed as
-  `tz_id` and written in brackets in an ISO 8601 string. The system timezone
+time zone
+  A region's rules for its offset from UTC, including any daylight saving
+  changes. Named by a time zone ID, or taken from the system.
+  Preferred over *timezone* and *zone*.
+  See {ref}`timezones-explained`.
+
+time zone ID
+  The IANA name of a time zone's rules, such as `Europe/Paris`. Exposed as
+  `tz_id` and written in brackets in an ISO 8601 string. The system time zone
   may lack one.
-  Preferred over *IANA identifier*, *timezone name*, *timezone key*, and
+  Preferred over *IANA identifier*, *time zone name*, *time zone key*, and
   *tz*.
   See {ref}`timezone-database`.
 
-timezone search path
-  The ordered directories in which timezone IDs are looked up. Read with
+time zone search path
+  The ordered directories in which time zone IDs are looked up. Read with
   `get_tzpath()`, which returns a snapshot; set with `reset_tzpath()`, or
   initially by `PYTHONTZPATH`. The `tzdata` package is a fallback after the
   path, not part of it.
-  Preferred over *tzpath*, *TZPATH*, *timezone path*, and *zoneinfo path*.
+  Preferred over *tzpath*, *TZPATH*, *time zone path*, and *zoneinfo path*.
   See {ref}`timezone-database`.
 
-system timezone
-  The timezone the operating system is configured with. Requested with
-  `SYSTEM_TZ` wherever a timezone ID is accepted. Each call resolves it and
-  stores the result in the returned value, which keeps that timezone for
+system time zone
+  The time zone the operating system is configured with. Requested with
+  `SYSTEM_TZ` wherever a time zone ID is accepted. Each call resolves it and
+  stores the result in the returned value, which keeps that time zone for
   good; `reset_system_tz()` changes only what later calls resolve to. It may
-  have no timezone ID.
-  Preferred over *local timezone*, *local zone*, *machine timezone*, and
-  *OS timezone*.
+  have no time zone ID.
+  Preferred over *local time zone*, *local zone*, *machine time zone*, and
+  *OS time zone*.
   See {ref}`systemtime`.
 
 repeated local time
-  A local time that occurs twice in a timezone because the clock moved
+  A local time that occurs twice in a time zone because the clock moved
   backward. Resolved by a disambiguation policy.
   Preferred over *fold* and *ambiguous time*.
   See {ref}`ambiguity`.
 
 skipped local time
-  A local time that does not occur in a timezone because the clock moved
+  A local time that does not occur in a time zone because the clock moved
   forward. Resolved by a disambiguation policy.
   Preferred over *gap* and *non-existent time*.
   See {ref}`ambiguity`.
 
 disambiguation
   The policy that picks the instant for a repeated or skipped local time in
-  a named timezone: `"compatible"`, `"earlier"`, `"later"`, or `"raise"`.
+  a named time zone: `"compatible"`, `"earlier"`, `"later"`, or `"raise"`.
   Passed as `disambiguation=`; when omitted, `"compatible"` applies with an
   `ImplicitDisambiguationWarning`.
   Preferred over *disambiguate*, *ambiguity policy*, and *fold handling*.
@@ -104,9 +110,9 @@ disambiguation
 
 offset mismatch
   A numeric offset in the input that identifies no occurrence of the written
-  local time in the named timezone. Resolved by `offset_mismatch=`, before
+  local time in the named time zone. Resolved by `offset_mismatch=`, before
   disambiguation can apply. A `ZonedDateTime` pickle loaded under changed
-  timezone rules is one too; unpickling resolves it as `keep_instant` and
+  time zone rules is one too; unpickling resolves it as `keep_instant` and
   emits `PickleOffsetMismatchWarning`.
   Preferred over *offset conflict*, *offset disagreement*, and *pickle
   reconciliation*.
@@ -122,9 +128,17 @@ offset-preserving resolution
 stale offset
   The offset an `OffsetDateTime` carries after an operation moved the value:
   still the observed offset, but no longer certain to be the one the source
-  timezone would apply. Flagged by `StaleOffsetWarning`.
+  time zone would apply. Flagged by `StaleOffsetWarning`.
   Preferred over *wrong offset* and *outdated offset*.
   See {ref}`offset-datetime-guidance`.
+
+call-local escape
+  A keyword argument that accepts one flagged risk for one call, such as
+  `naive_arithmetic_ok=True`. Each belongs to one warning, whose message
+  names it.
+  Preferred over *escape hatch*, *suppression flag*, *opt-out*, *override*,
+  and *per-method kwarg*.
+  See {ref}`warnings`.
 
 time patch
   A test-only override of the current time as Whenever sees it, created by

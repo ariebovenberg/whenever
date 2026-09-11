@@ -60,7 +60,7 @@ PlainDateTime("2023-06-15T09:00:00")
 
 ## Time
 
-{class}`Time` represents a time of day, independent of any date or timezone.
+{class}`Time` represents a time of day, independent of any date or time zone.
 Sub-second precision is supported down to nanoseconds.
 
 ```python

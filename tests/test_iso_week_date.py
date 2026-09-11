@@ -312,9 +312,13 @@ class TestPickle:
 class TestMinMax:
     def test_min_exists(self):
         assert isinstance(IsoWeekDate.MIN, IsoWeekDate)
+        assert IsoWeekDate.MIN == IsoWeekDate(1, 1, Weekday.MONDAY)
+        assert IsoWeekDate.MIN.date() == Date.MIN
 
     def test_max_exists(self):
         assert isinstance(IsoWeekDate.MAX, IsoWeekDate)
+        assert IsoWeekDate.MAX == IsoWeekDate(9999, 52, Weekday.FRIDAY)
+        assert IsoWeekDate.MAX.date() == Date.MAX
 
     def test_min_le_max(self):
         assert IsoWeekDate.MIN <= IsoWeekDate.MAX

@@ -59,8 +59,37 @@ CI runs this coverage check on Python 3.14.
   interoperability, and explicitly symmetric scalar slots are the exception.
 - **Remove redundant checks**: if a condition is guaranteed by earlier logic, don't re-check it.
   Add a debug assert and/or a comment explaining why it's safe instead.
-- **Error message capitalization**: use lowercase error messages.
 - Only comment code where names and types are insufficient to explain the logic. Avoid redundant comments.
+
+## API conventions
+
+- **Verb prefixes**: `to_` changes representation, `assume_` adds what a local
+  value lacks, `from_` constructs from a non-whenever input, `parse_`/`format_`
+  are text in and out, `replace_` swaps a part, `start_of`/`end_of` bound,
+  `next_`/`prev_` step. A predicate reads as a yes/no question (`is_`, `in_`);
+  a projection is named by its result (`date()`, `timestamp()`).
+- **Parameter kinds**: a method's single operand is positional-only; every
+  option (policies, units, `mode=`, `increment=`, `relative_to=`, every `_ok`)
+  is keyword-only; constructor fields through `second` are positional-or-keyword,
+  and `nanosecond`, `offset`, `tz`, `disambiguation`, and delta components are
+  keyword-only. Both backends enforce it; `make typecheck` runs stubtest.
+- **Value types**: `repr(x)` is a constructor expression that rebuilds an equal
+  value (space separator, lowercase delta units); `str(x)` is `format_iso()`
+  and never raises; `hash` agrees with `==`; `__format__` exists exactly on the
+  six types with patterns.
+- **Exceptions**: out of domain is `ValueError`, `OverflowError` only for a
+  machine-integer overflow. A wrong type raises whatever falls out, usually
+  `TypeError` or `AttributeError`; the type checker is the guard. Add an
+  explicit type check only where a wrong type would pass silently, such as a
+  string where a sequence of strings is expected.
+- **Messages**: lowercase, the offending value in `repr` form, the parameter
+  named when the call has more than one, glossary headwords. Keep one wording
+  per condition on both backends where that costs nothing; stdlib messages
+  may bubble up in the pure-Python backend.
+- **Warnings**: each escapable warning has one call-local escape ending in
+  `_ok`, named in its message; `ImplicitDisambiguationWarning` is escaped by
+  stating `disambiguation=`.
+- **Spelling**: *time zone* in prose, `timezone` in identifiers.
 
 ## Tests
 

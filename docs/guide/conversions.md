@@ -25,7 +25,7 @@ Instant("2023-12-28 10:30:00Z")
 OffsetDateTime("2023-12-28 15:30:00+05:00")
 >>> d.to_tz("America/New_York")  # same moment in New York
 ZonedDateTime("2023-12-28 05:30:00-05:00[America/New_York]")
->>> d.to_tz(SYSTEM_TZ)  # same moment in the system timezone (e.g. Europe/Paris)
+>>> d.to_tz(SYSTEM_TZ)  # same moment in the system time zone (e.g. Europe/Paris)
 ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Paris]")
 >>> d.to_fixed_offset(hours(4)) == d
 True  # always the same moment in time
@@ -66,7 +66,7 @@ move it with `to_fixed_offset()` or `to_tz()`.
 
 Conversion to a "plain" datetime is easy: calling
 {meth}`~whenever.ZonedDateTime.to_plain` simply
-retrieves the date and time part of the datetime, and discards the any timezone
+retrieves the date and time part of the datetime, and discards the any time zone
 or offset information.
 
 ```python
@@ -94,7 +94,7 @@ See the {ref}`FAQ <faq-to-vs-assume>` for the rationale.
 
 
 Similarly, you can associate an {class}`~whenever.OffsetDateTime`
-with a timezone using {meth}`~whenever.OffsetDateTime.assume_tz`:
+with a time zone using {meth}`~whenever.OffsetDateTime.assume_tz`:
 
 ```python
 >>> o = OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(1))
@@ -102,7 +102,7 @@ with a timezone using {meth}`~whenever.OffsetDateTime.assume_tz`:
 ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Amsterdam]")
 ```
 
-By default, this raises an error if the offset doesn't match the timezone.
+By default, this raises an error if the offset doesn't match the time zone.
 The `offset_mismatch` argument can instead preserve either the instant or the
 local fields:
 
@@ -121,7 +121,7 @@ with `disambiguation`.
 :class: hint
 
 A common scenario is receiving datetimes from an external source that only
-carries a fixed offset. If the originating timezone is known,
+carries a fixed offset. If the originating time zone is known,
 {meth}`~whenever.OffsetDateTime.assume_tz` associates its rules before further
 arithmetic. See {ref}`offset-datetime-guidance` for why doing this before
 moving the value matters.

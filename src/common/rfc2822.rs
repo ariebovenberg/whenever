@@ -47,7 +47,7 @@ pub(crate) fn format(odt: OffsetDateTime) -> [u8; 31] {
     buf
 }
 
-/// Format into a standard RFC 2822 date string, using "GMT" as the timezone.
+/// Format into a standard RFC 2822 date string, using "GMT" as the time zone.
 pub(crate) fn format_gmt(i: Instant) -> [u8; 29] {
     let PlainDateTime {
         date,
@@ -209,7 +209,7 @@ fn parse_offset(s: &mut Scan) -> Option<Offset> {
             TIMEZONES
                 .iter()
                 .find_map(|&(tz_name, offset)| tz.eq_ignore_ascii_case(tz_name).then_some(offset))
-                // According to specification, if the timezone is not recognized, it should be
+                // According to specification, if the time zone is not recognized, it should be
                 // treated as GMT.
                 .unwrap_or(0)
         }

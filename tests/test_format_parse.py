@@ -8,14 +8,20 @@ from whenever import (
     ImplicitDisambiguationWarning,
     Instant,
     InvalidOffsetError,
+    IsoWeekDate,
+    ItemizedDateDelta,
+    ItemizedDelta,
+    MonthDay,
     OffsetDateTime,
     PlainDateTime,
     RepeatedTime,
     SkippedTime,
     Time,
     TimeDelta,
+    Weekday,
     WheneverDeprecationWarning,
     WheneverWarning,
+    YearMonth,
     ZonedDateTime,
     hours,
     minutes,
@@ -132,8 +138,8 @@ class TestCompilePattern:
             t.format("ii:mm")
             assert len(w) == 1
             assert w[0].category is WheneverWarning
-            assert "without an AM/PM field" in str(w[0].message)
-            assert "24-hour fields" in str(w[0].message)
+            assert "without an AM/PM specifier" in str(w[0].message)
+            assert "24-hour specifiers" in str(w[0].message)
 
     def test_yy_parse_disabled(self):
         with pytest.raises(ValueError, match="YY.*only.*formatting"):
@@ -1136,7 +1142,7 @@ class TestZonedDateTimeParse:
         assert zdt == ZonedDateTime(2024, 3, 15, 14, 30, tz="Europe/Paris")
 
     def test_missing_tz_id(self):
-        with pytest.raises(ValueError, match="timezone ID.*VV"):
+        with pytest.raises(ValueError, match="time zone ID.*VV"):
             ZonedDateTime.parse(
                 "2024-03-15 14:30+01:00",
                 pattern="YYYY-MM-DD HH:mmxxx",
@@ -1186,10 +1192,10 @@ class TestZonedDateTimeParse:
             )
 
     def test_offset_mismatch(self):
-        """Offset doesn't match timezone: should raise."""
+        """Offset doesn't match time zone: should raise."""
         with pytest.raises(
             InvalidOffsetError,
-            match=r"Offset -?\d+s does not match timezone 'Europe/Paris'",
+            match=r"offset [+-]\d\d:\d\d does not match time zone 'Europe/Paris'",
         ):
             ZonedDateTime.parse(
                 "2024-03-15 14:30+05:00[Europe/Paris]",
@@ -1581,7 +1587,7 @@ class TestParseEdgeCases:
             pdt.format("YYYY-MM-DD HH:mmxxx")
 
     def test_tz_id_empty(self):
-        with pytest.raises(ValueError, match="timezone ID"):
+        with pytest.raises(ValueError, match="time zone ID"):
             ZonedDateTime.parse(
                 "2024-03-15 14:30+01:00[]",
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
@@ -1676,7 +1682,7 @@ class TestFormatFieldsInternal:
         assert result == "+05:30:15"
 
     def test_tz_id_format_error_when_none(self):
-        with pytest.raises(ValueError, match="timezone ID"):
+        with pytest.raises(ValueError, match="time zone ID"):
             format_fields(compile_pattern("VV"), tz_id=None)
 
     def test_tz_abbrev_format_error_when_none(self):
@@ -1859,3 +1865,30 @@ class TestDunderFormat:
             f"{value:hh}"
         with warns_here(WheneverWarning):
             f"{value:ii}"
+
+
+@pytest.mark.parametrize(
+    "x",
+    [
+        TimeDelta(hours=1),
+        ItemizedDelta(months=1, hours=2),
+        ItemizedDateDelta(months=1, days=2),
+        YearMonth(2024, 3),
+        MonthDay(3, 15),
+        IsoWeekDate(2024, 11, Weekday.FRIDAY),
+    ],
+)
+def test_types_without_patterns_fall_back_to_object_format(x):
+    assert not hasattr(type(x), "format")
+    assert format(x, "") == str(x)
+    assert f"{x}" == str(x)
+    with pytest.raises(TypeError):
+        format(x, "YYYY")
+
+
+def test_12h_warning_points_at_the_caller():
+    with warns_here(WheneverWarning) as caught:
+        Time(14, 30).format("ii:mm")
+    assert "specifier" in str(caught[0].message)
+    with warns_here(WheneverWarning):
+        Time.parse("02:30", pattern="ii:mm")

@@ -1,4 +1,4 @@
-"""Timezone database access and caching."""
+"""Time zone database access and caching."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def _set_tzpath(to: tuple[str, ...]) -> None:
 
 
 def get_tzpath() -> tuple[str, ...]:
-    """Return a snapshot of the current timezone search path."""
+    """Return a snapshot of the current time zone search path."""
     return _TZPATH
 
 
@@ -115,7 +115,7 @@ def get_tz(key: str) -> TimeZone:
 
     if (instance := _tzcache_lookup.get(cache_key)) is None:
         # Concurrency note: we accept the possibility of multiple threads
-        # loading the same timezone at the same time, since TimeZone instances
+        # loading the same time zone at the same time, since TimeZone instances
         # are immutable after construction. The last one to write wins.
         tzif, canonical_key, updates = _load_tz(cache_key, key)
         loaded = TimeZone.parse_tzif(tzif, canonical_key)
@@ -314,7 +314,7 @@ def get_system_tz() -> TimeZone:
     # This lookup is intentionally lock-free for performance reasons.
     # This is valid because:
     # - TimeZone instances are immutable after construction
-    # - loading the system timezone is side-effect free
+    # - loading the system time zone is side-effect free
     # - Last writer wins; all outcomes are acceptable.
     # - Python guarantees atomic assignment to the module global variables
     #   since it's a `dict`. This guarantee may change in the future, but for now
@@ -325,16 +325,16 @@ def get_system_tz() -> TimeZone:
 
 
 def reset_system_tz() -> None:
-    """Resets the cached system timezone to the currently set system timezone.
+    """Resets the cached system time zone to the currently set system time zone.
 
     >>> os.environ["TZ"] = "America/New_York"
     >>> reset_system_tz()  # system tz is now New York
     >>> os.environ["TZ"] = "Europe/London"
     >>> ZonedDateTime.now(SYSTEM_TZ)  # still uses cached New York tz
-    ZonedDateTime(2025-06-18 15:11:08-04:00[America/New_York])
+    ZonedDateTime("2025-06-18 15:11:08-04:00[America/New_York]")
     >>> reset_system_tz()  # system tz is now London
     >>> ZonedDateTime.now(SYSTEM_TZ)
-    ZonedDateTime(2025-06-18 20:11:08+01:00[Europe/London])
+    ZonedDateTime("2025-06-18 20:11:08+01:00[Europe/London]")
     """
     global _CACHED_SYSTEM_TZ
     _CACHED_SYSTEM_TZ = _read_system_tz()
@@ -353,22 +353,22 @@ def _read_system_tz() -> TimeZone:
                 return TimeZone.parse_posix(tz_value)
             except ValueError:
                 raise TimeZoneNotFoundError(
-                    f"No time zone found with key or posix TZ string {tz_value}"
+                    f"'{tz_value}' is not a time zone ID or POSIX TZ string"
                 ) from None
-    else:  # file-based timezone (no key)
-        assert tz_type == 1, "Unknown system timezone type"
+    else:  # file-based time zone (no key)
+        assert tz_type == 1, "Unknown system time zone type"
         try:
             with open(tz_value, "rb") as f:
                 return TimeZone.parse_tzif(f.read())
         except (OSError, ValueError):
             raise TimeZoneNotFoundError(
-                f'No time zone found at path "{tz_value}"'
+                f"no time zone found at path '{tz_value}'"
             ) from None
 
 
 class TimeZoneNotFoundError(ValueError):
-    """A timezone with the given ID was not found"""
+    """A time zone with the given ID was not found"""
 
     @classmethod
     def _for_key(cls, key: str) -> TimeZoneNotFoundError:
-        return cls(f"No time zone found for key: {key!r}")
+        return cls(f"time zone ID '{key}' not found")

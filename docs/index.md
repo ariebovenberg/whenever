@@ -38,7 +38,7 @@ ZonedDateTime("2023-03-26 07:00:00+02:00[Europe/Paris]")
 >>> bedtime.to_tz("America/New_York")
 ZonedDateTime("2023-03-25 17:00:00-04:00[America/New_York]")
 
-# A moment in time, without timezone or calendar complexity
+# A moment in time, without time zone or calendar complexity
 >>> Instant.now()
 Instant("2024-07-04 10:36:56Z")
 

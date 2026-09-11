@@ -24,23 +24,23 @@ Context managers
    :members:
 
 
-System timezone
----------------
+System time zone
+----------------
 
 .. data:: SYSTEM_TZ
 
-   A public sentinel that requests the system timezone. Pass it where a named
-   timezone is accepted to resolve the system timezone at call time, for
+   A public sentinel that requests the system time zone. Pass it where a named
+   time zone is accepted to resolve the system time zone at call time, for
    example ``ZonedDateTime.now(SYSTEM_TZ)`` or
    ``plain.assume_tz(SYSTEM_TZ)``. The returned datetime stores the resolved
-   timezone, not the sentinel itself.
+   time zone, not the sentinel itself.
 
-   See :ref:`systemtime` for caching, reset behavior, and system timezones
-   without a timezone ID.
+   See :ref:`systemtime` for caching, reset behavior, and system time zones
+   without a time zone ID.
 
 
-Timezone data
--------------
+Time zone data
+--------------
 
 .. autofunction:: get_tzpath
 

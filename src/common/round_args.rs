@@ -103,7 +103,7 @@ pub(crate) struct Args {
 }
 
 static INCREMENT_DIV_MSG: &str =
-    "Invalid increment. Must be positive and divide a 24-hour day evenly.";
+    "invalid increment: must be positive and divide a 24-hour day evenly";
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum ArgsContext {
@@ -129,10 +129,10 @@ impl Args {
             } else if eq(key, *state.strs.increment) {
                 let raw_increment = value
                     .cast_allow_subclass::<PyInt>()
-                    .ok_or_value_err("increment must be an integer")?
+                    .ok_or_type_err("increment must be an integer")?
                     .to_i64()?;
                 if raw_increment <= 0 {
-                    raise_value_err("increment must be a positive integer")?;
+                    raise_value_err(INCREMENT_DIV_MSG)?;
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU64::new_unchecked(raw_increment as _) });
@@ -209,10 +209,10 @@ impl DeltaArgs {
             } else if eq(key, *state.strs.increment) {
                 let raw_increment = value
                     .cast_allow_subclass::<PyInt>()
-                    .ok_or_value_err("increment must be an integer")?
+                    .ok_or_type_err("increment must be an integer")?
                     .to_i128()?;
                 if raw_increment <= 0 {
-                    raise_value_err("increment must be a positive integer")?;
+                    raise_value_err(INCREMENT_DIV_MSG)?;
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU128::new_unchecked(raw_increment as _) });
@@ -234,7 +234,7 @@ impl DeltaArgs {
                         raise_type_err("cannot specify an increment with a TimeDelta argument")?;
                     }
                     if delta.is_negative() || delta.is_zero() {
-                        raise_value_err("rounding TimeDelta must be positive")?;
+                        raise_value_err(INCREMENT_DIV_MSG)?;
                     }
                     DeltaIncrement {
                         secs: delta.secs.get() as u64,

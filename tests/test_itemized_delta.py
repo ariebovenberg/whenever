@@ -442,6 +442,32 @@ def test_strict_eq():
         d1.strict_eq(ItemizedDateDelta(years=2))  # type: ignore[arg-type]
 
 
+class TestHash:
+    """``hash()`` agrees with ``==``, which ignores explicit zeros."""
+
+    @pytest.mark.parametrize(
+        "a, b",
+        [
+            (ItemizedDelta(weeks=1, days=2), ItemizedDelta(weeks=1, days=2)),
+            (ItemizedDelta(weeks=1, days=0), ItemizedDelta(weeks=1)),
+            (ItemizedDelta(weeks=0, days=1), ItemizedDelta(days=1)),
+        ],
+    )
+    def test_equal_values_hash_alike(self, a, b):
+        assert a == b
+        assert hash(a) == hash(b)
+
+    def test_unequal_values(self):
+        assert hash(ItemizedDelta(weeks=1, days=2)) != hash(
+            ItemizedDelta(weeks=2, days=1)
+        )
+
+    def test_set_member(self):
+        s = {ItemizedDelta(weeks=1, days=0), ItemizedDelta(weeks=1)}
+        assert s == {ItemizedDelta(weeks=1)}
+        assert ItemizedDelta(weeks=1, days=0) in s
+
+
 class TestFormatIso:
     @pytest.mark.parametrize(
         "d, expected",
@@ -1016,7 +1042,7 @@ class TestAddSub:
             )
 
     def test_overflows(self):
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ItemizedDelta(years=5_000).add(
                 years=5_000,
                 relative_to=ZonedDateTime(
@@ -1026,7 +1052,7 @@ class TestAddSub:
             )
 
         # Overflow due to relative_to
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ItemizedDelta(years=5).add(
                 months=29,
                 relative_to=ZonedDateTime(
@@ -1155,7 +1181,9 @@ class TestAddSub:
         reference = ZonedDateTime("2024-01-01T00:00Z[UTC]")
         with pytest.raises(TypeError, match="mix"):
             operation(ItemizedDelta(hours=1), hours=1)
-        with pytest.raises(TypeError, match="Expected an itemized delta"):
+        with pytest.raises(
+            TypeError, match="argument must be an ItemizedDelta"
+        ):
             operation(1)
         with pytest.raises(TypeError, match="foo"):
             operation(foo=1)
@@ -1194,7 +1222,7 @@ class TestAddSub:
                 **rounding,
             )
         with pytest.raises(TypeError, match="rounding"):
-            operation(**rounding)
+            operation(round_mode="ceil", round_increment=2)
 
     def test_subtract_options_are_keyword_only(self):
         delta = ItemizedDelta(hours=1)
@@ -1352,7 +1380,7 @@ class TestTotal:
         assert isinstance(microseconds_result, float)
 
     def test_relative_to_overflows(self):
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ItemizedDelta(years=2, nanoseconds=1).total(
                 "months",
                 relative_to=ZonedDateTime(
@@ -1360,7 +1388,7 @@ class TestTotal:
                 ),
             )
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ItemizedDelta(years=-2, minutes=0).total(
                 "months",
                 relative_to=ZonedDateTime(

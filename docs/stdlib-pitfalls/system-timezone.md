@@ -3,7 +3,7 @@ hide-toc: true
 myst:
   html_meta:
     description: >-
-      Why the standard library's implicit conversion to the system timezone makes
+      Why the standard library's implicit conversion to the system time zone makes
       code depend on machine configuration, and represents the result as a fixed
       offset.
 ---

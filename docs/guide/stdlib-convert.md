@@ -55,8 +55,8 @@ datetime.datetime(2025, 4, 19, 15, 30, tzinfo=datetime.timezone.utc)
 :class: note
 
 {class}`~whenever.ZonedDateTime` reads such a datetime as local fields, the
-offset its {class}`~zoneinfo.ZoneInfo` computes for them, and a timezone ID.
-An ISO string with an offset and a timezone ID carries the same three things,
+offset its {class}`~zoneinfo.ZoneInfo` computes for them, and a time zone ID.
+An ISO string with an offset and a time zone ID carries the same three things,
 so both go through the same
 {ref}`resolution flow <resolving-local-times>`. The constructor accepts
 `offset_mismatch=` and `disambiguation=`, and raises

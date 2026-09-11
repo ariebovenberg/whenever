@@ -36,6 +36,7 @@ from ._common import (
     _Base,
     add_alternate_constructors,
     final,
+    invalid,
     warn_deprecated,
 )
 from ._math import (
@@ -44,6 +45,7 @@ from ._math import (
     DIFF_FUNCS,
     EXACT_TOTAL_UNITS,
     EXACT_UNITS_STRICT,
+    ROUND_MODES,
     Sign,
     resolve_leap_day,
 )
@@ -127,6 +129,8 @@ def _resolve_rounding(
     round_mode: RoundModeStr, round_increment: int
 ) -> tuple[RoundModeStr, int]:
     mode = "trunc" if round_mode is UNSET else round_mode
+    if mode not in ROUND_MODES:
+        raise invalid("round_mode", mode)
     increment = 1 if round_increment is UNSET else round_increment
     if not isinstance(increment, int):
         raise TypeError("round_increment must be an integer")
@@ -537,7 +541,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
             ...
 
-    def __getitem__(self, key: str) -> int:
+    def __getitem__(self, key: str, /) -> int:
         """Get the value of a specific component by name.
 
         >>> d = ItemizedDelta(weeks=1, days=3)
@@ -591,7 +595,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             + (self._nanoseconds is not None)
         )
 
-    def __contains__(self, key: object) -> bool:
+    def __contains__(self, key: object, /) -> bool:
         """Check if a specific component is set.
 
         >>> d = ItemizedDelta(weeks=1, days=3)
@@ -722,7 +726,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> ItemizedDelta.parse_iso("-P1W11DT4H")
         ItemizedDelta("-P1w11dT4h")
         """
-        exc = ValueError(f"Invalid format: {s!r}")
+        exc = ValueError(f"invalid format: {s!r}")
         prev_unit = ""
         years, months, weeks, days, hours, minutes, seconds, nanos = (
             None,
@@ -914,7 +918,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         )
         return self
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: object, /) -> bool:
         """Compare for equality. Each component is individually compared.
         No normalization is performed. Zero values are considered equivalent
         to missing values.
@@ -943,6 +947,11 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             and (self._seconds or 0) == (other._seconds or 0)
             and (self._nanoseconds or 0) == (other._nanoseconds or 0)
         )
+
+    def __hash__(self) -> int:
+        # Equal values must hash alike, so a component given as zero
+        # hashes like a missing one.
+        return hash(tuple((k, v) for k, v in self.items() if v))
 
     def strict_eq(self, other: ItemizedDelta, /) -> bool:
         """Compare two deltas, including what ``==`` ignores.
@@ -1095,7 +1104,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     def add(
         self,
-        arg: ItemizedDelta | ItemizedDateDelta = UNSET,
+        delta: ItemizedDelta | ItemizedDateDelta = UNSET,
         /,
         *,
         relative_to: _whenever.ZonedDateTime = UNSET,
@@ -1112,7 +1121,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         with `cal_unit_composition_ok=True`.
         """
         return self._add(
-            arg,
+            delta,
             relative_to=relative_to,
             in_units=in_units,
             round_mode=round_mode,
@@ -1144,18 +1153,19 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         other: Mapping[str, int]
         if kwargs:
             if arg is not UNSET:
-                # NIT: this message is slightly confusing
-                raise TypeError("Cannot mix positional and keyword arguments")
-            if invalid := kwargs.keys() - DELTA_UNITS:
+                raise TypeError("cannot mix positional and keyword arguments")
+            if unexpected := kwargs.keys() - DELTA_UNITS:
                 raise TypeError(
-                    f"Unexpected keyword argument: {invalid.pop()!r}"
+                    f"unexpected keyword argument {unexpected.pop()!r}"
                 )
             other = kwargs
         elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
             # Mypy can't see how itemized deltas are always valid str->int mappings
             other = arg  # type: ignore[assignment]
         elif arg is not UNSET:
-            raise TypeError("Expected an itemized delta")
+            raise TypeError(
+                "argument must be an ItemizedDelta or ItemizedDateDelta"
+            )
         else:
             other = {}
 
@@ -1279,7 +1289,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
     def subtract(
         self,
-        arg: ItemizedDelta | ItemizedDateDelta = UNSET,
+        delta: ItemizedDelta | ItemizedDateDelta = UNSET,
         /,
         *,
         relative_to: _whenever.ZonedDateTime = UNSET,
@@ -1293,10 +1303,10 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         # Invert the arguments and pass to add()
         if kwargs:
             kwargs = {k: -v for k, v in kwargs.items()}
-        if arg:
-            arg = -arg
+        if delta:
+            delta = -delta
         return self._add(
-            arg,
+            delta,
             relative_to=relative_to,
             in_units=in_units,
             round_mode=round_mode,
@@ -1313,6 +1323,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         | _whenever.ZonedDateTime
         | _whenever.PlainDateTime
         | _whenever.OffsetDateTime,
+        /,
     ) -> (
         ItemizedDelta
         | _whenever.ZonedDateTime
@@ -1340,6 +1351,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         other: _whenever.ZonedDateTime
         | _whenever.PlainDateTime
         | _whenever.OffsetDateTime,
+        /,
     ) -> (
         _whenever.ZonedDateTime
         | _whenever.PlainDateTime
@@ -1352,7 +1364,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         return NotImplemented
 
     def __sub__(
-        self, other: ItemizedDelta | ItemizedDateDelta
+        self, other: ItemizedDelta | ItemizedDateDelta, /
     ) -> ItemizedDelta:
         if not isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
             return NotImplemented
@@ -1371,6 +1383,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         other: _whenever.ZonedDateTime
         | _whenever.PlainDateTime
         | _whenever.OffsetDateTime,
+        /,
     ) -> (
         _whenever.ZonedDateTime
         | _whenever.PlainDateTime
@@ -1574,7 +1587,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     def __repr__(self) -> str:
         return f'ItemizedDelta("{self.format_iso(lowercase_units=True)}")'
 
-    __str__ = format_iso
+    def __str__(self) -> str:
+        return self.format_iso()
 
     def _init_from_iso(self, s: str) -> None:
         parsed = type(self).parse_iso(s)
@@ -1881,7 +1895,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         it doesn't allow fractional values.
         See :ref:`here <iso8601-durations>` for more information.
         """
-        exc = ValueError(f"Invalid format: {s!r}")
+        exc = ValueError(f"invalid format: {s!r}")
 
         # Catch certain invalid strings early, making parsing easier
         if len(s) < 3 or not s.isascii():
@@ -1991,7 +2005,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         if self._days is not None:
             yield "days"
 
-    def __getitem__(self, key: DateDeltaUnitStr) -> int:
+    def __getitem__(self, key: DateDeltaUnitStr, /) -> int:
         """Get the value of a specific component by name.
 
         >>> d = ItemizedDateDelta(weeks=1, days=0)
@@ -2033,7 +2047,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             + (self._days is not None)
         )
 
-    def __contains__(self, key: object) -> bool:
+    def __contains__(self, key: object, /) -> bool:
         """Check if a specific component is set.
 
         >>> d = ItemizedDateDelta(weeks=1, days=0)
@@ -2068,7 +2082,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         """
         return bool(self._years or self._months or self._weeks or self._days)
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: object, /) -> bool:
         """Compare each component for equality, under the following rules:
 
         - No normalization is performed. 12 months is not equal to 1 year, etc.
@@ -2091,6 +2105,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             and (self._weeks or 0) == (other._weeks or 0)
             and (self._days or 0) == (other._days or 0)
         )
+
+    def __hash__(self) -> int:
+        # Equal values must hash alike, so a component given as zero
+        # hashes like a missing one.
+        return hash(tuple((k, v) for k, v in self.items() if v))
 
     def strict_eq(self, other: ItemizedDateDelta, /) -> bool:
         """Compare two deltas, including what ``==`` ignores.
@@ -2237,7 +2256,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     def add(
         self,
-        arg: ItemizedDateDelta | ItemizedDelta = UNSET,
+        delta: ItemizedDateDelta | ItemizedDelta = UNSET,
         /,
         *,
         relative_to: _whenever.Date
@@ -2252,7 +2271,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     ) -> ItemizedDateDelta | ItemizedDelta:
         """Add time to this delta, returning a new delta."""
         return self._add(
-            arg,
+            delta,
             relative_to=relative_to,
             in_units=in_units,
             round_mode=round_mode,
@@ -2285,17 +2304,19 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         other: Mapping[str, int]
         if kwargs:
             if arg is not UNSET:
-                raise TypeError("Cannot mix positional and keyword arguments")
-            if invalid := kwargs.keys() - DATE_DELTA_UNITS:
+                raise TypeError("cannot mix positional and keyword arguments")
+            if unexpected := kwargs.keys() - DATE_DELTA_UNITS:
                 raise TypeError(
-                    f"Unexpected keyword argument: {next(iter(invalid))!r}"
+                    f"unexpected keyword argument {next(iter(unexpected))!r}"
                 )
             other = kwargs
         elif isinstance(arg, (ItemizedDateDelta, ItemizedDelta)):
             # Mypy doesn't see that itemized deltas are valid str->int maps
             other = arg  # type: ignore[assignment]
         elif arg is not UNSET:
-            raise TypeError("Expected an itemized delta")
+            raise TypeError(
+                "argument must be an ItemizedDelta or ItemizedDateDelta"
+            )
         else:
             other = {}
 
@@ -2339,16 +2360,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             round_mode, round_increment
         )
         combined = _items_add(self, other)
-        if isinstance(arg, ItemizedDelta):
-            from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
+        from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
 
-            if not isinstance(
-                relative_to, (ZonedDateTime, PlainDateTime, OffsetDateTime)
-            ):
-                raise TypeError(
-                    "relative_to must be a ZonedDateTime, PlainDateTime, or "
-                    "OffsetDateTime when composing with ItemizedDelta"
-                )
+        if isinstance(
+            relative_to, (ZonedDateTime, PlainDateTime, OffsetDateTime)
+        ):
             return cast(
                 ItemizedDelta,
                 relative_to.add(**cast(Any, combined)).since(
@@ -2358,9 +2374,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                     round_increment=round_increment,
                 ),
             )
-        from ._core import Date
-
-        assert isinstance(relative_to, Date)
+        if isinstance(arg, ItemizedDelta):
+            raise TypeError(
+                "relative_to must be a ZonedDateTime, PlainDateTime, or "
+                "OffsetDateTime when composing with ItemizedDelta"
+            )
         return relative_to.add(**cast(Any, combined)).since(
             relative_to,
             in_units=cast(Sequence[DateDeltaUnitStr], in_units),
@@ -2429,7 +2447,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
     def subtract(
         self,
-        arg: ItemizedDateDelta | ItemizedDelta = UNSET,
+        delta: ItemizedDateDelta | ItemizedDelta = UNSET,
         /,
         *,
         relative_to: _whenever.Date
@@ -2446,10 +2464,10 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         # Invert the arguments and pass to add()
         if kwargs:
             kwargs = {k: -v for k, v in kwargs.items()}
-        if arg:
-            arg = -arg
+        if delta:
+            delta = -delta
         return self._add(
-            arg,
+            delta,
             relative_to=relative_to,
             in_units=in_units,
             round_mode=round_mode,
@@ -2467,6 +2485,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         | _whenever.ZonedDateTime
         | _whenever.PlainDateTime
         | _whenever.OffsetDateTime,
+        /,
     ) -> (
         ItemizedDateDelta
         | ItemizedDelta
@@ -2500,6 +2519,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         | _whenever.ZonedDateTime
         | _whenever.PlainDateTime
         | _whenever.OffsetDateTime,
+        /,
     ) -> (
         _whenever.Date
         | _whenever.ZonedDateTime
@@ -2515,7 +2535,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         return NotImplemented
 
     def __sub__(
-        self, other: ItemizedDateDelta | ItemizedDelta
+        self, other: ItemizedDateDelta | ItemizedDelta, /
     ) -> ItemizedDateDelta | ItemizedDelta:
         if isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
             if _has_nonzero_calendar_units(
@@ -2536,6 +2556,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         | _whenever.ZonedDateTime
         | _whenever.PlainDateTime
         | _whenever.OffsetDateTime,
+        /,
     ) -> (
         _whenever.Date
         | _whenever.ZonedDateTime
@@ -2617,7 +2638,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     def __repr__(self) -> str:
         return f'ItemizedDateDelta("{self.format_iso(lowercase_units=True)}")'
 
-    __str__ = format_iso
+    def __str__(self) -> str:
+        return self.format_iso()
 
     def _init_from_iso(self, s: str) -> None:
         parsed = type(self).parse_iso(s)

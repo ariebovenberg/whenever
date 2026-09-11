@@ -7,7 +7,7 @@ ZONEINFO = "zoneinfo"
 SYSTEM = platform.system()
 LOCALTIME = "/etc/localtime"
 
-# Getting the system timezone key and file depends on the platform.
+# Getting the system time zone key and file depends on the platform.
 # On unix-like systems it's relatively straightforward.
 # On other platforms, we use the tzlocal package.
 # This keeps dependencies minimal for linux.
@@ -33,7 +33,7 @@ else:  # pragma: no cover
 
 
 def _tzid_from_path(path: str) -> str | None:
-    """Find the IANA timezone ID from a path to a zoneinfo file.
+    """Find the IANA time zone ID from a path to a zoneinfo file.
     Returns None if the path is not in a zoneinfo directory.
     """
     # Find the path segment containing 'zoneinfo',
@@ -44,8 +44,8 @@ def _tzid_from_path(path: str) -> str | None:
 
 
 def get_tz() -> tuple[Literal[0, 1, 2], str]:
-    """Get the system timezone. The timezone can be determined in different ways.
-    The first item in the tuple is the type of the timezone:
+    """Get the system time zone. The time zone can be determined in different ways.
+    The first item in the tuple is the type of the time zone:
         - 0: zoneinfo key
         - 1: file path to a zoneinfo file (key unknown)
         - 2: zoneinfo key or posix TZ string (unknown which)

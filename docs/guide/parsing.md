@@ -17,7 +17,7 @@ patterns for everything else.
 
 All types in *whenever* use ISO 8601 as their canonical string representation.
 This representation is round-trippable except in the uncommon case of a zoned
-datetime backed by a system timezone without a timezone ID (see
+datetime backed by a system time zone without a time zone ID (see
 {ref}`systemtime`).
 You can even instantiate objects directly from their ISO 8601 string representation:
 
@@ -37,7 +37,7 @@ Below are the default ISO string formats produced by each type:
 | {class}`~whenever.ZonedDateTime`        | `YYYY-MM-DDTHH:MM:SS±HH:MM[IANA TZ ID]` [^1] |
 | {class}`~whenever.OffsetDateTime`       | `YYYY-MM-DDTHH:MM:SS±HH:MM`                  |
 
-[^1]: The timezone ID is not part of the core ISO 8601 standard,
+[^1]: The time zone ID is not part of the core ISO 8601 standard,
       but is part of the RFC 9557 extension.
       This format is commonly used by datetime libraries in other languages as well.
 

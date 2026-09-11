@@ -45,6 +45,11 @@ BENCH_PYTEST_ARGS ?= $(DEFAULT_BENCH_PYTEST_ARGS)
 .PHONY: typecheck
 typecheck:
 	uv $(UV_ARGS) run mypy $(MYPY_ARGS) pysrc/ tests/
+	# checks the stub against whichever backend is installed
+	uv $(UV_ARGS) run python -m mypy.stubtest whenever \
+		--mypy-config-file tests/stubtest_mypy.ini \
+		--allowlist tests/stubtest_allowlist.txt \
+		--ignore-unused-allowlist
 
 .PHONY: sync-docstrings
 sync-docstrings:

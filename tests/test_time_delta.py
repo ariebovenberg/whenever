@@ -164,6 +164,14 @@ class TestInit:
         with pytest.raises(TypeError):
             TimeDelta(**{1: 43})  # type: ignore[arg-type,call-overload]
 
+    def test_invalid_types(self):
+        # a string would be repeated by ``str * int`` instead of failing
+        with pytest.raises(TypeError, match="hours"):
+            TimeDelta(hours="1")  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="nanoseconds"):
+            TimeDelta(nanoseconds=1.5)  # type: ignore[call-overload]
+
     def test_iso(self):
         assert TimeDelta("PT1H2M3.000004S") == TimeDelta(
             hours=1, minutes=2, seconds=3, microseconds=4
@@ -533,10 +541,10 @@ class TestTotal:
 
     def test_invalid_unit(self):
         d = hours(1)
-        with pytest.raises(ValueError, match="Invalid unit.*foobars"):
+        with pytest.raises(ValueError, match="invalid unit: 'foobars'"):
             d.total("foobars")  # type: ignore[call-overload]
 
-        with pytest.raises(ValueError, match="Invalid unit"):
+        with pytest.raises(ValueError, match="invalid unit"):
             d.total("")  # type: ignore[call-overload]
 
     def test_range_error(self):
@@ -709,6 +717,12 @@ def test_repr():
     assert repr(TimeDelta(minutes=23, seconds=1)) == 'TimeDelta("PT23m1s")'
 
 
+def test_str():
+    d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+    assert str(d) == d.format_iso() == "PT1H2M3.000004S"
+    assert str(TimeDelta()) == "PT0S"
+
+
 VALID_TDELTAS = [
     (
         "PT1H2M3.000004S",
@@ -806,7 +820,7 @@ class TestParseIso:
     def test_invalid(self, s) -> None:
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
+            match=r"invalid format.*" + re.escape(repr(s)),
         ):
             TimeDelta.parse_iso(s)
 
@@ -1331,6 +1345,10 @@ class TestRound:
         with pytest.raises(ValueError, match="[Ii]ncrement"):
             t.round(unit, increment=increment)
 
+    def test_increment_must_be_an_integer(self):
+        with pytest.raises(TypeError, match="increment"):
+            TimeDelta.ZERO.round("second", increment=1.5)  # type: ignore[call-overload]
+
     def test_default_half_even_seconds(self):
         assert TimeDelta(seconds=2, milliseconds=500).round() == TimeDelta(
             seconds=2
@@ -1345,12 +1363,12 @@ class TestRound:
 
     def test_invalid_unit(self):
         t = TimeDelta.ZERO
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
             t.round("foo")  # type: ignore[call-overload]
 
     def test_invalid_mode(self):
         t = TimeDelta.ZERO
-        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
+        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
             t.round(mode="foo")  # type: ignore[call-overload]
 
     def test_24h_day_warning(self):
@@ -1677,17 +1695,17 @@ class TestInUnits:
 
     def test_invalid_unit(self):
         d = hours(1)
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+        with pytest.raises(ValueError, match="invalid unit"):
             d.in_units(["foo"])  # type: ignore[list-item]
 
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+        with pytest.raises(ValueError, match="invalid unit"):
             d.in_units(["foos"])  # type: ignore[list-item]
 
-        with pytest.raises(ValueError, match="Invalid.*unit"):
+        with pytest.raises(ValueError, match="invalid unit"):
             d.in_units([""])  # type: ignore[list-item]
 
         # DOC: make this error clearer
-        with pytest.raises(ValueError, match="Invalid.*unit"):
+        with pytest.raises(ValueError, match="invalid unit"):
             d.in_units(["milliseconds"])  # type: ignore[list-item]
 
     def test_missing_units(self):
@@ -1713,7 +1731,7 @@ class TestInUnits:
 
     def test_invalid_round_mode(self):
         d = hours(1)
-        with pytest.raises(ValueError, match="Invalid.*rounding mode.*foo"):
+        with pytest.raises(ValueError, match="invalid (round_)?mode: 'foo'"):
             d.in_units(["hours"], round_mode="foo")  # type: ignore[call-overload]
 
     def test_24h_days_warning(self):
@@ -1732,6 +1750,8 @@ class TestInUnits:
         d = hours(1)
         with pytest.raises(TypeError, match="sequence"):
             d.in_units("hours")  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="sequence"):
+            d.in_units({"hours"})  # type: ignore[call-overload]
 
     def test_calendar_units_require_relative_to(self):
         d = hours(2000)
@@ -1847,3 +1867,9 @@ class TestAssume24hDaysKwarg:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             td.round("day", days_assumed_24h_ok=True)
+
+
+def test_in_units_warns_once_for_weeks():
+    with warns_here(DaysAssumed24HoursWarning) as caught:
+        TimeDelta(hours=30).in_units(["weeks", "hours"])
+    assert len(caught) == 1

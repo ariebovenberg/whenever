@@ -1,4 +1,4 @@
-"""Misc public utilities, e.g. to manage the timezone cache, or patch the time"""
+"""Misc public utilities, e.g. to manage the time zone cache, or patch the time"""
 
 from __future__ import annotations
 
@@ -7,10 +7,14 @@ from contextlib import contextmanager
 from functools import partial
 from threading import RLock
 from typing import Any, Iterable, Iterator, Protocol, no_type_check
+from warnings import warn
 
+from ._common import DAYS_NOT_ALWAYS_24H_MSG
 from ._core import (
+    DaysAssumed24HoursWarning,
     Instant,
     OffsetDateTime,
+    TimeDelta,
     ZonedDateTime,
     _clear_tz_cache,
     _clear_tz_cache_by_keys,
@@ -82,6 +86,17 @@ class _TimePatch:
 
     def shift(self, *args: Any, **kwargs: Any) -> None:
         """Move the patched clock by an exact elapsed-time amount."""
+        if not args:
+            # Build the delta here rather than in Instant.add(), so that the
+            # days-are-24-hours warning points at the caller of shift().
+            ok = kwargs.pop("days_assumed_24h_ok", False)
+            if (kwargs.get("weeks") or kwargs.get("days")) and not ok:
+                warn(
+                    DAYS_NOT_ALWAYS_24H_MSG,
+                    DaysAssumed24HoursWarning,
+                    stacklevel=2,
+                )
+            args, kwargs = (TimeDelta(**kwargs, days_assumed_24h_ok=True),), {}
         with _patch_lock:
             self._check_active()
             current = Instant.now() if self._keep_ticking else self._pin
@@ -96,7 +111,10 @@ class _TimePatch:
         with _patch_lock:
             self._check_active()
             if not isinstance(value, (Instant, OffsetDateTime, ZonedDateTime)):
-                raise TypeError("move_to() argument must be an exact time")
+                raise TypeError(
+                    "move_to() argument must be an Instant, OffsetDateTime, "
+                    "or ZonedDateTime"
+                )
             self._apply(
                 value if isinstance(value, Instant) else value.to_instant()
             )
@@ -125,8 +143,8 @@ def patch_current_time(
     * This function only affects whenever's ``now`` functions. It does not
       affect the standard library's time functions or any other libraries.
       Use the ``time_machine`` package if you also want to patch other libraries.
-    * It doesn't affect the system timezone.
-      If you need to patch the system timezone, set the ``TZ`` environment
+    * It doesn't affect the system time zone.
+      If you need to patch the system time zone, set the ``TZ`` environment
       variable in combination with :func:`~whenever.reset_system_tz`.
 
     Example
@@ -170,13 +188,13 @@ def patch_current_time(
 def reset_tzpath(
     target: Iterable[str | os.PathLike[str]] | None = None, /
 ) -> None:
-    """Reset or set the paths in which ``whenever`` will search for timezone data.
+    """Reset or set the paths in which ``whenever`` will search for time zone data.
 
     It does not affect the :mod:`zoneinfo` module or other libraries.
 
     Note
     ----
-    Due to caching, looking up a timezone after changing the search path may
+    Due to caching, looking up a time zone after changing the search path may
     continue to use the already loaded definition. Call :func:`clear_tzcache`
     to make subsequent lookups load from the new path.
 
@@ -198,15 +216,15 @@ def reset_tzpath(
 
 
 def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
-    """Clear the timezone cache. If ``only_keys`` is provided, only the cache for those
+    """Clear the time zone cache. If ``only_keys`` is provided, only the cache for those
     keys will be cleared.
 
     Caution
     -------
     Calling this function may change the behavior of existing ``ZonedDateTime``
     instances in surprising ways. Most significantly, ``strict_eq()`` may
-    return ``False`` between two timezone instances with the same TZ ID,
-    if this timezone definition was changed on disk.
+    return ``False`` between two time zone instances with the same TZ ID,
+    if this time zone definition was changed on disk.
 
     **Use this function only if you know that you need to.**
 
@@ -217,21 +235,21 @@ def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
     else:
         # This is such a common mistake, that we raise a descriptive error
         if isinstance(only_keys, (str, bytes)):
-            raise TypeError("only_keys must be an iterable of timezone IDs")
+            raise TypeError("only_keys must be an iterable of time zone IDs")
         _clear_tz_cache_by_keys(tuple(only_keys))
 
 
 def available_timezones() -> set[str]:
-    """Gather the set of all available timezones.
+    """Gather the set of all available time zones.
 
-    Each call to this function will recalculate the available timezone names
-    depending on the current timezone search path (see :func:`get_tzpath`),
+    Each call to this function will recalculate the available time zone names
+    depending on the current time zone search path (see :func:`get_tzpath`),
     and the presence of the ``tzdata`` package.
 
     Warning
     -------
     This function may open a large number of files, since the first few bytes
-    of timezone files must be read to determine if they are valid.
+    of time zone files must be read to determine if they are valid.
 
     Note
     ----

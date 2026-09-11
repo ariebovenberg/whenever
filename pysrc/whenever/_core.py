@@ -51,7 +51,7 @@ except ModuleNotFoundError as e:
     _EXTENSION_LOADED = False
 
     # In pure Python mode, populate TZPATH eagerly (the Rust extension defers
-    # this to first timezone lookup for faster import time).
+    # this to first time zone lookup for faster import time).
     if "whenever._utils" not in sys.modules:  # pragma: no branch
         from ._utils import reset_tzpath
 

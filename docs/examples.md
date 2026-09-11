@@ -2,7 +2,7 @@
 myst:
   html_meta:
     description: >-
-      Copy-pasteable recipes for common tasks: current time, timezone conversion,
+      Copy-pasteable recipes for common tasks: current time, time zone conversion,
       parsing ISO 8601, rounding, ages, countdowns, and DST-safe scheduling.
 ---
 
@@ -24,7 +24,7 @@ For the reasoning behind them, refer to the {ref}`guide`.
 Instant("2025-04-19 19:02:56.39569Z")
 ```
 
-## Convert UTC to the system timezone
+## Convert UTC to the system time zone
 
 ```python
 >>> from whenever import Instant, SYSTEM_TZ
@@ -33,7 +33,7 @@ Instant("2025-04-19 19:02:56.39569Z")
 ZonedDateTime("2025-04-19 21:02:56.39569+02:00[Europe/Berlin]")
 ```
 
-## Convert from one timezone to another
+## Convert from one time zone to another
 
 ```python
 >>> from whenever import ZonedDateTime
@@ -68,7 +68,7 @@ PlainDateTime("2023-10-01 12:30:00")
 (4, 8)
 ```
 
-## Assign a timezone to a datetime
+## Assign a time zone to a datetime
 
 ```python
 >>> from whenever import PlainDateTime
@@ -192,7 +192,7 @@ Use the arguments of {meth}`~whenever.Instant.round` to customize the rounding b
 ## Handling ambiguous datetimes
 
 Due to daylight saving time, some date and time values don't exist,
-or occur twice in a given timezone.
+or occur twice in a given time zone.
 In the example below, the clock was set forward by one hour at 2:00 AM,
 so the time 2:30 AM doesn't exist.
 
@@ -305,7 +305,7 @@ PlainDateTime("2024-03-15 14:30:00")
 OffsetDateTime("2024-03-15 14:30:00+02:00")
 ```
 
-If your input doesn't include an offset or timezone, parse with
+If your input doesn't include an offset or time zone, parse with
 {meth}`PlainDateTime.parse` and convert:
 
 ```python
@@ -336,7 +336,7 @@ Every `whenever` type has an ISO-compatible reversible string representation:
 >>> d = ZonedDateTime(2025, 6, 15, hour=14, minute=30, tz="Europe/Amsterdam")
 >>> s = str(d)
 >>> s
-'2025-06-15 14:30:00+02:00[Europe/Amsterdam]'
+'2025-06-15T14:30:00+02:00[Europe/Amsterdam]'
 >>> ZonedDateTime(s) == d
 True
 ```

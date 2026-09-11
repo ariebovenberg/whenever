@@ -1,7 +1,7 @@
 """
-Stress tests for refcounting in the timezone cache (Rust implementation).
+Stress tests for refcounting in the time zone cache (Rust implementation).
 
-This test can surface refcounting issues when many timezones are loaded and unloaded.
+This test can surface refcounting issues when many time zones are loaded and unloaded.
 """
 
 import os
@@ -43,16 +43,16 @@ def main():
     f.assume_system_tz()
     f.assume_tz("Europe/Amsterdam")
 
-    # A posix timezone
+    # A posix time zone
     os.environ["TZ"] = "IST-5:30"
     f.assume_system_tz()
 
-    # A path timezone
+    # A path time zone
     path = os.environ["TZ"] = "/usr/share/zoneinfo/Asia/Tokyo"
     if os.path.exists(path):
         reset_system_tz()
     else:
-        print("Path timezone not found, skipping that part of the test")
+        print("Path time zone not found, skipping that part of the test")
 
 
 if __name__ == "__main__":

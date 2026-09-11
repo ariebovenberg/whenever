@@ -79,7 +79,7 @@ fn handle_exact_unit(value: PyObj, max: u64, name: &str, factor: i128) -> PyResu
             .then_some((f * factor as f64) as i128)
             .ok_or_range_err()
     } else {
-        raise_value_err(format!("{name} must be an integer or float"))?
+        raise_type_err(format!("{name} must be an integer or float"))?
     }
 }
 pub(crate) const MAX_MINUTES: u64 = MAX_SECS / 60;
@@ -245,7 +245,7 @@ pub(crate) fn microseconds(state: &State, arg: PyObj) -> PyReturn {
 pub(crate) fn nanoseconds(state: &State, arg: PyObj) -> PyReturn {
     TimeDelta::from_nanos(
         arg.cast_allow_subclass::<PyInt>()
-            .ok_or_value_err("nanoseconds must be an integer")?
+            .ok_or_type_err("nanoseconds must be an integer")?
             .to_i128()?,
     )
     .ok_or_range_err()?
@@ -571,10 +571,10 @@ fn parse_iso(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
         .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
         // called through the constructor
-        .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
+        .ok_or_type_err("parse_iso() argument must be a string")?;
     match TimeDelta::parse_iso(py_str.as_utf8()?) {
         Ok(d) => d.to_obj(cls),
-        Err(ParseError::Invalid) => raise_value_err(format!("Invalid format: {arg}")),
+        Err(ParseError::Invalid) => raise_value_err(format!("invalid format: {arg}")),
         Err(ParseError::OutOfRange) => raise_range_err(),
     }
 }
@@ -624,9 +624,9 @@ fn add_method(
     }
     let other = match arg {
         Some(arg) => arg.extract(cls).ok_or_type_err(if negate {
-            "subtract() argument must be a whenever.TimeDelta"
+            "subtract() argument must be a TimeDelta"
         } else {
-            "add() argument must be a whenever.TimeDelta"
+            "add() argument must be a TimeDelta"
         })?,
         None if kwargs.original_len() == 0 => return slf.to_obj(cls),
         None => timedelta_from_kwargs(fname, kwargs, cls.state())?,
@@ -653,7 +653,7 @@ fn in_units(
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
         if eq(key, *state.strs.round_mode) {
-            mode = round::Mode::from_py_named("rounding mode", value, &state.strs)?;
+            mode = round::Mode::from_py_named("round_mode", value, &state.strs)?;
         } else if eq(key, *state.strs.round_increment) {
             increment = difference::DifferenceIncrement::from_py(value)?;
         } else if eq(key, *state.strs.relative_to) {

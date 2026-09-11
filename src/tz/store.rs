@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, RwLock, Weak},
 };
 
-/// Timezone cache.
+/// Time zone cache.
 /// In GIL-enabled builds, access is synchronized by the GIL.
 /// In free-threaded builds, a mutex provides synchronization.
 /// It is based on the cache approach of zoneinfo in Python's standard library.
@@ -112,7 +112,7 @@ type Lookup = AHashMap<NormalizedKey, Weak<TimeZone>>;
 
 #[derive(Debug)]
 struct CacheInner {
-    // Weak references to timezones keyed by TZ ID.
+    // Weak references to time zones keyed by TZ ID.
     // Strong references are held by (1) the LRU and (2) ZonedDateTime objects.
     //
     // "Ahash" works significantly faster than the standard hashing algorithm.
@@ -274,20 +274,20 @@ struct ResolvedPath {
     updates: DirectoryUpdates,
 }
 
-/// Access layer for timezone data and relevant metadata.
+/// Access layer for time zone data and relevant metadata.
 #[derive(Debug)]
 pub(crate) struct TzStore {
-    // The zoneinfo timezone cache.
+    // The zoneinfo time zone cache.
     cache: Cache,
     // Directory spelling indices, published only after a valid TZif load.
     directories: DirectoryCache,
     // The path to the `tzdata` Python package contents, if any.
-    // Lazily initialized on first timezone lookup.
+    // Lazily initialized on first time zone lookup.
     tzdata_path: OncePyCell<Option<PathBuf>>,
     // The paths to search for zoneinfo files.
     // Lazily initialized from Python's TZPATH on first use; can be overridden via set_paths().
     paths: OncePyCell<Vec<PathBuf>>,
-    // Cached system timezone. Held behind an RwLock for safe concurrent access.
+    // Cached system time zone. Held behind an RwLock for safe concurrent access.
     // The Arc keeps the allocation alive even if the cache entry is evicted while being read.
     system_tz_cache: RwLock<Option<Arc<TimeZone>>>,
     // This reference is borrowed from the module, which outlives this store.
@@ -306,25 +306,22 @@ impl TzStore {
         }
     }
 
-    /// Set the timezone search paths, overriding the lazily-initialized default.
+    /// Set the time zone search paths, overriding the lazily-initialized default.
     pub(crate) fn set_paths(&self, new_paths: Vec<PathBuf>) {
         self.paths.set(new_paths);
         self.directories.clear();
     }
 
-    /// Fetches the timezone definition for the given IANA time zone ID.
+    /// Fetches the time zone definition for the given IANA time zone ID.
     pub(crate) fn get(&self, key: &str) -> PyResult<Arc<TimeZone>> {
         let Some(validated) = ValidatedKey::new(key) else {
-            return raise(
-                self.exc_notfound,
-                format!("No time zone found with key {key}"),
-            );
+            return raise(self.exc_notfound, format!("time zone ID '{key}' not found"));
         };
         let normalized = NormalizedKey::from(validated);
         self.cache
             .get_or_insert_with(&normalized, || self.load_tzif(&normalized))?
             .ok_or_else_raise(self.exc_notfound, || {
-                format!("No time zone found with key {key}")
+                format!("time zone ID '{key}' not found")
             })
     }
 
@@ -343,7 +340,7 @@ impl TzStore {
             return TimeZone::parse_posix(key)
                 .map(Arc::new)
                 .ok_or_else_raise(self.exc_notfound, || {
-                    format!("No time zone found with key or posix TZ string {key}")
+                    format!("'{key}' is not a time zone ID or POSIX TZ string")
                 });
         };
         let normalized = NormalizedKey::from(validated);
@@ -351,11 +348,11 @@ impl TzStore {
             .get_or_insert_with(&normalized, || self.load_tzif(&normalized))?
             .or_else(|| TimeZone::parse_posix(key).map(Arc::new))
             .ok_or_else_raise(self.exc_notfound, || {
-                format!("No time zone found with key or posix TZ string {key}")
+                format!("'{key}' is not a time zone ID or POSIX TZ string")
             })
     }
 
-    /// Retrieve the system timezone definition (cached for repeat calls).
+    /// Retrieve the system time zone definition (cached for repeat calls).
     pub(crate) fn get_system_tz(&self) -> PyResult<Arc<TimeZone>> {
         // Fast path: clone the Arc under a read lock
         if let Some(arc) = self
@@ -370,7 +367,7 @@ impl TzStore {
         self.reset_system_tz()
     }
 
-    /// Reset the cached system timezone.
+    /// Reset the cached system time zone.
     pub(crate) fn reset_system_tz(&self) -> PyResult<Arc<TimeZone>> {
         let new_arc = self.determine_system_tz()?;
         *self.system_tz_cache.write().unwrap() = Some(Arc::clone(&new_arc));
@@ -455,7 +452,7 @@ impl TzStore {
         }
     }
 
-    /// Determine the current system timezone, returning a strong Arc reference.
+    /// Determine the current system time zone, returning a strong Arc reference.
     fn determine_system_tz(&self) -> PyResult<Arc<TimeZone>> {
         const ERR_MSG: &str = "get_tz() gave unexpected result";
         let tz_tuple = import(c"whenever._tz.system")?
@@ -485,7 +482,7 @@ impl TzStore {
                 let tzif = self
                     .read_tzif_at_path(&path, None)
                     .ok_or_else_raise(self.exc_notfound, || {
-                        format!("No time zone found at path {path:?}")
+                        format!("no time zone found at path '{tz_value}'")
                     })?;
                 Ok(Arc::new(tzif))
             }

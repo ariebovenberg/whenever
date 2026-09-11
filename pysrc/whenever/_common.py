@@ -22,11 +22,12 @@ UTC = _timezone.utc
 DUMMY_LEAP_YEAR = 4
 Nanos = int  # 0-999_999_999
 
-_NANOSECONDS_PER_TIMESTAMP_UNIT: dict[TimestampUnitStr, int] = {
-    "second": 1_000_000_000,
-    "millisecond": 1_000_000,
-    "microsecond": 1_000,
-    "nanosecond": 1,
+# unit -> (nanoseconds per unit, units per second)
+_TIMESTAMP_UNITS: dict[TimestampUnitStr, tuple[int, int]] = {
+    "second": (1_000_000_000, 1),
+    "millisecond": (1_000_000, 1_000),
+    "microsecond": (1_000, 1_000_000),
+    "nanosecond": (1, 1_000_000_000),
 }
 
 WARNING_HANDLING_DOCS_MSG = (
@@ -41,11 +42,11 @@ OFFSET_DATETIME_DOCS_MSG = (
 )
 
 OFFSET_SHIFT_STALE_MSG = (
-    "An OffsetDateTime's offset is usually an observation, not a timezone rule. "
+    "An OffsetDateTime's offset is usually an observation, not a time zone rule. "
     "The arithmetic is mathematically valid and preserves that fixed offset, "
-    "but OffsetDateTime does not retain regional timezone rules. The result's "
-    "offset may therefore be stale relative to the source timezone, even after "
-    "an exact shift. If the originating timezone is known, convert to "
+    "but OffsetDateTime does not retain regional time zone rules. The result's "
+    "offset may therefore be stale relative to the source time zone, even after "
+    "an exact shift. If the originating time zone is known, convert to "
     "ZonedDateTime first using .assume_tz(). If fixed-offset arithmetic is "
     "intentional or the risk is accepted, pass `stale_offset_ok=True`. For "
     "an entirely fixed-offset domain, configure StaleOffsetWarning globally. "
@@ -55,13 +56,23 @@ OFFSET_SHIFT_STALE_MSG = (
 )
 
 PLAIN_SHIFT_UNAWARE_MSG = (
-    "Shifting a PlainDateTime by exact time units does not account for timezone transitions "
+    "Shifting a PlainDateTime by exact time units does not account for time zone transitions "
     "that may occur in the interval "
     "(e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward "
     "transition, so only 1 real hour has passed). "
-    "Use .assume_tz('<tz>') + delta if you know the timezone. "
-    "If timezone transitions are intentionally irrelevant here, pass "
+    "Use .assume_tz('<tz>') + delta if you know the time zone. "
+    "If time zone transitions are intentionally irrelevant here, pass "
     "`naive_arithmetic_ok=True`. " + WARNING_HANDLING_DOCS_MSG
+)
+
+DAYS_NOT_ALWAYS_24H_MSG = (
+    "You are using days or weeks as exact time, so Whenever will treat each day "
+    "as exactly 24 hours. A calendar day can be 23 or 25 hours during a DST "
+    "transition, so this may differ from calendar arithmetic. If you mean "
+    "calendar days, perform the operation on a ZonedDateTime or pass "
+    "`relative_to=...` where supported. If fixed 24-hour periods are "
+    "intentional, pass `days_assumed_24h_ok=True`. "
+    + WARNING_HANDLING_DOCS_MSG
 )
 
 # A self-set variable to detect if we're being run by sphinx autodoc
@@ -116,7 +127,7 @@ def check_utc_bounds(dt: _datetime) -> _datetime:
     try:
         dt.astimezone(UTC)
     except (OverflowError, ValueError):
-        raise ValueError("Instant out of range")
+        raise ValueError(RANGE_MSG) from None
     return dt
 
 
@@ -136,7 +147,7 @@ class WheneverWarning(UserWarning):
 # A custom warnings class to prevent silent deprecation warnings in user code.
 # See https://sethmlarson.dev/deprecations-via-warnings-dont-work-for-python-libraries
 class WheneverDeprecationWarning(WheneverWarning):
-    """Raised when a deprecated feature of the ``whenever`` library is used.
+    """Emitted when a deprecated feature of the ``whenever`` library is used.
 
     This is a custom warning class (not a subclass of
     :class:`DeprecationWarning`) so that deprecation warnings from this
@@ -190,29 +201,76 @@ def check_no_kwargs(
         )
 
 
+# The message templates of docs/reference/exceptions.rst. One template per
+# condition, identical on both backends; tests/test_rejections.py pins them.
+RANGE_MSG = "value or calculation out of range"
+INCREMENT_MSG = (
+    "invalid increment: must be positive and divide a 24-hour day evenly"
+)
+
+
+def invalid(name: str, value: Any, /) -> ValueError:
+    """A parameter with a fixed set of values got something else."""
+    return ValueError(f"invalid {name}: {value!r}")
+
+
+def check_nanos(nanosecond: Any, /) -> int:
+    if not isinstance(nanosecond, int):
+        raise TypeError("nanosecond must be an integer")
+    if not 0 <= nanosecond < 1_000_000_000:
+        raise ValueError("invalid time")
+    return nanosecond
+
+
+def tzid_display(tzid: str | None, /) -> str:
+    """How messages name a time zone."""
+    if tzid is None:
+        return "the system time zone (with unknown ID)"
+    return f"time zone '{tzid}'"
+
+
+def format_offset_secs(secs: int, /) -> str:
+    """``+05:00``, with seconds only when nonzero."""
+    sign = "-" if secs < 0 else "+"
+    hours, rem = divmod(abs(secs), 3_600)
+    minutes, seconds = divmod(rem, 60)
+    return f"{sign}{hours:02d}:{minutes:02d}" + (
+        f":{seconds:02d}" if seconds else ""
+    )
+
+
 def split_timestamp(
     value: int | float,
     unit: Any,
     /,
 ) -> tuple[int, int]:
     try:
-        nanoseconds_per_unit = _NANOSECONDS_PER_TIMESTAMP_UNIT[unit]
+        nanoseconds_per_unit, units_per_second = _TIMESTAMP_UNITS[unit]
     except (KeyError, TypeError):
-        raise ValueError(f"invalid timestamp unit: {unit!r}") from None
+        raise invalid("unit", unit) from None
 
     if unit == "second":
         if not isinstance(value, (int, float)):
             raise TypeError("timestamp must be an integer or float")
         if isinstance(value, float) and not _isfinite(value):
-            raise ValueError("timestamp out of range")
+            raise ValueError(RANGE_MSG)
         seconds, fraction = divmod(value, 1)
-        return int(seconds), int(fraction * 1_000_000_000)
+        seconds, nanos = int(seconds), int(fraction * 1_000_000_000)
+    else:
+        if not isinstance(value, int):
+            raise TypeError(f"timestamp in {unit}s must be an integer")
+        seconds, remainder = divmod(value, units_per_second)
+        nanos = remainder * nanoseconds_per_unit
+    # Check the instant range here, before any time zone arithmetic can
+    # overflow on a value far outside it.
+    if not _MIN_TIMESTAMP <= seconds <= _MAX_TIMESTAMP:
+        raise ValueError(RANGE_MSG)
+    return seconds, nanos
 
-    if not isinstance(value, int):
-        raise TypeError(f"timestamp in {unit}s must be an integer")
-    units_per_second = 1_000_000_000 // nanoseconds_per_unit
-    seconds, remainder = divmod(value, units_per_second)
-    return seconds, remainder * nanoseconds_per_unit
+
+# Instant.MIN and Instant.MAX in seconds since the epoch
+_MIN_TIMESTAMP = -62_135_596_800
+_MAX_TIMESTAMP = 253_402_300_799
 
 
 def timestamp_from_parts(
@@ -222,10 +280,9 @@ def timestamp_from_parts(
     /,
 ) -> int:
     try:
-        nanoseconds_per_unit = _NANOSECONDS_PER_TIMESTAMP_UNIT[unit]
+        nanoseconds_per_unit, units_per_second = _TIMESTAMP_UNITS[unit]
     except (KeyError, TypeError):
-        raise ValueError(f"invalid timestamp unit: {unit!r}") from None
-    units_per_second = 1_000_000_000 // nanoseconds_per_unit
+        raise invalid("unit", unit) from None
     return seconds * units_per_second + nanosecond // nanoseconds_per_unit
 
 
@@ -263,10 +320,13 @@ else:
 
     def final(cls):
 
-        def init_subclass_not_allowed(cls, **kwargs):  # pragma: no cover
-            raise TypeError("Subclassing not allowed")
+        def init_subclass_not_allowed(subcls, **kwargs):
+            raise TypeError(
+                f"type '{cls.__module__}.{cls.__qualname__}' "
+                "is not an acceptable base type"
+            )
 
-        cls.__init_subclass__ = init_subclass_not_allowed
+        cls.__init_subclass__ = classmethod(init_subclass_not_allowed)
         return cls
 
 

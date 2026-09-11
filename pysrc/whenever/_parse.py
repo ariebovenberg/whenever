@@ -15,8 +15,10 @@ from ._common import (
     UTC,
     Nanos,
     check_utc_bounds,
+    format_offset_secs,
     mk_fixed_tzinfo,
     round_offset_to_minute,
+    tzid_display,
 )
 
 if TYPE_CHECKING:
@@ -26,9 +28,16 @@ if TYPE_CHECKING:
 class InvalidOffsetError(ValueError):
     """A string has an invalid offset for the given zone"""
 
+    @classmethod
+    def _for_tz(cls, offset_secs: int, tzid: str | None) -> InvalidOffsetError:
+        return cls(
+            f"offset {format_offset_secs(offset_secs)} does not match "
+            f"{tzid_display(tzid)}"
+        )
+
 
 def _parse_err(s: str) -> NoReturn:
-    raise ValueError(f"Invalid format: {s!r}") from None
+    raise ValueError(f"invalid format: {s!r}") from None
 
 
 def _parse_nanos(s: str) -> Nanos:
@@ -184,7 +193,7 @@ def matching_local_offset(
 
 
 class ZonedInput(NamedTuple):
-    """A local time in a named timezone, with the offset it was written with:
+    """A local time in a named time zone, with the offset it was written with:
     the input to the resolution flow, from an ISO string or a stdlib datetime.
     """
 
@@ -235,7 +244,7 @@ def time_from_iso(s_orig: str) -> tuple[_time, Nanos]:
         _parse_err(s_orig)
 
 
-# Parse the time, UTC offset, and timezone ID
+# Parse the time, UTC offset, and time zone ID
 def _time_offset_tz_from_iso(
     s: str,
 ) -> tuple[
@@ -245,7 +254,7 @@ def _time_offset_tz_from_iso(
     bool,
     SafeTzId | None,
 ]:
-    # ditch the bracketted timezone (if present)
+    # ditch the bracketted time zone (if present)
     if s.endswith("]"):
         from ._tz import validate_tzid
 
@@ -514,7 +523,7 @@ def parse_rfc2822(s: str) -> _datetime:
                 * sign
             )
         elif offset_raw.isalpha():
-            # According to the spec, unknown timezones should
+            # According to the spec, unknown time zones should
             # just be treated at -0000 (UTC with unknown offset)
             offset = _timedelta(
                 hours=_RFC2822_ZONES.get(offset_raw.upper(), 0)

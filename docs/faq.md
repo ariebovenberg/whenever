@@ -41,7 +41,7 @@ Since you can also express a moment in time using
 {class}`~whenever.ZonedDateTime`, you might
 wonder why {class}`~whenever.Instant` exists.
 The reason it exists is precisely *because* it doesn't include a
-timezone. By using {class}`~whenever.Instant`,
+time zone. By using {class}`~whenever.Instant`,
 you clearly express that you only care about *when* something happened,
 not about the local time.
 
@@ -65,7 +65,7 @@ endpoints, etc).
 ## Why doesn't {class}`~whenever.Instant` have `.year`, `.hour`, etc.?
 
 An instant represents a specific moment in time,
-independent of any calendar system or timezone.
+independent of any calendar system or time zone.
 Although its debug representation uses UTC,
 that's just a convenient way to display it—it doesn't
 mean the instant *is* a UTC datetime.
@@ -90,7 +90,7 @@ If you need to access calendar fields, convert to a datetime type first:
 ## Why does {class}`~whenever.OffsetDateTime` exist?
 
 It represents the common interchange case where local fields and a numeric
-offset are available but regional timezone rules are not. See the complete
+offset are available but regional time zone rules are not. See the complete
 {ref}`OffsetDateTime guidance <offset-datetime-guidance>` for why this type is
 necessary and how to avoid stale-offset arithmetic.
 
@@ -141,11 +141,11 @@ When converting between types, `whenever` uses two naming conventions:
 - **`to_*`** methods convert between types that already carry enough
   information to determine the result unambiguously.
   For example, {meth}`ZonedDateTime.to_instant`
-  can compute the exact moment because the timezone is known.
+  can compute the exact moment because the time zone is known.
 - **`assume_*`** methods convert from types that *lack* information.
-  The developer must supply the missing piece (a timezone, an offset).
+  The developer must supply the missing piece (a time zone, an offset).
   For example, {meth}`~whenever.PlainDateTime.assume_tz` requires you to
-  specify which timezone the plain datetime is in.
+  specify which time zone the plain datetime is in.
 
 The `assume_*` naming is intentional: it signals that you're making
 an assumption that the library can't verify for you.
@@ -153,13 +153,13 @@ an assumption that the library can't verify for you.
 ## Why the name `PlainDateTime`?
 
 This has been an oft-discussed topic. Several names were considered for
-the concept of a "datetime without a timezone".
+the concept of a "datetime without a time zone".
 
 Each option had its pros and cons.
 
 - Why not `NaiveDateTime`? This name is already used in the standard
   library, which does give it recognition. However, "naive" is a
-  decidedly negative term. While datetimes without a timezone *can* be
+  decidedly negative term. While datetimes without a time zone *can* be
   used in a naive way by developers who don\'t understand the
   implications, they are not inherently wrong to use.
 - Why not `CivilDateTime`? This is the most "technically correct"
@@ -172,7 +172,7 @@ Each option had its pros and cons.
 - Why not `LocalDateTime`? This is the name that ISO8601 gives to the
   concept, also making it a "technically correct" name. However, the
   term "local" has become overloaded in the Python world where it
-  often refers to the system timezone.
+  often refers to the system time zone.
 
 While `PlainDateTime` is not perfect, it has the following advantages:
 
@@ -321,7 +321,7 @@ doesn't wrap it:
     re-implementing jiff's logic in Python and keeping them in sync.
 3.  Jiff has a slightly different design philosophy, most notably
     de-emphasizing the difference between offset and zoned datetimes.
-4.  Jiff can't make use of Python's bundled timezone database
+4.  Jiff can't make use of Python's bundled time zone database
     (`tzdata`) if present.
 5.  Writing a Rust library with Python bindings primarily in mind allows
     for some optimizations.

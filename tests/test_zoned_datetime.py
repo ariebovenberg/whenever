@@ -150,7 +150,7 @@ class TestInit:
 
         with pytest.raises(
             RepeatedTime,
-            match="2023-10-29 02:15:30 is repeated in timezone 'Europe/Amsterdam'",
+            match="2023-10-29 02:15:30 is repeated in time zone 'Europe/Amsterdam'",
         ):
             ZonedDateTime(**kwargs, disambiguation="raise")
 
@@ -498,7 +498,7 @@ class TestInit:
         reset_tzpath([TEST_DIR / "tzif"])
         assert get_tzpath() == (str(TEST_DIR / "tzif"),)
         try:
-            # Available timezones should now be different
+            # Available time zones should now be different
             assert (
                 available_timezones()
                 != zoneinfo_available_timezones().difference(["localtime"])
@@ -520,7 +520,7 @@ class TestInit:
             # We can still use the old instance without problems
             d.add(hours=24)
 
-            # Ok, let's see if we can find our custom timezones
+            # Ok, let's see if we can find our custom time zones
             d2 = ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
             d3 = ZonedDateTime(1982, 8, 15, 5, 12, tz="Asia/Amman")
         finally:
@@ -529,13 +529,13 @@ class TestInit:
 
         assert get_tzpath() == prev_tzpath
 
-        # Available timezones should now be the same again
+        # Available time zones should now be the same again
         assert (
             available_timezones()
             == zoneinfo_available_timezones().difference(["localtime"])
         )
 
-        # The custom timezone remains cached until it is explicitly cleared.
+        # The custom time zone remains cached until it is explicitly cleared.
         assert ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
         clear_tzcache()
         with pytest.raises(TimeZoneNotFoundError):
@@ -552,7 +552,7 @@ class TestInit:
         # but we can still use an old instance
         d2.add(hours=24)
 
-        # We can request proper timezones now again
+        # We can request proper time zones now again
         assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc) == d
         # exact_eq() works again
         assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc).strict_eq(d)
@@ -635,7 +635,7 @@ class TestInit:
 
         with pytest.raises(
             SkippedTime,
-            match="2023-03-26 02:15:30 is skipped in timezone 'Europe/Amsterdam'",
+            match="2023-03-26 02:15:30 is skipped in time zone 'Europe/Amsterdam'",
         ):
             ZonedDateTime(**kwargs, disambiguation="raise")
 
@@ -1102,7 +1102,7 @@ class TestFormatIso:
 
     @pytest.mark.parametrize("d", [ZDT_POSIX, ZDT_RAWFILE])
     def test_no_timezone_id(self, d: ZonedDateTime):
-        with pytest.raises(ValueError, match="timezone ID"):
+        with pytest.raises(ValueError, match="time zone ID"):
             d.format_iso()
 
     @pytest.mark.parametrize(
@@ -1251,13 +1251,13 @@ class TestEquality:
         ],
     )
     def test_different_timezone(self, d: ZonedDateTime):
-        # same **wall clock** time, different timezone
+        # same **wall clock** time, different time zone
         d2 = d.replace(tz="America/Los_Angeles")
         assert d != d2
         assert not d == d2
         assert hash(d) != hash(d2)
 
-        # same moment, different timezone
+        # same moment, different time zone
         d3 = d.to_tz("America/New_York")
         assert d == d3
         assert hash(d) == hash(d3)
@@ -1382,7 +1382,7 @@ class TestStrictEq:
     ) -> tuple[ZonedDateTime, ZonedDateTime]:
         """Build the same local datetime under both Amsterdam definitions.
 
-        Both timezones are loaded straight from a tzif file, so neither has an
+        Both time zones are loaded straight from a tzif file, so neither has an
         identifier and the two values differ only in the rules they carry.
         """
         with system_tz(AMS_TZ_RAWFILE):
@@ -1392,8 +1392,8 @@ class TestStrictEq:
         return a, b
 
     # Note: there is no test for a stale offset, i.e. a value whose offset
-    # disagrees with its own timezone. Every constructor resolves the offset
-    # from the timezone (the pickle reader warns and corrects), so such a value
+    # disagrees with its own time zone. Every constructor resolves the offset
+    # from the time zone (the pickle reader warns and corrects), so such a value
     # is unreachable. It is also the only thing that would tell the two
     # backends apart: the extension compares the local datetime and the offset,
     # the Python version the instant they are derived from.
@@ -1419,10 +1419,10 @@ class TestStrictEq:
         assert not b.strict_eq(a)
 
     def test_system_tz_compares_by_definition(self):
-        """The system timezone has no identifier, so only its rules count."""
+        """The system time zone has no identifier, so only its rules count."""
         with system_tz_ams():
             a = ZonedDateTime(2020, 8, 15, 12, tz=SYSTEM_TZ)
-            # force a reload, so the two values hold distinct timezone objects
+            # force a reload, so the two values hold distinct time zone objects
             reset_system_tz()
             b = ZonedDateTime(2020, 8, 15, 12, tz=SYSTEM_TZ)
             assert a.strict_eq(b)
@@ -2973,7 +2973,7 @@ class TestParseIso:
                     2020, 8, 15, 12, 34, 59, nanosecond=500_000_000, tz="UTC"
                 ),
             ),
-            # Z is also valid for non-UTC timezones
+            # Z is also valid for non-UTC time zones
             (
                 "2020-02-15t120830z[America/New_York]",
                 ZonedDateTime(2020, 2, 15, 7, 8, 30, tz="America/New_York"),
@@ -3284,10 +3284,10 @@ class TestParseIso:
         with pytest.raises(TimeZoneNotFoundError):
             ZonedDateTime.parse_iso("2020-08-15T12:08:30Z[X]")
 
-        with pytest.raises(ValueError, match="Invalid format"):
+        with pytest.raises(ValueError, match="invalid format"):
             ZonedDateTime.parse_iso(f"2023-10-29T02:15:30+02:00[{'X' * 9999}]")
 
-        with pytest.raises(ValueError, match="Invalid format"):
+        with pytest.raises(ValueError, match="invalid format"):
             ZonedDateTime.parse_iso(
                 f"2023-10-29T02:15:30+02:00[{chr(1600)}]",
             )
@@ -3311,13 +3311,15 @@ class TestParseIso:
         # The message must actually say something: it was empty in the pure
         # Python backend, which no bare `pytest.raises` could catch.
         with pytest.raises(
-            InvalidOffsetError, match="invalid offset for Europe/Amsterdam"
+            InvalidOffsetError,
+            match="offset \\+03:00 does not match time zone 'Europe/Amsterdam'",
         ):
             ZonedDateTime.parse_iso("2023-05-01T12:00+03:00[Europe/Amsterdam]")
 
         # the ID is echoed back as written, not canonicalized
         with pytest.raises(
-            InvalidOffsetError, match="invalid offset for europe/amsterdam"
+            InvalidOffsetError,
+            match="offset \\+03:00 does not match time zone 'europe/amsterdam'",
         ):
             ZonedDateTime.parse_iso("2023-05-01T12:00+03:00[europe/amsterdam]")
 
@@ -3351,7 +3353,7 @@ class TestParseIso:
     def test_fuzzing(self, s: str):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
+            match=r"invalid format.*" + re.escape(repr(s)),
         ):
             ZonedDateTime.parse_iso(s)
 
@@ -3501,11 +3503,11 @@ class TestTimestamp:
         ),
         (
             create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_POSIX),
-            'ZonedDateTime("2020-08-15 12:08:30+02:00[<system timezone without ID>]")',
+            'ZonedDateTime("2020-08-15 12:08:30+02:00[<system time zone without ID>]")',
         ),
         (
             create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_RAWFILE),
-            'ZonedDateTime("2020-08-15 12:08:30+02:00[<system timezone without ID>]")',
+            'ZonedDateTime("2020-08-15 12:08:30+02:00[<system time zone without ID>]")',
         ),
     ],
 )
@@ -3515,8 +3517,17 @@ def test_repr(d: ZonedDateTime, expect: str):
 
 def test_format_tz_id_without_id():
     d = create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_POSIX)
-    with pytest.raises(ValueError, match="timezone ID"):
+    with pytest.raises(ValueError, match="time zone ID"):
         d.format("VV")
+
+
+def test_str_without_tz_id():
+    """str() never raises: without an ID it gives the offset form."""
+    with system_tz(AMS_TZ_POSIX):
+        d = ZonedDateTime.now(SYSTEM_TZ)
+    assert str(d).endswith(("+02:00", "+01:00"))
+    assert str(d) == d.format_iso(tz_id_display="if_available")
+    assert "<system time zone without ID>" in repr(d)
 
 
 class TestComparison:
@@ -3958,7 +3969,7 @@ class TestInitFromPy:
 
     def test_naive(self):
 
-        with pytest.raises(ValueError, match="None"):
+        with pytest.raises(ValueError, match="datetime is naive"):
             ZonedDateTime(py_datetime(2020, 3, 4))
 
     def test_out_of_range(self):
@@ -4384,8 +4395,8 @@ class TestReplace:
             paris = d_later.replace(minute=30, tz="Europe/Paris")
         assert not paris.strict_eq(d_later.replace(minute=30))
 
-        # don't reuse offset per se when changing timezone. The target local
-        # time is repeated in the new timezone too, so each of these resolves
+        # don't reuse offset per se when changing time zone. The target local
+        # time is repeated in the new time zone too, so each of these resolves
         # implicitly and warns.
         for original, hour, new_tz in [
             (d, 3, "Europe/Athens"),
@@ -4476,8 +4487,8 @@ class TestReplace:
                 disambiguation="compatible",
             )
         )
-        # Don't per se reuse the offset when changing timezone. The target
-        # local time is skipped in the new timezone too, so each of these
+        # Don't per se reuse the offset when changing time zone. The target
+        # local time is skipped in the new time zone too, so each of these
         # resolves implicitly and warns.
         for original, hour, expect_hour, new_tz in [
             (d, 1, 2, "Europe/London"),
@@ -4525,7 +4536,7 @@ class TestAddSubtractTimeUnits:
         d = ZonedDateTime(2020, 8, 15, tz="UTC")
         with pytest.raises(TypeError):
             d.add(ItemizedDelta(days=1), days=1)  # type: ignore[call-overload]
-        with pytest.raises(TypeError, match="delta"):
+        with pytest.raises(TypeError, match="must be a TimeDelta"):
             d.add(42)  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
@@ -5297,7 +5308,7 @@ class TestSince:
                 {},
                 ItemizedDelta(seconds=-1),
             ),
-            # different timezone
+            # different time zone
             (
                 ZonedDateTime(
                     2023,
@@ -5374,7 +5385,7 @@ class TestSince:
             b.until(a, in_units=["days", "hours"])
 
     def test_cal_units_with_different_tz_not_supported(self):
-        with pytest.raises(ValueError, match="same timezone"):
+        with pytest.raises(ValueError, match="same time zone"):
             ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo").since(
                 ZonedDateTime(2023, 2, 15, tz="America/Los_Angeles"),
                 in_units=["days"],
@@ -5458,7 +5469,7 @@ class TestSince:
     def test_total_calendar_unit_different_tz_raises(self):
         a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
         b = ZonedDateTime(2021, 7, 3, tz="Europe/Paris")
-        with pytest.raises(ValueError, match="[Cc]alendar.*same.*timezone"):
+        with pytest.raises(ValueError, match="[Cc]alendar.*same.*time zone"):
             a.since(b, total="days")
 
     def test_no_units_raises(self):
@@ -5760,7 +5771,6 @@ class TestRound:
         [
             ("minute", 0),
             ("minute", -5),
-            ("second", 4.1),
         ],
     )
     def test_increment_invalid(self, unit, increment):
@@ -5774,7 +5784,7 @@ class TestRound:
         d = ZonedDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
         )
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
             d.round("foo")  # type: ignore[call-overload]
 
     def test_out_of_range(self):
@@ -5927,7 +5937,7 @@ class TestPickle:
         d = create_zdt(2023, 12, 3, 9, 15, tz=tz)
         with pytest.raises(
             ValueError,
-            match="cannot pickle ZonedDateTime without a timezone ID",
+            match="cannot pickle ZonedDateTime without a time zone ID",
         ):
             pickle.dumps(d)
 
@@ -5955,13 +5965,6 @@ def test_copy(tz: str):
     d = create_zdt(2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz=tz)
     assert copy(d) is d
     assert deepcopy(d) is d
-
-
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class Subclass(ZonedDateTime):  # type: ignore[misc]
-            pass
 
 
 class TestDayOfYear:
@@ -6096,7 +6099,7 @@ class TestStartOf:
         )
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+        with pytest.raises(ValueError, match="invalid unit"):
             ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of(
                 "invalid"  # type: ignore[arg-type]
             )
@@ -6383,7 +6386,7 @@ class TestEndOf:
         )
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+        with pytest.raises(ValueError, match="invalid unit"):
             ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").end_of(
                 "invalid"  # type: ignore[arg-type]
             )
@@ -6685,7 +6688,7 @@ class TestClearTzCache:
         """Clearing the cache by key clears _last_tz_key when it matches."""
         from whenever._tz import store
 
-        # Load a timezone to populate the fast cache
+        # Load a time zone to populate the fast cache
         ZonedDateTime(2024, 1, 1, tz="US/Eastern")
         assert store._last_tz_key == "us/eastern"
         # Now clear that exact key — _last_tz_key should be reset

@@ -17,10 +17,18 @@ impl CalendarUnit {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
         TotalUnit::match_py(v, state)
             .and_then(|unit| unit.try_into().ok())
-            .ok_or_else_value_err(|| {
-                format!("Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days'")
-            })
+            .ok_or_else_value_err(|| format!("invalid unit: {v}"))
     }
+}
+
+fn is_bytes(v: PyObj) -> bool {
+    // SAFETY: a type check on a valid object
+    unsafe { pyo3_ffi::PyBytes_Check(v.as_ptr()) != 0 }
+}
+
+fn is_set(v: PyObj) -> bool {
+    // SAFETY: a type check on a valid object
+    unsafe { pyo3_ffi::PyAnySet_Check(v.as_ptr()) != 0 }
 }
 
 fn parse_ordered_units<U, F, G>(
@@ -34,8 +42,11 @@ where
     F: FnMut(PyObj) -> PyResult<U>,
     G: FnMut(U),
 {
-    if PyStr::isinstance(v) {
+    if PyStr::isinstance(v) || is_bytes(v) {
         raise_type_err("units must be a sequence of strings, not a single string")?;
+    }
+    if is_set(v) {
+        raise_type_err("units must be a sequence of strings, not a set")?;
     }
     let mut prev = None;
     let mut empty = true;
@@ -76,9 +87,7 @@ impl DifferenceUnit {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
         TotalUnit::match_py(v, state)
             .and_then(|unit| unit.try_into().ok())
-            .ok_or_else_value_err(|| format!(
-                "Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds', 'nanoseconds'"
-            ))
+            .ok_or_else_value_err(|| format!("invalid unit: {v}"))
     }
 }
 
@@ -88,11 +97,11 @@ impl ExactUnit {
             self.parse_py_int(i)
         } else if let Some(f) = v.cast_allow_subclass::<PyFloat>() {
             if self == Self::Nanoseconds {
-                raise_value_err("nanoseconds must be an integer, not a float")?;
+                raise_type_err("nanoseconds must be an integer")?;
             }
             self.parse_py_float(f)
         } else {
-            raise_value_err(format!("{} must be an integer or float", self.name()))
+            raise_type_err(format!("{} must be an integer or float", self.name()))
         }
     }
 
@@ -146,9 +155,7 @@ impl TotalUnit {
     }
 
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        Self::match_py(v, state).ok_or_else_value_err(|| format!(
-            "Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds', 'milliseconds', 'microseconds', 'nanoseconds'"
-        ))
+        Self::match_py(v, state).ok_or_else_value_err(|| format!("invalid unit: {v}"))
     }
 }
 

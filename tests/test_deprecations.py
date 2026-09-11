@@ -32,10 +32,9 @@ from .common import (
 
 
 def deprecated(call: Callable[[], Any], /, *, match: str) -> Any:
-    with pytest.warns(WheneverDeprecationWarning, match=match) as caught:
+    with warns_here(WheneverDeprecationWarning, match=match) as caught:
         result = call()
     assert len(caught) == 1
-    assert caught[0].filename == __file__
     return result
 
 
@@ -423,7 +422,7 @@ def test_system_timezone_wrappers():
     )
     # The method warns before parsing its arguments, so the TypeError
     # arrives after the deprecation warning.
-    with pytest.warns(WheneverDeprecationWarning, match=from_system_tz_msg):
+    with warns_here(WheneverDeprecationWarning, match=from_system_tz_msg):
         with pytest.raises(
             TypeError,
             match="both 'disambiguation' and deprecated 'disambiguate'",
@@ -450,7 +449,7 @@ def test_system_timezone_wrappers():
         plain.assume_system_tz,  # type: ignore[deprecated]
         match=assume_system_tz_msg,
     ).strict_eq(plain.assume_tz(SYSTEM_TZ, disambiguation="compatible"))
-    with pytest.warns(WheneverDeprecationWarning, match=assume_system_tz_msg):
+    with warns_here(WheneverDeprecationWarning, match=assume_system_tz_msg):
         with pytest.raises(
             TypeError,
             match="both 'disambiguation' and deprecated 'disambiguate'",
@@ -477,7 +476,7 @@ def test_system_timezone_wrappers():
     ],
 )
 def test_deprecated_timestamp_factories_accept_system_tz(method):
-    with pytest.warns(WheneverDeprecationWarning):
+    with warns_here(WheneverDeprecationWarning):
         assert method(0, tz=SYSTEM_TZ).tz_id == "Europe/Amsterdam"
 
 
@@ -755,7 +754,7 @@ class TestZonedTimestampFactoryWrapperArguments:
 
     @suppress(WheneverDeprecationWarning)
     def test_float_out_of_range(self):
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_timestamp(9e200, tz="America/New_York")  # type: ignore[deprecated]
 
         with pytest.raises((ValueError, OverflowError, OSError)):
@@ -764,8 +763,8 @@ class TestZonedTimestampFactoryWrapperArguments:
                 tz="America/New_York",
             )
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_timestamp(float("inf"), tz="America/New_York")  # type: ignore[deprecated]
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             ZonedDateTime.from_timestamp(float("nan"), tz="America/New_York")  # type: ignore[deprecated]

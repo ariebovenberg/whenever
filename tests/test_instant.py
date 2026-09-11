@@ -265,7 +265,7 @@ class TestTimestamp:
         assert after.timestamp(unit=unit) == after_epoch
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid timestamp unit"):
+        with pytest.raises(ValueError, match="invalid unit"):
             Instant.from_utc(1970, 1, 1).timestamp(
                 unit="seconds"  # type: ignore[arg-type]
             )
@@ -346,7 +346,7 @@ class TestFromTimestamp:
         Instant.from_timestamp(1, unit="nanosecond")
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid timestamp unit"):
+        with pytest.raises(ValueError, match="invalid unit"):
             Instant.from_timestamp(
                 0,
                 unit="seconds",  # type: ignore[call-overload]
@@ -643,7 +643,7 @@ class TestInitFromPy:
     @pytest.mark.parametrize(
         "dt, expected",
         [
-            # UTC timezone
+            # UTC time zone
             (
                 py_datetime(
                     2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc
@@ -987,10 +987,10 @@ def test_to_fixed_offset():
         OffsetDateTime(2020, 8, 15, 17, offset=hours(-3))
     )
 
-    with pytest.raises((ValueError, OverflowError)):
+    with pytest.raises(ValueError):
         Instant.MIN.to_fixed_offset(hours(-4))
 
-    with pytest.raises((ValueError, OverflowError)):
+    with pytest.raises(ValueError):
         Instant.MAX.to_fixed_offset(hours(4))
 
 
@@ -1030,11 +1030,11 @@ def test_to_system_tz():
         )
     )
 
-    with pytest.raises((ValueError, OverflowError)):
+    with pytest.raises(ValueError):
         Instant.MIN.to_tz(SYSTEM_TZ)
 
     with system_tz_ams():
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             Instant.MAX.to_tz(SYSTEM_TZ)
 
 
@@ -1168,7 +1168,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
+            match=r"invalid format.*" + re.escape(repr(s)),
         ):
             Instant.parse_iso(s)
 
@@ -1176,7 +1176,7 @@ class TestParseIso:
     def test_fuzzing(self, s: str):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
+            match=r"invalid format.*" + re.escape(repr(s)),
         ):
             Instant.parse_iso(s)
 
@@ -1306,7 +1306,7 @@ class TestRound:
 
     def test_invalid_mode(self):
         d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
+        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
             d.round("second", mode="foo")  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
@@ -1325,7 +1325,7 @@ class TestRound:
 
     def test_invalid_unit(self):
         d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
             d.round("foo")  # type: ignore[call-overload]
 
     def test_day_not_supported(self):
@@ -1367,10 +1367,3 @@ class TestRound:
         d = Instant.from_utc(2020, 1, 1, 12)
         with pytest.raises(TypeError):
             d.round(hours(1), increment=2)  # type: ignore[call-overload]
-
-
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class Subclass(Instant):  # type: ignore[misc]
-            pass

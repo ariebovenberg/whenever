@@ -987,7 +987,7 @@ class _TzId(_Field):
     def format_value(self, v: _FormatValues) -> str:
         if v.tz_id is None:
             raise ValueError(
-                "Cannot format timezone ID: not available for this type"
+                "Cannot format time zone ID: not available for this type"
             )
         return v.tz_id
 
@@ -998,7 +998,7 @@ class _TzId(_Field):
         ):
             pos += 1
         if pos == start:
-            raise ValueError(f"Expected timezone ID at position {pos}")
+            raise ValueError(f"Expected time zone ID at position {pos}")
         state.tz_id = s[start:pos]
         return pos
 
@@ -1014,7 +1014,7 @@ class _TzAbbrev(_Field):
     def format_value(self, v: _FormatValues) -> str:
         if v.tz_abbrev is None:
             raise ValueError(
-                "Cannot format timezone abbreviation: "
+                "Cannot format time zone abbreviation: "
                 "not available for this type"
             )
         return v.tz_abbrev
@@ -1174,8 +1174,8 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
             )
         ):
             raise ValueError(
-                "timezone ID field VV must be followed by a literal "
-                "delimiter that is not valid in a timezone ID"
+                "time zone ID field VV must be followed by a literal "
+                "delimiter that is not valid in a time zone ID"
             )
 
 
@@ -1405,9 +1405,9 @@ def validate_fields(
     if has_12h and not has_ampm:
         warnings.warn(
             "The pattern uses a 12-hour clock (`i` or `ii`) without an AM/PM "
-            "field (`a` or `aa`). A value such as `03:00` could mean either "
-            "3 AM or 3 PM. Add `a` or `aa`, or use the 24-hour fields `H` or "
-            "`HH`.",
+            "specifier (`a` or `aa`). A value such as `03:00` could mean "
+            "either 3 AM or 3 PM. Add `a` or `aa`, or use the 24-hour "
+            "specifiers `H` or `HH`.",
             WheneverWarning,
             stacklevel=warning_stacklevel,
         )

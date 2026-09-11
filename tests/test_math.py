@@ -245,5 +245,5 @@ class TestCustomRound:
         )
 
     def test_invalid_mode(self):
-        with pytest.raises(ValueError, match="Invalid rounding mode: 'foo'"):
+        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
             custom_round(1_234, 3, 5, "foo", 8, 1)

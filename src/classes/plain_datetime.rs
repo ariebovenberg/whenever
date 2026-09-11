@@ -56,7 +56,7 @@ impl DateTimeBoundaryUnit {
             ))
         })
         .transpose()?
-        .ok_or_else_value_err(|| format!("Invalid unit: {obj}"))
+        .ok_or_else_value_err(|| format!("invalid unit: {obj}"))
     }
 }
 
@@ -68,7 +68,7 @@ impl PlainDateTime {
     fn from_stdlib_datetime(dt: PyDateTime) -> PyResult<Self> {
         let tzinfo = dt.tzinfo();
         if !tzinfo.is_none() {
-            raise_value_err(format!("datetime must be naive, but got tzinfo={tzinfo}"))?
+            raise_value_err(format!("datetime must be naive, got tzinfo={tzinfo}"))?
         }
         Ok(PlainDateTime {
             date: Date::from_stdlib_date(dt.date()),
@@ -160,10 +160,10 @@ fn parse_iso(cls: PyClass<PlainDateTime>, arg: PyObj) -> PyReturn {
         arg.cast_allow_subclass::<PyStr>()
             // NOTE: this exception message also needs to make sense when
             // called through the constructor
-            .ok_or_type_err("when parsing from ISO format, the argument must be str")?
+            .ok_or_type_err("parse_iso() argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("Invalid format: {arg}"))?
+    .ok_or_else_value_err(|| format!("invalid format: {arg}"))?
     .to_obj(cls)
 }
 
@@ -540,14 +540,14 @@ fn assume_system_tz(
 
 fn replace_date(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyObj) -> PyReturn {
     let Some(date) = arg.extract(*cls.state().date_type) else {
-        raise_type_err("argument must be a whenever.Date")?
+        raise_type_err("replace_date() argument must be a Date")?
     };
     slf.with_date(date).to_obj(cls)
 }
 
 fn replace_time(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyObj) -> PyReturn {
     let Some(time) = arg.extract(*cls.state().time_type) else {
-        raise_type_err("argument must be a whenever.Time")?
+        raise_type_err("replace_time() argument must be a Time")?
     };
     slf.with_time(time).to_obj(cls)
 }
@@ -583,7 +583,7 @@ fn plain_since(
 
     let other = handle_one_arg(fname, args)?
         .extract(cls)
-        .ok_or_type_err("argument must be a whenever.PlainDateTime")?;
+        .ok_or_else_type_err(|| format!("{fname}() argument must be a PlainDateTime"))?;
 
     let mut suppress_unaware = false;
     let since_kwargs = DifferenceSpec::parse_with(fname, kwargs, state, |key, value, eq| {
@@ -670,7 +670,7 @@ pub(crate) fn plain_since_float(
 ///
 /// This mirrors `zoned_datetime::total_calendar` but works with raw `Instant` and
 /// `PlainDateTime` values instead of `ZonedDateTime`, avoiding the need for a UTC
-/// timezone object.
+/// time zone object.
 pub(crate) fn total_calendar_plain(
     neg: bool,
     unit: difference::CalendarUnit,
@@ -758,7 +758,7 @@ fn plain_since_in_units(
         calendar_results.round_by_time(
             calendar_units.smallest(),
             // This UTC conversion is a bit weird, but it allows us to reuse
-            // the logic since plain and UTC datetimes both have no timezone
+            // the logic since plain and UTC datetimes both have no time zone
             // adjustments.
             a.assume_utc(),
             trunc_dt.assume_utc(),
@@ -802,7 +802,7 @@ fn round(
 fn format(cls: PyClass<PlainDateTime>, slf: PlainDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("format() argument must be str")?;
+        .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(
@@ -826,13 +826,13 @@ fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("parse() argument must be str")?;
+        .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
     let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
-        .ok_or_type_err("pattern must be str")?;
+        .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;

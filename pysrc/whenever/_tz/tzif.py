@@ -27,12 +27,12 @@ EPOCH_SECS_MAX = 253402300799
 
 @final
 class TimeZone:
-    """A complete timezone definition, enough to represent a tzif file.
+    """A complete time zone definition, enough to represent a tzif file.
 
     Can also be used to represent a POSIX TZ string (if the transition arrays
-    are empty) or an anonymous timezone (if the `key` field is set to `None`).
+    are empty) or an anonymous time zone (if the `key` field is set to `None`).
 
-    The timezone data is stored as four parallel arrays (two pairs):
+    The time zone data is stored as four parallel arrays (two pairs):
 
     UTC pair — for mapping an exact UTC instant to a UTC offset:
       _utc_epochs[i]   is the epoch at which transition i occurs (UTC seconds).
@@ -141,7 +141,7 @@ class TimeZone:
             return Unique(prev_offset + last_shift)
 
     def meta_for_instant(self, t: EpochSecs) -> tuple[int, str]:
-        """Get timezone metadata (dst_saving_secs, abbreviation)
+        """Get time zone metadata (dst_saving_secs, abbreviation)
         at the given exact time."""
         idx = _bisect_right(self._utc_epochs, t)
         if idx < len(self._utc_epochs):
@@ -184,20 +184,20 @@ class TimeZone:
         return None
 
     # NOTE: this equality check needs to be fast, since it's used in
-    # some routines to check if the timezone is indeed changing.
+    # some routines to check if the time zone is indeed changing.
     def __eq__(self, other: object) -> bool:
         # We first check for identity, as that's the cheapest check
         # and makes the common case fast.
         if self is other:
             return True
         # Identity inequality doesn't rule out equality, as two different
-        # instances may represent the same timezone due to cache clearing.
+        # instances may represent the same time zone due to cache clearing.
         elif type(other) is TimeZone:
             return (
                 # We compare the key first, as it's the cheapest to compare,
                 # and most likely to differ
                 self.key == other.key
-                # Only in rare cases (i.e. system timezone changes or cache clears)
+                # Only in rare cases (i.e. system time zone changes or cache clears)
                 # should we need to compare the rest of the data. It's relatively
                 # expensive, so we do it last.
                 and self._utc_epochs == other._utc_epochs
@@ -334,7 +334,7 @@ def _extend_with_posix(
     and *meta*, covering years from (last recorded year + 1) to
     ``_PRECALC_UNTIL`` inclusive.
 
-    For timezones without a DST rule the tables are already complete; this
+    For time zones without a DST rule the tables are already complete; this
     function returns immediately.
     """
     if not end.dst:

@@ -3,7 +3,7 @@ hide-toc: true
 myst:
   html_meta:
     description: >-
-      Why ZoneInfo timezone identifiers are case-sensitive on some filesystems
+      Why ZoneInfo time zone identifiers are case-sensitive on some filesystems
       but not others, how that breaks portability and even arithmetic, and how
       whenever normalizes casing.
 ---

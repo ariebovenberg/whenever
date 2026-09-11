@@ -166,7 +166,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
+            match=r"invalid format.*" + re.escape(repr(s)),
         ):
             MonthDay.parse_iso(s)
 
@@ -246,10 +246,3 @@ def test_unpickle_compatibility():
         b"d\x94\x93\x94C\x02\x0b\x01\x94\x85\x94R\x94."
     )
     assert pickle.loads(dumped) == MonthDay(11, 1)
-
-
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class SubclassDate(MonthDay):  # type: ignore[misc]
-            pass

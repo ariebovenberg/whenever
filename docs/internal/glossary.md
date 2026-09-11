@@ -18,7 +18,7 @@ messages; the "preferred over" words are rejected synonyms.
 
 **field**
 : The value a specifier sets: year, month, day, weekday, hour, minute,
-  second, nanoseconds, offset, or timezone ID. Category validation and
+  second, nanoseconds, offset, or time zone ID. Category validation and
   duplicate detection reason about fields; a message shown to a user names
   the specifier instead.
   Preferred over *slot*, *component*, and *state key*.

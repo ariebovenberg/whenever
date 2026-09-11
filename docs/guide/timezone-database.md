@@ -2,23 +2,23 @@
 myst:
   html_meta:
     description: >-
-      How whenever finds IANA timezone data: the timezone search path from
-      PYTHONTZPATH and its tzdata fallback, case-insensitive timezone IDs,
+      How whenever finds IANA time zone data: the time zone search path from
+      PYTHONTZPATH and its tzdata fallback, case-insensitive time zone IDs,
       get_tzpath() and reset_tzpath(), and the definition cache with
       clear_tzcache().
 ---
 
 (timezone-database)=
-# Working with the timezone database
+# Working with the time zone database
 
-`whenever` loads named timezones from the IANA timezone database installed on
-your system. It uses the configured **timezone search path** (see
+`whenever` loads named time zones from the IANA time zone database installed on
+your system. It uses the configured **time zone search path** (see
 {func}`~whenever.get_tzpath`) first and falls back to the `tzdata` package
 when it is installed.
 
-## Timezone identifiers
+## Time zone identifiers
 
-IANA timezone identifiers are matched case-insensitively for ASCII letters.
+IANA time zone identifiers are matched case-insensitively for ASCII letters.
 After a successful lookup, `whenever` uses the spelling from the selected
 database in `tz_id`, representations, ISO output, and pickles:
 
@@ -29,8 +29,11 @@ database in `tz_id`, representations, ISO output, and pickles:
 
 This normalizes spelling only; it does not replace aliases with primary zones.
 For example, `us/eastern` becomes `US/Eastern`, not `America/New_York`.
+An identifier that no configured source knows raises
+{exc}`~whenever.TimeZoneNotFoundError`, a `ValueError`, so the same
+`except ValueError` that catches a malformed string catches an unknown zone.
 
-## Choosing timezone data
+## Choosing time zone data
 
 Use {func}`~whenever.reset_tzpath` to replace the search path with one or more
 absolute directories. Sources are searched in order, so the first source with
@@ -56,7 +59,7 @@ not change when the path is reset later.
 
 ## Cache behavior
 
-Loaded timezone definitions are cached. Changing the timezone search path
+Loaded time zone definitions are cached. Changing the time zone search path
 does not change existing datetimes or discard already loaded definitions. If
 you need new lookups to use the replacement database, clear the relevant
 entries after changing the path:
@@ -69,5 +72,5 @@ clear_tzcache()
 ```
 
 `clear_tzcache(only_keys=[...])` also matches identifiers case-insensitively.
-Clearing a cache can make otherwise identical timezone IDs refer to different
-database versions, so use it only when updating timezone data deliberately.
+Clearing a cache can make otherwise identical time zone IDs refer to different
+database versions, so use it only when updating time zone data deliberately.

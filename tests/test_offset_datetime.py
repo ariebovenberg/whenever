@@ -728,7 +728,7 @@ class TestFromTimestamp:
             )
         )
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             Instant.from_timestamp(9e200).to_fixed_offset(hours(0))
 
         with pytest.raises((ValueError, OverflowError, OSError)):
@@ -736,10 +736,10 @@ class TestFromTimestamp:
                 float(Instant.MAX.timestamp()) + 0.99999999
             ).to_fixed_offset(hours(0))
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             Instant.from_timestamp(float("inf")).to_fixed_offset(hours(0))
 
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             Instant.from_timestamp(float("nan")).to_fixed_offset(hours(0))
 
     @suppress(StaleOffsetWarning)
@@ -1090,11 +1090,11 @@ class TestAddSubtractOperators:
         with warns_here(StaleOffsetWarning) as w:
             d + hours(4)
         assert len(w) == 1
-        assert "usually an observation, not a timezone rule" in str(
+        assert "usually an observation, not a time zone rule" in str(
             w[0].message
         )
         assert "mathematically valid" in str(w[0].message)
-        assert "stale relative to the source timezone" in str(w[0].message)
+        assert "stale relative to the source time zone" in str(w[0].message)
         assert "even after an exact shift" in str(w[0].message)
         assert "stale_offset_ok=True" in str(w[0].message)
         assert "choosing-a-type.html#offset-datetime-guidance" in str(
@@ -1271,7 +1271,9 @@ class TestAssumeTz:
         assert d.assume_tz(tz, **kwargs).strict_eq(expect)
 
     def test_invalid_offset_raises(self):
-        with pytest.raises(InvalidOffsetError, match="-04:00.*-09:00"):
+        with pytest.raises(
+            InvalidOffsetError, match="offset -09:00 does not match"
+        ):
             OffsetDateTime("2023-05-01 12:30:00-09:00").assume_tz(
                 "America/New_York"
             )
@@ -1279,7 +1281,7 @@ class TestAssumeTz:
     def test_invalid_offset_message_uses_canonical_tz_id(self):
         # not the spelling that was passed in
         with pytest.raises(
-            InvalidOffsetError, match="timezone 'America/New_York'"
+            InvalidOffsetError, match="time zone 'America/New_York'"
         ):
             OffsetDateTime("2023-05-01 12:30:00-09:00").assume_tz(
                 "america/new_york"
@@ -1576,12 +1578,12 @@ def test_to_fixed_offset():
         )
     )
 
-    with pytest.raises((ValueError, OverflowError)):
+    with pytest.raises(ValueError):
         OffsetDateTime(
             1, 1, 1, hour=3, minute=59, offset=hours(0)
         ).to_fixed_offset(hours(-4))
 
-    with pytest.raises((ValueError, OverflowError)):
+    with pytest.raises(ValueError):
         OffsetDateTime(9999, 12, 31, hour=23, offset=hours(0)).to_fixed_offset(
             hours(1)
         )
@@ -1648,12 +1650,12 @@ def test_to_system_tz():
     )
 
     small_dt = OffsetDateTime(1, 1, 1, offset=hours(0))
-    with pytest.raises((ValueError, OverflowError)):
+    with pytest.raises(ValueError):
         small_dt.to_tz(SYSTEM_TZ)
 
     big_dt = OffsetDateTime(9999, 12, 31, hour=23, offset=hours(0))
     with system_tz_ams():
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             big_dt.to_tz(SYSTEM_TZ)
 
 
@@ -1817,7 +1819,7 @@ VALID_RFC2822 = [
         "7 Dec 2020 23:12:09 +0000",
         OffsetDateTime(2020, 12, 7, 23, 12, 9, offset=hours(0)),
     ),
-    # named timezones
+    # named time zones
     (
         "Sat, 15 Aug 2020 23:12:09 MST",
         OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(-7)),
@@ -1869,7 +1871,7 @@ VALID_RFC2822 = [
         "Sat\t,\n\r15 Aug 2020 23:\x0b\t12\x0c:09\nMST",
         OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(-7)),
     ),
-    # According to the spec, unknown timezones should be interpreted as -0000.
+    # According to the spec, unknown time zones should be interpreted as -0000.
     (
         "15 Aug 2020  23:12 FOO",
         OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(0)),
@@ -1896,7 +1898,7 @@ VALID_RFC2822 = [
 ]
 
 INVALID_RFC2822 = [
-    # Invalid timezone/offset
+    # Invalid time zone/offset
     "Sat, 15 Aug 2020 23:12:09",
     "Sat, 15 Aug 2020 23:12 -",
     "Sat, 15 Aug 2020 23:12 +",
@@ -2223,7 +2225,7 @@ class TestRound:
         d = OffsetDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=hours(2)
         )
-        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
+        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
             d.round("second", mode="foo")  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
@@ -2275,7 +2277,7 @@ class TestRound:
         d = OffsetDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=hours(2)
         )
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
             d.round("foo")  # type: ignore[call-overload]
 
     @suppress(StaleOffsetWarning)
@@ -2496,13 +2498,6 @@ class TestSince:
             a.since(b)  # type: ignore[call-overload]
 
 
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class Subclass(OffsetDateTime):  # type: ignore[misc]
-            pass
-
-
 class TestDayOfYear:
     def test_basic(self):
         odt = OffsetDateTime(2024, 2, 29, 12, offset=hours(5))
@@ -2642,7 +2637,7 @@ class TestStartOf:
 
     @suppress(StaleOffsetWarning)
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+        with pytest.raises(ValueError, match="invalid unit"):
             OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).start_of(
                 "invalid"  # type: ignore[arg-type]
             )
@@ -2879,7 +2874,7 @@ class TestEndOf:
 
     @suppress(StaleOffsetWarning)
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+        with pytest.raises(ValueError, match="invalid unit"):
             OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).end_of(
                 "invalid"  # type: ignore[arg-type]
             )

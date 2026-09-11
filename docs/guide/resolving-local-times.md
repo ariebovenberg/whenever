@@ -2,22 +2,22 @@
 myst:
   html_meta:
     description: >-
-      Turning local fields into an instant in a named timezone: the
+      Turning local fields into an instant in a named time zone: the
       offset_mismatch policy for conflicting offsets, the disambiguation policy
       for repeated and skipped times, the order in which they apply, and how
       derived local times keep the offset they already had.
 ---
 
 (resolving-local-times)=
-# Resolving local times in a timezone
+# Resolving local times in a time zone
 
-A named timezone contains rules that map exact instants to local clock
+A named time zone contains rules that map exact instants to local clock
 readings and UTC offsets. Going the other way—from local fields to an
 instant—sometimes requires more information:
 
-- A local time may be {ref}`repeated or skipped <ambiguity>` by a timezone
+- A local time may be {ref}`repeated or skipped <ambiguity>` by a time zone
   transition. The `disambiguation` policy resolves that ambiguity.
-- Input may contain both a numeric offset and a named timezone. If they
+- Input may contain both a numeric offset and a named time zone. If they
   conflict, the `offset_mismatch` policy decides which part is authoritative.
 
 These rules apply to the {class}`~whenever.ZonedDateTime` constructor,
@@ -32,7 +32,7 @@ existing value follows a related rule, described in
 ## The complete resolution flow
 
 ```text
-INPUT: local fields + named timezone
+INPUT: local fields + named time zone
        e.g. 2023-10-29 02:15 [Europe/Amsterdam]
        │
        ├─ no offset, e.g. 02:15[Europe/Amsterdam] ───────────────┐
@@ -42,7 +42,7 @@ INPUT: local fields + named timezone
        │                                                         │
        └─ numeric offset, e.g. +02:00                            │
           │                                                      │
-          ├─ matches a possible timezone offset                  │
+          ├─ matches a possible time zone offset                 │
           │  e.g. +02:00 during the repeated hour                │
           │  └─► offset identifies instant;                      │
           │      ignore both policies ────────────────► DONE     │
@@ -71,11 +71,11 @@ In other words, `offset_mismatch` determines which input is authoritative
 
 | Input situation | Result |
 |---|---|
-| No numeric offset | Resolve the written local fields in the timezone. Consult `disambiguation` only for a repeated or skipped local time. |
-| `Z` suffix | Treat the input as an exact UTC instant and recalculate its local fields in the timezone. |
+| No numeric offset | Resolve the written local fields in the time zone. Consult `disambiguation` only for a repeated or skipped local time. |
+| `Z` suffix | Treat the input as an exact UTC instant and recalculate its local fields in the time zone. |
 | Numeric offset matches | The offset identifies the instant, including which occurrence of a repeated time was written. Neither policy is consulted. |
 | Mismatch + `"raise"` | Raise {exc}`~whenever.InvalidOffsetError`. |
-| Mismatch + `"keep_instant"` | Treat the numeric offset as authoritative. Preserve the instant and recalculate local fields in the timezone. `disambiguation` is not consulted. |
+| Mismatch + `"keep_instant"` | Treat the numeric offset as authoritative. Preserve the instant and recalculate local fields in the time zone. `disambiguation` is not consulted. |
 | Mismatch + `"keep_local"` | Discard the numeric offset. Preserve the written local fields and consult `disambiguation` only if they are repeated or skipped. |
 
 For example, both numeric offsets below are valid in Amsterdam's repeated
@@ -99,14 +99,14 @@ ZonedDateTime("2023-05-01 12:00:00+02:00[Europe/Amsterdam]")
 ```
 
 {meth}`~whenever.OffsetDateTime.assume_tz` follows the same model: its local fields and
-offset are the input, and the named timezone supplies the rules. A matching
+offset are the input, and the named time zone supplies the rules. A matching
 offset preserves the represented instant. On a mismatch, `"keep_instant"`
 preserves that instant while `"keep_local"` reinterprets the local fields.
 
 ### Offset precision
 
 Hour-and-minute offsets in parsed text are compared with candidate historical
-timezone offsets rounded to the nearest minute, half away from zero. An offset
+time zone offsets rounded to the nearest minute, half away from zero. An offset
 that includes seconds must match exactly. {meth}`~whenever.OffsetDateTime.assume_tz` always
 compares its exact offset.
 
@@ -116,7 +116,7 @@ Historical offsets often carry seconds—Dublin ran on `-00:25:21` until
 
 `Z` is not an offset in this sense. ISO 8601 and RFC 3339 both read `Z` as the
 UTC designator: it says the time is written in UTC, not which offset the named
-timezone was applying. `Z` therefore leaves the flow before either policy
+time zone was applying. `Z` therefore leaves the flow before either policy
 applies, which is why `offset_mismatch="keep_local"` on a `Z` input behaves
 like `"keep_instant"`.
 
@@ -165,7 +165,7 @@ ZonedDateTime("2023-03-26 03:30:00+02:00[Europe/Paris]")
 :class: tip
 
 A skipped wall time cannot retain identical final local fields: those fields
-do not exist in that timezone. Extrapolating by the size of the gap preserves
+do not exist in that time zone. Extrapolating by the size of the gap preserves
 the intended minute and second, which fits the common case where a clock was
 not adjusted—or was adjusted too early. It also matches almost all other
 datetime libraries and the iCalendar standard (RFC 5545).
@@ -193,7 +193,7 @@ already has half the answer: the offset the value carries.
 while it is still valid for the new local time.
 
 A repeated local time is the case that needs the rule. The current offset is
-one of the two the timezone offers, so the value stays on the side of the
+one of the two the time zone offers, so the value stays on the side of the
 transition it was already on, and no policy applies:
 
 ```python
@@ -208,7 +208,7 @@ ZonedDateTime("2023-10-29 02:45:00+01:00[Europe/Paris]")
 emits an {class}`~whenever.ImplicitDisambiguationWarning` when omitted. A
 skipped local time always falls to `disambiguation`, because no earlier offset
 is valid inside a gap. A repeated local time falls to it as well when the
-operation changes the timezone, since neither offset of the new timezone need
+operation changes the time zone, since neither offset of the new time zone need
 match the current one.
 
 ```python

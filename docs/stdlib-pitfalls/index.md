@@ -51,7 +51,7 @@ of the places where the design makes certain mistakes easy to make.
       :link-type: doc
       :shadow: md
 
-      Sometimes the system timezone, sometimes UTC, sometimes neither
+      Sometimes the system time zone, sometimes UTC, sometimes neither
 
    .. grid-item-card:: :octicon:`mute` Silent ambiguity
       :link: silent-ambiguity
@@ -72,7 +72,7 @@ of the places where the design makes certain mistakes easy to make.
       :link-type: doc
       :shadow: md
 
-      Several timezone classes to choose from; the obvious one is wrong
+      Several time zone classes to choose from; the obvious one is wrong
 
    .. grid-item-card:: :octicon:`file-directory` Casing depends on the filesystem
       :link: zoneinfo-casing

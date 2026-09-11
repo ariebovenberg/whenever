@@ -17,7 +17,7 @@ use std::num::{NonZeroU8, NonZeroU16};
 
 const DEFAULT_DST: OffsetDelta = OffsetDelta::new_unchecked(3_600);
 
-/// Result of a timezone metadata query.
+/// Result of a time zone metadata query.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TzMetaResult {
     pub(crate) dst_saving: i32,
@@ -161,7 +161,7 @@ impl TzStr {
         }
     }
 
-    /// Timezone metadata: (dst_saving, abbreviation)
+    /// Time zone metadata: (dst_saving, abbreviation)
     pub(crate) fn meta_for_instant(&self, epoch: EpochSecs) -> TzMetaResult {
         match self.dst {
             Some(Dst {
@@ -993,7 +993,7 @@ mod tests {
             }),
             std_abbrev: TzAbbrev::EMPTY,
         };
-        // Some timezones have DST end before start
+        // Some time zones have DST end before start
         let tz_inverted = TzStr {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
@@ -1007,7 +1007,7 @@ mod tests {
             }),
             std_abbrev: TzAbbrev::EMPTY,
         };
-        // Some timezones appear to be "always DST", like Africa/Casablanca
+        // Some time zones appear to be "always DST", like Africa/Casablanca
         let tz_always_dst = TzStr {
             std: 7200.try_into().unwrap(),
             dst: Some(Dst {
