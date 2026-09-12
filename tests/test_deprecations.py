@@ -319,6 +319,38 @@ def test_offset_timestamp_factory_wrappers_take_stale_offset_ok(method):
 
 
 @pytest.mark.parametrize(
+    "call",
+    [
+        lambda: OffsetDateTime.from_timestamp(  # type: ignore[deprecated]
+            Instant.MAX.timestamp(), offset=hours(1)
+        ),
+        lambda: OffsetDateTime.from_timestamp(0, offset="x"),  # type: ignore[deprecated, arg-type]
+        lambda: ZonedDateTime.from_timestamp(  # type: ignore[deprecated]
+            Instant.MAX.timestamp(), tz="Asia/Tokyo"
+        ),
+        lambda: PlainDateTime(2020, 1, 1).assume_system_tz("raise"),  # type: ignore[deprecated, call-arg]
+    ],
+)
+def test_shim_that_raises_emits_no_warning(call: Callable[[], object]):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with pytest.raises((ValueError, TypeError)):
+            call()
+    assert caught == []
+
+
+def test_offset_timestamp_factory_wrapper_local_out_of_range():
+    with pytest.raises(ValueError, match="value or calculation out of range"):
+        OffsetDateTime.from_timestamp(  # type: ignore[deprecated]
+            Instant.MAX.timestamp(), offset=hours(1)
+        )
+    with pytest.raises(ValueError, match="value or calculation out of range"):
+        ZonedDateTime.from_timestamp(  # type: ignore[deprecated]
+            Instant.MAX.timestamp(), tz="Asia/Tokyo"
+        )
+
+
+@pytest.mark.parametrize(
     "method, unit",
     [
         ("from_timestamp_millis", "millisecond"),
@@ -328,16 +360,14 @@ def test_offset_timestamp_factory_wrappers_take_stale_offset_ok(method):
 def test_offset_timestamp_factory_wrappers_keep_integer_requirement(
     method, unit
 ):
-    with warns_here(WheneverDeprecationWarning) as caught:
-        with pytest.raises(
-            TypeError, match=f"^timestamp in {unit}s must be an integer$"
-        ):
-            getattr(OffsetDateTime, method)(
-                1.5,
-                offset=hours(2),
-                stale_offset_ok=True,
-            )
-    assert caught[0].filename == __file__
+    with pytest.raises(
+        TypeError, match=f"^timestamp in {unit}s must be an integer$"
+    ):
+        getattr(OffsetDateTime, method)(
+            1.5,
+            offset=hours(2),
+            stale_offset_ok=True,
+        )
 
 
 @pytest.mark.parametrize(
@@ -451,7 +481,10 @@ def test_system_timezone_wrappers():
         plain.assume_system_tz,  # type: ignore[deprecated]
         match=assume_system_tz_msg,
     ).strict_eq(plain.assume_tz(SYSTEM_TZ, disambiguation="compatible"))
-    with warns_here(WheneverDeprecationWarning, match=assume_system_tz_msg):
+    # The arguments are validated before the method warns, so a call that
+    # raises emits no warning.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         with pytest.raises(
             TypeError,
             match="both 'disambiguation' and deprecated 'disambiguate'",
@@ -459,6 +492,7 @@ def test_system_timezone_wrappers():
             plain.assume_system_tz(  # type: ignore[deprecated]
                 disambiguation="raise", disambiguate="raise"
             )
+    assert caught == []
 
     with patch_current_time(instant, keep_ticking=False):
         actual = deprecated(
@@ -704,13 +738,13 @@ class TestZonedTimestampFactoryWrapperArguments:
         assert method(1_597_493_310 * factor, tz="America/Nuuk").strict_eq(
             ZonedDateTime(2020, 8, 15, 10, 8, 30, tz="America/Nuuk")
         )
-        with pytest.raises((OSError, OverflowError, ValueError)):
+        with pytest.raises(ValueError, match="out of range"):
             method(1_000_000_000_000_000_000 * factor, tz="America/Nuuk")
 
-        with pytest.raises((OSError, OverflowError, ValueError)):
+        with pytest.raises(ValueError, match="out of range"):
             method(-1_000_000_000_000_000_000 * factor, tz="America/Nuuk")
 
-        with pytest.raises((TypeError, AttributeError)):
+        with pytest.raises(TypeError, match="tz must be a string"):
             method(0, tz=3)
 
         with pytest.raises(TypeError):
@@ -719,10 +753,14 @@ class TestZonedTimestampFactoryWrapperArguments:
         with pytest.raises(TimeZoneNotFoundError):
             method(0, tz="America/Nowhere")
 
-        with pytest.raises(TypeError, match="got 3|foo"):
+        with pytest.raises(
+            TypeError, match="unexpected keyword argument 'foo'"
+        ):
             method(0, tz="America/New_York", foo="bar")
 
-        with pytest.raises(TypeError, match="positional|ts"):
+        with pytest.raises(
+            TypeError, match="unexpected keyword argument 'ts'"
+        ):
             method(ts=0, tz="America/New_York")
 
         with pytest.raises(TypeError):
@@ -789,7 +827,7 @@ class TestZonedTimestampFactoryWrapperArguments:
         with pytest.raises(ValueError):
             ZonedDateTime.from_timestamp(9e200, tz="America/New_York")  # type: ignore[deprecated]
 
-        with pytest.raises((ValueError, OverflowError, OSError)):
+        with pytest.raises(ValueError, match="out of range"):
             ZonedDateTime.from_timestamp(  # type: ignore[deprecated]
                 float(Instant.MAX.timestamp()) + 0.99999999,
                 tz="America/New_York",

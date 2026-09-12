@@ -1,7 +1,12 @@
 import pickle
 import re
+import warnings
 from copy import copy, deepcopy
-from datetime import date as py_date, datetime as py_datetime
+from datetime import (
+    date as py_date,
+    datetime as py_datetime,
+    timezone as py_timezone,
+)
 from itertools import chain
 from typing import Literal
 
@@ -16,6 +21,7 @@ from whenever import (
     PlainDateTime,
     Time,
     Weekday,
+    WheneverWarning,
     YearMonth,
     patch_current_time,
 )
@@ -26,6 +32,7 @@ from .common import (
     AlwaysSmaller,
     NeverEqual,
     system_tz,
+    warns_here,
 )
 
 MAX_I64 = 1 << 63
@@ -188,15 +195,30 @@ def test_today_differs_from_utc():
 
 def test_init_from_py_date():
     assert Date(py_date(2021, 1, 2)) == Date(2021, 1, 2)
-    assert Date(py_datetime(2021, 1, 2, 3, 4, 5)) == Date(2021, 1, 2)
 
     class CustomDate(py_date):
         pass
 
-    assert Date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert Date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
 
     with pytest.raises(TypeError):
         Date(20210102)  # type: ignore[call-overload]
+
+
+def test_init_from_py_datetime_warns():
+    # A datetime is a date subclass whose time is dropped
+    match = (
+        r"^datetime\.datetime contains data that cannot be reliably read "
+        r"through the datetime\.date fields; convert it explicitly$"
+    )
+    with warns_here(WheneverWarning, match=match):
+        assert Date(py_datetime(2021, 1, 2, 3, 4, 5)) == Date(2021, 1, 2)
+    with warns_here(WheneverWarning, match=match):
+        assert Date(
+            py_datetime(2021, 1, 2, 3, 4, 5, tzinfo=py_timezone.utc)
+        ) == Date(2021, 1, 2)
 
 
 def test_format_iso():

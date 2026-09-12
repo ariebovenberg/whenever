@@ -3,15 +3,22 @@ myst:
   html_meta:
     description: >-
       How equality and ordering work in whenever: exact types compare by moment in
-      time, PlainDateTime never mixes with them, plus strict_eq() and nanosecond
-      precision caveats.
+      time, values of different types never mix, itemized deltas do not order,
+      plus strict_eq() and nanosecond precision caveats.
 ---
 
 # Comparison and equality
 
-All types support equality and comparison.
-However, {class}`~whenever.PlainDateTime` instances are
-never equal or comparable to the "exact" types.
+Every type supports `==`. Every type but the itemized deltas supports
+ordering (`<`, `<=`, `>`, `>=`): a calendar unit has no fixed length, so
+compare {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta`
+after `in_units()` or `total()` with a `relative_to`.
+Values of different types are equal only within the exact family
+({class}`~whenever.Instant`, {class}`~whenever.OffsetDateTime`,
+{class}`~whenever.ZonedDateTime`) and never order: `<` across types raises
+{exc}`TypeError`. No *whenever* value equals a standard-library value, and an
+itemized delta, though a {class}`~collections.abc.Mapping`, never equals a
+`dict`.
 `hash()` agrees with `==` on every type: values that compare equal hash alike,
 across {class}`~whenever.Instant`, {class}`~whenever.OffsetDateTime`, and
 {class}`~whenever.ZonedDateTime` too, so equal values collapse in a `set` or
@@ -78,7 +85,7 @@ compares exactly that in addition:
 - {class}`~whenever.OffsetDateTime`: the type, the local datetime, and the
   offset.
 - {class}`~whenever.ZonedDateTime`: the type, the local datetime, the offset,
-  and the time zone—meaning its identifier (or the absence of one, for the
+  and the time zone—meaning its time zone ID (or the absence of one, for the
   system time zone) and its definition. Two values with the same time zone ID
   can carry different rules after a {func}`~whenever.clear_tzcache` or a
   {func}`~whenever.reset_tzpath`, and they are then not strictly equal.

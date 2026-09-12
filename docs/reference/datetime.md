@@ -63,6 +63,8 @@ exact points in time:
 |  `strict_eq()`  | {meth}`🔗 <Instant.strict_eq>`       | {meth}`🔗 <ZonedDateTime.strict_eq>`       | {meth}`🔗 <OffsetDateTime.strict_eq>`      |
 |    |   |   |   |
 |  `x + TimeDelta`  | {meth}`🔗 <Instant.__add__>` | {meth}`🔗 <ZonedDateTime.__add__>`  | {meth}`🔗 <OffsetDateTime.__add__>` |
+|    |   |   |   |
+|  `to_stdlib()`  | {meth}`🔗 <Instant.to_stdlib>` | {meth}`🔗 <ZonedDateTime.to_stdlib>`  | {meth}`🔗 <OffsetDateTime.to_stdlib>` |
 
 Timestamp conversion floors at the requested unit in both directions; see
 {ref}`timestamps`.
@@ -95,6 +97,8 @@ local date and time values:
 | `days_in_month()`            | {meth}`🔗 <PlainDateTime.days_in_month>`                               | {meth}`🔗 <ZonedDateTime.days_in_month>`                               | {meth}`🔗 <OffsetDateTime.days_in_month>`                                |
 | `days_in_year()`             | {meth}`🔗 <PlainDateTime.days_in_year>`                                | {meth}`🔗 <ZonedDateTime.days_in_year>`                                | {meth}`🔗 <OffsetDateTime.days_in_year>`                                 |
 | `in_leap_year()`             | {meth}`🔗 <PlainDateTime.in_leap_year>`                                | {meth}`🔗 <ZonedDateTime.in_leap_year>`                                | {meth}`🔗 <OffsetDateTime.in_leap_year>`                                 |
+|    |   |   |
+| `to_stdlib()`                | {meth}`🔗 <PlainDateTime.to_stdlib>`                                   | {meth}`🔗 <ZonedDateTime.to_stdlib>`                                   | {meth}`🔗 <OffsetDateTime.to_stdlib>`                                    |
 
 Each type's replacement carries its own resolution: `disambiguation=` on
 {class}`ZonedDateTime`, `stale_offset_ok=` on {class}`OffsetDateTime`, and

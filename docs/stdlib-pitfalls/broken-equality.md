@@ -31,13 +31,13 @@ incorrect from a "moment in time" perspective.
 
 `whenever` was designed from the ground up with these considerations in mind.
 It defines equality for "aware" objects based on the exact instant in time they represent,
-and this holds true consistenly.
+and this holds true consistently.
 
 ```python
 >>> dt1 = ZonedDateTime(2024, 10, 27, 2, 30, tz="Europe/Paris", disambiguation="earlier")
 >>> dt2 = ZonedDateTime(2024, 10, 27, 2, 30, tz="Europe/Paris", disambiguation="later")
->>> dt1 == dt2  # different instant, same zone
+>>> dt1 == dt2  # different instant, same time zone
 False
->>> dt1 == dt1.to_tz("Asia/Tokyo")  # same instant, different zone
+>>> dt1 == dt1.to_tz("Asia/Tokyo")  # same instant, different time zone
 True
 ```

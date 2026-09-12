@@ -12,6 +12,7 @@ from whenever import (
     SATURDAY,
     SYSTEM_TZ,
     Date,
+    ImplicitDisambiguationWarning,
     Instant,
     ItemizedDateDelta,
     ItemizedDelta,
@@ -22,6 +23,7 @@ from whenever import (
     SkippedTime,
     Time,
     TimeDelta,
+    TimeZoneNotFoundError,
     ZonedDateTime,
     hours,
     nanoseconds,
@@ -176,6 +178,31 @@ class TestAssumeTz:
                 disambiguation="later",
             )
         )
+
+    @pytest.mark.parametrize(
+        "d",
+        [
+            PlainDateTime(2023, 10, 29, 2, 15),  # repeated
+            PlainDateTime(2023, 3, 26, 2, 15),  # skipped
+        ],
+    )
+    def test_implicit_disambiguation_warns(self, d):
+        with warns_here(ImplicitDisambiguationWarning):
+            implicit = d.assume_tz("Europe/Amsterdam")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            explicit = d.assume_tz(
+                "Europe/Amsterdam", disambiguation="compatible"
+            )
+        assert implicit.strict_eq(explicit)
+
+    def test_wrong_type(self):
+        with pytest.raises(TypeError, match="tz must be a string"):
+            PlainDateTime(2020, 8, 15).assume_tz(3)
+
+    def test_unknown_tz_id(self):
+        with pytest.raises(TimeZoneNotFoundError):
+            PlainDateTime(2020, 8, 15).assume_tz("Europe/Nowhere")
 
     def test_nonexistent(self):
         d = PlainDateTime(2023, 3, 26, 2, 15)
@@ -520,17 +547,13 @@ class TestFormatIso:
         with pytest.raises(ValueError, match="unit"):
             dt.format_iso(unit="foo")  # type: ignore[arg-type]
 
-        with pytest.raises(
-            (ValueError, TypeError, AttributeError), match="unit"
-        ):
+        with pytest.raises(ValueError, match="invalid unit"):
             dt.format_iso(unit=True)  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="sep"):
             dt.format_iso(sep="_")  # type: ignore[arg-type]
 
-        with pytest.raises(
-            (ValueError, TypeError, AttributeError), match="sep"
-        ):
+        with pytest.raises(ValueError, match="invalid sep"):
             dt.format_iso(sep=1)  # type: ignore[arg-type]
 
         # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
@@ -576,7 +599,10 @@ def test_init_from_py_datetime():
         2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
     )
 
-    with pytest.raises(ValueError, match="utc"):
+    with pytest.raises(
+        ValueError,
+        match=r"^datetime must be naive, got tzinfo=datetime\.timezone\.utc$",
+    ):
         PlainDateTime(
             py_datetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
         )
@@ -587,6 +613,24 @@ def test_init_from_py_datetime():
     assert PlainDateTime(
         MyDateTime(2020, 8, 15, 23, 12, 9, 987_654)
     ) == PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
+
+
+def test_init_from_py_datetime_keyword_rejected():
+    with pytest.raises(
+        TypeError,
+        match=r"^PlainDateTime\(\) got an unexpected keyword argument 'nanosecond'$",
+    ):
+        PlainDateTime(py_datetime(2020, 8, 15), nanosecond=1)  # type: ignore[call-overload]
+
+
+def test_init_from_py_datetime_drops_fold():
+    # fold means nothing without a time zone, so it isn't carried
+    assert (
+        PlainDateTime(py_datetime(2023, 10, 29, 2, 30, fold=1))
+        .to_stdlib()
+        .fold
+        == 0
+    )
 
 
 def test_min_max():

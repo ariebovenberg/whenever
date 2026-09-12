@@ -60,6 +60,11 @@ CI runs this coverage check on Python 3.14.
 - **Remove redundant checks**: if a condition is guaranteed by earlier logic, don't re-check it.
   Add a debug assert and/or a comment explaining why it's safe instead.
 - Only comment code where names and types are insufficient to explain the logic. Avoid redundant comments.
+- **Complexity budget**: weigh what an addition costs against what it buys.
+  A perfect error message does not weigh up against three helper functions
+  with introspection; a convention is a reason to prefer the literal at each
+  site over a mechanism. When an addition starts to look like gold-plating,
+  check with the user rather than building or dropping it on your own.
 
 ## API conventions
 
@@ -76,7 +81,9 @@ CI runs this coverage check on Python 3.14.
 - **Value types**: `repr(x)` is a constructor expression that rebuilds an equal
   value (space separator, lowercase delta units); `str(x)` is `format_iso()`
   and never raises; `hash` agrees with `==`; `__format__` exists exactly on the
-  six types with patterns.
+  six types with patterns. `==` across types is `False` outside the exact
+  family and against stdlib objects; ordering across types raises `TypeError`.
+  Sub-microsecond precision is floored on the way to the stdlib.
 - **Exceptions**: out of domain is `ValueError`, `OverflowError` only for a
   machine-integer overflow. A wrong type raises whatever falls out, usually
   `TypeError` or `AttributeError`; the type checker is the guard. Add an
@@ -93,10 +100,12 @@ CI runs this coverage check on Python 3.14.
 - **Messages**: lowercase, the offending value in `repr` form, the parameter
   named when the call has more than one, glossary headwords. Keep one wording
   per condition on both backends where that costs nothing; stdlib messages
-  may bubble up in the pure-Python backend.
+  may bubble up in the pure-Python backend. Which of two wrong arguments is
+  reported first is unspecified.
 - **Warnings**: each escapable warning has one call-local escape ending in
   `_ok`, named in its message; `ImplicitDisambiguationWarning` is escaped by
-  stating `disambiguation=`.
+  stating `disambiguation=`. A call that raises emits no warning: validate,
+  compute, then warn.
 - **Spelling**: *time zone* in prose, `timezone` in identifiers.
 - **Attribute or method**: a field of the value's own notation (`year`,
   `offset`, `tz_id`, `week`) is an attribute; everything derived
@@ -105,9 +114,14 @@ CI runs this coverage check on Python 3.14.
   localize the clock and nothing it would discard; no system default.
 - **Constructor defaults**: time-of-day fields default to zero; calendar
   fields never default.
-- **Stdlib overloads** accept subclasses and read them through the stdlib
-  attributes; `warn_lossy_stdlib_subclass` flags the families known to
-  carry more than those attributes hold.
+- **Stdlib overloads**: the declared stdlib type's own fields are the
+  contract. A field the target cannot hold or lacks raises `ValueError` (a
+  `time` with a tzinfo, an aware `datetime` for `PlainDateTime`, a naive one
+  for the exact types). A subclass's additions are outside it: read through
+  the base fields and flagged with `warn_lossy_stdlib_subclass` where the
+  loss is known (`datetime` under `date`, pandas, pendulum), silent otherwise.
+  `fold` is read through the offset where a tzinfo gives it meaning and
+  dropped elsewhere.
 
 ## Tests
 

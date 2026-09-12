@@ -26,27 +26,31 @@ or pass the standard library object directly to the constructor:
 datetime.datetime(2025, 4, 19, 15, 30, tzinfo=datetime.timezone.utc)
 ```
 
-| *whenever* class                | {mod}`datetime` equivalent                                   | *to* {mod}`datetime`                     |
-|:--------------------------------|:-------------------------------------------------------------|------------------------------------------|
-| {class}`Instant`                | {class}`~datetime.datetime` with {data}`~datetime.UTC`       | {meth}`~Instant.to_stdlib`               |
-| {class}`ZonedDateTime`          | {class}`~datetime.datetime` with {class}`~zoneinfo.ZoneInfo` | {meth}`~ZonedDateTime.to_stdlib`    |
-| {class}`OffsetDateTime`         | {class}`~datetime.datetime` with {class}`~datetime.timezone` | {meth}`~OffsetDateTime.to_stdlib`  |
-| {class}`PlainDateTime`          | {class}`~datetime.datetime` (naive)                          | {meth}`~PlainDateTime.to_stdlib`    |
-|                                 |                                                              |                                          |
-| {class}`Date`                   | {class}`~datetime.date`                                      | {meth}`~Date.to_stdlib`                  |
-| {class}`Time`                   | {class}`~datetime.time`                                      | {meth}`~Time.to_stdlib`                  |
-| {class}`YearMonth`              | N/A                                                          | N/A                                      |
-| {class}`MonthDay`               | N/A                                                          | N/A                                      |
-|                                 |                                                              |                                          |
-| {class}`TimeDelta`              | {class}`~datetime.timedelta`                                 | {meth}`~TimeDelta.to_stdlib`            |
-| {class}`ItemizedDelta`          | N/A                                                          | N/A                                      |
-| {class}`ItemizedDateDelta`      | N/A                                                          | N/A                                      |
+| *whenever* class           | {mod}`datetime` equivalent                                   | *to* {mod}`datetime`              | *from* {mod}`datetime`                                              |
+|:---------------------------|:-------------------------------------------------------------|:----------------------------------|:--------------------------------------------------------------------|
+| {class}`Instant`           | {class}`~datetime.datetime` with {data}`~datetime.UTC`       | {meth}`~Instant.to_stdlib`        | `Instant(py_datetime)`                                              |
+| {class}`ZonedDateTime`     | {class}`~datetime.datetime` with {class}`~zoneinfo.ZoneInfo` | {meth}`~ZonedDateTime.to_stdlib` [^system-tz] | `ZonedDateTime(py_datetime, disambiguation=, offset_mismatch=)` |
+| {class}`OffsetDateTime`    | {class}`~datetime.datetime` with {class}`~datetime.timezone` | {meth}`~OffsetDateTime.to_stdlib` | `OffsetDateTime(py_datetime)`                                       |
+| {class}`PlainDateTime`     | {class}`~datetime.datetime` (naive)                          | {meth}`~PlainDateTime.to_stdlib`  | `PlainDateTime(py_datetime)`                                        |
+|                            |                                                              |                                   |                                                                     |
+| {class}`Date`              | {class}`~datetime.date`                                      | {meth}`~Date.to_stdlib`           | `Date(py_date)`                                                     |
+| {class}`Time`              | {class}`~datetime.time`                                      | {meth}`~Time.to_stdlib`           | `Time(py_time)`                                                     |
+| {class}`YearMonth`         | N/A                                                          | N/A                               | N/A                                                                 |
+| {class}`MonthDay`          | N/A                                                          | N/A                               | N/A                                                                 |
+| {class}`IsoWeekDate`       | the {meth}`~datetime.date.isocalendar` result, a named tuple, not a type | via {meth}`~IsoWeekDate.date` | via `Date(py_date)`                                          |
+|                            |                                                              |                                   |                                                                     |
+| {class}`TimeDelta`         | {class}`~datetime.timedelta`                                 | {meth}`~TimeDelta.to_stdlib`      | `TimeDelta(py_timedelta)`                                           |
+| {class}`ItemizedDelta`     | N/A                                                          | N/A                               | N/A                                                                 |
+| {class}`ItemizedDateDelta` | N/A                                                          | N/A                               | N/A                                                                 |
+
+[^system-tz]: A system time zone without a time zone ID converts to a
+    fixed-offset `datetime`; see the admonition below.
 
 ```{note}
 
 * There are some exceptions where the conversion is not exact; see the individual method documentation for details.
 * Converting to the standard library is not always lossless.
-  Nanoseconds will be truncated to microseconds.
+  Nanoseconds are **floored** to microseconds.
 ```
 
 ```{warning}
@@ -59,8 +63,10 @@ Convert explicitly instead:
 `Instant.from_timestamp(ts.value, unit="nanosecond")` for a
 `pandas.Timestamp`, `TimeDelta(nanoseconds=td.value)` for a
 `pandas.Timedelta`, and an {class}`~whenever.ItemizedDelta` built from the
-`pendulum.Duration`'s components. Subclasses that add no data, such as
-freezegun's `FakeDatetime`, pass silently.
+`pendulum.Duration`'s components. A `datetime` given to {class}`Date` is the
+same case: it is a `date` subclass whose time is dropped, so it warns; call
+`.date()` first. A subclass that adds no data, such as freezegun's
+`FakeDatetime`, passes silently.
 ```
 
 ```{admonition} Converting a datetime with a ZoneInfo
@@ -74,6 +80,18 @@ so both go through the same
 `offset_mismatch=` and `disambiguation=`, and raises
 {exc}`~whenever.InvalidOffsetError` by default when the standard library's
 rules and *whenever*'s own rules disagree.
+
+{class}`~zoneinfo.ZoneInfo` subclasses are accepted. `timezone.utc`, pytz,
+and dateutil tzinfos are rejected with {exc}`ValueError`, because they carry
+no time zone ID: use `OffsetDateTime()` or `Instant()` for those.
+
+`fold` is read through the offset on aware datetimes and set by
+`to_stdlib()`, so both occurrences of a repeated local time round-trip. On
+naive datetimes and on `time`, `fold` is ignored.
+
+`to_stdlib()` hands the time zone ID to the standard library, which resolves
+it on its own search path. A system time zone without a time zone ID gives a
+fixed-offset {class}`~datetime.timezone` instead.
 ```
 
 ```{admonition} FAQ
@@ -87,5 +105,6 @@ There are no Python equivalents for the following classes:
 - {class}`ItemizedDelta` and {class}`ItemizedDateDelta` cannot be converted to {class}`~datetime.timedelta`
   because they may contain calendar units,
   and because they store their components in unnormalized form, unlike {class}`~datetime.timedelta`.
-- {class}`YearMonth`, {class}`MonthDay`, and {class}`IsoWeekDate` cannot be
-  converted because there is no direct equivalent in the standard library.
+- {class}`YearMonth` and {class}`MonthDay` cannot be converted because there
+  is no direct equivalent in the standard library. {class}`IsoWeekDate` has a
+  named tuple, not a type, in the standard library: go through `.date()`.

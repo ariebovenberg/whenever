@@ -9,7 +9,9 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from copy import copy, deepcopy
 from datetime import (
+    date as py_date,
     datetime as py_datetime,
+    time as py_time,
     timedelta as py_timedelta,
     timezone as py_timezone,
 )
@@ -723,6 +725,95 @@ EQUAL_BUT_NOT_STRICTLY_EQUAL = [
 ]
 
 
+@pytest.mark.parametrize(
+    "convert",
+    [
+        Instant.from_utc(2020, 1, 1).to_fixed_offset,
+        OffsetDateTime(2020, 1, 1, offset=hours(1)).to_fixed_offset,
+        ZonedDateTime(2020, 1, 1, tz="Europe/Amsterdam").to_fixed_offset,
+        PlainDateTime(2020, 1, 1).assume_fixed_offset,
+    ],
+)
+@pytest.mark.parametrize(
+    "offset, exc, message",
+    [
+        ("x", TypeError, "offset must be a TimeDelta"),
+        (
+            hours(1) + TimeDelta(nanoseconds=1),
+            ValueError,
+            "offset must be a whole number of seconds",
+        ),
+        (hours(24), ValueError, "offset must be between -24 and 24 hours"),
+        (hours(-24), ValueError, "offset must be between -24 and 24 hours"),
+    ],
+)
+def test_offset_rejections(convert, offset, exc, message):
+    # the four entry points that take an offset share one set of messages
+    with pytest.raises(exc, match=f"^{message}$"):
+        convert(offset)
+
+
+@pytest.mark.parametrize(
+    "cls", [Date, Time, TimeDelta, PlainDateTime, Instant]
+)
+def test_to_stdlib_extremes_convert(cls):
+    cls.MIN.to_stdlib()
+    cls.MAX.to_stdlib()
+
+
+def test_to_stdlib_tzinfo():
+    assert Instant.from_utc(2020, 1, 1).to_stdlib().tzinfo is py_timezone.utc
+    assert (
+        type(OffsetDateTime(2020, 1, 1, offset=hours(1)).to_stdlib().tzinfo)
+        is py_timezone
+    )
+    assert isinstance(
+        ZonedDateTime(2020, 1, 1, tz="Europe/Amsterdam").to_stdlib().tzinfo,
+        ZoneInfo,
+    )
+    assert PlainDateTime(2020, 1, 1).to_stdlib().tzinfo is None
+
+
+class TestCrossTypeComparison:
+    """Outside the exact family, values of different types are never equal
+    and never order; the same holds against the standard library."""
+
+    @pytest.mark.parametrize(
+        "a, b",
+        [
+            (Date(2020, 1, 1), PlainDateTime(2020, 1, 1)),
+            (Time(), Date(2020, 1, 1)),
+            (TimeDelta(hours=1), ItemizedDelta(hours=1)),
+            (ItemizedDelta(days=1), ItemizedDateDelta(days=1)),
+            (Instant.from_utc(2020, 1, 1), PlainDateTime(2020, 1, 1)),
+            (ItemizedDelta(hours=1), {"hours": 1}),
+            (Date(2020, 1, 1), py_date(2020, 1, 1)),
+            (Time(), py_time()),
+            (TimeDelta(hours=1), py_timedelta(hours=1)),
+            (
+                Instant.from_utc(2020, 1, 1),
+                py_datetime(2020, 1, 1, tzinfo=py_timezone.utc),
+            ),
+            (PlainDateTime(2020, 1, 1), py_datetime(2020, 1, 1)),
+        ],
+    )
+    def test_never_equal_never_ordered(self, a, b):
+        assert not a == b
+        assert a != b
+        assert not b == a
+        assert b != a
+        with pytest.raises(TypeError):
+            a < b
+        with pytest.raises(TypeError):
+            b < a
+
+    def test_exact_types_order_among_themselves(self):
+        inst = Instant.from_utc(2020, 1, 1, 12)
+        assert inst < OffsetDateTime(2020, 1, 1, 13, offset=hours(0))
+        assert ZonedDateTime(2020, 1, 1, 12, 59, tz="Europe/Amsterdam") < inst
+        assert OffsetDateTime(2020, 1, 1, 12, offset=hours(0)) <= inst
+
+
 @pytest.mark.parametrize("a, b", EQUAL_BUT_NOT_STRICTLY_EQUAL)
 def test_strict_eq_refines_eq(a, b):
     # the law: strict_eq() implies ==
@@ -734,7 +825,7 @@ def test_strict_eq_refines_eq(a, b):
         assert not a.strict_eq(b)
         assert not b.strict_eq(a)
     else:
-        with pytest.raises(TypeError, match="same-type"):
+        with pytest.raises(TypeError, match="argument must be"):
             a.strict_eq(b)
 
 
@@ -839,6 +930,50 @@ def test_types_are_final(cls):
         match=f"type 'whenever.{cls.__name__}' is not an acceptable base type",
     ):
         type("Sub", (cls,), {})
+
+
+_SAMPLE_VALUES = [
+    Date(2020, 1, 1),
+    YearMonth(2020, 1),
+    MonthDay(1, 1),
+    IsoWeekDate(2020, 1, MONDAY),
+    Time(),
+    Instant.from_utc(2020, 1, 1),
+    OffsetDateTime(2020, 1, 1, offset=hours(1)),
+    ZonedDateTime(2020, 1, 1, tz="Europe/Amsterdam"),
+    PlainDateTime(2020, 1, 1),
+    TimeDelta(hours=1),
+    ItemizedDelta(months=1),
+    ItemizedDateDelta(months=1),
+]
+
+
+def test_public_members_have_docstrings():
+    # help() is identical on both backends, bound methods included
+    import whenever
+
+    def public(cls: type) -> list[str]:
+        # what whenever defines, not what BaseException or Enum inherit
+        return [
+            n
+            for n in dir(cls)
+            if not n.startswith("_")
+            and next(
+                b for b in cls.__mro__ if n in vars(b)
+            ).__module__.startswith("whenever")
+        ]
+
+    for name in whenever.__all__:
+        cls = getattr(whenever, name)
+        if not isinstance(cls, type):
+            continue
+        for attr in public(cls):
+            assert getattr(cls, attr).__doc__, f"{name}.{attr}"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", WheneverDeprecationWarning)
+        for value in _SAMPLE_VALUES:
+            for attr in public(type(value)):
+                assert getattr(value, attr).__doc__, f"{value!r}.{attr}"
 
 
 def test_warning_and_exception_hierarchy():
@@ -970,6 +1105,12 @@ class TestLossyStdlibSubclass:
             assert PlainDateTime(cls(2020, 8, 15, 12)) == PlainDateTime(
                 2020, 8, 15, 12
             )
+        # read as a date, the datetime fields (not only pandas') are dropped
+        with warns_here(
+            WheneverWarning,
+            match=match.replace("datetime\\.datetime", "datetime\\.date"),
+        ):
+            assert Date(cls(2020, 8, 15, 12)) == Date(2020, 8, 15)
 
     @pytest.mark.parametrize("module", ["pandas._libs", "pendulum.duration"])
     def test_lossy_timedelta(self, module: str):

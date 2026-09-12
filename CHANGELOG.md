@@ -137,9 +137,32 @@ deprecated interfaces are removed.
 - `format_iso(basic=...)` reads its flag by truthiness like every other
   flag; a non-`bool` no longer raises `TypeError` (the check shipped in
   0.10.4).
+- `Date()` emits `WheneverWarning` when given a `datetime`, whose time it
+  drops; call `.date()` first to convert explicitly.
+- `ZonedDateTime()` accepts a `datetime` whose tzinfo is a `ZoneInfo`
+  subclass. The messages for a non-`ZoneInfo` tzinfo and for a `ZoneInfo`
+  without a key are reworded.
+- `strict_eq()` names the expected type when given another
+  (`strict_eq() argument must be an Instant`), and a sub-second offset is
+  rejected with `offset must be a whole number of seconds` everywhere.
+- The deprecated `from_timestamp*()` factories of `OffsetDateTime` and
+  `ZonedDateTime` and `assume_system_tz()` validate their arguments before
+  they warn, so a call that raises emits no warning. A local result outside
+  the supported range raises `ValueError` instead of the standard library's
+  `OverflowError`.
 
 **Fixed**
 
+- `PlainDateTime()` no longer carries the `fold` of its `datetime` argument
+  into `to_stdlib()` in the pure-Python backend.
+- `TimeDelta()` rejects a `timedelta` above `TimeDelta.MAX` by less than a
+  second in the Rust extension too.
+- Methods that take keyword arguments have a `__doc__` when bound to an
+  instance or class in the Rust extension, so `help(Instant.from_timestamp)`
+  shows their documentation on both backends.
+- `OffsetDateTime.assume_tz()` rejects an invalid `disambiguation` up front
+  in the pure-Python backend, and `OffsetDateTime(py_datetime, ...)` and
+  `PlainDateTime(py_datetime, ...)` name the class when rejecting a keyword.
 - `str()` of a `ZonedDateTime` without a time zone ID no longer raises in the
   pure-Python backend; it gives the offset form, as the Rust extension did.
 - `repr(Weekday.MONDAY)` is `Weekday.MONDAY`, which rebuilds the member.

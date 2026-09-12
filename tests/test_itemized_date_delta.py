@@ -319,7 +319,10 @@ def test_strict_eq():
     assert d1.strict_eq(d1)
     assert not d1.strict_eq(d2)
     assert not d1.strict_eq(d3)
-    with pytest.raises(TypeError):
+    with pytest.raises(
+        TypeError,
+        match=r"^strict_eq\(\) argument must be an ItemizedDateDelta$",
+    ):
         d1.strict_eq(ItemizedDelta(years=2))  # type: ignore[arg-type]
 
 

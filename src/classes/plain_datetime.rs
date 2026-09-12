@@ -85,16 +85,24 @@ impl PyPayload for PlainDateTime {
 
 #[inline(never)]
 fn __new__(cls: PyClass<PlainDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
-    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+    if args.len() == 1 {
         let arg = args.iter().next().unwrap();
-        if PyStr::isinstance(arg) {
+        let nkwargs = kwargs.map_or(0, |d| d.len());
+        if PyStr::isinstance(arg) && nkwargs == 0 {
             return parse_iso(cls, arg);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
+            if let Some((key, _)) = kwargs.and_then(|d| d.iteritems().next()) {
+                return raise_unexpected_kwarg("PlainDateTime", key);
+            }
             warn_lossy_stdlib_subclass::<PyDateTime>(cls.state(), arg, "datetime")?;
             return PlainDateTime::from_stdlib_datetime(dt)?.to_obj(cls);
         }
-        return raise_type_err("PlainDateTime() requires an ISO 8601 string or datetime.datetime");
+        if nkwargs == 0 {
+            return raise_type_err(
+                "PlainDateTime() requires an ISO 8601 string or datetime.datetime",
+            );
+        }
     }
     let mut year: i64 = 0;
     let mut month: i64 = 0;
@@ -525,11 +533,6 @@ fn assume_system_tz(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let state = cls.state();
-    warn_deprecated(
-        state,
-        c"assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
-        1,
-    )?;
     handle_no_args("assume_system_tz", args)?;
 
     let mut dis_arg = DisambiguationArg::default();
@@ -540,8 +543,16 @@ fn assume_system_tz(
         .finish("assume_system_tz", state)?
         .unwrap_or(Disambiguation::Compatible);
     let tz = state.tz_store.get_system_tz()?;
-    slf.resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
-        .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type)
+    // Validate and compute first, so a call that raises emits no warning.
+    let result = slf
+        .resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
+        .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type)?;
+    warn_deprecated(
+        state,
+        c"assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
+        1,
+    )?;
+    Ok(result)
 }
 
 fn replace_date(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyObj) -> PyReturn {

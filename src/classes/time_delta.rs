@@ -50,11 +50,10 @@ impl TimeDelta {
         }
     }
 
+    /// The full value is checked, so a `timedelta` past `TimeDelta::MAX` by
+    /// less than a second is rejected too.
     pub(crate) fn from_stdlib_timedelta(d: PyTimeDelta) -> Option<Self> {
-        Some(TimeDelta {
-            secs: d.whole_seconds()?,
-            subsec: d.subsec(),
-        })
+        Self::from_nanos(d.total_nanos())
     }
 }
 

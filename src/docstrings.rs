@@ -40,7 +40,8 @@ A date without a time component.
 Date(\"2021-01-02\")
 
 Can also be constructed from an ISO 8601 string
-or a standard library :class:`~datetime.date`:
+or a standard library :class:`~datetime.date`
+(a :class:`~datetime.datetime` is read as its date, and warns):
 
 >>> Date(\"2021-01-02\")
 Date(\"2021-01-02\")
@@ -311,8 +312,8 @@ Time(\"12:30:00\")
 
 Note
 ----
-When constructing from a :class:`~datetime.time`, the ``fold``
-attribute and ``tzinfo`` are ignored.
+A :class:`~datetime.time` with a ``tzinfo`` raises :exc:`ValueError`;
+its ``fold`` is ignored.
 
 Sub-second precision up to nanoseconds is supported:
 
@@ -390,7 +391,8 @@ ZonedDateTime(\"2024-12-08 11:00:00+01:00[Europe/Paris]\")
 >>> # Explicitly resolve ambiguities during DST transitions
 >>> ZonedDateTime(2023, 10, 29, 1, 15, tz=\"Europe/London\", disambiguation=\"earlier\")
 ZonedDateTime(\"2023-10-29 01:15:00+01:00[Europe/London]\")
->>> # From a standard library datetime (must have a ZoneInfo tzinfo)
+>>> # From a standard library datetime whose tzinfo is a ZoneInfo
+>>> # (or a subclass of it); any other tzinfo raises ValueError
 >>> ZonedDateTime(datetime(2020, 8, 15, 23, 12, tzinfo=ZoneInfo(\"Europe/London\")))
 ZonedDateTime(\"2020-08-15 23:12:00+01:00[Europe/London]\")
 
@@ -929,8 +931,7 @@ Associate this offset datetime with a time zone, returning a ZonedDateTime.
 
 This is the inverse of :meth:`ZonedDateTime.to_fixed_offset`.
 
-See the `timezone-resolution guide
-<https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html#offset-mismatch>`_
+See the :ref:`time zone resolution guide <offset-mismatch>`
 for how ``offset_mismatch`` interacts with ``disambiguation``.
 ";
 pub(crate) const OFFSETDATETIME_END_OF: &CStr = c"\
@@ -987,10 +988,9 @@ Warning
 Converting a UNIX timestamp to ``OffsetDateTime`` with a fixed UTC offset
 is correct for that offset, but the offset may be stale for the region you
 intend at that timestamp: a fixed offset contains no DST or other time zone
-rules. Use
-``ZonedDateTime.from_timestamp(ts, tz='<tz>')`` if you know the time zone,
-or ``Instant.from_timestamp()`` for exact time independent of any time zone.
-Pass ``stale_offset_ok=True`` to suppress.
+rules. Use ``Instant.from_timestamp(ts).to_tz('<tz>')`` if you know the
+time zone, or ``Instant.from_timestamp()`` for exact time independent of
+any time zone. Pass ``stale_offset_ok=True`` to suppress.
 ";
 pub(crate) const OFFSETDATETIME_FROM_TIMESTAMP_MILLIS: &CStr = c"\
 from_timestamp_millis(value, /, *, offset, stale_offset_ok=...)
@@ -1232,7 +1232,7 @@ creating a ``ZonedDateTime``.
 
 Note
 ----
-The local time may be ambiguous in the system time zone
+The local time may be repeated or skipped in the system time zone
 (e.g. during a DST transition). You can explicitly
 specify how to handle such a situation using ``disambiguation``.
 See `the documentation
@@ -1253,7 +1253,7 @@ creating a ``ZonedDateTime``.
 
 Note
 ----
-The local time may be ambiguous in the given time zone
+The local time may be repeated or skipped in the given time zone
 (e.g. during a DST transition). You can explicitly
 specify how to handle such a situation using the ``disambiguation`` argument.
 See `the documentation
@@ -1533,7 +1533,7 @@ Convert to a standard library :class:`~datetime.time`
 
 Note
 ----
-Nanoseconds are truncated to microseconds.
+Nanoseconds are floored to microseconds.
 If you need more control over rounding, use :meth:`round` first.
 ";
 pub(crate) const TIMEDELTA_ADD: &CStr = c"\
@@ -1643,7 +1643,7 @@ timedelta(seconds=5400)
 
 Note
 ----
-Nanoseconds are truncated to microseconds.
+Nanoseconds are floored to microseconds.
 If you need more control over rounding, use :meth:`round` first.
 ";
 pub(crate) const TIMEDELTA_TOTAL: &CStr = c"\
@@ -1873,8 +1873,7 @@ Parse a zoned datetime from a custom pattern string.
 The pattern **must** include a time zone ID field (``VV``).
 An offset field (``x``/``X``) is optional but recommended for
 disambiguation during DST transitions.
-See the `timezone-resolution guide
-<https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html#offset-mismatch>`_
+See the :ref:`time zone resolution guide <offset-mismatch>`
 for how ``offset_mismatch`` interacts with ``disambiguation``.
 See :ref:`pattern-format` for details.
 
@@ -1898,8 +1897,7 @@ Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
 The inverse of the ``format_iso()`` method.
 
-See the `timezone-resolution guide
-<https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html#offset-mismatch>`_
+See the :ref:`time zone resolution guide <offset-mismatch>`
 for how ``offset_mismatch`` interacts with ``disambiguation``.
 
 >>> ZonedDateTime.parse_iso(\"2020-08-15T23:12:00+01:00[Europe/London]\")
@@ -2039,8 +2037,8 @@ Compare two values, including what ``==`` ignores.
 
 ``ZonedDateTime.__eq__`` ignores the argument's type, the local
 datetime, the offset, and the time zone. A time zone is compared by
-identifier and definition; the system time zone has no identifier and
-so compares by definition alone. An argument of a different type
+time zone ID and definition; the system time zone may have no ID and
+then compares by definition alone. An argument of a different type
 raises :exc:`TypeError`.
 
 >>> a = ZonedDateTime(2020, 8, 15, hour=12, tz=\"Europe/Amsterdam\")
@@ -2057,6 +2055,35 @@ subtract($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, hours=0, mi
 --
 
 The inverse of the ``add()`` method. See :meth:`add` for more information.";
+pub(crate) const ZONEDDATETIME_TO_STDLIB: &CStr = c"\
+Convert to a standard library :class:`~datetime.datetime`
+with a :class:`~zoneinfo.ZoneInfo` tzinfo.
+
+The time zone ID is handed to the standard library, which resolves
+it on its own search path. For a repeated local time, ``fold`` is
+set, so the value round-trips through ``ZonedDateTime()``.
+A system time zone without a time zone ID gives a fixed-offset
+:class:`~datetime.timezone` instead.
+
+Note
+----
+Nanoseconds are floored to microseconds.
+If you need more control over rounding, use :meth:`round` first.
+";
+pub(crate) const ZONEDDATETIME_TO_TZ: &CStr = c"\
+Convert to the same moment in time in another time zone.
+
+``to_tz(SYSTEM_TZ)`` converts to the system time zone.
+
+>>> d = ZonedDateTime(2020, 8, 15, 12, tz=\"Europe/Amsterdam\")
+>>> d.to_tz(\"America/New_York\")
+ZonedDateTime(\"2020-08-15 06:00:00-04:00[America/New_York]\")
+
+Raises
+------
+~whenever.TimeZoneNotFoundError
+    If the time zone ID is not found in the time zone database.
+";
 pub(crate) const ZONEDDATETIME_TZ: &CStr = c"\
 Deprecated alias of :attr:`tz_id`.
 
@@ -2092,12 +2119,8 @@ Convert to a standard library :class:`~datetime.datetime`
 
 Note
 ----
-- Nanoseconds are truncated to microseconds.
-  If you wish to customize the rounding behavior, use
-  the ``round()`` method first.
-- For :class:`ZonedDateTime` linked to a system time zone without a
-  IANA time zone ID, the returned Python datetime will have
-  a fixed offset (:class:`~datetime.timezone` tzinfo)
+Nanoseconds are floored to microseconds.
+If you need more control over rounding, use :meth:`round` first.
 ";
 pub(crate) const EXACTANDLOCALTIME_OFFSET: &CStr = c"\
 The UTC offset of the datetime";
@@ -2191,7 +2214,8 @@ to_fixed_offset($self, offset=..., /)
 
 Convert to an OffsetDateTime that represents the same moment in time.
 
-If no offset is given, the offset is taken from the original datetime.
+With no offset, the value's own offset is kept; an ``Instant``
+gives ``+00:00``.
 ";
 pub(crate) const EXACTTIME_TO_SYSTEM_TZ: &CStr = c"\
 Convert to a ZonedDateTime of the system's time zone.
@@ -2300,5 +2324,4 @@ pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by 
 pub(crate) const RANGE_MSG: &CStr = c"value or calculation out of range";
 pub(crate) const STALE_OFFSET_CALENDAR_MSG: &CStr = c"You are calculating calendar units relative to an OffsetDateTime. Because it contains only a fixed offset, Whenever must assume that the offset remains constant throughout the calculation. That offset may be stale relative to the source time zone during part of the period if the value represents a region that crosses a DST or other rule change. Use a ZonedDateTime for calendar arithmetic that accounts for the time zone. If the fixed-offset assumption is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const WARNING_HANDLING_DOCS_MSG: &CStr = c"For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const ZONEINFO_NO_KEY_MSG: &CStr = c"Can't determine the IANA time zone ID of the given datetime: The 'key' attribute of the datetime's ZoneInfo object is None. 
-This typically means the ZoneInfo object represents the system time zone with an unknown ID. As an alternative, you can construct an OffsetDateTime from the standard-library datetime, but be aware this is a lossy conversion that only preserves the current UTC offset and discards future daylight saving rules. Please note that a time zone abbreviation like 'CEST' from datetime.tzname() is not a valid IANA time zone ID and cannot be used here.";
+pub(crate) const ZONEINFO_NO_KEY_MSG: &CStr = c"tzinfo has no time zone ID (ZoneInfo.key is None); pass key= to ZoneInfo.from_file(), or use OffsetDateTime() to keep only the offset";

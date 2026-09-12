@@ -46,3 +46,5 @@ Sunday 7. The module constants are the members:
 .. autotype:: ExactDeltaUnitStr
 .. autotype:: OffsetMismatchStr
 .. autotype:: TimestampUnitStr
+
+   See :ref:`timestamps` for more information.

@@ -33,7 +33,7 @@ else:  # pragma: no cover
 
 
 def _tzid_from_path(path: str) -> str | None:
-    """Find the IANA time zone ID from a path to a zoneinfo file.
+    """Find the time zone ID from a path to a zoneinfo file.
     Returns None if the path is not in a zoneinfo directory.
     """
     # Find the path segment containing 'zoneinfo',

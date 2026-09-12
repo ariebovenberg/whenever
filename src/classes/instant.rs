@@ -99,9 +99,8 @@ fn __new__(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyRe
         raise_type_err("Instant() requires an ISO 8601 string or datetime.datetime")
     } else {
         raise_type_err(
-            "Instant() can only be called with an ISO 8601 string passed
-            as the sole positional argument. To construct from UTC date and time components,
-            use Instant.from_utc().",
+            "Instant() takes an ISO 8601 string or datetime.datetime as its only argument; \
+             use Instant.from_utc() for fields",
         )
     }
 }
@@ -249,7 +248,7 @@ fn strict_eq(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     if let Some(i) = obj_b.extract(cls) {
         (slf == i).to_py()
     } else {
-        raise_type_err("strict_eq() requires same-type arguments")?
+        raise_type_err("strict_eq() argument must be an Instant")?
     }
 }
 
