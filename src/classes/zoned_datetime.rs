@@ -12,7 +12,7 @@ use crate::{
         disambiguation::*,
         fmt,
         format_args::{self, Suffix},
-        instant::{TimestampUnit, extract_instant, parse_instant_arg, parse_timestamp},
+        instant::{TimestampUnit, extract_instant, parse_instant_arg},
         parse::Scan,
         pattern, pickle, round_args as round,
         shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
@@ -29,7 +29,7 @@ use crate::{
     tz::tzif::TimeZone,
 };
 use core::{
-    ffi::{c_int, c_void},
+    ffi::{CStr, c_int, c_void},
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
@@ -461,7 +461,7 @@ fn strict_eq(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> 
     if let Some(zdt) = obj_b.extract_ref(cls) {
         (slf == zdt).to_py()
     } else {
-        raise_type_err("strict_eq() requires same-type arguments")?
+        raise_type_err("strict_eq() argument must be a ZonedDateTime")?
     }
 }
 
@@ -996,16 +996,15 @@ fn from_stdlib_datetime_inner(
 ) -> PyReturn {
     let state = cls.state();
     let tzinfo = dt.tzinfo();
-    // NOTE: it has to be exactly a `ZoneInfo`, since
-    // we *know* that this corresponds to a TZ database entry.
-    // Other types could be making up their own rules.
+    // A ZoneInfo (or subclass) carries a time zone ID; the offset it computes
+    // is checked against our own rules below, so a subclass guards nothing more.
     if tzinfo.is_none() {
         raise_value_err("datetime is naive; use PlainDateTime() instead")?;
     }
-    if tzinfo.type_().as_ptr() != state.zoneinfo_type.get()?.as_ptr() {
-        raise_value_err(format!(
-            "tzinfo must be of type ZoneInfo (exactly), got {tzinfo}"
-        ))?;
+    // SAFETY: zoneinfo.ZoneInfo is a type
+    let zoneinfo_type = unsafe { state.zoneinfo_type.get()?.cast_unchecked::<PyType>() };
+    if !tzinfo.type_().is_subtype(zoneinfo_type) {
+        raise_value_err(format!("tzinfo must be a ZoneInfo, got {tzinfo}"))?;
     }
     let key = tzinfo.getattr(c"key")?;
     if key.is_none() {
@@ -1079,31 +1078,40 @@ fn __reduce__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     .into_pytuple()
 }
 
-/// checks the args comply with (ts, /, *, tz: str)
-fn check_from_timestamp_args_return_tz(
+/// The deprecated `from_timestamp*` shims: (ts, /, *, tz).
+/// Validate and compute first, so a call that raises emits no warning.
+fn from_timestamp_deprecated(
+    cls: PyClass<ZonedDateTime>,
+    fname: &str,
+    unit: TimestampUnit,
+    deprecation: &CStr,
     args: &[PyObj],
     kwargs: &mut IterKwargs,
-    state: &State,
-    fname: &str,
-) -> PyResult<Arc<TimeZone>> {
-    match (args, kwargs.next()) {
-        (&[_], Some((key, value))) if kwargs.original_len() == 1 => {
-            if unicode_eq(key, *state.strs.tz) {
-                state.load_tz(value)
-            } else {
-                raise_unexpected_kwarg(fname, key)
-            }
+) -> PyReturn {
+    let state = cls.state();
+    let mut tz = None;
+    handle_kwargs(fname, kwargs, |key, value, eq| {
+        if eq(key, *state.strs.tz) {
+            tz = Some(value);
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        (&[_], None) => raise_type_err(format!(
-            "{fname}() missing 1 required keyword-only argument: 'tz'"
-        )),
-        (&[], _) => raise_type_err(format!("{fname}() missing 1 required positional argument")),
-        _ => raise_type_err(format!(
-            "{}() expected 2 arguments, got {}",
+    })?;
+    if args.len() != 1 {
+        raise_type_err(format!(
+            "{}() takes 1 positional argument but {} were given",
             fname,
-            args.len() + (kwargs.original_len() as usize)
-        )),
+            args.len()
+        ))?
     }
+    let tz = state.load_tz(tz.ok_or_else_type_err(|| {
+        format!("{fname}() missing 1 required keyword-only argument: 'tz'")
+    })?)?;
+    let result = unit.parse(args[0])?.into_zoned_obj(tz, cls)?;
+
+    warn_deprecated(state, deprecation, 1)?;
+    Ok(result)
 }
 
 fn from_timestamp(
@@ -1111,15 +1119,14 @@ fn from_timestamp(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let state = cls.state();
-    warn_deprecated(
-        state,
+    from_timestamp_deprecated(
+        cls,
+        "from_timestamp",
+        TimestampUnit::Second,
         c"ZonedDateTime.from_timestamp() is deprecated; use Instant.from_timestamp(...).to_tz(...) instead",
-        1,
-    )?;
-    let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp")?;
-
-    parse_timestamp(args[0])?.into_zoned_obj(tz, cls)
+        args,
+        kwargs,
+    )
 }
 
 fn from_timestamp_millis(
@@ -1127,16 +1134,14 @@ fn from_timestamp_millis(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let state = cls.state();
-    warn_deprecated(
-        state,
+    from_timestamp_deprecated(
+        cls,
+        "from_timestamp_millis",
+        TimestampUnit::Millisecond,
         c"ZonedDateTime.from_timestamp_millis() is deprecated; use Instant.from_timestamp(..., unit='millisecond').to_tz(...) instead",
-        1,
-    )?;
-    let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_millis")?;
-    TimestampUnit::Millisecond
-        .parse(args[0])?
-        .into_zoned_obj(tz, cls)
+        args,
+        kwargs,
+    )
 }
 
 fn from_timestamp_nanos(
@@ -1144,16 +1149,14 @@ fn from_timestamp_nanos(
     args: &[PyObj],
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
-    let state = cls.state();
-    warn_deprecated(
-        state,
+    from_timestamp_deprecated(
+        cls,
+        "from_timestamp_nanos",
+        TimestampUnit::Nanosecond,
         c"ZonedDateTime.from_timestamp_nanos() is deprecated; use Instant.from_timestamp(..., unit='nanosecond').to_tz(...) instead",
-        1,
-    )?;
-    let tz = check_from_timestamp_args_return_tz(args, kwargs, state, "from_timestamp_nanos")?;
-    TimestampUnit::Nanosecond
-        .parse(args[0])?
-        .into_zoned_obj(tz, cls)
+        args,
+        kwargs,
+    )
 }
 
 fn is_repeated(_: PyType, slf: &ZonedDateTime) -> PyReturn {
@@ -1559,7 +1562,7 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(ZonedDateTime, __reduce__, c""),
-    method1!(ZonedDateTime, to_tz, doc::EXACTTIME_TO_TZ),
+    method1!(ZonedDateTime, to_tz, doc::ZONEDDATETIME_TO_TZ),
     method0!(ZonedDateTime, to_system_tz, doc::EXACTTIME_TO_SYSTEM_TZ),
     method_vararg!(
         ZonedDateTime,
@@ -1568,7 +1571,7 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     ),
     method1!(ZonedDateTime, exact_eq, doc::ZONEDDATETIME_EXACT_EQ),
     method1!(ZonedDateTime, strict_eq, doc::ZONEDDATETIME_STRICT_EQ),
-    method0!(ZonedDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
+    method0!(ZonedDateTime, to_stdlib, doc::ZONEDDATETIME_TO_STDLIB),
     method0!(ZonedDateTime, to_instant, doc::EXACTANDLOCALTIME_TO_INSTANT),
     method0!(ZonedDateTime, to_plain, doc::EXACTANDLOCALTIME_TO_PLAIN),
     method0!(ZonedDateTime, date, doc::LOCALTIME_DATE),

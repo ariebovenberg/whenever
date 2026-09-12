@@ -167,7 +167,8 @@ True  # normalized durations are the same
 ```
 
 Use {meth}`~ItemizedDelta.strict_eq` when explicit component presence also matters
-(see {ref}`strict-equality`).
+(see {ref}`strict-equality`). `hash()` follows `==`, so an explicit zero
+hashes like a missing component.
 Constructors currently require at least one component, so construct an
 itemized zero with an explicit component such as `ItemizedDelta(seconds=0)` or
 `ItemizedDateDelta(days=0)`. Allowing empty constructors may be considered as

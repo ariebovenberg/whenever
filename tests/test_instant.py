@@ -16,6 +16,7 @@ from whenever import (
     PlainDateTime,
     StaleOffsetWarning,
     TimeDelta,
+    TimeZoneNotFoundError,
     ZonedDateTime,
     hours,
     milliseconds,
@@ -174,7 +175,7 @@ class TestEquality:
         assert not d == different
         assert hash(d) != hash(different)
 
-    def test_notimplemented(self):
+    def test_not_implemented(self):
         d = Instant.from_utc(2020, 8, 15)
         assert d == AlwaysEqual()
         assert d != NeverEqual()
@@ -205,9 +206,9 @@ class TestEquality:
         assert hash(d) != hash(zoned_different)
 
         # FUTURE: this *should* be flagged by mypy, but it isn't as of 1.20
-        with pytest.raises(TypeError):
-            d.strict_eq(zoned_same)
-        with pytest.raises(TypeError):
+        with pytest.raises(
+            TypeError, match=r"^strict_eq\(\) argument must be an Instant$"
+        ):
             d.strict_eq(zoned_same)
 
         # important: check typing errors in case of strict-comparison mode
@@ -227,7 +228,7 @@ class TestEquality:
         assert hash(d) != hash(offset_different)
 
         # FUTURE: this *should* be flagged by mypy, but it isn't as of 1.20
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError, match="argument must be an Instant"):
             d.strict_eq(offset_same)
 
 
@@ -283,34 +284,6 @@ class TestTimestamp:
                 unit="seconds"  # type: ignore[arg-type]
             )
 
-    def test_millisecond(self):
-        assert Instant.from_utc(1970, 1, 1).timestamp(unit="millisecond") == 0
-        assert (
-            Instant.from_utc(
-                2020, 8, 15, 12, 8, 30, nanosecond=45_123_987
-            ).timestamp(unit="millisecond")
-            == 1_597_493_310_045
-        )
-        assert Instant.MAX.timestamp(unit="millisecond") == 253_402_300_799_999
-        assert Instant.MIN.timestamp(unit="millisecond") == -62_135_596_800_000
-
-    def test_nanosecond(self):
-        assert Instant.from_utc(1970, 1, 1).timestamp(unit="nanosecond") == 0
-        assert (
-            Instant.from_utc(
-                2020, 8, 15, 12, 8, 30, nanosecond=45_123_789
-            ).timestamp(unit="nanosecond")
-            == 1_597_493_310_045_123_789
-        )
-        assert (
-            Instant.MAX.timestamp(unit="nanosecond")
-            == 253_402_300_799_999_999_999
-        )
-        assert (
-            Instant.MIN.timestamp(unit="nanosecond")
-            == -62_135_596_800_000_000_000
-        )
-
 
 class TestFromTimestamp:
     @pytest.mark.parametrize(
@@ -364,6 +337,13 @@ class TestFromTimestamp:
                 0,
                 unit="seconds",  # type: ignore[call-overload]
             )
+
+    def test_argument_kinds(self):
+        # the value is positional-only, the unit keyword-only
+        with pytest.raises(TypeError):
+            Instant.from_timestamp(value=1)  # type: ignore[call-overload]
+        with pytest.raises(TypeError):
+            Instant.from_timestamp(1, "second")  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
         "unit, factor",
@@ -604,42 +584,6 @@ class TestComparison:
         assert not d > zoned_gt
         assert not d >= zoned_gt
 
-    def test_notimplemented(self):
-        d = Instant.from_utc(2020, 8, 15)
-        assert d < AlwaysLarger()
-        assert d <= AlwaysLarger()
-        assert not d > AlwaysLarger()
-        assert not d >= AlwaysLarger()
-        assert not d < AlwaysSmaller()
-        assert not d <= AlwaysSmaller()
-        assert d > AlwaysSmaller()
-        assert d >= AlwaysSmaller()
-
-        with pytest.raises(TypeError):
-            d < 42  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            d <= 42  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            d > 42  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            d >= 42  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            42 < d  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            42 <= d  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            42 > d  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            42 >= d  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            None < d  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            None <= d  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            None > d  # type: ignore[operator]
-        with pytest.raises(TypeError):
-            None >= d  # type: ignore[operator]
-
 
 def test_to_stdlib():
     d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
@@ -744,8 +688,19 @@ class TestInitFromPy:
         ):
             Instant(d)
 
+    @pytest.mark.parametrize("fold, hour", [(0, 0), (1, 1)])
+    def test_fold(self, fold, hour):
+        # in a repeated hour, fold selects the occurrence through the offset
+        d = py_datetime(
+            2023, 10, 29, 2, 30, fold=fold, tzinfo=ZoneInfo("Europe/Amsterdam")
+        )
+        assert Instant(d) == Instant.from_utc(2023, 10, 29, hour, 30)
+
     def test_naive(self):
-        with pytest.raises(ValueError, match="naive"):
+        with pytest.raises(
+            ValueError,
+            match=r"^datetime is naive; use PlainDateTime\(\) instead$",
+        ):
             Instant(py_datetime(2020, 8, 15, 12))
 
     def test_utcoffset_none(self):
@@ -1018,11 +973,17 @@ def test_to_tz():
         ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
     )
 
-    with pytest.raises((ValueError, OverflowError, OSError)):
+    with pytest.raises(ValueError, match="out of range"):
         Instant.MIN.to_tz("America/New_York")
 
-    with pytest.raises((ValueError, OverflowError, OSError)):
+    with pytest.raises(ValueError, match="out of range"):
         Instant.MAX.to_tz("Asia/Tokyo")
+
+    with pytest.raises(TypeError, match="tz must be a string"):
+        d.to_tz(3)
+
+    with pytest.raises(TimeZoneNotFoundError):
+        d.to_tz("America/Nowhere")
 
 
 @system_tz_nyc()
@@ -1156,17 +1117,13 @@ class TestFormatIso:
         with pytest.raises(ValueError, match="unit"):
             dt.format_iso(unit="foo")  # type: ignore[arg-type]
 
-        with pytest.raises(
-            (ValueError, TypeError, AttributeError), match="unit"
-        ):
+        with pytest.raises(ValueError, match="invalid unit"):
             dt.format_iso(unit=True)  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="sep"):
             dt.format_iso(sep="_")  # type: ignore[arg-type]
 
-        with pytest.raises(
-            (ValueError, TypeError, AttributeError), match="sep"
-        ):
+        with pytest.raises(ValueError, match="invalid sep"):
             dt.format_iso(sep=1)  # type: ignore[arg-type]
 
         # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here

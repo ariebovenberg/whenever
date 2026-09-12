@@ -22,7 +22,7 @@ If you prefer a video explanation, [here is an excellent explanation of these co
 
 ## Exact time
 
-An **exact time** (also called "absolute time" or "UTC time") represents a single,
+An **exact time** (also called "absolute time") represents a single,
 precise moment on the global timeline.
 It refers to an instant that exists independently of where you are,
 what time zone you are in, or how clocks are configured.

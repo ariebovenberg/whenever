@@ -22,9 +22,9 @@ For example, you may be surprised to learn that the output of these lines
 depend on the system time zone:
 
 ```python
->>> datetime.fromtimestamp(t)  # returns a naive datetime in system tz
->>> my_datetime.astimezone(None)  # converts to system tz if no tz is given
->>> date.today()  # returns a date in the system tz
+>>> datetime.fromtimestamp(t)  # returns a naive datetime in the system time zone
+>>> my_datetime.astimezone(None)  # converts to the system time zone if none is given
+>>> date.today()  # returns a date in the system time zone
 ```
 
 This implicit behavior makes it hard to see when code is depending on the system configuration.
@@ -39,7 +39,7 @@ That means the resulting datetime is not safe for arithmetic across DST transiti
 Whenever makes converting to the system time zone an explicit operation,
 and never assumes this intention implicitly.
 
-This is the case when converting from a naive datetime:
+This is the case when giving a `PlainDateTime` a time zone:
 
 ```python
 >>> from whenever import PlainDateTime

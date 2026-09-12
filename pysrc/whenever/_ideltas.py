@@ -970,7 +970,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         See :ref:`strict-equality` for the rules on every type.
         """
         if type(other) is not type(self):
-            raise TypeError("strict_eq() requires same-type arguments")
+            raise TypeError("strict_eq() argument must be an ItemizedDelta")
         return (
             self._years == other._years
             and self._months == other._months
@@ -2135,7 +2135,9 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         See :ref:`strict-equality` for the rules on every type.
         """
         if type(other) is not type(self):
-            raise TypeError("strict_eq() requires same-type arguments")
+            raise TypeError(
+                "strict_eq() argument must be an ItemizedDateDelta"
+            )
         return (
             self._years == other._years
             and self._months == other._months

@@ -10,7 +10,7 @@ pub(crate) use crate::domain::date::DateBoundaryUnit;
 use crate::{
     classes::itemized_date_delta::ItemizedDateDelta,
     common::{
-        compat::{parse_pattern_keyword, warn_deprecated},
+        compat::{parse_pattern_keyword, warn_deprecated, warn_lossy_stdlib_subclass},
         format_args, pattern, pickle, round_args as round,
         shift_args::{parse_calendar_shift_arg, parse_calendar_shift_kwargs},
     },
@@ -114,8 +114,8 @@ fn __new__(cls: PyClass<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
         if PyStr::isinstance(arg) {
             return parse_iso(cls, arg);
         }
-        // Accept stdlib datetime.date (or datetime.datetime, which is a subclass)
         if let Some(d) = arg.cast_allow_subclass::<PyDate>() {
+            warn_lossy_stdlib_subclass::<PyDate>(cls.state(), arg, "date")?;
             return Date::from_stdlib_date(d).to_obj(cls);
         }
         return raise_type_err("Date() requires an ISO 8601 string or datetime.date");

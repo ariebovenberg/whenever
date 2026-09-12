@@ -31,6 +31,9 @@ ZonedDateTime("2023-12-28 11:30:00+01:00[Europe/Paris]")
 True  # always the same moment in time
 ```
 
+`to_fixed_offset()` with no argument keeps the value's own offset; an
+{class}`~whenever.Instant` gives `+00:00`.
+
 (timestamps)=
 ## To and from timestamps
 
@@ -74,6 +77,9 @@ or offset information.
 >>> n = d.to_plain()
 PlainDateTime("2023-12-28 11:30:00")
 ```
+
+An {class}`~whenever.Instant` has no local fields and so no `to_plain()`; its
+UTC reading is `to_fixed_offset().to_plain()`.
 
 You can convert from plain datetimes with the {meth}`~whenever.PlainDateTime.assume_utc`,
 {meth}`~whenever.PlainDateTime.assume_fixed_offset`,

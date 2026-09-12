@@ -7,7 +7,8 @@ pub(crate) fn warn_deprecated(state: &State, message: &CStr, stacklevel: isize) 
 }
 
 /// Warn when a stdlib subclass known to carry more than the stdlib fields
-/// (`base` names the stdlib type) is read through those fields. An exact
+/// (`base` names the stdlib type) is read through those fields: the pandas
+/// and pendulum families, and a `datetime` read as a `date`. An exact
 /// stdlib instance returns at once; the module check is allowed to be imperfect.
 pub(crate) fn warn_lossy_stdlib_subclass<T: PyStaticType>(
     state: &State,
@@ -26,7 +27,8 @@ pub(crate) fn warn_lossy_stdlib_subclass<T: PyStaticType>(
     if !matches!(
         (package, base),
         ("pandas", "datetime") | ("pandas", "timedelta") | ("pendulum", "timedelta")
-    ) {
+    ) && !(base == "date" && PyDateTime::isinstance(obj))
+    {
         return Ok(());
     }
     let qualname = cls.getattr(c"__qualname__")?;

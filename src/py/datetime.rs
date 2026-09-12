@@ -237,6 +237,12 @@ impl Typed<TimeDeltaTag> {
         // SAFETY: microseconds are always less than 1_000_000
         SubSecNanos::new_unchecked(self.microseconds_component() * 1_000)
     }
+
+    pub(crate) fn total_nanos(self) -> i128 {
+        i128::from(self.days_component()) * 86_400_000_000_000
+            + i128::from(self.seconds_component()) * 1_000_000_000
+            + i128::from(self.microseconds_component()) * 1_000
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

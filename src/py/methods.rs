@@ -213,15 +213,17 @@ macro_rules! modmethod_vararg(
         }
     };
 );
+// Not `METH_METHOD`: CPython binds such a function as a `builtin_method`,
+// whose `__doc__` is None. The defining class is `type(self)` (every type is
+// final) or the class argument, and state access goes through the module.
 macro_rules! method_kwargs(
     ($typ:ident, $meth:ident, $doc:expr) => {
         PyMethodDef {
             ml_name: concat!(stringify!($meth), "\0").as_ptr().cast(),
             ml_meth: PyMethodDefPointer {
-                PyCMethod: {
+                PyCFunctionFastWithKeywords: {
                     unsafe extern "C" fn _wrap(
                         slf_ptr: *mut PyObject,
-                        cls: *mut PyTypeObject,
                         args_raw: *const *mut PyObject,
                         nargsf: Py_ssize_t,
                         kwnames: *mut PyObject,
@@ -230,7 +232,7 @@ macro_rules! method_kwargs(
                         let nargs = unsafe {PyVectorcall_NARGS(nargsf as usize)};
                         let wrapped = unsafe { PyRef::from_obj_unchecked(slf) };
                         catch_panic!($meth(
-                            unsafe {PyType::from_ptr_unchecked(cls.cast()).assume_class::<$typ>().into()},
+                            unsafe {slf.type_().assume_class::<$typ>().into()},
                             FromWrapped::from_wrapped(wrapped),
                             unsafe {std::slice::from_raw_parts(args_raw.cast::<PyObj>(), nargs as usize)},
                             &mut unsafe {IterKwargs::new(kwnames, args_raw.offset(nargs as isize))},
@@ -239,7 +241,7 @@ macro_rules! method_kwargs(
                     _wrap
                 },
             },
-            ml_flags: METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
+            ml_flags: METH_FASTCALL | METH_KEYWORDS,
             ml_doc: $doc.as_ptr()
         }
     };
@@ -250,17 +252,16 @@ macro_rules! classmethod_kwargs(
         PyMethodDef {
             ml_name: concat!(stringify!($meth), "\0").as_ptr().cast(),
             ml_meth: PyMethodDefPointer {
-                PyCMethod: {
+                PyCFunctionFastWithKeywords: {
                     unsafe extern "C" fn _wrap(
-                        _: *mut PyObject,
-                        cls: *mut PyTypeObject,
+                        cls: *mut PyObject,
                         args_raw: *const *mut PyObject,
                         nargsf: Py_ssize_t,
                         kwnames: *mut PyObject,
                     ) -> *mut PyObject {
                         let nargs = unsafe {PyVectorcall_NARGS(nargsf as usize)};
                         catch_panic!($meth(
-                            unsafe {PyType::from_ptr_unchecked(cls.cast()).assume_class::<$typ>().into()},
+                            unsafe {PyType::from_ptr_unchecked(cls).assume_class::<$typ>().into()},
                             unsafe {std::slice::from_raw_parts(args_raw.cast::<PyObj>(), nargs as usize)},
                             &mut unsafe {IterKwargs::new(kwnames, args_raw.offset(nargs as isize))},
                         ).to_py_owned_ptr())
@@ -268,7 +269,7 @@ macro_rules! classmethod_kwargs(
                     _wrap
                 },
             },
-            ml_flags: METH_METHOD | METH_FASTCALL | METH_KEYWORDS | METH_CLASS,
+            ml_flags: METH_FASTCALL | METH_KEYWORDS | METH_CLASS,
             ml_doc: $doc.as_ptr()
         }
     };

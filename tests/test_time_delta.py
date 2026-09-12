@@ -1484,6 +1484,16 @@ def test_to_stdlib(d, expected):
     assert d.to_stdlib() == expected
 
 
+@pytest.mark.parametrize(
+    "nanos, micros",
+    [(-1, -1), (-1_001, -2), (1_999, 1)],
+)
+def test_to_stdlib_floors(nanos, micros):
+    assert TimeDelta(nanoseconds=nanos).to_stdlib() == py_timedelta(
+        microseconds=micros
+    )
+
+
 def test_init_from_py_timedelta():
     assert TimeDelta(py_timedelta(0)) == TimeDelta.ZERO
     assert TimeDelta(
@@ -1500,6 +1510,16 @@ def test_init_from_py_timedelta():
 
     with pytest.raises(ValueError, match="range"):
         TimeDelta(py_timedelta.min)
+
+
+def test_init_from_py_timedelta_bound():
+    # The full value is checked, not only the whole seconds
+    assert TimeDelta(TimeDelta.MAX.to_stdlib()) == TimeDelta.MAX
+    assert TimeDelta(TimeDelta.MIN.to_stdlib()) == TimeDelta.MIN
+    with pytest.raises(ValueError, match="value or calculation out of range"):
+        TimeDelta(TimeDelta.MAX.to_stdlib() + py_timedelta(microseconds=1))
+    with pytest.raises(ValueError, match="value or calculation out of range"):
+        TimeDelta(TimeDelta.MIN.to_stdlib() - py_timedelta(microseconds=1))
 
 
 def test_abs():

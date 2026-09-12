@@ -144,7 +144,7 @@ reference: they warn without an escape for now, so filter the category there.
 | `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `replace()`, `add`/`subtract`, and `assume_tz()` |
 | none: filter the category | {class}`~whenever.PickleOffsetMismatchWarning` | `pickle.loads()` of a {class}`~whenever.ZonedDateTime` |
 | none: fix the pattern | the 12-hour {class}`~whenever.WheneverWarning` | `format()` and `parse()`: add `a`/`aa`, or use `H`/`HH` |
-| none: convert explicitly | the lossy-subclass {class}`~whenever.WheneverWarning` | constructors given a `pandas` or `pendulum` object |
+| none: convert explicitly | the lossy-subclass {class}`~whenever.WheneverWarning` | constructors given a `pandas` or `pendulum` object, or `Date()` given a `datetime` |
 
 For example:
 

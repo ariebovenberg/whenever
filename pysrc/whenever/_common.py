@@ -159,6 +159,7 @@ class WheneverDeprecationWarning(WheneverWarning):
 
 # Stdlib subclasses known to carry more than the stdlib fields, keyed on the
 # top-level package. A subclass that adds nothing (freezegun) passes silently.
+# A datetime read as a date is the same case: its time is dropped.
 _LOSSY_STDLIB_SUBCLASSES = frozenset(
     [("pandas", _datetime), ("pandas", _timedelta), ("pendulum", _timedelta)]
 )
@@ -171,7 +172,9 @@ def warn_lossy_stdlib_subclass(
     if cls is base:
         return
     package = cls.__module__.partition(".")[0]
-    if (package, base) in _LOSSY_STDLIB_SUBCLASSES:
+    if (package, base) in _LOSSY_STDLIB_SUBCLASSES or (
+        base is _date and isinstance(obj, _datetime)
+    ):
         warn(
             f"{package}.{cls.__qualname__} contains data that cannot be "
             f"reliably read through the datetime.{base.__name__} fields; "

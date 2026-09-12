@@ -195,6 +195,11 @@ impl PyType {
         })
     }
 
+    /// Whether this type is `other` or a subclass of it.
+    pub(crate) fn is_subtype(&self, other: PyType) -> bool {
+        unsafe { PyType_IsSubtype(self.as_ptr().cast(), other.as_ptr().cast()) != 0 }
+    }
+
     /// Get the `__dict__` of this type.
     pub(crate) fn get_dict(self) -> PyDict {
         // SAFETY: type objects always have tp_dict populated

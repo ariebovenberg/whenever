@@ -79,9 +79,9 @@ of the places where the design makes certain mistakes easy to make.
       :link-type: doc
       :shadow: md
 
-      The same zone ID can load on your laptop and fail in production
+      The same time zone ID can load on your laptop and fail in production
 
-   .. grid-item-card:: :octicon:`location` Quietly uses the system zone
+   .. grid-item-card:: :octicon:`location` Quietly uses the system time zone
       :link: system-timezone
       :link-type: doc
       :shadow: md
@@ -113,7 +113,7 @@ of the places where the design makes certain mistakes easy to make.
    broken-equality
    timezone-classes
    zoneinfo-casing
-   Quietly uses the system zone <system-timezone>
+   Quietly uses the system time zone <system-timezone>
    Broken date inheritance <date-inheritance>
    timedelta-seconds
 ```
