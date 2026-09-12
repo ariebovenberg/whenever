@@ -39,6 +39,7 @@ For the motivation behind the three types and help choosing one, start with
 | {ref}`Addition/subtraction <delta-add-sub>`  | {meth}`~TimeDelta.add` / {meth}`~TimeDelta.subtract` | {meth}`~ItemizedDateDelta.add` / {meth}`~ItemizedDateDelta.subtract` | {meth}`~ItemizedDelta.add` / {meth}`~ItemizedDelta.subtract` |
 | {ref}`Operators <delta-operators>` | {meth}`+ <TimeDelta.__add__>` , {meth}`- <TimeDelta.__sub__>` , {meth}`* <TimeDelta.__mul__>` , {meth}`/ <TimeDelta.__truediv__>` , {meth}`// <TimeDelta.__floordiv__>` , {meth}`% <TimeDelta.__mod__>` | `+`, `-` | `+`, `-` |
 | {ref}`Rounding <delta-rounding>` | {meth}`~TimeDelta.round`  | with {meth}`~ItemizedDateDelta.in_units`          | with {meth}`~ItemizedDelta.in_units`          |
+| {ref}`Replace components <delta-norm>` | n/a | {meth}`~ItemizedDateDelta.replace` | {meth}`~ItemizedDelta.replace` |
 | Applies to...     | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` <br> {class}`Instant` | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` <br> {class}`Date` | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` |
 | Similar to... | {class}`~datetime.timedelta` | {class}`~collections.Counter` | {class}`~collections.Counter` |
 
@@ -83,6 +84,15 @@ The one exception is `seconds`, which `nanoseconds` brings with it; see
 
 {class}`TimeDelta` instead normalizes all its components into one exact
 duration. See {ref}`guide-deltas` for a side-by-side example.
+
+For the same reason, {class}`TimeDelta` has no `replace()`: a normalized
+delta is one quantity, so build a new one or add to it. The itemized deltas
+replace and remove components with {meth}`~ItemizedDelta.replace`:
+
+```python
+>>> ItemizedDelta(hours=1, minutes=90).replace(minutes=None, seconds=30)
+ItemizedDelta("PT1h30s")
+```
 
 (delta-subsecond)=
 ### Seconds and nanoseconds

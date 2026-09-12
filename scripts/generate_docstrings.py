@@ -115,7 +115,7 @@ stale_offset_ok=False)""",
     W.OffsetDateTime.replace: """\
 ($self, /, *, year=..., month=..., day=..., hour=..., \
 minute=..., second=..., nanosecond=..., offset=..., \
-stale_offset_ok=False)""",
+stale_offset_ok=...)""",
     W.PlainDateTime.add: """\
 ($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \

@@ -738,6 +738,67 @@ def test_strict_eq_refines_eq(a, b):
             a.strict_eq(b)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        Date(2024, 2, 29),
+        Time(12, 30, nanosecond=1),
+        YearMonth(2024, 2),
+        MonthDay(2, 29),
+        IsoWeekDate(2024, 9, MONDAY),
+        PlainDateTime(2024, 2, 29, 12, 30),
+        OffsetDateTime(2024, 2, 29, 12, 30, offset=hours(2)),
+        ZonedDateTime(2024, 2, 29, 12, 30, tz="Europe/Paris"),
+        ItemizedDelta(years=1, hours=2),
+        ItemizedDateDelta(years=1, days=2),
+    ],
+)
+def test_replace_contract(value):
+    """The contract every ``replace()`` shares: no arguments gives an equal
+    value, and both a positional argument and an unknown keyword raise."""
+    kwargs = (
+        {"stale_offset_ok": True} if isinstance(value, OffsetDateTime) else {}
+    )
+    same = value.replace(**kwargs)
+    if isinstance(value, (ItemizedDelta, ItemizedDateDelta)):
+        assert same.strict_eq(value)
+    else:
+        assert same == value
+    with pytest.raises(TypeError):
+        value.replace(1, **kwargs)
+    with pytest.raises(TypeError, match="foo"):
+        value.replace(foo=1, **kwargs)
+
+
+class _Idx:
+    """An integer-like object: what CPython's own parser accepts for a field."""
+
+    def __index__(self):
+        return 5
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda n: Date(2024, 1, 1).replace(day=n),
+        lambda n: Time(12).replace(minute=n),
+        lambda n: PlainDateTime(2024, 1, 1).replace(hour=n),
+        lambda n: OffsetDateTime(2024, 1, 1, offset=hours(2)).replace(
+            day=n, stale_offset_ok=True
+        ),
+        lambda n: ZonedDateTime(2024, 1, 1, tz="Europe/Paris").replace(
+            month=n
+        ),
+        lambda n: YearMonth(2024, 1).on_day(n),
+        lambda n: MonthDay(1, 1).in_year(n),
+        lambda n: IsoWeekDate(2024, n, MONDAY),
+        lambda n: Date(2024, 1, 1).nth_weekday(n, MONDAY),
+    ],
+)
+def test_integer_keywords_read_the_index_protocol(call):
+    assert call(_Idx()) == call(5)
+
+
 def test_weekday_repr_rebuilds_the_member():
     namespace: dict[str, object] = {}
     exec("from whenever import *", namespace)

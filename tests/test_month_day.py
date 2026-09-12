@@ -186,11 +186,15 @@ def test_replace():
     assert md.replace(day=8) == MonthDay(12, 8)
     assert md == MonthDay(12, 31)  # original is unchanged
 
-    with pytest.raises(ValueError, match="(day|month|date)"):
+    # the message names no dummy year
+    with pytest.raises(ValueError, match="^invalid date$"):
         md.replace(month=2)
 
-    with pytest.raises(ValueError, match="(date|day)"):
+    with pytest.raises(ValueError, match="^invalid date$"):
         md.replace(day=32)
+
+    with pytest.raises(ValueError, match="^invalid date$"):
+        md.replace(month=2, day=31)
 
     with pytest.raises(TypeError):
         md.replace(3)  # type: ignore[call-arg]
@@ -204,7 +208,7 @@ def test_replace():
     with pytest.raises(TypeError, match="foo"):
         md.replace(foo="blabla")  # type: ignore[call-arg]
 
-    with pytest.raises(ValueError, match="(date|month)"):
+    with pytest.raises(ValueError, match="^invalid date$"):
         md.replace(month=13)
 
 

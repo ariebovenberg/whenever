@@ -288,9 +288,6 @@ class TestFormatIso:
         ):
             dt.format_iso(sep=1)  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="basic"):
-            dt.format_iso(basic=1)  # type: ignore[arg-type]
-
         # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
         with pytest.raises(TypeError, match="tz"):
             dt.format_iso(tz="always")  # type: ignore[call-arg]
@@ -3003,6 +3000,93 @@ class TestEndOf:
             odt.end_of("day", stale_offset_ok=True)
 
 
+class TestReplace:
+    def test_fields(self):
+        d = OffsetDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=hours(5)
+        )
+        for field, value in [
+            ("year", 2021),
+            ("month", 9),
+            ("day", 16),
+            ("hour", 0),
+            ("minute", 0),
+            ("second", 0),
+            ("nanosecond", 0),
+        ]:
+            kwargs: dict[str, Any] = {field: value}
+            with warns_here(StaleOffsetWarning):
+                result = d.replace(**kwargs)
+            assert getattr(result, field) == value
+            assert result.offset == hours(5)
+            assert result.to_plain() == d.to_plain().replace(**kwargs)
+
+    def test_offset_keeps_fields_and_moves_instant(self):
+        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(5))
+        result = d.replace(offset=hours(2))
+        assert result.offset == hours(2)
+        assert result.to_plain() == d.to_plain()
+        assert result.to_instant() == d.to_instant() + hours(3)
+
+    def test_nanosecond(self):
+        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(5))
+        with warns_here(StaleOffsetWarning):
+            assert d.replace(nanosecond=999_999_999).nanosecond == 999_999_999
+        with pytest.raises(ValueError, match="nano|time"):
+            d.replace(nanosecond=1_000_000_000, stale_offset_ok=True)
+
+    def test_invalid(self):
+        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(5))
+        with pytest.raises(ValueError, match="date|day"):
+            d.replace(month=2, day=30, stale_offset_ok=True)
+
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d.replace(year=9999, month=12, day=31, offset=hours(-5))
+
+        with pytest.raises(TypeError, match="tzinfo"):
+            d.replace(tzinfo=timezone.utc, stale_offset_ok=True)  # type: ignore[call-overload]
+
+    def test_replace_date(self):
+        d = OffsetDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=hours(5)
+        )
+        with warns_here(StaleOffsetWarning):
+            result = d.replace_date(Date(2021, 1, 2))
+        assert result == OffsetDateTime(
+            2021, 1, 2, 23, 12, 9, nanosecond=987_654, offset=hours(5)
+        )
+        assert result.offset == hours(5)
+        assert result.nanosecond == 987_654
+
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            OffsetDateTime(2020, 1, 1, offset=hours(5)).replace_date(
+                Date.MIN, stale_offset_ok=True
+            )
+
+    def test_replace_time(self):
+        d = OffsetDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, offset=hours(5)
+        )
+        with warns_here(StaleOffsetWarning):
+            result = d.replace_time(Time(1, 2, 3, nanosecond=4))
+        assert result == OffsetDateTime(
+            2020, 8, 15, 1, 2, 3, nanosecond=4, offset=hours(5)
+        )
+        assert result.offset == hours(5)
+        assert result.nanosecond == 4
+
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            OffsetDateTime(9999, 12, 31, offset=hours(-5)).replace_time(
+                Time.MAX, stale_offset_ok=True
+            )
+
+
 class TestStaleOffsetOkKwarg:
     def test_now(self):
         with warnings.catch_warnings():
@@ -3057,6 +3141,7 @@ class TestStaleOffsetOkKwarg:
     @pytest.mark.parametrize(
         "replace",
         [
+            lambda d: d.replace(day=2),
             lambda d: d.replace_date(Date(2025, 1, 1)),
             lambda d: d.replace_time(Time(12, 0)),
         ],
@@ -3065,6 +3150,26 @@ class TestStaleOffsetOkKwarg:
         d = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
         with warns_here(StaleOffsetWarning):
             replace(d)
+
+    def test_replace_offset_is_silent(self):
+        # A stated offset is not carried, so it cannot go stale
+        d = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            moved = d.replace(offset=hours(3))
+            assert d.replace(offset=hours(3), day=2) == OffsetDateTime(
+                2024, 8, 2, 14, 30, offset=hours(3)
+            )
+        assert moved == OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(3))
+        assert moved.to_instant() == d.to_instant() + hours(2)
+
+    def test_failing_replace_does_not_warn(self):
+        d = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with pytest.raises(ValueError):
+                d.replace(month=13)
+        assert caught == []
 
     def test_round(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))

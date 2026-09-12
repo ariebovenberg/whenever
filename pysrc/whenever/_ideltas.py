@@ -35,6 +35,7 @@ from ._common import (
     WheneverWarning,
     _Base,
     add_alternate_constructors,
+    check_no_kwargs,
     final,
     invalid,
     warn_deprecated,
@@ -1551,15 +1552,19 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ) -> ItemizedDelta: ...
 
     def replace(self, **kwargs: int | None) -> ItemizedDelta:
-        """Return a new delta with specific components replaced.
-        Fields set to ``None`` will be removed.
+        """Create a new delta with the given components replaced
 
-        All normal validation rules apply.
+        A component set to ``None`` is removed. Removing the last one
+        raises :class:`ValueError`, as does a mixed sign.
 
         >>> d = ItemizedDelta(years=1, months=2, hours=3)
         >>> d.replace(months=None, hours=2)
         ItemizedDelta("P1yT2h")
         """
+        check_no_kwargs(
+            {k: v for k, v in kwargs.items() if k not in DELTA_UNITS},
+            "replace",
+        )
         kwargs_w_sentinel = {
             k: UNSET if v is None else v for k, v in kwargs.items()
         }
@@ -1820,19 +1825,22 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         ) -> ItemizedDateDelta: ...
 
     def replace(self, **kwargs: int | None) -> ItemizedDateDelta:
-        """Return a new delta with specific components replaced.
-        Fields set to ``None`` will be removed.
+        """Create a new delta with the given components replaced
 
-        All normal validation rules apply.
+        A component set to ``None`` is removed. Removing the last one
+        raises :class:`ValueError`, as does a mixed sign.
 
         >>> d = ItemizedDateDelta(years=1, months=2, weeks=3)
         >>> d.replace(months=None, weeks=4)
         ItemizedDateDelta("P1y4w")
         """
+        check_no_kwargs(
+            {k: v for k, v in kwargs.items() if k not in DATE_DELTA_UNITS},
+            "replace",
+        )
         kwargs_w_sentinel = {
             k: UNSET if v is None else v for k, v in kwargs.items()
         }
-        # Keys may be invalid here, but the constructor will catch that.
         components: dict[str, object] = {
             **{key: value for key, value in self.items()},
             **kwargs_w_sentinel,

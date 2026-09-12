@@ -61,6 +61,13 @@ impl Date {
     }
 
     /// Find the nth weekday in a month.
+    /// How often a weekday occurs in a month: four or five times.
+    pub(crate) fn weekday_count_in_month(year: Year, month: Month, target_dow: Weekday) -> u8 {
+        let first_dow = Date::first_of_month(year, month).day_of_week() as i32;
+        let first = 1 + (target_dow as i32 - first_dow).rem_euclid(7);
+        ((year.days_in_month(month) as i32 - first) / 7 + 1) as u8
+    }
+
     pub(crate) fn nth_weekday_in_month(
         year: Year,
         month: Month,

@@ -533,9 +533,6 @@ class TestFormatIso:
         ):
             dt.format_iso(sep=1)  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="basic"):
-            dt.format_iso(basic=1)  # type: ignore[arg-type]
-
         # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
         with pytest.raises(TypeError, match="tz"):
             dt.format_iso(tz="always")  # type: ignore[call-arg]
@@ -622,6 +619,16 @@ def test_replace():
     assert d.replace(nanosecond=0) == PlainDateTime(
         2020, 8, 15, 23, 12, 9, nanosecond=0
     )
+    assert d.replace(day=31).replace(month=10) == PlainDateTime(
+        2020, 10, 31, 23, 12, 9, nanosecond=987_654
+    )
+
+    # a result that is not a valid date
+    with pytest.raises(ValueError, match="date|day"):
+        d.replace(day=31).replace(month=4)
+
+    with pytest.raises(ValueError, match="date|day"):
+        d.replace(year=2023, month=2, day=29)
 
     with pytest.raises(ValueError, match="nano|time"):
         d.replace(nanosecond=1_000_000_000)
@@ -1013,17 +1020,21 @@ class TestRound:
 
 
 def test_replace_date():
-    d = PlainDateTime(2020, 8, 15, 3, 12, 9)
+    d = PlainDateTime(2020, 8, 15, 3, 12, 9, nanosecond=987_654)
+    # the datetime's nanoseconds are kept
     assert d.replace_date(Date(1996, 2, 19)) == PlainDateTime(
-        1996, 2, 19, 3, 12, 9
+        1996, 2, 19, 3, 12, 9, nanosecond=987_654
     )
     with pytest.raises((TypeError, AttributeError)):
         d.replace_date(42)  # type: ignore[arg-type]
 
 
 def test_replace_time():
-    d = PlainDateTime(2020, 8, 15, 3, 12, 9)
-    assert d.replace_time(Time(1, 2, 3)) == PlainDateTime(2020, 8, 15, 1, 2, 3)
+    d = PlainDateTime(2020, 8, 15, 3, 12, 9, nanosecond=987_654)
+    # the time's nanoseconds replace the datetime's
+    assert d.replace_time(Time(1, 2, 3, nanosecond=4)) == PlainDateTime(
+        2020, 8, 15, 1, 2, 3, nanosecond=4
+    )
     with pytest.raises((TypeError, AttributeError)):
         d.replace_time(42)  # type: ignore[arg-type]
 

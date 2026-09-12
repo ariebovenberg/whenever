@@ -937,6 +937,19 @@ impl Weekday {
     pub(crate) const fn iso(self) -> u8 {
         self as u8
     }
+
+    /// The name of the Python enum member, as its `repr()` spells it
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Weekday::Monday => "MONDAY",
+            Weekday::Tuesday => "TUESDAY",
+            Weekday::Wednesday => "WEDNESDAY",
+            Weekday::Thursday => "THURSDAY",
+            Weekday::Friday => "FRIDAY",
+            Weekday::Saturday => "SATURDAY",
+            Weekday::Sunday => "SUNDAY",
+        }
+    }
 }
 
 /// Trait for types that can be used as delta field values with a sentinel

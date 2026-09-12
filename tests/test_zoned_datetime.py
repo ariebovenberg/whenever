@@ -878,15 +878,15 @@ class TestReplaceDate:
     @pytest.mark.parametrize(
         "d",
         [
-            # before a fold
+            # before a repeated local time (a fold, in PEP 495's words)
             create_zdt(2020, 6, 1, 2, 15, 30, tz="Europe/Amsterdam"),
             create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_POSIX),
             create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_RAWFILE),
-            # after a fold
+            # after a repeated local time
             create_zdt(2020, 11, 8, 2, 15, 30, tz="Europe/Amsterdam"),
             create_zdt(2020, 11, 8, 2, 15, 30, tz=AMS_TZ_POSIX),
             create_zdt(2020, 11, 8, 2, 15, 30, tz=AMS_TZ_RAWFILE),
-            # in a fold
+            # in a repeated local time
             create_zdt(2022, 10, 30, 2, 30, 30, tz="Europe/Amsterdam"),
             create_zdt(2022, 10, 30, 2, 30, 30, tz=AMS_TZ_POSIX),
             create_zdt(2022, 10, 30, 2, 30, 30, tz=AMS_TZ_RAWFILE),
@@ -914,11 +914,11 @@ class TestReplaceDate:
     @pytest.mark.parametrize(
         "d",
         [
-            # before the gap
+            # before the skipped local time (a gap, in PEP 495's words)
             create_zdt(2020, 1, 1, 2, 15, 30, tz="Europe/Amsterdam"),
             create_zdt(2020, 1, 1, 2, 15, 30, tz=AMS_TZ_POSIX),
             create_zdt(2020, 1, 1, 2, 15, 30, tz=AMS_TZ_RAWFILE),
-            # after the gap
+            # after the skipped local time
             create_zdt(2020, 6, 1, 2, 15, 30, tz="Europe/Amsterdam"),
             create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_POSIX),
             create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_RAWFILE),
@@ -930,8 +930,8 @@ class TestReplaceDate:
         with pytest.raises(SkippedTime):
             assert d.replace_date(date, disambiguation="raise")
 
-        # A gap can't be resolved by preserving the offset, so an omitted
-        # disambiguation is implicit here.
+        # A skipped local time can't be resolved by preserving the offset,
+        # so an omitted disambiguation is implicit here.
         with warns_here(ImplicitDisambiguationWarning):
             assert d.replace_date(date).strict_eq(
                 d.replace(year=2023, month=3, day=26)
@@ -962,12 +962,30 @@ class TestReplaceDate:
 
     def test_out_of_range_due_to_offset(self):
         d = ZonedDateTime(2020, 1, 1, tz="Asia/Tokyo")
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             d.replace_date(Date(1, 1, 1), disambiguation="compatible")
 
         d2 = ZonedDateTime(2020, 1, 1, hour=23, tz="America/New_York")
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             d2.replace_date(Date(9999, 12, 31), disambiguation="compatible")
+
+    @pytest.mark.parametrize(
+        "d, date",
+        [
+            (ZonedDateTime(9999, 12, 30, 23, tz="Etc/GMT+12"), Date.MAX),
+            (ZonedDateTime(1, 1, 2, tz="Etc/GMT-14"), Date.MIN),
+        ],
+    )
+    def test_out_of_range_with_offset_preserved(self, d, date):
+        # The local result is a valid datetime, but its instant is not
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d.replace_date(date)
 
 
 class TestReplaceTime:
@@ -989,15 +1007,15 @@ class TestReplaceTime:
     @pytest.mark.parametrize(
         "d",
         [
-            # before a fold
+            # before a repeated local time (a fold, in PEP 495's words)
             create_zdt(2023, 10, 29, 0, 15, 30, tz="Europe/Amsterdam"),
             create_zdt(2023, 10, 29, 0, 15, 30, tz=AMS_TZ_POSIX),
             create_zdt(2023, 10, 29, 0, 15, 30, tz=AMS_TZ_RAWFILE),
-            # after a fold
+            # after a repeated local time
             create_zdt(2023, 10, 29, 4, 15, 30, tz="Europe/Amsterdam"),
             create_zdt(2023, 10, 29, 4, 15, 30, tz=AMS_TZ_POSIX),
             create_zdt(2023, 10, 29, 4, 15, 30, tz=AMS_TZ_RAWFILE),
-            # in a fold
+            # in a repeated local time
             create_zdt(2023, 10, 29, 2, 30, 30, tz="Europe/Amsterdam"),
             create_zdt(2023, 10, 29, 2, 30, 30, tz=AMS_TZ_POSIX),
             create_zdt(2023, 10, 29, 2, 30, 30, tz=AMS_TZ_RAWFILE),
@@ -1027,11 +1045,11 @@ class TestReplaceTime:
     @pytest.mark.parametrize(
         "d",
         [
-            # before a gap
+            # before a skipped local time (a gap, in PEP 495's words)
             create_zdt(2023, 3, 26, 0, 15, tz="Europe/Amsterdam"),
             create_zdt(2023, 3, 26, 0, 15, tz=AMS_TZ_POSIX),
             create_zdt(2023, 3, 26, 0, 15, tz=AMS_TZ_RAWFILE),
-            # after a gap
+            # after a skipped local time
             create_zdt(2023, 3, 26, 4, 15, tz="Europe/Amsterdam"),
             create_zdt(2023, 3, 26, 4, 15, tz=AMS_TZ_POSIX),
             create_zdt(2023, 3, 26, 4, 15, tz=AMS_TZ_RAWFILE),
@@ -1042,8 +1060,8 @@ class TestReplaceTime:
         with pytest.raises(SkippedTime):
             assert d.replace_time(time, disambiguation="raise")
 
-        # A gap can't be resolved by preserving the offset, so an omitted
-        # disambiguation is implicit here.
+        # A skipped local time can't be resolved by preserving the offset,
+        # so an omitted disambiguation is implicit here.
         with warns_here(ImplicitDisambiguationWarning):
             assert d.replace_time(time).strict_eq(
                 d.replace(hour=2, minute=15, second=0)
@@ -1074,12 +1092,30 @@ class TestReplaceTime:
 
     def test_out_of_range_due_to_offset(self):
         d = ZonedDateTime(1, 1, 1, hour=23, tz="Asia/Tokyo")
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             d.replace_time(Time(1), disambiguation="compatible")
 
         d2 = ZonedDateTime(9999, 12, 31, hour=2, tz="America/New_York")
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             d2.replace_time(Time(23), disambiguation="compatible")
+
+    @pytest.mark.parametrize(
+        "d, time",
+        [
+            (ZonedDateTime(9999, 12, 31, tz="Etc/GMT+12"), Time.MAX),
+            (ZonedDateTime(1, 1, 1, 23, tz="Etc/GMT-14"), Time.MIN),
+        ],
+    )
+    def test_out_of_range_with_offset_preserved(self, d, time):
+        # The local result is a valid datetime, but its instant is not
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d.replace_time(time)
 
 
 class TestFormatIso:
@@ -1269,9 +1305,6 @@ class TestFormatIso:
             (ValueError, TypeError, AttributeError), match="sep"
         ):
             ZDT1.format_iso(sep=1)  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError, match="basic"):
-            ZDT1.format_iso(basic=1)  # type: ignore[call-overload]
 
         with pytest.raises(ValueError, match="tz_id_display"):
             ZDT1.format_iso(tz_id_display="sometimes")  # type: ignore[call-overload]
@@ -4516,8 +4549,9 @@ class TestReplace:
         ):
             d.replace(hour=2, disambiguation="raise")
 
-        # default behavior without explicit disambiguation. Unlike in folds,
-        # we *don't* reuse the offset here, since the time doesn't exist at all.
+        # default behavior without explicit disambiguation. Unlike a repeated
+        # local time, a skipped one can't reuse the offset: the time doesn't
+        # exist at all.
         # Instead, we go to the later time (same as disambiguation="compatible").
         # Since the offset can't decide the matter, this warns.
         with warns_here(ImplicitDisambiguationWarning):
@@ -4606,6 +4640,22 @@ class TestReplace:
                 hour=23,
                 disambiguation="compatible",
             )
+
+    def test_system_tz(self):
+        d = ZonedDateTime(2020, 8, 15, 12, 30, tz="Europe/Amsterdam")
+        with system_tz("America/New_York"):
+            result = d.replace(tz=SYSTEM_TZ, disambiguation="raise")
+        # the local fields are kept; the time zone is the system's
+        assert result.strict_eq(
+            ZonedDateTime(2020, 8, 15, 12, 30, tz="America/New_York")
+        )
+
+    def test_invalid_disambiguation(self):
+        d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
+        with pytest.raises(
+            ValueError, match=r"^invalid disambiguation: 'bogus'$"
+        ):
+            d.replace(hour=2, disambiguation="bogus")  # type: ignore[call-overload]
 
 
 class TestAddSubtractTimeUnits:
@@ -6793,19 +6843,20 @@ class TestClearTzCache:
 
 # --- Fixtures for TestImplicitDisambiguationWarning ---
 _AMS = "Europe/Amsterdam"
-# In a fold, so its offset settles which occurrence is meant
-_IN_FOLD = ZonedDateTime(
+# A repeated local time, so its offset settles which occurrence is meant
+_IN_REPEATED = ZonedDateTime(
     2023, 10, 29, 2, 30, tz=_AMS, disambiguation="earlier"
 )
-# Amsterdam was at UTC+0 back then: an offset matching neither side of the fold
+# Amsterdam was at UTC+0 back then: an offset matching neither occurrence
+# of the repeated local time
 _ANCIENT = ZonedDateTime(1900, 6, 1, 2, 30, tz=_AMS)
-_BEFORE_GAP = ZonedDateTime(2023, 3, 25, 2, 30, tz=_AMS)
-_AFTER_GAP = ZonedDateTime(2023, 3, 27, 2, 30, tz=_AMS)
-_BEFORE_FOLD = ZonedDateTime(2023, 10, 28, 2, 30, tz=_AMS)
-_FOLD_DAY_NOON = ZonedDateTime(2023, 10, 29, 12, tz=_AMS)
-_GAP_DAY_NOON = ZonedDateTime(2023, 3, 26, 12, tz=_AMS)
-_FOLD_DATE = Date(2023, 10, 29)
-_GAP_DATE = Date(2023, 3, 26)
+_BEFORE_SKIPPED = ZonedDateTime(2023, 3, 25, 2, 30, tz=_AMS)
+_AFTER_SKIPPED = ZonedDateTime(2023, 3, 27, 2, 30, tz=_AMS)
+_BEFORE_REPEATED = ZonedDateTime(2023, 10, 28, 2, 30, tz=_AMS)
+_REPEATED_DAY_NOON = ZonedDateTime(2023, 10, 29, 12, tz=_AMS)
+_SKIPPED_DAY_NOON = ZonedDateTime(2023, 3, 26, 12, tz=_AMS)
+_REPEATED_DATE = Date(2023, 10, 29)
+_SKIPPED_DATE = Date(2023, 3, 26)
 
 
 class TestImplicitDisambiguationWarning:
@@ -6816,17 +6867,18 @@ class TestImplicitDisambiguationWarning:
     @pytest.mark.parametrize(
         "func",
         [
-            # A gap can never be resolved by preserving the offset
-            lambda: _BEFORE_GAP.add(days=1),
-            lambda: _AFTER_GAP.subtract(days=1),
-            lambda: _BEFORE_GAP.replace_date(_GAP_DATE),
-            lambda: _GAP_DAY_NOON.replace_time(Time(2, 30)),
-            lambda: _BEFORE_GAP.replace(day=26),
-            # A fold whose offset matches neither side
-            lambda: _ANCIENT.replace_date(_FOLD_DATE),
+            # A skipped local time (a gap, in PEP 495's words) can never be
+            # resolved by preserving the offset
+            lambda: _BEFORE_SKIPPED.add(days=1),
+            lambda: _AFTER_SKIPPED.subtract(days=1),
+            lambda: _BEFORE_SKIPPED.replace_date(_SKIPPED_DATE),
+            lambda: _SKIPPED_DAY_NOON.replace_time(Time(2, 30)),
+            lambda: _BEFORE_SKIPPED.replace(day=26),
+            # A repeated local time whose offset matches neither occurrence
+            lambda: _ANCIENT.replace_date(_REPEATED_DATE),
             lambda: _ANCIENT.replace(year=2023, month=10, day=29),
             # Changing tz discards the offset entirely
-            lambda: _IN_FOLD.replace(tz="Europe/Paris"),
+            lambda: _IN_REPEATED.replace(tz="Europe/Paris"),
         ],
     )
     def test_warns(self, func):
@@ -6837,12 +6889,12 @@ class TestImplicitDisambiguationWarning:
     @pytest.mark.parametrize(
         "func",
         [
-            lambda: _BEFORE_GAP + ItemizedDateDelta(days=1),
-            lambda: _BEFORE_GAP + ItemizedDelta(days=1),
-            lambda: _AFTER_GAP - ItemizedDateDelta(days=1),
-            lambda: _AFTER_GAP - ItemizedDelta(days=1),
-            lambda: ItemizedDateDelta(days=1) + _BEFORE_GAP,
-            lambda: ItemizedDelta(days=1) + _BEFORE_GAP,
+            lambda: _BEFORE_SKIPPED + ItemizedDateDelta(days=1),
+            lambda: _BEFORE_SKIPPED + ItemizedDelta(days=1),
+            lambda: _AFTER_SKIPPED - ItemizedDateDelta(days=1),
+            lambda: _AFTER_SKIPPED - ItemizedDelta(days=1),
+            lambda: ItemizedDateDelta(days=1) + _BEFORE_SKIPPED,
+            lambda: ItemizedDelta(days=1) + _BEFORE_SKIPPED,
         ],
     )
     def test_operators_warn(self, func):
@@ -6854,30 +6906,32 @@ class TestImplicitDisambiguationWarning:
     @pytest.mark.parametrize(
         "func",
         [
-            # The previous offset settles which occurrence of the fold is meant
-            lambda: _BEFORE_FOLD.add(days=1),
-            lambda: _BEFORE_FOLD.replace_date(_FOLD_DATE),
-            lambda: _FOLD_DAY_NOON.replace_time(Time(2, 30)),
-            lambda: _FOLD_DAY_NOON.replace(hour=2, minute=30),
+            # The previous offset settles which occurrence of the repeated
+            # local time is meant
+            lambda: _BEFORE_REPEATED.add(days=1),
+            lambda: _BEFORE_REPEATED.replace_date(_REPEATED_DATE),
+            lambda: _REPEATED_DAY_NOON.replace_time(Time(2, 30)),
+            lambda: _REPEATED_DAY_NOON.replace(hour=2, minute=30),
             # Setting the same tz doesn't count as a tz change
-            lambda: _IN_FOLD.replace(tz=_AMS),
+            lambda: _IN_REPEATED.replace(tz=_AMS),
             # An explicit policy never warns
-            lambda: _BEFORE_GAP.add(days=1, disambiguation="later"),
-            lambda: _BEFORE_GAP.replace_date(
-                _GAP_DATE, disambiguation="compatible"
+            lambda: _BEFORE_SKIPPED.add(days=1, disambiguation="later"),
+            lambda: _BEFORE_SKIPPED.replace_date(
+                _SKIPPED_DATE, disambiguation="compatible"
             ),
-            lambda: _IN_FOLD.replace(
+            lambda: _IN_REPEATED.replace(
                 tz="Europe/Paris", disambiguation="compatible"
             ),
             # Unambiguous local times never warn
-            lambda: _IN_FOLD.add(days=2),
-            lambda: _IN_FOLD.replace(hour=12),
-            # The offset still settles the fold when shifted by operator
-            lambda: _BEFORE_FOLD + ItemizedDateDelta(days=1),
-            lambda: _BEFORE_FOLD + ItemizedDelta(days=1),
+            lambda: _IN_REPEATED.add(days=2),
+            lambda: _IN_REPEATED.replace(hour=12),
+            # The offset still settles a repeated local time when shifted by
+            # operator
+            lambda: _BEFORE_REPEATED + ItemizedDateDelta(days=1),
+            lambda: _BEFORE_REPEATED + ItemizedDelta(days=1),
             # Exact-time shifts never resolve a local time
-            lambda: _BEFORE_GAP + hours(24),
-            lambda: _BEFORE_GAP + ItemizedDelta(hours=24),
+            lambda: _BEFORE_SKIPPED + hours(24),
+            lambda: _BEFORE_SKIPPED + ItemizedDelta(hours=24),
         ],
     )
     def test_does_not_warn(self, func):

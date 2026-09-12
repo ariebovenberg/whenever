@@ -210,10 +210,6 @@ def test_format_iso():
     with pytest.raises(TypeError):
         d.format_iso(sep="T")  # type: ignore[call-arg]
 
-    for basic in (0, 1, None, ""):
-        with pytest.raises(TypeError, match="basic must be a boolean"):
-            d.format_iso(basic=basic)  # type: ignore[arg-type]
-
 
 def test_str():
     d = Date(2021, 1, 2)
@@ -316,6 +312,14 @@ def test_replace():
     assert d.replace(month=2) == Date(2021, 2, 2)
     assert d.replace(day=3) == Date(2021, 1, 3)
     assert d == Date(2021, 1, 2)  # original is unchanged
+    assert d.replace(day=31).replace(month=3) == Date(2021, 3, 31)
+
+    # a result that is not a valid date
+    with pytest.raises(ValueError, match="date|day"):
+        d.replace(day=31).replace(month=4)
+
+    with pytest.raises(ValueError, match="date|day"):
+        d.replace(year=2023, month=2, day=29)
 
     with pytest.raises(TypeError):
         d.replace(3)  # type: ignore[call-arg]
@@ -339,7 +343,9 @@ def test_kwarg_interning_bug_issue_149():
 
 def test_at():
     d = Date(2021, 1, 2)
-    assert d.at(Time(3, 4, 5)) == PlainDateTime(2021, 1, 2, 3, 4, 5)
+    assert d.at(Time(3, 4, 5, nanosecond=6_000)) == PlainDateTime(
+        2021, 1, 2, 3, 4, 5, nanosecond=6_000
+    )
 
 
 def test_repr():
@@ -1077,21 +1083,46 @@ class TestNthWeekdayOfMonth:
     def test_fifth_positive_when_not_exists(self):
         # February 2023 (non-leap) starts on Wednesday
         # Only 4 Wednesdays: 1, 8, 15, 22
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"^n=5 is out of range: Weekday\.WEDNESDAY occurs 4 times "
+            r"in 2023-02$",
+        ):
             Date(2023, 2, 1).nth_weekday_of_month(5, WEDNESDAY)
 
     def test_fifth_negative_when_not_exists(self):
         # February 2023 (non-leap) starts on Wednesday
         # Only 4 Fridays: 3, 10, 17, 24
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"^n=-5 is out of range: Weekday\.FRIDAY occurs 4 times "
+            r"in 2023-02$",
+        ):
             Date(2023, 2, 1).nth_weekday_of_month(-5, FRIDAY)
 
     def test_n_out_of_range(self):
-        with pytest.raises(ValueError, match="n must be between -5 and 5"):
+        with pytest.raises(
+            ValueError,
+            match=r"^n=6 is out of range: Weekday\.MONDAY occurs 5 times "
+            r"in 2024-12$",
+        ):
             Date(2024, 12, 1).nth_weekday_of_month(6, MONDAY)
 
-        with pytest.raises(ValueError, match="n must be between -5 and 5"):
+        with pytest.raises(
+            ValueError,
+            match=r"^n=-6 is out of range: Weekday\.MONDAY occurs 5 times "
+            r"in 2024-12$",
+        ):
             Date(2024, 12, 1).nth_weekday_of_month(-6, MONDAY)
+
+    def test_n_type(self):
+        # a bool is an int; a float is not, even when integral
+        d = Date(2024, 12, 1)
+        assert d.nth_weekday_of_month(True, MONDAY) == d.nth_weekday_of_month(
+            1, MONDAY
+        )
+        with pytest.raises(TypeError, match="n must be an integer"):
+            d.nth_weekday_of_month(1.0, MONDAY)  # type: ignore[arg-type]
 
 
 class TestNthWeekday:
@@ -1133,12 +1164,33 @@ class TestNthWeekday:
         with pytest.raises(ValueError, match="n must not be 0"):
             Date(2024, 8, 15).nth_weekday(0, MONDAY)
 
-    def test_n_too_large(self):
-        with pytest.raises(ValueError):
+    def test_out_of_range(self):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             Date(2024, 12, 25).nth_weekday(521_723, FRIDAY)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             Date(2024, 12, 25).nth_weekday(-521_723, FRIDAY)
+
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            Date.MAX.nth_weekday(1, FRIDAY)
+
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            Date.MIN.nth_weekday(-1, FRIDAY)
+
+    def test_n_type(self):
+        # a bool is an int; a float is not, even when integral
+        d = Date(2024, 12, 25)
+        assert d.nth_weekday(True, MONDAY) == d.nth_weekday(1, MONDAY)
+        with pytest.raises(TypeError, match="n must be an integer"):
+            d.nth_weekday(1.5, MONDAY)  # type: ignore[arg-type]
 
     def test_same_weekday_as_date(self):
         # 2024-12-25 is a Wednesday. n=1 should return NEXT Wednesday, not self

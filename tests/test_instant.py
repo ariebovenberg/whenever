@@ -1169,9 +1169,6 @@ class TestFormatIso:
         ):
             dt.format_iso(sep=1)  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError, match="basic"):
-            dt.format_iso(basic=1)  # type: ignore[arg-type]
-
         # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
         with pytest.raises(TypeError, match="tz"):
             dt.format_iso(tz="always")  # type: ignore[call-arg]

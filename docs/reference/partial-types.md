@@ -2,8 +2,8 @@
 myst:
   html_meta:
     description: >-
-      API reference for Date, Time, YearMonth, MonthDay, and IsoWeekDate, and how
-      they combine into datetimes.
+      API reference for Date, Time, YearMonth, MonthDay, and IsoWeekDate: how
+      they combine into datetimes and how a Date finds nearby dates.
 ---
 
 (partial-api)=
@@ -51,12 +51,23 @@ Date("2023-02-28")
 ItemizedDateDelta("P3m16d")
 ```
 
-You can combine a {class}`Date` with a {class}`Time` to get a {class}`PlainDateTime`:
+You can combine a {class}`Date` with a {class}`Time` to get a {class}`PlainDateTime`,
+from either side:
 
 ```python
 >>> Date(2023, 6, 15).at(Time(9, 0))
-PlainDateTime("2023-06-15T09:00:00")
+PlainDateTime("2023-06-15 09:00:00")
+>>> Time(9, 0).on(Date(2023, 6, 15))
+PlainDateTime("2023-06-15 09:00:00")
 ```
+
+A {class}`Date` also finds dates near it:
+
+- {meth}`~Date.next_day` and {meth}`~Date.prev_day` step one day.
+- {meth}`~Date.nth_weekday` finds the n-th occurrence of a weekday from the
+  date, exclusive of the date itself; negative `n` searches backward.
+- {meth}`~Date.nth_weekday_of_month` finds the n-th occurrence of a weekday
+  in the date's month; negative `n` counts from the end.
 
 ## Time
 
@@ -93,4 +104,16 @@ since a year-month has no day to shift:
 >>> delta = ItemizedDateDelta(years=1, months=2)
 >>> YearMonth(2024, 3).add(**delta)
 YearMonth("2025-05")
+```
+
+## IsoWeekDate
+
+{class}`IsoWeekDate` is a date in the ISO 8601 week date system.
+{meth}`Date.iso_week_date` and {meth}`IsoWeekDate.date` are a round trip:
+
+```python
+>>> Date(2024, 12, 30).iso_week_date()
+IsoWeekDate("2025-W01-1")
+>>> IsoWeekDate(2025, 1, Weekday.MONDAY).date()
+Date("2024-12-30")
 ```
