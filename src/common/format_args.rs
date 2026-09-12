@@ -123,7 +123,7 @@ pub(crate) fn format_date_iso(
     let mut basic = false;
     handle_kwargs("format_iso", kwargs, |k, v, eq| {
         if eq(k, *state.strs.basic) {
-            basic = v.expect_bool("basic")?;
+            basic = v.is_truthy()?;
         } else {
             return Ok(false);
         }
@@ -145,7 +145,7 @@ pub(crate) fn format_time_iso(
         if eq(k, *state.strs.unit) {
             unit = parse_precision(v, state)?;
         } else if eq(k, *state.strs.basic) {
-            basic = v.expect_bool("basic")?;
+            basic = v.is_truthy()?;
         } else {
             return Ok(false);
         }
@@ -179,7 +179,7 @@ pub(crate) fn format_datetime_iso(
         } else if eq(k, *state.strs.unit) {
             unit = parse_precision(v, state)?;
         } else if eq(k, *state.strs.basic) {
-            basic = v.expect_bool("basic")?;
+            basic = v.is_truthy()?;
         } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.strs.tz_id_display) {
             display_arg.set_new(v);
         } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.strs.tz) {

@@ -18,6 +18,7 @@ from datetime import (
     timedelta as _timedelta,
     timezone as _timezone,
 )
+from operator import index as _index
 from struct import pack, unpack
 from time import time_ns as _physical_time_ns
 from typing import (
@@ -785,40 +786,36 @@ class Date(_Base):
         """The n-th occurrence of a weekday in this date's month.
 
         Negative ``n`` counts from the end.
-        ``n=0`` raises :class:`ValueError`.
+        ``n=0`` raises :class:`ValueError`, as does an occurrence the month
+        does not have, such as a fifth Monday in a month with four.
 
         >>> Date(2024, 8, 1).nth_weekday_of_month(2, Weekday.FRIDAY)
         Date("2024-08-09")
         >>> Date(2024, 8, 1).nth_weekday_of_month(-1, Weekday.FRIDAY)
         Date("2024-08-30")
         """
-        if n == 0:
-            raise ValueError("n must not be 0")
+        n = _weekday_ordinal(n)
         if not isinstance(weekday, Weekday):
             raise TypeError("weekday must be a Weekday")
-        if not (-5 <= n <= 5):
-            raise ValueError("n must be between -5 and 5")
         year, month = self._py_date.year, self._py_date.month
-        day = _nth_weekday_of_month(year, month, n, weekday.value)
+        day = _nth_weekday_of_month(year, month, n, weekday)
         return Date._from_py_unchecked(_date(year, month, day))
 
     def nth_weekday(self, n: int, weekday: Weekday, /) -> Date:
         """The n-th occurrence of a weekday from this date (exclusive).
 
         Negative ``n`` searches backward.
-        ``n=0`` raises :class:`ValueError`.
+        ``n=0`` raises :class:`ValueError`, as does a result outside
+        ``Date.MIN``..``Date.MAX``.
 
         >>> Date(2024, 8, 1).nth_weekday(1, Weekday.FRIDAY)
         Date("2024-08-02")
         >>> Date(2024, 8, 1).nth_weekday(-1, Weekday.WEDNESDAY)
         Date("2024-07-31")
         """
-        if n == 0:
-            raise ValueError("n must not be 0")
+        n = _weekday_ordinal(n)
         if not isinstance(weekday, Weekday):
             raise TypeError("weekday must be a Weekday")
-        if not (-521_722 <= n <= 521_722):
-            raise ValueError("n out of range")
         target_dow = weekday.value
         self_dow = self._py_date.isoweekday()
 
@@ -833,9 +830,14 @@ class Date(_Base):
                 offset = 7
             delta = -(offset + (-n - 1) * 7)
 
-        return Date._from_py_unchecked(self._py_date + _timedelta(days=delta))
+        try:
+            return Date._from_py_unchecked(
+                self._py_date + _timedelta(days=delta)
+            )
+        except OverflowError:
+            raise ValueError(RANGE_MSG) from None
 
-    def at(self, t: Time, /) -> PlainDateTime:
+    def at(self, time: Time, /) -> PlainDateTime:
         """Combine a date with a time to create a datetime
 
         >>> d = Date(2021, 1, 2)
@@ -846,7 +848,7 @@ class Date(_Base):
         or :meth:`~PlainDateTime.assume_tz` to find the corresponding exact time.
         """
         return PlainDateTime._from_py_unchecked(
-            _datetime.combine(self._py_date, t._py), t._nanos
+            _datetime.combine(self._py_date, time._py), time._nanos
         )
 
     def to_stdlib(self) -> _date:
@@ -875,7 +877,7 @@ class Date(_Base):
         >>> Date(1992, 9, 4).format_iso(basic=True)
         '19920904'
         """
-        return _format_date(self._py_date, _expect_bool(basic, "basic"))
+        return _format_date(self._py_date, basic)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Date:
@@ -962,11 +964,13 @@ class Date(_Base):
 
         @overload
         def replace(
-            self, year: int = ..., month: int = ..., day: int = ...
+            self, *, year: int = ..., month: int = ..., day: int = ...
         ) -> Date: ...
 
     def replace(self, **kwargs: Any) -> Date:
         """Create a new instance with the given fields replaced
+
+        A result that is not a valid date raises :class:`ValueError`.
 
         >>> d = Date(2021, 1, 2)
         >>> d.replace(day=4)
@@ -1431,7 +1435,7 @@ class Time(_Base):
         """
         return self._nanos
 
-    def on(self, d: Date, /) -> PlainDateTime:
+    def on(self, date: Date, /) -> PlainDateTime:
         """Combine a time with a date to create a datetime
 
         >>> t = Time(12, 30)
@@ -1446,7 +1450,7 @@ class Time(_Base):
         ZonedDateTime("2021-01-02 12:30:00-05:00[America/New_York]")
         """
         return PlainDateTime._from_py_unchecked(
-            _datetime.combine(d._py_date, self._py),
+            _datetime.combine(date._py_date, self._py),
             self._nanos,
         )
 
@@ -1491,9 +1495,7 @@ class Time(_Base):
         >>> Time(4, 0, 59, nanosecond=40_000).format_iso(basic=True)
         '040059.00004'
         """
-        return _format_time(
-            self._py, self._nanos, unit, _expect_bool(basic, "basic")
-        )
+        return _format_time(self._py, self._nanos, unit, basic)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Time:
@@ -1568,6 +1570,7 @@ class Time(_Base):
         @overload
         def replace(
             self,
+            *,
             hour: int = ...,
             minute: int = ...,
             second: int = ...,
@@ -1577,10 +1580,11 @@ class Time(_Base):
     def replace(self, **kwargs: Any) -> Time:
         """Create a new instance with the given fields replaced
 
+        A result that is not a valid time raises :class:`ValueError`.
+
         >>> t = Time(12, 30, 0)
         >>> t.replace(minute=3, nanosecond=4_000)
         Time("12:03:00.000004")
-
         """
         _check_invalid_replace_kwargs(kwargs)
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
@@ -3984,15 +3988,15 @@ class OffsetDateTime(_ExactAndLocalTime):
         @overload
         def replace(
             self,
+            *,
             year: int = ...,
             month: int = ...,
             day: int = ...,
             hour: int = ...,
             minute: int = ...,
             second: int = ...,
-            *,
             nanosecond: int = ...,
-            offset: int | TimeDelta = ...,
+            offset: TimeDelta = ...,
             stale_offset_ok: bool = ...,
         ) -> OffsetDateTime: ...
 
@@ -4003,32 +4007,41 @@ class OffsetDateTime(_ExactAndLocalTime):
         stale_offset_ok: bool = UNSET,
         **kwargs: Any,
     ) -> OffsetDateTime:
-        """Construct a new instance with the given fields replaced.
+        """Create a new instance with the given fields replaced
 
-        Warning
-        -------
-        The observed offset may be stale relative to its source time zone after
-        replacement. See the `OffsetDateTime guidance
-        <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
-        Pass ``stale_offset_ok=True`` when preserving it is intentional.
+        A stated ``offset=`` keeps the local fields and moves the instant,
+        the reverse of :meth:`to_fixed_offset`, and is silent. Any other
+        replacement carries the current offset, which may be stale relative
+        to its source time zone, and emits :class:`StaleOffsetWarning`
+        unless ``stale_offset_ok=True``. See
+        :ref:`offset-datetime-guidance`.
+
+        >>> d = OffsetDateTime(2024, 3, 9, 12, offset=hours(-7))
+        >>> d.replace(offset=hours(-6))
+        OffsetDateTime("2024-03-09 12:00:00-06:00")
+        >>> d.replace(day=10, stale_offset_ok=True)
+        OffsetDateTime("2024-03-10 12:00:00-07:00")
         """
-        if not stale_offset_ok:
-            warn(
-                OFFSET_REPLACE_STALE_MSG,
-                StaleOffsetWarning,
-                stacklevel=2,
-            )
         _check_invalid_replace_kwargs(kwargs)
         try:
             kwargs["tzinfo"] = _load_offset(
                 kwargs.pop("offset"), warning_stacklevel=3
             )
         except KeyError:
-            pass
+            offset_stated = False
+        else:
+            offset_stated = True
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
-        return self._from_py_unchecked(
+        result = self._from_py_unchecked(
             check_utc_bounds(self._py_dt.replace(**kwargs)), nanos
         )
+        if not (offset_stated or stale_offset_ok):
+            warn(
+                OFFSET_REPLACE_STALE_MSG,
+                StaleOffsetWarning,
+                stacklevel=2,
+            )
+        return result
 
     def replace_date(
         self,
@@ -4037,22 +4050,28 @@ class OffsetDateTime(_ExactAndLocalTime):
         *,
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
-        """Construct a new instance with the date replaced.
+        """Create a new instance with the date replaced
 
-        See :meth:`replace` for more information.
+        See :meth:`replace` for more information. The offset is always
+        carried, so this warns unless ``stale_offset_ok=True``.
+
+        >>> d = OffsetDateTime(2024, 3, 9, 12, offset=hours(-7))
+        >>> d.replace_date(Date(2024, 12, 25), stale_offset_ok=True)
+        OffsetDateTime("2024-12-25 12:00:00-07:00")
         """
+        result = self._from_py_unchecked(
+            check_utc_bounds(
+                _datetime.combine(date._py_date, self._py_dt.timetz())
+            ),
+            self._nanos,
+        )
         if not stale_offset_ok:
             warn(
                 OFFSET_REPLACE_STALE_MSG,
                 StaleOffsetWarning,
                 stacklevel=2,
             )
-        return self._from_py_unchecked(
-            check_utc_bounds(
-                _datetime.combine(date._py_date, self._py_dt.timetz())
-            ),
-            self._nanos,
-        )
+        return result
 
     def replace_time(
         self,
@@ -4061,17 +4080,16 @@ class OffsetDateTime(_ExactAndLocalTime):
         *,
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
-        """Construct a new instance with the time replaced.
+        """Create a new instance with the time replaced
 
-        See :meth:`replace` for more information.
+        See :meth:`replace` for more information. The offset is always
+        carried, so this warns unless ``stale_offset_ok=True``.
+
+        >>> d = OffsetDateTime(2024, 3, 9, 12, offset=hours(-7))
+        >>> d.replace_time(Time(8, 30), stale_offset_ok=True)
+        OffsetDateTime("2024-03-09 08:30:00-07:00")
         """
-        if not stale_offset_ok:
-            warn(
-                OFFSET_REPLACE_STALE_MSG,
-                StaleOffsetWarning,
-                stacklevel=2,
-            )
-        return self._from_py_unchecked(
+        result = self._from_py_unchecked(
             check_utc_bounds(
                 _datetime.combine(
                     self._py_dt.date(), time._py, self._py_dt.tzinfo
@@ -4079,6 +4097,13 @@ class OffsetDateTime(_ExactAndLocalTime):
             ),
             time._nanos,
         )
+        if not stale_offset_ok:
+            warn(
+                OFFSET_REPLACE_STALE_MSG,
+                StaleOffsetWarning,
+                stacklevel=2,
+            )
+        return result
 
     def start_of(
         self,
@@ -5334,9 +5359,15 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguation: DisambiguationStr = UNSET,
         **kwargs: Any,
     ) -> ZonedDateTime:
-        """Construct a new instance with the date replaced.
+        """Create a new instance with the date replaced
 
-        See the ``replace()`` method for more information.
+        See :meth:`replace`: the current offset is kept while it applies to
+        the new local time; otherwise ``disambiguation=`` decides, with
+        :class:`ImplicitDisambiguationWarning` when omitted.
+
+        >>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz="Europe/Paris", disambiguation="later")
+        >>> d.replace_date(Date(2023, 10, 30))
+        ZonedDateTime("2023-10-30 02:30:00+01:00[Europe/Paris]")
         """
         disambiguation = _normalize_disambiguation(
             disambiguation,
@@ -5372,7 +5403,7 @@ class ZonedDateTime(_ExactAndLocalTime):
                 naive, self._tz, disambiguation, self._nanos
             )
         return self._from_py_unchecked(
-            resolved,
+            check_utc_bounds(resolved),
             self._nanos,
             self._tz,
         )
@@ -5385,9 +5416,15 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguation: DisambiguationStr = UNSET,
         **kwargs: Any,
     ) -> ZonedDateTime:
-        """Construct a new instance with the time replaced.
+        """Create a new instance with the time replaced
 
-        See the ``replace()`` method for more information.
+        See :meth:`replace`: the current offset is kept while it applies to
+        the new local time; otherwise ``disambiguation=`` decides, with
+        :class:`ImplicitDisambiguationWarning` when omitted.
+
+        >>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz="Europe/Paris", disambiguation="later")
+        >>> d.replace_time(Time(12))
+        ZonedDateTime("2023-10-29 12:00:00+01:00[Europe/Paris]")
         """
         disambiguation = _normalize_disambiguation(
             disambiguation,
@@ -5409,7 +5446,7 @@ class ZonedDateTime(_ExactAndLocalTime):
                 naive, self._tz, disambiguation, time._nanos
             )
         return self._from_py_unchecked(
-            resolved,
+            check_utc_bounds(resolved),
             time._nanos,
             self._tz,
         )
@@ -5419,13 +5456,13 @@ class ZonedDateTime(_ExactAndLocalTime):
         @overload
         def replace(
             self,
+            *,
             year: int = ...,
             month: int = ...,
             day: int = ...,
             hour: int = ...,
             minute: int = ...,
             second: int = ...,
-            *,
             nanosecond: int = ...,
             tz: str | _SystemTZ = ...,
             disambiguation: DisambiguationStr = ...,
@@ -5438,7 +5475,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguation: DisambiguationStr = UNSET,
         **kwargs: Any,
     ) -> ZonedDateTime:
-        """Construct a new instance with the given fields replaced.
+        """Create a new instance with the given fields replaced
 
         Tip
         ---
@@ -5447,17 +5484,20 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         Important
         ---------
-        Replacing fields of a ZonedDateTime may result in an ambiguous time
-        (e.g. during a DST transition). Therefore, it's recommended to
-        specify how to handle such a situation using the ``disambiguation`` argument.
+        Replacing fields keeps the current offset while it is valid for the
+        new local time (**offset-preserving resolution**), so a repeated
+        local time stays on its side of the transition. A skipped local
+        time, a changed ``tz=``, or an offset that no longer applies falls
+        to ``disambiguation=``, which is ``"compatible"`` with
+        :class:`ImplicitDisambiguationWarning` when omitted. A stated ``tz=``
+        keeps the local fields and moves the instant; :meth:`to_tz` keeps
+        the instant. See :ref:`offset-preserving`.
 
-        By default, if the tz remains the same, the offset is used to disambiguate
-        if possible, falling back to the "compatible" strategy if needed.
-
-        See `the documentation
-        <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html>`__
-        for more information.
-
+        >>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz="Europe/Paris", disambiguation="later")
+        >>> d.replace(minute=45)  # still the second occurrence
+        ZonedDateTime("2023-10-29 02:45:00+01:00[Europe/Paris]")
+        >>> d.replace(minute=45, disambiguation="earlier")
+        ZonedDateTime("2023-10-29 02:45:00+02:00[Europe/Paris]")
         """
 
         disambiguation = _normalize_disambiguation(
@@ -6554,21 +6594,38 @@ class PlainDateTime(_LocalTime):
         ) -> PlainDateTime: ...
 
     def replace(self, /, **kwargs: Any) -> PlainDateTime:
-        """Construct a new instance with the given fields replaced."""
+        """Create a new instance with the given fields replaced
+
+        A result that is not a valid date or time raises :class:`ValueError`.
+
+        >>> d = PlainDateTime(2021, 1, 31, 12, 30)
+        >>> d.replace(month=2, day=28)
+        PlainDateTime("2021-02-28 12:30:00")
+        """
         _check_invalid_replace_kwargs(kwargs)
         nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         return self._from_py_unchecked(self._py_dt.replace(**kwargs), nanos)
 
-    def replace_date(self, d: Date, /) -> PlainDateTime:
-        """Construct a new instance with the date replaced."""
+    def replace_date(self, date: Date, /) -> PlainDateTime:
+        """Create a new instance with the date replaced
+
+        >>> d = PlainDateTime(2021, 1, 2, 12, 30)
+        >>> d.replace_date(Date(2024, 2, 29))
+        PlainDateTime("2024-02-29 12:30:00")
+        """
         return self._from_py_unchecked(
-            _datetime.combine(d._py_date, self._py_dt.time()), self._nanos
+            _datetime.combine(date._py_date, self._py_dt.time()), self._nanos
         )
 
-    def replace_time(self, t: Time, /) -> PlainDateTime:
-        """Construct a new instance with the time replaced."""
+    def replace_time(self, time: Time, /) -> PlainDateTime:
+        """Create a new instance with the time replaced
+
+        >>> d = PlainDateTime(2021, 1, 2, 12, 30)
+        >>> d.replace_time(Time(8, 15, nanosecond=1))
+        PlainDateTime("2021-01-02 08:15:00.000000001")
+        """
         return self._from_py_unchecked(
-            _datetime.combine(self._py_dt.date(), t._py), t._nanos
+            _datetime.combine(self._py_dt.date(), time._py), time._nanos
         )
 
     def start_of(
@@ -7573,10 +7630,15 @@ def _pop_nanos_kwarg(kwargs: Any, default: int) -> int:
     return check_nanos(kwargs.pop("nanosecond", default))
 
 
-def _expect_bool(value: object, name: str) -> bool:
-    if type(value) is not bool:
-        raise TypeError(f"{name} must be a boolean")
-    return value
+def _weekday_ordinal(n: Any, /) -> int:
+    """The ``n`` of the weekday finders: an integer other than zero."""
+    try:
+        n_int: int = _index(n)
+    except TypeError:
+        raise TypeError("n must be an integer") from None
+    if n_int == 0:
+        raise ValueError("n must not be 0")
+    return n_int
 
 
 def _format_date(d: _date, basic: bool) -> str:
@@ -7638,8 +7700,6 @@ def _format_dt(
 ) -> str:
     if sep not in ("T", " "):
         raise invalid("sep", sep)
-    basic = _expect_bool(basic, "basic")
-
     return (
         f"{_format_date(dt, basic)}{sep}"
         f"{_format_time(dt, ns, unit, basic)}"

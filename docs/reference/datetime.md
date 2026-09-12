@@ -82,7 +82,8 @@ local date and time values:
 | `date()`                                      | {meth}`🔗 <PlainDateTime.date>`                                      | {meth}`🔗 <ZonedDateTime.date>`                                      | {meth}`🔗 <OffsetDateTime.date>`                                       |
 | `time()`                                      | {meth}`🔗 <PlainDateTime.time>`                                      | {meth}`🔗 <ZonedDateTime.time>`                                      | {meth}`🔗 <OffsetDateTime.time>`                                       |
 |    |   |   |
-| `replace()` [^4]                              | {meth}`🔗 <PlainDateTime.replace>`                              | {meth}`🔗 <ZonedDateTime.replace>`                              | {meth}`🔗 <OffsetDateTime.replace>`                               |
+| `replace()`                                   | {meth}`🔗 <PlainDateTime.replace>`                              | {meth}`🔗 <ZonedDateTime.replace>`                              | {meth}`🔗 <OffsetDateTime.replace>`                               |
+| `replace_date()`, `replace_time()`            | {meth}`🔗 <PlainDateTime.replace_date>`, {meth}`🔗 <PlainDateTime.replace_time>` | {meth}`🔗 <ZonedDateTime.replace_date>`, {meth}`🔗 <ZonedDateTime.replace_time>` | {meth}`🔗 <OffsetDateTime.replace_date>`, {meth}`🔗 <OffsetDateTime.replace_time>` |
 | `add()`, `subtract()`      | {meth}`🔗 <PlainDateTime.add>`, {meth}`🔗 <PlainDateTime.subtract>`      | {meth}`🔗 <ZonedDateTime.add>`, {meth}`🔗 <ZonedDateTime.subtract>`      | {meth}`🔗 <OffsetDateTime.add>`, {meth}`🔗 <OffsetDateTime.subtract>`      |
 | `since()`, `until()`      | {meth}`🔗 <PlainDateTime.since>`, {meth}`🔗 <PlainDateTime.until>`      | {meth}`🔗 <ZonedDateTime.since>`, {meth}`🔗 <ZonedDateTime.until>`      | {meth}`🔗 <OffsetDateTime.since>`, {meth}`🔗 <OffsetDateTime.until>`      |
 | `round()`                                     | {meth}`🔗 <PlainDateTime.round>`                                     | {meth}`🔗 <ZonedDateTime.round>`                                     | {meth}`🔗 <OffsetDateTime.round>`                                      |
@@ -95,6 +96,10 @@ local date and time values:
 | `days_in_year()`             | {meth}`🔗 <PlainDateTime.days_in_year>`                                | {meth}`🔗 <ZonedDateTime.days_in_year>`                                | {meth}`🔗 <OffsetDateTime.days_in_year>`                                 |
 | `in_leap_year()`             | {meth}`🔗 <PlainDateTime.in_leap_year>`                                | {meth}`🔗 <ZonedDateTime.in_leap_year>`                                | {meth}`🔗 <OffsetDateTime.in_leap_year>`                                 |
 
+Each type's replacement carries its own resolution: `disambiguation=` on
+{class}`ZonedDateTime`, `stale_offset_ok=` on {class}`OffsetDateTime`, and
+nothing on {class}`PlainDateTime`. {class}`Instant` has no `replace()`,
+because it has no local fields; see the {ref}`FAQ <faq-instant-no-local>`.
 
 :::{note}
 Although {class}`Instant`'s debug representation is in
@@ -143,6 +148,3 @@ See the {ref}`FAQ <faq-instant-no-local>`.
 
 [^3]: The other comparison operators `<=`, `<`, and `>=` are also
     supported.
-
-[^4]: `replace_date()` and `replace_time()` are also available for
-    replacing only the date or time component.

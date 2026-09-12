@@ -583,7 +583,8 @@ nth_weekday($self, n, weekday, /)
 The n-th occurrence of a weekday from this date (exclusive).
 
 Negative ``n`` searches backward.
-``n=0`` raises :class:`ValueError`.
+``n=0`` raises :class:`ValueError`, as does a result outside
+``Date.MIN``..``Date.MAX``.
 
 >>> Date(2024, 8, 1).nth_weekday(1, Weekday.FRIDAY)
 Date(\"2024-08-02\")
@@ -597,7 +598,8 @@ nth_weekday_of_month($self, n, weekday, /)
 The n-th occurrence of a weekday in this date's month.
 
 Negative ``n`` counts from the end.
-``n=0`` raises :class:`ValueError`.
+``n=0`` raises :class:`ValueError`, as does an occurrence the month
+does not have, such as a fifth Monday in a month with four.
 
 >>> Date(2024, 8, 1).nth_weekday_of_month(2, Weekday.FRIDAY)
 Date(\"2024-08-09\")
@@ -640,6 +642,8 @@ replace($self, /, *, year=..., month=..., day=...)
 --
 
 Create a new instance with the given fields replaced
+
+A result that is not a valid date raises :class:`ValueError`.
 
 >>> d = Date(2021, 1, 2)
 >>> d.replace(day=4)
@@ -1085,33 +1089,49 @@ Note
   comments within folding whitespace are not supported.
 ";
 pub(crate) const OFFSETDATETIME_REPLACE: &CStr = c"\
-replace($self, /, *, year=..., month=..., day=..., hour=..., minute=..., second=..., nanosecond=..., offset=..., stale_offset_ok=False)
+replace($self, /, *, year=..., month=..., day=..., hour=..., minute=..., second=..., nanosecond=..., offset=..., stale_offset_ok=...)
 --
 
-Construct a new instance with the given fields replaced.
+Create a new instance with the given fields replaced
 
-Warning
--------
-The observed offset may be stale relative to its source time zone after
-replacement. See the `OffsetDateTime guidance
-<https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
-Pass ``stale_offset_ok=True`` when preserving it is intentional.
+A stated ``offset=`` keeps the local fields and moves the instant,
+the reverse of :meth:`to_fixed_offset`, and is silent. Any other
+replacement carries the current offset, which may be stale relative
+to its source time zone, and emits :class:`StaleOffsetWarning`
+unless ``stale_offset_ok=True``. See
+:ref:`offset-datetime-guidance`.
+
+>>> d = OffsetDateTime(2024, 3, 9, 12, offset=hours(-7))
+>>> d.replace(offset=hours(-6))
+OffsetDateTime(\"2024-03-09 12:00:00-06:00\")
+>>> d.replace(day=10, stale_offset_ok=True)
+OffsetDateTime(\"2024-03-10 12:00:00-07:00\")
 ";
 pub(crate) const OFFSETDATETIME_REPLACE_DATE: &CStr = c"\
 replace_date($self, date, /, *, stale_offset_ok=...)
 --
 
-Construct a new instance with the date replaced.
+Create a new instance with the date replaced
 
-See :meth:`replace` for more information.
+See :meth:`replace` for more information. The offset is always
+carried, so this warns unless ``stale_offset_ok=True``.
+
+>>> d = OffsetDateTime(2024, 3, 9, 12, offset=hours(-7))
+>>> d.replace_date(Date(2024, 12, 25), stale_offset_ok=True)
+OffsetDateTime(\"2024-12-25 12:00:00-07:00\")
 ";
 pub(crate) const OFFSETDATETIME_REPLACE_TIME: &CStr = c"\
 replace_time($self, time, /, *, stale_offset_ok=...)
 --
 
-Construct a new instance with the time replaced.
+Create a new instance with the time replaced
 
-See :meth:`replace` for more information.
+See :meth:`replace` for more information. The offset is always
+carried, so this warns unless ``stale_offset_ok=True``.
+
+>>> d = OffsetDateTime(2024, 3, 9, 12, offset=hours(-7))
+>>> d.replace_time(Time(8, 30), stale_offset_ok=True)
+OffsetDateTime(\"2024-03-09 08:30:00-07:00\")
 ";
 pub(crate) const OFFSETDATETIME_ROUND: &CStr = c"\
 round($self, unit='second', /, *, increment=1, mode='half_even', stale_offset_ok=...)
@@ -1322,11 +1342,28 @@ pub(crate) const PLAINDATETIME_REPLACE: &CStr = c"\
 replace($self, /, *, year=..., month=..., day=..., hour=..., minute=..., second=..., nanosecond=...)
 --
 
-Construct a new instance with the given fields replaced.";
+Create a new instance with the given fields replaced
+
+A result that is not a valid date or time raises :class:`ValueError`.
+
+>>> d = PlainDateTime(2021, 1, 31, 12, 30)
+>>> d.replace(month=2, day=28)
+PlainDateTime(\"2021-02-28 12:30:00\")
+";
 pub(crate) const PLAINDATETIME_REPLACE_DATE: &CStr = c"\
-Construct a new instance with the date replaced.";
+Create a new instance with the date replaced
+
+>>> d = PlainDateTime(2021, 1, 2, 12, 30)
+>>> d.replace_date(Date(2024, 2, 29))
+PlainDateTime(\"2024-02-29 12:30:00\")
+";
 pub(crate) const PLAINDATETIME_REPLACE_TIME: &CStr = c"\
-Construct a new instance with the time replaced.";
+Create a new instance with the time replaced
+
+>>> d = PlainDateTime(2021, 1, 2, 12, 30)
+>>> d.replace_time(Time(8, 15, nanosecond=1))
+PlainDateTime(\"2021-01-02 08:15:00.000000001\")
+";
 pub(crate) const PLAINDATETIME_ROUND: &CStr = c"\
 round($self, unit='second', /, *, increment=1, mode='half_even')
 --
@@ -1458,10 +1495,11 @@ replace($self, /, *, hour=..., minute=..., second=..., nanosecond=...)
 
 Create a new instance with the given fields replaced
 
+A result that is not a valid time raises :class:`ValueError`.
+
 >>> t = Time(12, 30, 0)
 >>> t.replace(minute=3, nanosecond=4_000)
 Time(\"12:03:00.000004\")
-
 ";
 pub(crate) const TIME_ROUND: &CStr = c"\
 round($self, unit='second', /, *, increment=1, mode='half_even')
@@ -1886,7 +1924,7 @@ pub(crate) const ZONEDDATETIME_REPLACE: &CStr = c"\
 replace($self, /, *, year=..., month=..., day=..., hour=..., minute=..., second=..., nanosecond=..., tz=..., disambiguation=...)
 --
 
-Construct a new instance with the given fields replaced.
+Create a new instance with the given fields replaced
 
 Tip
 ---
@@ -1895,33 +1933,48 @@ use :meth:`start_of` and :meth:`end_of` instead.
 
 Important
 ---------
-Replacing fields of a ZonedDateTime may result in an ambiguous time
-(e.g. during a DST transition). Therefore, it's recommended to
-specify how to handle such a situation using the ``disambiguation`` argument.
+Replacing fields keeps the current offset while it is valid for the
+new local time (**offset-preserving resolution**), so a repeated
+local time stays on its side of the transition. A skipped local
+time, a changed ``tz=``, or an offset that no longer applies falls
+to ``disambiguation=``, which is ``\"compatible\"`` with
+:class:`ImplicitDisambiguationWarning` when omitted. A stated ``tz=``
+keeps the local fields and moves the instant; :meth:`to_tz` keeps
+the instant. See :ref:`offset-preserving`.
 
-By default, if the tz remains the same, the offset is used to disambiguate
-if possible, falling back to the \"compatible\" strategy if needed.
-
-See `the documentation
-<https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html>`__
-for more information.
-
+>>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz=\"Europe/Paris\", disambiguation=\"later\")
+>>> d.replace(minute=45)  # still the second occurrence
+ZonedDateTime(\"2023-10-29 02:45:00+01:00[Europe/Paris]\")
+>>> d.replace(minute=45, disambiguation=\"earlier\")
+ZonedDateTime(\"2023-10-29 02:45:00+02:00[Europe/Paris]\")
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_DATE: &CStr = c"\
 replace_date($self, date, /, *, disambiguation=...)
 --
 
-Construct a new instance with the date replaced.
+Create a new instance with the date replaced
 
-See the ``replace()`` method for more information.
+See :meth:`replace`: the current offset is kept while it applies to
+the new local time; otherwise ``disambiguation=`` decides, with
+:class:`ImplicitDisambiguationWarning` when omitted.
+
+>>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz=\"Europe/Paris\", disambiguation=\"later\")
+>>> d.replace_date(Date(2023, 10, 30))
+ZonedDateTime(\"2023-10-30 02:30:00+01:00[Europe/Paris]\")
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_TIME: &CStr = c"\
 replace_time($self, time, /, *, disambiguation=...)
 --
 
-Construct a new instance with the time replaced.
+Create a new instance with the time replaced
 
-See the ``replace()`` method for more information.
+See :meth:`replace`: the current offset is kept while it applies to
+the new local time; otherwise ``disambiguation=`` decides, with
+:class:`ImplicitDisambiguationWarning` when omitted.
+
+>>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz=\"Europe/Paris\", disambiguation=\"later\")
+>>> d.replace_time(Time(12))
+ZonedDateTime(\"2023-10-29 12:00:00+01:00[Europe/Paris]\")
 ";
 pub(crate) const ZONEDDATETIME_ROUND: &CStr = c"\
 round($self, unit='second', /, *, increment=1, mode='half_even')

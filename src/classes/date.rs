@@ -260,31 +260,33 @@ fn prev_day(cls: PyClass<Date>, slf: Date) -> PyReturn {
         .to_obj(cls)
 }
 
+/// The `n` of the weekday finders: an integer other than zero.
+fn weekday_ordinal(n_obj: PyObj) -> PyResult<i64> {
+    let n = n_obj.expect_int("n")?.to_i64()?;
+    if n == 0 {
+        raise_value_err("n must not be 0")?
+    }
+    Ok(n)
+}
+
 fn nth_weekday_of_month(cls: PyClass<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
     let &[n_obj, dow_obj] = args else {
         raise_type_err("nth_weekday_of_month() requires exactly 2 positional arguments")?
     };
-    let n = {
-        let raw = n_obj
-            .cast_exact::<PyInt>()
-            .ok_or_type_err("n must be an integer")?
-            .to_i64()?;
-        if raw == 0 {
-            raise_value_err("n must not be 0")?
-        } else if !(-5..=5).contains(&raw) {
-            raise_value_err("n must be between -5 and 5")?
-        }
-        // SAFETY: we just checked that it's well within range
-        raw as i32
-    };
-
+    let n = weekday_ordinal(n_obj)?;
     let target_dow = extract_weekday(cls.state(), dow_obj)?;
-    Date::nth_weekday_in_month(slf.year, slf.month, n, target_dow)
-        .ok_or_value_err(format!(
-            "Weekday #{n} doesn't exist in {}-{:02}",
+    let count = Date::weekday_count_in_month(slf.year, slf.month, target_dow);
+    if n.unsigned_abs() > count.into() {
+        raise_value_err(format!(
+            "n={n} is out of range: Weekday.{} occurs {count} times in {:04}-{:02}",
+            target_dow.name(),
             slf.year.get(),
             slf.month.get()
         ))?
+    }
+    // The count check above guarantees the occurrence exists
+    Date::nth_weekday_in_month(slf.year, slf.month, n as i32, target_dow)
+        .ok_or_range_err()?
         .to_obj(cls)
 }
 
@@ -292,37 +294,28 @@ fn nth_weekday(cls: PyClass<Date>, slf: Date, args: &[PyObj]) -> PyReturn {
     let &[n_obj, dow_obj] = args else {
         raise_type_err("nth_weekday() requires exactly 2 positional arguments")?
     };
-    let n = {
-        let raw = n_obj
-            .cast_exact::<PyInt>()
-            .ok_or_type_err("n must be an integer")?
-            .to_i64()?;
-        if raw == 0 {
-            raise_value_err("n must not be 0")?
-        } else if !(-521_722..=521_722).contains(&raw) {
-            raise_value_err("n out of range")?
-        }
-        // SAFETY: we just checked that it's well within range
-        raw as i32
-    };
-    let target_dow = extract_weekday(cls.state(), dow_obj)? as i32;
-    let self_dow = slf.day_of_week() as i32;
+    let n = weekday_ordinal(n_obj)?;
+    let target_dow = extract_weekday(cls.state(), dow_obj)? as i64;
+    let self_dow = slf.day_of_week() as i64;
 
-    let days = if n > 0 {
-        let mut offset = (target_dow - self_dow).rem_euclid(7);
-        if offset == 0 {
-            offset = 7;
-        }
-        offset + (n - 1) * 7
+    let mut offset = if n > 0 {
+        (target_dow - self_dow).rem_euclid(7)
     } else {
-        let mut offset = (self_dow - target_dow).rem_euclid(7);
-        if offset == 0 {
-            offset = 7;
-        }
-        -(offset + (-n - 1) * 7)
-    };
+        (self_dow - target_dow).rem_euclid(7)
+    } as u64;
+    if offset == 0 {
+        offset = 7;
+    }
+    // Checked arithmetic: `n` is any machine integer
+    let days = (n.unsigned_abs() - 1)
+        .checked_mul(7)
+        .and_then(|d| d.checked_add(offset))
+        .and_then(|d| i64::try_from(d).ok())
+        .map(|d| d * n.signum())
+        .and_then(DeltaDays::from_i64)
+        .ok_or_range_err()?;
 
-    slf.shift(DeltaMonths::ZERO, DeltaDays::new(days).ok_or_range_err()?)
+    slf.shift(DeltaMonths::ZERO, days)
         .ok_or_range_err()?
         .to_obj(cls)
 }

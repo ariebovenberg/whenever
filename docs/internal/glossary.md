@@ -39,7 +39,9 @@ messages; the "preferred over" words are rejected synonyms.
 : Said of an argument the caller did not pass. Omission is distinct from
   every accepted value, including `None`; where it has its own meaning, the
   runtime default is the private sentinel spelled `UNSET`
-  (`pysrc/whenever/_common.py`).
+  (`pysrc/whenever/_common.py`). `None` is accepted as a value only where
+  absence is itself a value: an itemized delta component, removed with
+  `replace(x=None)`.
   Preferred over *unset*, *missing*, and *not specified*.
 
 **pin**

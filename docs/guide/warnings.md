@@ -138,7 +138,7 @@ reference: they warn without an escape for now, so filter the category there.
 | Keyword argument | Suppresses | Used on |
 |---|---|---|
 | `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | {class}`~whenever.TimeDelta` methods, {class}`~whenever.Instant` `add`/`subtract`, {meth}`TimePatch.shift() <whenever.TimePatch.shift>` |
-| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` methods |
+| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` `add`/`subtract`, `now()`, `replace()`, `replace_date()`, `replace_time()`, `round()`, `start_of()`, `end_of()` |
 | `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods |
 | `cal_unit_composition_ok=True` | {class}`~whenever.CalendarUnitCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
 | `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `replace()`, `add`/`subtract`, and `assume_tz()` |

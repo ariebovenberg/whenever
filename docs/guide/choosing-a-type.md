@@ -199,6 +199,19 @@ OffsetDateTime("2024-03-10 12:00:00+05:00")
 default for the same reason: it is the one call where you choose the offset
 rather than receive it, and "now at +02:00" nearly always means a place.
 
+Replacing fields with {meth}`~whenever.OffsetDateTime.replace`,
+{meth}`~whenever.OffsetDateTime.replace_date`, or
+{meth}`~whenever.OffsetDateTime.replace_time` warns for the same reason:
+the offset is carried to a local time it may no longer describe. Replacing
+the offset itself does not warn, because a stated offset is not carried:
+
+```python
+>>> observed.replace(day=10)  # emits StaleOffsetWarning
+OffsetDateTime("2024-03-10 12:00:00-07:00")
+>>> observed.replace(offset=hours(-6))  # silent: the offset is stated
+OffsetDateTime("2024-03-09 12:00:00-06:00")
+```
+
 Use `stale_offset_ok=True` when fixed-offset arithmetic is deliberate or the
 provenance risk is accepted. If the entire domain uses permanently fixed
 offsets, configure {class}`~whenever.StaleOffsetWarning` globally as described

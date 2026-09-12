@@ -81,7 +81,15 @@ CI runs this coverage check on Python 3.14.
   machine-integer overflow. A wrong type raises whatever falls out, usually
   `TypeError` or `AttributeError`; the type checker is the guard. Add an
   explicit type check only where a wrong type would pass silently, such as a
-  string where a sequence of strings is expected.
+  string where a sequence of strings is expected. A flag (`basic`, every
+  `_ok`, `keep_ticking`) is read by truthiness, as CPython's `p` converter
+  does; no flag is type-checked.
+- **`None`**: never a stand-in for omitting an argument. Accepted only where
+  absence is itself a value: an itemized delta component, removed with
+  `replace(x=None)`.
+- **Integers**: integer fields and integer keywords (`replace()`, `n`) are
+  read with `operator.index` semantics on both backends and promise `int`
+  only; a `bool` is an `int`.
 - **Messages**: lowercase, the offending value in `repr` form, the parameter
   named when the call has more than one, glossary headwords. Keep one wording
   per condition on both backends where that costs nothing; stdlib messages

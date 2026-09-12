@@ -263,8 +263,11 @@ def test_replace():
     assert d.replace().strict_eq(d)
     assert (-d).replace().strict_eq(-d)
 
-    # invalid field
-    with pytest.raises(TypeError, match="foo"):
+    # invalid component
+    with pytest.raises(
+        TypeError,
+        match=r"^replace\(\) got an unexpected keyword argument 'foo'$",
+    ):
         d.replace(foo=5)  # type: ignore[call-arg]
 
 

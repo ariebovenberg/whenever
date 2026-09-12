@@ -469,12 +469,8 @@ fn offset_stale_warning(state: &State, msg: &CStr) -> PyResult<()> {
     warn_with_class(*state.warn_potentially_stale_offset, msg, 1)
 }
 
-fn check_stale_offset(
-    fname: &str,
-    kwargs: &mut IterKwargs,
-    state: &State,
-    stale_msg: &CStr,
-) -> PyResult<()> {
+/// Read the `stale_offset_ok` flag, rejecting any other keyword.
+fn parse_stale_offset_ok(fname: &str, kwargs: &mut IterKwargs, state: &State) -> PyResult<bool> {
     let mut suppress = false;
     handle_kwargs(fname, kwargs, |key, value, eq| {
         if eq(key, *state.strs.stale_offset_ok) {
@@ -484,7 +480,16 @@ fn check_stale_offset(
         }
         Ok(true)
     })?;
-    if !suppress {
+    Ok(suppress)
+}
+
+fn check_stale_offset(
+    fname: &str,
+    kwargs: &mut IterKwargs,
+    state: &State,
+    stale_msg: &CStr,
+) -> PyResult<()> {
+    if !parse_stale_offset_ok(fname, kwargs, state)? {
         offset_stale_warning(state, stale_msg)?;
     }
     Ok(())
@@ -500,11 +505,13 @@ fn replace_date(
     let date = handle_one_arg("replace_date", args)?
         .extract(*state.date_type)
         .ok_or_type_err("replace_date() argument must be a Date")?;
-    check_stale_offset("replace_date", kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
-    date.at(time)
-        .assume_offset(offset)
-        .ok_or_range_err()?
-        .to_obj(cls)
+    let stale_ok = parse_stale_offset_ok("replace_date", kwargs, state)?;
+    // Validate before warning: a call that raises must not warn
+    let result = date.at(time).assume_offset(offset).ok_or_range_err()?;
+    if !stale_ok {
+        offset_stale_warning(state, doc::OFFSET_REPLACE_STALE_MSG)?;
+    }
+    result.to_obj(cls)
 }
 
 fn replace_time(
@@ -517,11 +524,13 @@ fn replace_time(
     let time = handle_one_arg("replace_time", args)?
         .extract(*state.time_type)
         .ok_or_type_err("replace_time() argument must be a Time")?;
-    check_stale_offset("replace_time", kwargs, state, doc::OFFSET_REPLACE_STALE_MSG)?;
-    date.at(time)
-        .assume_offset(offset)
-        .ok_or_range_err()?
-        .to_obj(cls)
+    let stale_ok = parse_stale_offset_ok("replace_time", kwargs, state)?;
+    // Validate before warning: a call that raises must not warn
+    let result = date.at(time).assume_offset(offset).ok_or_range_err()?;
+    if !stale_ok {
+        offset_stale_warning(state, doc::OFFSET_REPLACE_STALE_MSG)?;
+    }
+    result.to_obj(cls)
 }
 
 fn format_iso(
@@ -563,27 +572,32 @@ fn replace(
     let mut components = slf.to_plain().components();
     let mut offset = slf.offset;
     let mut suppress_stale = false;
+    // A stated offset is not carried, so it never goes stale
+    let mut offset_stated = false;
 
     handle_kwargs("replace", kwargs, |k, v, eq| {
         if eq(k, *state.strs.stale_offset_ok) {
             suppress_stale = v.is_truthy()?;
         } else if eq(k, *state.strs.offset) {
             offset = Offset::from_py(v, state)?;
+            offset_stated = true;
         } else {
             return components.set_from_kwarg(k, v, state, eq);
         }
         Ok(true)
     })?;
 
-    if !suppress_stale {
+    // Validate before warning: a call that raises must not warn
+    let result = components
+        .into_plain()?
+        .assume_offset(offset)
+        .ok_or_range_err()?;
+
+    if !(suppress_stale || offset_stated) {
         offset_stale_warning(state, doc::OFFSET_REPLACE_STALE_MSG)?;
     }
 
-    components
-        .into_plain()?
-        .assume_offset(offset)
-        .ok_or_range_err()?
-        .to_obj(cls)
+    result.to_obj(cls)
 }
 
 fn now(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {

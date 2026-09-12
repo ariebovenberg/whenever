@@ -83,6 +83,13 @@ class TestConstructor:
         with pytest.raises(TypeError):
             IsoWeekDate(2024, 1, 1)  # type: ignore[call-overload]
 
+    def test_invalid_field_type(self):
+        with pytest.raises(TypeError, match="week must be an integer"):
+            IsoWeekDate(2024, "1", MONDAY)  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="year must be an integer"):
+            IsoWeekDate(2024.0, 1, MONDAY)  # type: ignore[call-overload]
+
     def test_invalid_string(self):
         with pytest.raises(ValueError):
             IsoWeekDate("2024-01-01")
@@ -300,8 +307,37 @@ class TestReplace:
 
     def test_replace_year_makes_week53_invalid(self):
         # 2004 has 53 weeks, 2024 does not
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="week must be between 1 and 52"):
             IsoWeekDate(2004, 53, FRIDAY).replace(year=2024)
+
+    @pytest.mark.parametrize(
+        "kwargs, match",
+        [
+            ({"week": 0}, "week must be between 1 and 52"),
+            ({"week": 54}, "week must be between 1 and 52"),
+            ({"year": 0}, "^invalid date$"),
+        ],
+    )
+    def test_replace_out_of_range(self, kwargs, match):
+        with pytest.raises(ValueError, match=match):
+            IsoWeekDate(2024, 1, MONDAY).replace(**kwargs)
+
+    def test_replace_invalid_arguments(self):
+        iwd = IsoWeekDate(2024, 1, MONDAY)
+        with pytest.raises(TypeError):
+            iwd.replace(2025)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="foo"):
+            iwd.replace(foo=2025)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="weekday must be a Weekday"):
+            iwd.replace(weekday=1)  # type: ignore[arg-type]
+
+    def test_replace_year_past_gregorian_range(self):
+        # The Gregorian date would be in year 10000, which the message
+        # must not name: the caller never passed it
+        with pytest.raises(ValueError, match="^invalid date$"):
+            IsoWeekDate(2021, 52, SUNDAY).replace(year=9999)
 
 
 class TestPickle:

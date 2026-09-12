@@ -230,15 +230,6 @@ pub(crate) trait PyBase: FromPy {
             _ => Err(PyErrMarker),
         }
     }
-
-    /// Determine if the object is *exactly equal* to `True`.
-    fn is_true(&self) -> bool {
-        unsafe { Py_IsTrue(self.as_ptr()) != 0 }
-    }
-
-    fn is_false(&self) -> bool {
-        unsafe { Py_IsFalse(self.as_ptr()) != 0 }
-    }
 }
 
 impl std::fmt::Display for PyObj {

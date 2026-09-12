@@ -130,6 +130,14 @@ deprecated interfaces are removed.
 - `ItemizedDelta` and `ItemizedDateDelta` are hashable, so they can be
   `set` members and `dict` keys.
 
+**Changed**
+
+- `OffsetDateTime.replace()` no longer emits `StaleOffsetWarning` when
+  `offset=` is passed: the offset is stated, not carried.
+- `format_iso(basic=...)` reads its flag by truthiness like every other
+  flag; a non-`bool` no longer raises `TypeError` (the check shipped in
+  0.10.4).
+
 **Fixed**
 
 - `str()` of a `ZonedDateTime` without a time zone ID no longer raises in the
@@ -181,6 +189,11 @@ deprecated interfaces are removed.
   follows the same resolution flow as ISO parsing: an offset that disagrees
   with *whenever*'s time zone rules raises `InvalidOffsetError` by default, and
   `offset_mismatch=` and `disambiguation=` resolve it.
+- `ZonedDateTime.replace_date()` and `replace_time()` could return a value
+  past the supported range in the pure-Python build; they now raise
+  `ValueError`. `Date.nth_weekday()` raises `ValueError` instead of
+  `OverflowError` past the date range, and both weekday finders reject a
+  `float` on both backends.
 
 Migration summary:
 

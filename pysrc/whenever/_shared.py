@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import enum
 from datetime import date as _date
+from operator import index as _index
 from struct import pack, unpack
 from typing import TYPE_CHECKING, Any, ClassVar, no_type_check, overload
 
@@ -32,25 +33,24 @@ if TYPE_CHECKING:
 _object_new = object.__new__
 
 
-def _nth_weekday_of_month(year: int, month: int, n: int, weekday: int) -> int:
+def _nth_weekday_of_month(
+    year: int, month: int, n: int, weekday: Weekday
+) -> int:
     """Core logic for finding the nth weekday in a month.
 
-    ``weekday`` is ISO weekday (1=Mon, 7=Sun).
+    ``n`` is nonzero; negative counts from the end.
     Returns the day of month, or raises ValueError if it doesn't exist.
     """
     dim = days_in_month(year, month)
-    if n > 0:
-        first_dow = _date(year, month, 1).isoweekday()
-        offset = (weekday - first_dow) % 7
-        day = 1 + offset + (n - 1) * 7
-    else:
-        last_dow = _date(year, month, dim).isoweekday()
-        offset = (last_dow - weekday) % 7
-        day = dim - offset + (n + 1) * 7
-
-    if day < 1 or day > dim:
-        raise ValueError(f"Weekday #{n} doesn't exist in {year}-{month:02d}")
-    return day
+    first_dow = _date(year, month, 1).isoweekday()
+    first = 1 + (weekday.value - first_dow) % 7
+    count = (dim - first) // 7 + 1
+    if abs(n) > count:
+        raise ValueError(
+            f"n={n} is out of range: {weekday!r} occurs {count} times "
+            f"in {year:04d}-{month:02d}"
+        )
+    return first + (n - 1 if n > 0 else count + n) * 7
 
 
 class Weekday(enum.Enum):
@@ -182,7 +182,9 @@ class YearMonth(_Base):
     if not TYPE_CHECKING:  # for a nice autodoc
 
         @overload
-        def replace(self, year: int = ..., month: int = ...) -> YearMonth: ...
+        def replace(
+            self, *, year: int = ..., month: int = ...
+        ) -> YearMonth: ...
 
     def replace(self, **kwargs: Any) -> YearMonth:
         """Create a new instance with the given fields replaced
@@ -235,6 +237,11 @@ class YearMonth(_Base):
 
         >>> YearMonth(2021, 1).on_day(2)
         Date("2021-01-02")
+
+        Note
+        ----
+        This method will raise a ``ValueError`` if the day does not exist
+        in that month.
         """
         from whenever import Date
 
@@ -434,7 +441,7 @@ class MonthDay(_Base):
     if not TYPE_CHECKING:  # for a nice autodoc
 
         @overload
-        def replace(self, month: int = ..., day: int = ...) -> MonthDay: ...
+        def replace(self, *, month: int = ..., day: int = ...) -> MonthDay: ...
 
     def replace(self, **kwargs: Any) -> MonthDay:
         """Create a new instance with the given fields replaced
@@ -447,7 +454,12 @@ class MonthDay(_Base):
             raise TypeError(
                 "replace() got an unexpected keyword argument 'year'"
             )
-        return MonthDay._from_py_unchecked(self._py.replace(**kwargs))
+        try:
+            py = self._py.replace(**kwargs)
+        except ValueError:
+            # the stdlib message would name the dummy leap year
+            raise ValueError("invalid date") from None
+        return MonthDay._from_py_unchecked(py)
 
     def in_year(self, year: int, /) -> Date:
         """Create a date from this month-day in a given year
@@ -558,6 +570,14 @@ MonthDay.MAX = MonthDay._from_py_unchecked(
 )
 
 
+def _iso_week_int(value: Any, name: str, /) -> int:
+    try:
+        result: int = _index(value)
+    except TypeError:
+        raise TypeError(f"{name} must be an integer") from None
+    return result
+
+
 def _is_long_year(year: int) -> bool:
     """Whether an ISO week year has 53 weeks.
 
@@ -600,13 +620,22 @@ class IsoWeekDate(_Base):
         def __init__(self, year: int, week: int, weekday: Weekday) -> None: ...
 
     def __init__(self, year: int, week: int, weekday: Weekday) -> None:
+        year = _iso_week_int(year, "year")
+        week = _iso_week_int(week, "week")
         if not isinstance(weekday, Weekday):
             raise TypeError("weekday must be a Weekday")
-        max_weeks = 53 if _is_long_year(year) else 52
+        try:
+            max_weeks = 53 if _is_long_year(year) else 52
+        except ValueError:
+            raise ValueError("invalid date") from None
         if not 1 <= week <= max_weeks:
             raise ValueError(f"week must be between 1 and {max_weeks}")
-        # Validate by round-tripping through the stdlib
-        _date.fromisocalendar(year, week, weekday.value)
+        # Validate by round-tripping through the stdlib. Its message would
+        # name the derived Gregorian year, which the caller never passed.
+        try:
+            _date.fromisocalendar(year, week, weekday.value)
+        except ValueError:
+            raise ValueError("invalid date") from None
         self._year = year
         self._week = week
         self._weekday = weekday
@@ -680,13 +709,14 @@ class IsoWeekDate(_Base):
 
     def replace(
         self,
-        /,
         *,
         year: int = UNSET,
         week: int = UNSET,
         weekday: Weekday = UNSET,
     ) -> IsoWeekDate:
-        """Return a new :class:`IsoWeekDate` with the given fields replaced
+        """Create a new instance with the given fields replaced
+
+        A week beyond the year's count raises :class:`ValueError`.
 
         >>> IsoWeekDate(2024, 1, Weekday.MONDAY).replace(week=10)
         IsoWeekDate("2024-W10-1")
