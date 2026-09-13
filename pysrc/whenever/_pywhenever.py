@@ -63,6 +63,7 @@ from ._common import (
     tzid_display,
     warn_deprecated,
     warn_lossy_stdlib_subclass,
+    warn_renamed_keyword,
 )
 from ._format import (
     compile_pattern,
@@ -181,6 +182,7 @@ __all__ = (
     # Other
     "SYSTEM_TZ",
     "reset_system_tz",
+    "get_tzpath",
     "_unpkl_date",
     "_unpkl_iddelta",
     "_unpkl_idelta",
@@ -228,15 +230,22 @@ def _normalize_disambiguation(
     /,
     *,
     function_name: str,
-    warning_stacklevel: int,
-) -> Any:
+) -> tuple[Any, bool]:
+    """The policy, and whether it came as ``disambiguate=``: the caller
+    validates, computes, then warns with ``_warn_disambiguate``.
+    """
     return normalize_renamed_keyword(
         value,
         kwargs,
         function_name=function_name,
         new_name="disambiguation",
         old_name="disambiguate",
-        warning_stacklevel=warning_stacklevel,
+    )
+
+
+def _warn_disambiguate(*, stacklevel: int) -> None:
+    warn_renamed_keyword(
+        "disambiguation", "disambiguate", stacklevel=stacklevel + 1
     )
 
 
@@ -244,19 +253,25 @@ def _normalize_pattern(
     value: Any,
     kwargs: dict[str, Any],
     /,
-) -> str:
-    value = normalize_renamed_keyword(
+) -> tuple[str, bool]:
+    """The pattern, and whether it came as ``format=``: the caller parses,
+    then warns with ``_warn_format``.
+    """
+    value, renamed = normalize_renamed_keyword(
         value,
         kwargs,
         function_name="parse",
         new_name="pattern",
         old_name="format",
-        warning_stacklevel=4,
     )
     check_no_kwargs(kwargs, "parse")
     if value is UNSET:
         raise TypeError("parse() missing required keyword argument 'pattern'")
-    return cast(str, value)
+    return cast(str, value), renamed
+
+
+def _warn_format(*, stacklevel: int) -> None:
+    warn_renamed_keyword("pattern", "format", stacklevel=stacklevel + 1)
 
 
 def _resolve_disambiguation(
@@ -322,7 +337,8 @@ def _resolve_zoned_local(
     if matching is not None:
         return matching
     elif offset_mismatch == "raise":
-        raise InvalidOffsetError._for_tz(parsed_offset, tzid)
+        # the database spelling of the ID, not the string as written
+        raise InvalidOffsetError._for_tz(parsed_offset, tz.key)
     elif offset_mismatch == "keep_instant":
         return instant_at_offset(local, tz, parsed_offset)
     else:
@@ -582,6 +598,11 @@ class Date(_Base):
     def today(cls, tz: str | _SystemTZ, /) -> Date:
         """Get the current date in the given time zone.
         Pass ``SYSTEM_TZ`` for the system time zone.
+
+        Raises
+        ------
+        ~whenever.TimeZoneNotFoundError
+            If the time zone ID is not found in the time zone database.
         """
         return Instant.now().to_tz(tz).date()
 
@@ -937,7 +958,7 @@ class Date(_Base):
         >>> Date.parse("15 Mar 2024", pattern="DD MMM YYYY")
         Date("2024-03-15")
         """
-        pattern = _normalize_pattern(pattern, kwargs)
+        pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
         validate_fields(
             elements, cls._PATTERN_CATS, "Date", warning_stacklevel=3
@@ -954,6 +975,8 @@ class Date(_Base):
             and result._py_date.weekday() != state.weekday
         ):
             raise ValueError("Parsed weekday does not match the date")
+        if renamed:
+            _warn_format(stacklevel=2)
         return result
 
     if not TYPE_CHECKING:  # for a nice autodoc
@@ -1548,18 +1571,21 @@ class Time(_Base):
         >>> Time.parse("02:30 PM", pattern="ii:mm aa")
         Time("14:30:00")
         """
-        pattern = _normalize_pattern(pattern, kwargs)
+        pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
         validate_fields(
             elements, cls._PATTERN_CATS, "Time", warning_stacklevel=3
         )
         state = parse_fields(elements, s)
-        return cls(
+        result = cls(
             hour=state.hour or 0,
             minute=state.minute or 0,
             second=state.second or 0,
             nanosecond=state.nanos,
         )
+        if renamed:
+            _warn_format(stacklevel=2)
+        return result
 
     if not TYPE_CHECKING:  # for a nice autodoc
 
@@ -2877,6 +2903,7 @@ class _ExactTime(_BasicConversions):
 
     def to_tz(self, tz: str | _SystemTZ, /) -> ZonedDateTime:
         """Convert to a ZonedDateTime that represents the same moment in time.
+        Pass ``SYSTEM_TZ`` for the system time zone.
 
         Raises
         ------
@@ -2889,7 +2916,7 @@ class _ExactTime(_BasicConversions):
         )
 
     def to_system_tz(self) -> ZonedDateTime:
-        """Convert to a ZonedDateTime of the system's time zone.
+        """Convert to a ZonedDateTime of the system time zone.
 
         .. deprecated:: 0.11
            Use ``to_tz(SYSTEM_TZ)`` instead.
@@ -3398,7 +3425,7 @@ class Instant(_ExactTime):
         >>> Instant.parse("2024-03-15 14:30+05:30", pattern="YYYY-MM-DD HH:mmxxx")
         Instant("2024-03-15 09:00:00Z")
         """
-        pattern = _normalize_pattern(pattern, kwargs)
+        pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
         validate_fields(
             elements, cls._PATTERN_CATS, "Instant", warning_stacklevel=3
@@ -3423,6 +3450,8 @@ class Instant(_ExactTime):
                 tzinfo=_timezone(_timedelta(seconds=state.offset_secs)),
             )
         ).astimezone(_UTC)
+        if renamed:
+            _warn_format(stacklevel=2)
         return cls._from_py_unchecked(dt, state.nanos)
 
     if not TYPE_CHECKING:  # for a nicer autodoc
@@ -4326,7 +4355,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         >>> OffsetDateTime.parse("2024-03-15 14:30+02:00", pattern="YYYY-MM-DD HH:mmxxx")
         OffsetDateTime("2024-03-15 14:30:00+02:00")
         """
-        pattern = _normalize_pattern(pattern, kwargs)
+        pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
         validate_fields(
             elements,
@@ -4359,6 +4388,8 @@ class OffsetDateTime(_ExactAndLocalTime):
             and result._py_dt.weekday() != state.weekday
         ):
             raise ValueError("Parsed weekday does not match the date")
+        if renamed:
+            _warn_format(stacklevel=2)
         return result
 
     if not TYPE_CHECKING:  # for a nicer autodoc
@@ -4584,11 +4615,20 @@ class OffsetDateTime(_ExactAndLocalTime):
         disambiguation: DisambiguationStr = UNSET,
     ) -> ZonedDateTime:
         """Associate this offset datetime with a time zone, returning a ZonedDateTime.
+        Pass ``SYSTEM_TZ`` for the system time zone.
 
         This is the inverse of :meth:`ZonedDateTime.to_fixed_offset`.
 
         See the :ref:`time zone resolution guide <offset-mismatch>`
         for how ``offset_mismatch`` interacts with ``disambiguation``.
+
+        Raises
+        ------
+        ~whenever.TimeZoneNotFoundError
+            If the time zone ID is not found in the time zone database.
+        ~whenever.InvalidOffsetError
+            If the offset matches no offset the time zone applies to the
+            local time, under ``offset_mismatch="raise"``.
         """
         if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
             raise invalid("offset_mismatch", offset_mismatch)
@@ -4738,6 +4778,9 @@ class ZonedDateTime(_ExactAndLocalTime):
     This is the right type when you need both the exact moment *and*
     the local date/time at a specific location. Arithmetic is fully
     DST-aware: the offset is always kept in sync with the time zone rules.
+    ``tz=`` takes a time zone ID; pass ``SYSTEM_TZ`` for the system time
+    zone. A string that names no time zone raises
+    :exc:`~whenever.TimeZoneNotFoundError`, also inside an ISO string.
 
     >>> ZonedDateTime("2024-12-08T11[Europe/Paris]")
     ZonedDateTime("2024-12-08 11:00:00+01:00[Europe/Paris]")
@@ -4822,11 +4865,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguation: DisambiguationStr = UNSET,
         **kwargs: Any,
     ) -> None:
-        disambiguation = _normalize_disambiguation(
+        disambiguation, renamed = _normalize_disambiguation(
             disambiguation,
             kwargs,
             function_name="ZonedDateTime",
-            warning_stacklevel=5,
         )
         check_no_kwargs(kwargs, "ZonedDateTime")
         self._nanos = check_nanos(nanosecond)
@@ -4838,6 +4880,8 @@ class ZonedDateTime(_ExactAndLocalTime):
             warning_stacklevel=4,
         )
         self._tz = _tz
+        if renamed:
+            _warn_disambiguate(stacklevel=3)
 
     __init__ = add_alternate_constructors(__init__, _datetime)
 
@@ -4865,20 +4909,16 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime.from_system_tz(2020, 8, 15, hour=23, minute=12)
         ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Berlin]")
         """
-        warn_deprecated(
-            "from_system_tz() is deprecated; use ZonedDateTime(..., tz=SYSTEM_TZ) instead",
-            stacklevel=2,
-        )
-        disambiguation = _normalize_disambiguation(
+        disambiguation, renamed = _normalize_disambiguation(
             disambiguation,
             kwargs,
             function_name="from_system_tz",
-            warning_stacklevel=4,
         )
         check_no_kwargs(kwargs, "from_system_tz")
         if disambiguation is UNSET:
             disambiguation = "compatible"
-        return cls(
+        # Validate and compute first: a call that raises emits no warning.
+        result = cls(
             year,
             month,
             day,
@@ -4889,6 +4929,13 @@ class ZonedDateTime(_ExactAndLocalTime):
             tz=SYSTEM_TZ,
             disambiguation=disambiguation,
         )
+        warn_deprecated(
+            "from_system_tz() is deprecated; use ZonedDateTime(..., tz=SYSTEM_TZ) instead",
+            stacklevel=2,
+        )
+        if renamed:
+            _warn_disambiguate(stacklevel=2)
+        return result
 
     @classmethod
     def now(cls, tz: str | _SystemTZ, /) -> ZonedDateTime:
@@ -4897,6 +4944,11 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         >>> ZonedDateTime.now("Europe/Amsterdam")
         ZonedDateTime("2024-03-09 23:00:00+01:00[Europe/Amsterdam]")
+
+        Raises
+        ------
+        ~whenever.TimeZoneNotFoundError
+            If the time zone ID is not found in the time zone database.
         """
         secs, nanos = divmod(time_ns(), 1_000_000_000)
         _tz = _load_tz(tz)
@@ -4967,25 +5019,20 @@ class ZonedDateTime(_ExactAndLocalTime):
         Although it is gaining popularity, it is not yet widely supported
         by ISO 8601 parsers.
         """
-        tz_id_display = normalize_renamed_keyword(
+        tz_id_display, renamed = normalize_renamed_keyword(
             tz_id_display,
             kwargs,
             function_name="format_iso",
             new_name="tz_id_display",
             old_name="tz",
-            warning_stacklevel=3,
         )
         check_no_kwargs(kwargs, "format_iso")
+        deprecated_value = None
         if tz_id_display is UNSET:
             tz_id_display = "required"
         elif tz_id_display in _TZ_ID_DISPLAY_DEPRECATED:
-            replacement = _TZ_ID_DISPLAY_DEPRECATED[tz_id_display]
-            warn_deprecated(
-                f"tz_id_display='{tz_id_display}' is deprecated; "
-                f"use '{replacement}' instead",
-                stacklevel=2,
-            )
-            tz_id_display = replacement
+            deprecated_value = tz_id_display
+            tz_id_display = _TZ_ID_DISPLAY_DEPRECATED[tz_id_display]
 
         if tz_id_display == "required":
             if self._tz.key is None:
@@ -4998,7 +5045,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         else:
             raise ValueError(f"invalid tz_id_display: {tz_id_display!r}")
 
-        return (
+        result = (
             _format_dt(
                 self._py_dt,
                 self._nanos,
@@ -5009,6 +5056,15 @@ class ZonedDateTime(_ExactAndLocalTime):
             )
             + suffix
         )
+        if renamed:
+            warn_renamed_keyword("tz_id_display", "tz", stacklevel=2)
+        if deprecated_value is not None:
+            warn_deprecated(
+                f"tz_id_display='{deprecated_value}' is deprecated; "
+                f"use '{tz_id_display}' instead",
+                stacklevel=2,
+            )
+        return result
 
     # FUTURE: allow handling offset mismatches
     @classmethod
@@ -5023,7 +5079,9 @@ class ZonedDateTime(_ExactAndLocalTime):
     ) -> ZonedDateTime:
         """Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
-        The inverse of the ``format_iso()`` method.
+        The inverse of the ``format_iso()`` method. The bracketed time zone
+        ID follows the same rules as ``tz=``: an unknown or malformed one
+        raises :exc:`~whenever.TimeZoneNotFoundError`.
 
         See the :ref:`time zone resolution guide <offset-mismatch>`
         for how ``offset_mismatch`` interacts with ``disambiguation``.
@@ -5035,12 +5093,21 @@ class ZonedDateTime(_ExactAndLocalTime):
         ---------
         The time zone ID is a recent extension to the ISO 8601 format (RFC 9557).
         Although it is gaining popularity, it is not yet widely supported.
+
+        Raises
+        ------
+        ValueError
+            If the string is not in the expected format.
+        ~whenever.TimeZoneNotFoundError
+            If the time zone ID is not found in the time zone database.
+        ~whenever.InvalidOffsetError
+            If the offset matches no offset the time zone applies to the
+            local time, under ``offset_mismatch="raise"``.
         """
-        disambiguation = _normalize_disambiguation(
+        disambiguation, renamed = _normalize_disambiguation(
             disambiguation,
             kwargs,
             function_name="parse_iso",
-            warning_stacklevel=5,
         )
         check_no_kwargs(kwargs, "parse_iso")
         self = _object_new(cls)
@@ -5049,6 +5116,8 @@ class ZonedDateTime(_ExactAndLocalTime):
             disambiguation=disambiguation,
             offset_mismatch=offset_mismatch,
         )
+        if renamed:
+            _warn_disambiguate(stacklevel=2)
         return self
 
     def _init_from_iso(
@@ -5131,7 +5200,9 @@ class ZonedDateTime(_ExactAndLocalTime):
     ) -> ZonedDateTime:
         """Parse a zoned datetime from a custom pattern string.
 
-        The pattern **must** include a time zone ID field (``VV``).
+        The pattern **must** include a time zone ID field (``VV``), which
+        follows the same rules as ``tz=``: an unknown or malformed ID raises
+        :exc:`~whenever.TimeZoneNotFoundError`.
         An offset field (``x``/``X``) is optional but recommended for
         disambiguation during DST transitions.
         See the :ref:`time zone resolution guide <offset-mismatch>`
@@ -5149,8 +5220,20 @@ class ZonedDateTime(_ExactAndLocalTime):
         ...     pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
         ... )
         ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
+
+        Raises
+        ------
+        ValueError
+            If the string does not match the pattern.
+        ~whenever.TimeZoneNotFoundError
+            If the time zone ID is not found in the time zone database.
+        ~whenever.InvalidOffsetError
+            If the offset matches no offset the time zone applies to the
+            local time, under ``offset_mismatch="raise"``.
         """
-        pattern = _normalize_pattern(pattern, kwargs)
+        pattern, renamed = _normalize_pattern(pattern, kwargs)
+        if disambiguation is not UNSET:
+            check_disambiguation(disambiguation)
         if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
             raise invalid("offset_mismatch", offset_mismatch)
         elements = compile_pattern(pattern)
@@ -5198,9 +5281,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             ) is not None:
                 resolved = matching
             elif offset_mismatch == "raise":
-                raise InvalidOffsetError._for_tz(
-                    state.offset_secs, state.tz_id
-                )
+                raise InvalidOffsetError._for_tz(state.offset_secs, tz.key)
             elif offset_mismatch == "keep_instant":
                 expected_offset = tz.offset_for_instant(
                     int(parsed.timestamp())
@@ -5233,6 +5314,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._tz = tz
         if state.weekday is not None and resolved.weekday() != state.weekday:
             raise ValueError("Parsed weekday does not match the date")
+        if renamed:
+            _warn_format(stacklevel=2)
         return self
 
     @classmethod
@@ -5325,6 +5408,8 @@ class ZonedDateTime(_ExactAndLocalTime):
             raise ValueError(f"tzinfo must be a ZoneInfo, got {d.tzinfo!r}")
         if d.tzinfo.key is None:
             raise ValueError(ZONEINFO_NO_KEY_MSG)
+        if not isinstance(d.tzinfo.key, str):
+            raise TypeError("ZoneInfo key must be a string")
 
         # The datetime is read the way its own tzinfo reads it: local fields,
         # the offset ZoneInfo computes for them, and a time zone ID. That is the
@@ -5371,14 +5456,16 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> d.replace_date(Date(2023, 10, 30))
         ZonedDateTime("2023-10-30 02:30:00+01:00[Europe/Paris]")
         """
-        disambiguation = _normalize_disambiguation(
+        disambiguation, renamed = _normalize_disambiguation(
             disambiguation,
             kwargs,
             function_name="replace_date",
-            warning_stacklevel=4,
         )
         check_no_kwargs(kwargs, "replace_date")
-        return self._replace_date(date, disambiguation, warn_level=4)
+        result = self._replace_date(date, disambiguation, warn_level=4)
+        if renamed:
+            _warn_disambiguate(stacklevel=2)
+        return result
 
     def _replace_date(
         self,
@@ -5428,11 +5515,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> d.replace_time(Time(12))
         ZonedDateTime("2023-10-29 12:00:00+01:00[Europe/Paris]")
         """
-        disambiguation = _normalize_disambiguation(
+        disambiguation, renamed = _normalize_disambiguation(
             disambiguation,
             kwargs,
             function_name="replace_time",
-            warning_stacklevel=4,
         )
         check_no_kwargs(kwargs, "replace_time")
         naive = _datetime.combine(self._py_dt, time._py)
@@ -5447,11 +5533,14 @@ class ZonedDateTime(_ExactAndLocalTime):
             resolved = resolve_ambiguity(
                 naive, self._tz, disambiguation, time._nanos
             )
-        return self._from_py_unchecked(
+        result = self._from_py_unchecked(
             check_utc_bounds(resolved),
             time._nanos,
             self._tz,
         )
+        if renamed:
+            _warn_disambiguate(stacklevel=2)
+        return result
 
     if not TYPE_CHECKING:  # for a nicer autodoc
 
@@ -5500,13 +5589,21 @@ class ZonedDateTime(_ExactAndLocalTime):
         ZonedDateTime("2023-10-29 02:45:00+01:00[Europe/Paris]")
         >>> d.replace(minute=45, disambiguation="earlier")
         ZonedDateTime("2023-10-29 02:45:00+02:00[Europe/Paris]")
+
+        Pass ``SYSTEM_TZ`` as ``tz=`` for the system time zone.
+
+        Raises
+        ------
+        ValueError
+            If a field is out of range or the result is out of range.
+        ~whenever.TimeZoneNotFoundError
+            If the time zone ID is not found in the time zone database.
         """
 
-        disambiguation = _normalize_disambiguation(
+        disambiguation, renamed = _normalize_disambiguation(
             disambiguation,
             kwargs,
             function_name="replace",
-            warning_stacklevel=4,
         )
         _check_invalid_replace_kwargs(kwargs)
         preserve_offset = True
@@ -5537,11 +5634,14 @@ class ZonedDateTime(_ExactAndLocalTime):
                 warning_stacklevel=3,
             )
 
-        return self._from_py_unchecked(
+        result = self._from_py_unchecked(
             check_utc_bounds(resolved),
             nanos,
             tz,
         )
+        if renamed:
+            _warn_disambiguate(stacklevel=2)
+        return result
 
     @property
     def tz(self) -> str | None:
@@ -5699,35 +5799,36 @@ class ZonedDateTime(_ExactAndLocalTime):
         # itemized-delta operators in `_ideltas.py` move our warnings up
         # to their own caller.
         extra = kwargs.pop("_warn_stacklevel", 1) - 1
-        disambiguation = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="add" if sign == 1 else "subtract",
-            warning_stacklevel=5 + extra,
-        )
         fname = "add" if sign == 1 else "subtract"
+        disambiguation, renamed = _normalize_disambiguation(
+            disambiguation, kwargs, function_name=fname
+        )
+        # Validated on entry, whether or not the shift consults it.
+        if disambiguation is not UNSET:
+            check_disambiguation(disambiguation)
         if kwargs:
             if delta is UNSET:
-                return self._shift_kwargs(
+                result = self._shift_kwargs(
                     sign,
                     disambiguation=disambiguation,
                     warn_level=6 + extra,
                     **kwargs,
                 )
-            raise TypeError(
-                f"{fname}() cannot mix positional and keyword arguments"
-            )
+            else:
+                raise TypeError(
+                    f"{fname}() cannot mix positional and keyword arguments"
+                )
         elif delta is UNSET:
-            return self
+            result = self
         elif isinstance(delta, (ItemizedDelta, ItemizedDateDelta)):
-            return self._shift_kwargs(
+            result = self._shift_kwargs(
                 sign,
                 **delta,
                 disambiguation=disambiguation,
                 warn_level=6 + extra,
             )
         elif isinstance(delta, TimeDelta):
-            return self._shift_kwargs(
+            result = self._shift_kwargs(
                 sign,
                 nanoseconds=delta._total_ns,
                 disambiguation=disambiguation,
@@ -5738,6 +5839,9 @@ class ZonedDateTime(_ExactAndLocalTime):
                 f"{fname}() argument must be a TimeDelta, ItemizedDelta, "
                 "or ItemizedDateDelta"
             )
+        if renamed:
+            _warn_disambiguate(stacklevel=3 + extra)
+        return result
 
     def _shift_kwargs(
         self,
@@ -5904,14 +6008,19 @@ class ZonedDateTime(_ExactAndLocalTime):
         return self.is_repeated()
 
     def next_transition(self) -> ZonedDateTime | None:
-        """The next time zone transition after this datetime, if any.
-
-        Returns ``None`` if the time zone has no further transitions
-        (e.g. for UTC or fixed-offset time zones).
+        """The next change of the time zone's rules strictly after this
+        datetime, as the first instant at which the new rules apply, in the
+        same time zone, with zero nanoseconds. A change of the UTC offset,
+        the DST offset, or the abbreviation counts. ``None`` when the time
+        zone has no further change: UTC and fixed offsets. A POSIX rule tail
+        projects offset changes for every year through 9999.
 
         >>> d = ZonedDateTime(2024, 1, 1, tz="America/New_York")
         >>> d.next_transition()
         ZonedDateTime("2024-03-10 03:00:00-04:00[America/New_York]")
+        >>> # the offset stays; the DST offset and abbreviation change
+        >>> ZonedDateTime(1968, 6, 1, tz="Europe/London").next_transition()
+        ZonedDateTime("1968-10-27 00:00:00+01:00[Europe/London]")
         """
         epoch = int(self._py_dt.timestamp())
         if (result := self._tz.next_transition(epoch)) is None:
@@ -5922,10 +6031,12 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
 
     def prev_transition(self) -> ZonedDateTime | None:
-        """The previous time zone transition before this datetime, if any.
-
-        Returns ``None`` if the time zone has no earlier transitions
-        (e.g. for UTC or fixed-offset time zones).
+        """The previous change of the time zone's rules strictly before this
+        datetime, as the first instant at which its rules apply, in the same
+        time zone, with zero nanoseconds. A change of the UTC offset, the DST
+        offset, or the abbreviation counts. ``None`` when the time zone has
+        no earlier change: UTC and fixed offsets, and before the first
+        recorded change.
 
         >>> d = ZonedDateTime(2024, 1, 1, tz="America/New_York")
         >>> d.prev_transition()
@@ -6237,7 +6348,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         If you need more control over rounding, use :meth:`round` first.
         """
         if (key := self._tz.key) is None:
-            # For system timezoned datetimes without a key,
+            # For system time zone datetimes without a key,
             # there's nothing else we can do. This is documented behavior.
             return self._py_dt.replace(microsecond=self._nanos // 1_000)
 
@@ -6569,7 +6680,7 @@ class PlainDateTime(_LocalTime):
         >>> PlainDateTime.parse("2024-03-15 14:30", pattern="YYYY-MM-DD HH:mm")
         PlainDateTime("2024-03-15 14:30:00")
         """
-        pattern = _normalize_pattern(pattern, kwargs)
+        pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
         validate_fields(
             elements,
@@ -6596,6 +6707,8 @@ class PlainDateTime(_LocalTime):
             and result._py_dt.weekday() != state.weekday
         ):
             raise ValueError("Parsed weekday does not match the date")
+        if renamed:
+            _warn_format(stacklevel=2)
         return result
 
     def _init_from_py(self, d: _datetime, **kwargs: Any) -> None:
@@ -7160,7 +7273,8 @@ class PlainDateTime(_LocalTime):
         **kwargs: Any,
     ) -> ZonedDateTime:
         """Assume the datetime is in the given time zone,
-        creating a ``ZonedDateTime``.
+        creating a ``ZonedDateTime``. Pass ``SYSTEM_TZ`` for the system
+        time zone.
 
         Note
         ----
@@ -7174,15 +7288,22 @@ class PlainDateTime(_LocalTime):
         >>> d = PlainDateTime(2020, 8, 15, 23, 12)
         >>> d.assume_tz("Europe/Amsterdam", disambiguation="raise")
         ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Amsterdam]")
+
+        Raises
+        ------
+        ~whenever.TimeZoneNotFoundError
+            If the time zone ID is not found in the time zone database.
         """
-        disambiguation = _normalize_disambiguation(
+        disambiguation, renamed = _normalize_disambiguation(
             disambiguation,
             kwargs,
             function_name="assume_tz",
-            warning_stacklevel=4,
         )
         check_no_kwargs(kwargs, "assume_tz")
-        return self._assume_tz(tz, disambiguation, warn_level=4)
+        result = self._assume_tz(tz, disambiguation, warn_level=4)
+        if renamed:
+            _warn_disambiguate(stacklevel=2)
+        return result
 
     def _assume_tz(
         self,
@@ -7233,11 +7354,10 @@ class PlainDateTime(_LocalTime):
         >>> d.assume_tz(SYSTEM_TZ, disambiguation="raise")
         ZonedDateTime("2020-08-15 23:12:00-04:00[America/New_York]")
         """
-        disambiguation = _normalize_disambiguation(
+        disambiguation, renamed = _normalize_disambiguation(
             disambiguation,
             kwargs,
             function_name="assume_system_tz",
-            warning_stacklevel=4,
         )
         check_no_kwargs(kwargs, "assume_system_tz")
         if disambiguation is UNSET:
@@ -7248,6 +7368,8 @@ class PlainDateTime(_LocalTime):
             "assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
             stacklevel=2,
         )
+        if renamed:
+            _warn_disambiguate(stacklevel=2)
         return result
 
     def round(

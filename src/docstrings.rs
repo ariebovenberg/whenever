@@ -143,7 +143,11 @@ Although the debug representation uses UTC, ``Instant`` does *not* have
 See the :ref:`FAQ <faq-instant-no-local>`.
 ";
 pub(crate) const INVALIDOFFSETERROR: &CStr = c"\
-A string has an invalid offset for the given zone";
+The offset in the input matches no offset the time zone applies to
+the written local time. Raised by the ISO and pattern parsers, the
+``datetime`` constructor overload, and ``assume_tz()`` under
+``offset_mismatch=\"raise\"``.
+";
 pub(crate) const NAIVEARITHMETICWARNING: &CStr = c"\
 Emitted when exact-time arithmetic is performed on a
 :class:`~whenever.PlainDateTime` without time zone context.
@@ -359,7 +363,9 @@ A shorter way to instantiate a timedelta is to use the helper functions
 :func:`~whenever.hours`, :func:`~whenever.minutes`, etc.
 ";
 pub(crate) const TIMEZONENOTFOUNDERROR: &CStr = c"\
-A time zone with the given ID was not found";
+The string names no time zone: an unknown or malformed time zone ID,
+or a system time zone that cannot be resolved.
+";
 pub(crate) const WHENEVERDEPRECATIONWARNING: &CStr = c"\
 Emitted when a deprecated feature of the ``whenever`` library is used.
 
@@ -385,6 +391,9 @@ A datetime associated with a time zone from the IANA database.
 This is the right type when you need both the exact moment *and*
 the local date/time at a specific location. Arithmetic is fully
 DST-aware: the offset is always kept in sync with the time zone rules.
+``tz=`` takes a time zone ID; pass ``SYSTEM_TZ`` for the system time
+zone. A string that names no time zone raises
+:exc:`~whenever.TimeZoneNotFoundError`, also inside an ISO string.
 
 >>> ZonedDateTime(\"2024-12-08T11[Europe/Paris]\")
 ZonedDateTime(\"2024-12-08 11:00:00+01:00[Europe/Paris]\")
@@ -413,6 +422,11 @@ For ISO inputs containing both an offset and time zone ID, see the
 `offset-mismatch flow
 <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html#offset-mismatch>`_.
 ";
+pub(crate) const GET_TZPATH: &CStr = c"\
+The time zone search path: the directories in which ``whenever``
+looks for time zone data, in order. The tuple is a snapshot: it does
+not change when :func:`reset_tzpath` is called later.
+";
 pub(crate) const HOURS: &CStr = c"\
 Create a :class:`~TimeDelta` with the given number of hours.
 ``hours(1) == TimeDelta(hours=1)``
@@ -434,16 +448,22 @@ Create a :class:`TimeDelta` with the given number of nanoseconds.
 ``nanoseconds(1) == TimeDelta(nanoseconds=1)``
 ";
 pub(crate) const RESET_SYSTEM_TZ: &CStr = c"\
-Resets the cached system time zone to the currently set system time zone.
+Determine the system time zone again and cache it, replacing the
+cached one. An empty ``TZ`` environment variable means UTC.
 
 >>> os.environ[\"TZ\"] = \"America/New_York\"
->>> reset_system_tz()  # system tz is now New York
+>>> reset_system_tz()  # the system time zone is now New York
 >>> os.environ[\"TZ\"] = \"Europe/London\"
->>> ZonedDateTime.now(SYSTEM_TZ)  # still uses cached New York tz
+>>> ZonedDateTime.now(SYSTEM_TZ)  # still the cached New York time zone
 ZonedDateTime(\"2025-06-18 15:11:08-04:00[America/New_York]\")
->>> reset_system_tz()  # system tz is now London
+>>> reset_system_tz()  # the system time zone is now London
 >>> ZonedDateTime.now(SYSTEM_TZ)
 ZonedDateTime(\"2025-06-18 20:11:08+01:00[Europe/London]\")
+
+Raises
+------
+~whenever.TimeZoneNotFoundError
+    If the system time zone cannot be resolved; the cached one stays.
 ";
 pub(crate) const SECONDS: &CStr = c"\
 Create a :class:`TimeDelta` with the given number of seconds.
@@ -725,6 +745,11 @@ Convert to a standard library :class:`~datetime.date`";
 pub(crate) const DATE_TODAY: &CStr = c"\
 Get the current date in the given time zone.
 Pass ``SYSTEM_TZ`` for the system time zone.
+
+Raises
+------
+~whenever.TimeZoneNotFoundError
+    If the time zone ID is not found in the time zone database.
 ";
 pub(crate) const DATE_TODAY_IN_SYSTEM_TZ: &CStr = c"\
 Get the current date in the system time zone.
@@ -928,11 +953,20 @@ assume_tz($self, tz, /, *, offset_mismatch='raise', disambiguation=...)
 --
 
 Associate this offset datetime with a time zone, returning a ZonedDateTime.
+Pass ``SYSTEM_TZ`` for the system time zone.
 
 This is the inverse of :meth:`ZonedDateTime.to_fixed_offset`.
 
 See the :ref:`time zone resolution guide <offset-mismatch>`
 for how ``offset_mismatch`` interacts with ``disambiguation``.
+
+Raises
+------
+~whenever.TimeZoneNotFoundError
+    If the time zone ID is not found in the time zone database.
+~whenever.InvalidOffsetError
+    If the offset matches no offset the time zone applies to the
+    local time, under ``offset_mismatch=\"raise\"``.
 ";
 pub(crate) const OFFSETDATETIME_END_OF: &CStr = c"\
 end_of($self, unit, /, *, stale_offset_ok=...)
@@ -1249,7 +1283,8 @@ assume_tz($self, tz, /, *, disambiguation=...)
 --
 
 Assume the datetime is in the given time zone,
-creating a ``ZonedDateTime``.
+creating a ``ZonedDateTime``. Pass ``SYSTEM_TZ`` for the system
+time zone.
 
 Note
 ----
@@ -1263,6 +1298,11 @@ for more information.
 >>> d = PlainDateTime(2020, 8, 15, 23, 12)
 >>> d.assume_tz(\"Europe/Amsterdam\", disambiguation=\"raise\")
 ZonedDateTime(\"2020-08-15 23:12:00+02:00[Europe/Amsterdam]\")
+
+Raises
+------
+~whenever.TimeZoneNotFoundError
+    If the time zone ID is not found in the time zone database.
 ";
 pub(crate) const PLAINDATETIME_ASSUME_UTC: &CStr = c"\
 Assume the datetime is in UTC, creating an ``Instant``.
@@ -1840,14 +1880,19 @@ False
 True
 ";
 pub(crate) const ZONEDDATETIME_NEXT_TRANSITION: &CStr = c"\
-The next time zone transition after this datetime, if any.
-
-Returns ``None`` if the time zone has no further transitions
-(e.g. for UTC or fixed-offset time zones).
+The next change of the time zone's rules strictly after this
+datetime, as the first instant at which the new rules apply, in the
+same time zone, with zero nanoseconds. A change of the UTC offset,
+the DST offset, or the abbreviation counts. ``None`` when the time
+zone has no further change: UTC and fixed offsets. A POSIX rule tail
+projects offset changes for every year through 9999.
 
 >>> d = ZonedDateTime(2024, 1, 1, tz=\"America/New_York\")
 >>> d.next_transition()
 ZonedDateTime(\"2024-03-10 03:00:00-04:00[America/New_York]\")
+>>> # the offset stays; the DST offset and abbreviation change
+>>> ZonedDateTime(1968, 6, 1, tz=\"Europe/London\").next_transition()
+ZonedDateTime(\"1968-10-27 00:00:00+01:00[Europe/London]\")
 ";
 pub(crate) const ZONEDDATETIME_NOW: &CStr = c"\
 Create an instance from the current time in the given time zone.
@@ -1855,6 +1900,11 @@ Pass ``SYSTEM_TZ`` for the system time zone.
 
 >>> ZonedDateTime.now(\"Europe/Amsterdam\")
 ZonedDateTime(\"2024-03-09 23:00:00+01:00[Europe/Amsterdam]\")
+
+Raises
+------
+~whenever.TimeZoneNotFoundError
+    If the time zone ID is not found in the time zone database.
 ";
 pub(crate) const ZONEDDATETIME_NOW_IN_SYSTEM_TZ: &CStr = c"\
 Create an instance from the current time in the system time zone.
@@ -1870,7 +1920,9 @@ parse(s, /, *, pattern=..., disambiguation=..., offset_mismatch='raise')
 
 Parse a zoned datetime from a custom pattern string.
 
-The pattern **must** include a time zone ID field (``VV``).
+The pattern **must** include a time zone ID field (``VV``), which
+follows the same rules as ``tz=``: an unknown or malformed ID raises
+:exc:`~whenever.TimeZoneNotFoundError`.
 An offset field (``x``/``X``) is optional but recommended for
 disambiguation during DST transitions.
 See the :ref:`time zone resolution guide <offset-mismatch>`
@@ -1888,6 +1940,16 @@ See :ref:`pattern-format` for details.
 ...     pattern=\"YYYY-MM-DD HH:mmxxx'['VV']'\",
 ... )
 ZonedDateTime(\"2024-03-15 14:30:00+01:00[Europe/Paris]\")
+
+Raises
+------
+ValueError
+    If the string does not match the pattern.
+~whenever.TimeZoneNotFoundError
+    If the time zone ID is not found in the time zone database.
+~whenever.InvalidOffsetError
+    If the offset matches no offset the time zone applies to the
+    local time, under ``offset_mismatch=\"raise\"``.
 ";
 pub(crate) const ZONEDDATETIME_PARSE_ISO: &CStr = c"\
 parse_iso(s, /, *, disambiguation=..., offset_mismatch='raise')
@@ -1895,7 +1957,9 @@ parse_iso(s, /, *, disambiguation=..., offset_mismatch='raise')
 
 Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
 
-The inverse of the ``format_iso()`` method.
+The inverse of the ``format_iso()`` method. The bracketed time zone
+ID follows the same rules as ``tz=``: an unknown or malformed one
+raises :exc:`~whenever.TimeZoneNotFoundError`.
 
 See the :ref:`time zone resolution guide <offset-mismatch>`
 for how ``offset_mismatch`` interacts with ``disambiguation``.
@@ -1907,12 +1971,24 @@ Important
 ---------
 The time zone ID is a recent extension to the ISO 8601 format (RFC 9557).
 Although it is gaining popularity, it is not yet widely supported.
+
+Raises
+------
+ValueError
+    If the string is not in the expected format.
+~whenever.TimeZoneNotFoundError
+    If the time zone ID is not found in the time zone database.
+~whenever.InvalidOffsetError
+    If the offset matches no offset the time zone applies to the
+    local time, under ``offset_mismatch=\"raise\"``.
 ";
 pub(crate) const ZONEDDATETIME_PREV_TRANSITION: &CStr = c"\
-The previous time zone transition before this datetime, if any.
-
-Returns ``None`` if the time zone has no earlier transitions
-(e.g. for UTC or fixed-offset time zones).
+The previous change of the time zone's rules strictly before this
+datetime, as the first instant at which its rules apply, in the same
+time zone, with zero nanoseconds. A change of the UTC offset, the DST
+offset, or the abbreviation counts. ``None`` when the time zone has
+no earlier change: UTC and fixed offsets, and before the first
+recorded change.
 
 >>> d = ZonedDateTime(2024, 1, 1, tz=\"America/New_York\")
 >>> d.prev_transition()
@@ -1945,6 +2021,15 @@ the instant. See :ref:`offset-preserving`.
 ZonedDateTime(\"2023-10-29 02:45:00+01:00[Europe/Paris]\")
 >>> d.replace(minute=45, disambiguation=\"earlier\")
 ZonedDateTime(\"2023-10-29 02:45:00+02:00[Europe/Paris]\")
+
+Pass ``SYSTEM_TZ`` as ``tz=`` for the system time zone.
+
+Raises
+------
+ValueError
+    If a field is out of range or the result is out of range.
+~whenever.TimeZoneNotFoundError
+    If the time zone ID is not found in the time zone database.
 ";
 pub(crate) const ZONEDDATETIME_REPLACE_DATE: &CStr = c"\
 replace_date($self, date, /, *, disambiguation=...)
@@ -2218,13 +2303,14 @@ With no offset, the value's own offset is kept; an ``Instant``
 gives ``+00:00``.
 ";
 pub(crate) const EXACTTIME_TO_SYSTEM_TZ: &CStr = c"\
-Convert to a ZonedDateTime of the system's time zone.
+Convert to a ZonedDateTime of the system time zone.
 
 .. deprecated:: 0.11
    Use ``to_tz(SYSTEM_TZ)`` instead.
 ";
 pub(crate) const EXACTTIME_TO_TZ: &CStr = c"\
 Convert to a ZonedDateTime that represents the same moment in time.
+Pass ``SYSTEM_TZ`` for the system time zone.
 
 Raises
 ------

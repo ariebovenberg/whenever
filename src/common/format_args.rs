@@ -190,21 +190,11 @@ pub(crate) fn format_datetime_iso(
         Ok(true)
     })?;
 
-    let (tz_id_display, deprecation) = display_arg
-        .finish(
-            state,
-            "format_iso",
-            "tz_id_display",
-            "tz",
-            c"'tz' is deprecated; use 'tz_id_display' instead",
-            1,
-        )?
+    let (display_obj, renamed) = display_arg.finish("format_iso", "tz_id_display", "tz")?;
+    let (tz_id_display, deprecation) = display_obj
         .map(|v| match_interned_str("tz_id_display", v, &tz_display_choices(state)))
         .transpose()?
         .unwrap_or((TzDisplay::Required, None));
-    if let Some(message) = deprecation {
-        warn_deprecated(state, message, 1)?;
-    }
 
     let suffix = match suffix {
         Suffix::Absent => SuffixFormat::Absent,
@@ -221,10 +211,17 @@ pub(crate) fn format_datetime_iso(
         },
     };
 
-    PyAsciiStrBuilder::format((
+    let result = PyAsciiStrBuilder::format((
         date.iso_format(basic),
         sep,
         time.iso_format(unit, basic),
         suffix,
-    ))
+    ))?;
+    if renamed {
+        warn_deprecated(state, c"'tz' is deprecated; use 'tz_id_display' instead", 1)?;
+    }
+    if let Some(message) = deprecation {
+        warn_deprecated(state, message, 1)?;
+    }
+    Ok(result)
 }

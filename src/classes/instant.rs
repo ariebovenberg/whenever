@@ -13,7 +13,10 @@ use crate::{
         time_delta::{DeltaIncrement, TimeDelta, timedelta_from_kwargs},
     },
     common::{
-        compat::{parse_pattern_keyword, warn_deprecated, warn_lossy_stdlib_subclass},
+        compat::{
+            FORMAT_KEYWORD_WARNING, parse_pattern_keyword, warn_deprecated,
+            warn_lossy_stdlib_subclass,
+        },
         fmt,
         format_args::{self, Suffix},
         instant::{TimestampUnit, extract_instant, parse_instant_arg},
@@ -529,7 +532,7 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
+    let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
@@ -550,11 +553,16 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
         .date("Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields")?;
     let time = parsed.time()?;
     // offset is already validated (scalar::Offset) — no range check needed here.
-    date.at(time)
+    let result = date
+        .at(time)
         .assume_utc()
         .shift_by_offset(-offset)
         .ok_or_range_err()?
-        .to_obj(cls)
+        .to_obj(cls)?;
+    if renamed {
+        warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
+    }
+    Ok(result)
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[

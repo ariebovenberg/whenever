@@ -3,7 +3,7 @@ hide-toc: true
 myst:
   html_meta:
     description: >-
-      Why ambiguous and skipped local times pass silently in the standard library:
+      Why repeated and skipped local times pass silently in the standard library:
       fold defaults to 0, there is no way to raise, and the parameter is hard to
       discover.
 ---
@@ -27,7 +27,7 @@ The problem is that it’s difficult to handle ambiguity *explicitly*:
 datetime(2024, 10, 27, 2, 30, tzinfo=ZoneInfo("Europe/Amsterdam"), fold=1)
 ```
 
-Without careful handling, code may interpret an ambiguous local time
+Without careful handling, code may interpret a repeated local time
 differently than intended.
 
 ## How `whenever` solves this

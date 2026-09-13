@@ -58,30 +58,33 @@ impl RenamedKeyword {
         self.old = Some(value);
     }
 
+    /// The value, and whether it came by the deprecated name. The caller
+    /// warns once its call has succeeded: a call that raises emits no warning.
     pub(crate) fn finish(
         self,
-        state: &State,
         function_name: &str,
         new_name: &str,
         old_name: &str,
-        warning: &CStr,
-        stacklevel: isize,
-    ) -> PyResult<Option<PyObj>> {
+    ) -> PyResult<(Option<PyObj>, bool)> {
         match (self.new, self.old) {
             (Some(_), Some(_)) => raise_type_err(format!(
                 "{function_name}() received both '{new_name}' and deprecated '{old_name}'"
             )),
-            (Some(value), None) => Ok(Some(value)),
-            (None, Some(value)) => {
-                warn_deprecated(state, warning, stacklevel)?;
-                Ok(Some(value))
-            }
-            (None, None) => Ok(None),
+            (Some(value), None) => Ok((Some(value), false)),
+            (None, Some(value)) => Ok((Some(value), true)),
+            (None, None) => Ok((None, false)),
         }
     }
 }
 
-pub(crate) fn parse_pattern_keyword(kwargs: &mut IterKwargs, state: &State) -> PyResult<PyObj> {
+pub(crate) const FORMAT_KEYWORD_WARNING: &CStr = c"'format' is deprecated; use 'pattern' instead";
+
+/// The pattern, and whether it came as `format=`: the caller parses, then
+/// warns with `FORMAT_KEYWORD_WARNING`.
+pub(crate) fn parse_pattern_keyword(
+    kwargs: &mut IterKwargs,
+    state: &State,
+) -> PyResult<(PyObj, bool)> {
     let mut value = RenamedKeyword::default();
     handle_kwargs("parse", kwargs, |k, v, eq| {
         if eq(k, *state.strs.pattern) {
@@ -93,14 +96,9 @@ pub(crate) fn parse_pattern_keyword(kwargs: &mut IterKwargs, state: &State) -> P
         }
         Ok(true)
     })?;
-    value
-        .finish(
-            state,
-            "parse",
-            "pattern",
-            "format",
-            c"'format' is deprecated; use 'pattern' instead",
-            1,
-        )?
-        .ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")
+    let (value, renamed) = value.finish("parse", "pattern", "format")?;
+    Ok((
+        value.ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")?,
+        renamed,
+    ))
 }

@@ -73,7 +73,7 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     modmethod1!(_patch_time_keep_ticking, c""),
     modmethod0!(_unpatch_time, c""),
     modmethod1!(_set_tzpath, c""),
-    modmethod0!(_get_tzpath, c""),
+    modmethod0!(get_tzpath, doc::GET_TZPATH),
     modmethod0!(_clear_tz_cache, c""),
     modmethod1!(_clear_tz_cache_by_keys, c""),
     modmethod0!(reset_system_tz, doc::RESET_SYSTEM_TZ),

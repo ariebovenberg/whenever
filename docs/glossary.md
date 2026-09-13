@@ -88,17 +88,28 @@ system time zone
   *OS time zone*.
   See {ref}`systemtime`.
 
+ambiguity
+  The umbrella for a repeated or skipped local time: a local time that a
+  time zone maps to two instants or to none. *Ambiguous* is allowed only
+  when both cases are meant, *unambiguous* when neither applies; one case
+  takes its own headword. Resolved by disambiguation.
+  See {ref}`ambiguity2`.
+
 repeated local time
   A local time that occurs twice in a time zone because the clock moved
   backward. Resolved by a disambiguation policy; `is_repeated()` on a
-  `ZonedDateTime` reports one.
-  Preferred over *fold* and *ambiguous time*.
+  `ZonedDateTime` reports one. The interval of repeated local times around
+  one transition is a *fold*; the word names the interval, never one time
+  in it.
+  Preferred over *fold* and *ambiguous time* as names for one local time.
   See {ref}`ambiguity`.
 
 skipped local time
   A local time that does not occur in a time zone because the clock moved
-  forward. Resolved by a disambiguation policy.
-  Preferred over *gap* and *non-existent time*.
+  forward. Resolved by a disambiguation policy. The interval of skipped
+  local times around one transition is a *gap*; the word names the
+  interval, never one time in it.
+  Preferred over *gap* and *non-existent time* as names for one local time.
   See {ref}`ambiguity`.
 
 disambiguation

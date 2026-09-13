@@ -1,4 +1,5 @@
 import ast
+import inspect
 import json
 import os
 import pickle
@@ -552,6 +553,69 @@ def test_get_tzpath_returns_snapshot(tmp_path):
         reset_tzpath(previous)
 
 
+def test_get_tzpath_is_the_public_name():
+    # registered under its public name on both backends
+    from whenever._tz import store
+
+    assert get_tzpath.__name__ == "get_tzpath"
+    assert inspect.getdoc(get_tzpath) == inspect.getdoc(store.get_tzpath)
+
+
+class TestResetTzpath:
+    def test_iterator_is_read_once(self, tmp_path):
+        previous = get_tzpath()
+        try:
+            reset_tzpath(iter([tmp_path]))
+            assert get_tzpath() == (str(tmp_path),)
+        finally:
+            reset_tzpath(previous)
+
+    @pytest.mark.parametrize("bad", [[b"/x"], [1], 1, "/x", b"/x", [None]])
+    def test_not_an_iterable_of_paths(self, bad):
+        with pytest.raises(
+            TypeError,
+            match="^reset_tzpath\\(\\) argument must be an iterable of paths$",
+        ):
+            reset_tzpath(bad)
+
+    def test_relative_entry(self, tmp_path):
+        with pytest.raises(
+            ValueError,
+            match="^time zone search path entries must be absolute paths, "
+            "got 'zoneinfo'$",
+        ):
+            reset_tzpath([tmp_path, "zoneinfo"])
+        with pytest.raises(
+            ValueError,
+            match="^time zone search path entries must be absolute paths, "
+            "got .*Path\\('zoneinfo'\\)$",
+        ):
+            reset_tzpath([Path("zoneinfo")])
+        # nothing was set
+        assert get_tzpath() != (str(tmp_path),)
+
+
+class TestEmptyTzIsUtc:
+    def test_from_the_database(self):
+        with system_tz(""):
+            assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "UTC"
+
+    @pytest.mark.skipif(
+        _EXTENSION_LOADED, reason="the pure-Python store is not in use"
+    )
+    def test_falls_back_to_posix(self, monkeypatch):
+        from whenever._tz import store
+
+        def not_found(key):
+            raise TimeZoneNotFoundError._for_key(key)  # type: ignore[attr-defined]
+
+        monkeypatch.setattr(store, "get_tz", not_found)
+        with patch.dict(os.environ, {"TZ": ""}):
+            tz = store._read_system_tz()
+        assert tz.key is None
+        assert tz.offset_for_instant(0) == 0
+
+
 def test_get_system_tz():
 
     tz_type, tz_value = get_tz()
@@ -684,10 +748,20 @@ class TestOutOfRangeIsValueError:
     @pytest.mark.parametrize("bad", [3, None, b"UTC", 3.5, ["UTC"]])
     def test_non_string_tz_is_type_error(self, bad):
         # was a leaked AttributeError in the pure Python backend
-        with pytest.raises(TypeError, match="tz must be a string"):
+        with pytest.raises(
+            TypeError, match="^tz must be a string or SYSTEM_TZ$"
+        ):
             ZonedDateTime(2020, 1, 1, tz=bad)
-        with pytest.raises(TypeError, match="key must be a string"):
+        with pytest.raises(
+            TypeError, match="^only_keys must be an iterable of time zone IDs$"
+        ):
             clear_tzcache(only_keys=[bad])
+
+    def test_system_tz_is_not_a_cache_key(self):
+        with pytest.raises(
+            TypeError, match="^only_keys must be an iterable of time zone IDs$"
+        ):
+            clear_tzcache(only_keys=[SYSTEM_TZ])  # type: ignore[list-item]
 
     def test_oversized_int_is_out_of_range(self):
         # Distinct from the above: for an integer far outside the range the
@@ -1151,5 +1225,5 @@ class TestLossyStdlibSubclass:
 def test_tz_store_rejects_non_string_key():
     from whenever._tz.store import get_tz as store_get_tz
 
-    with pytest.raises(TypeError, match="tz must be a string"):
+    with pytest.raises(TypeError, match="^tz must be a string or SYSTEM_TZ$"):
         store_get_tz(1)  # type: ignore[arg-type]

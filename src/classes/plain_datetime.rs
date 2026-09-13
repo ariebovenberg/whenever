@@ -7,7 +7,10 @@ use crate::{
         time::{self, Time},
     },
     common::{
-        compat::{parse_pattern_keyword, warn_deprecated, warn_lossy_stdlib_subclass},
+        compat::{
+            FORMAT_KEYWORD_WARNING, parse_pattern_keyword, warn_deprecated,
+            warn_lossy_stdlib_subclass,
+        },
         disambiguation::*,
         fmt,
         format_args::{self, Suffix},
@@ -520,10 +523,15 @@ fn assume_tz(
     let state = cls.state();
     let tz_obj = handle_one_arg("assume_tz", args)?;
 
-    let dis = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?;
+    let (dis, renamed) = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?;
     let tz = state.load_tz(tz_obj)?;
-    slf.resolve_with_disambiguation(&tz, dis, state)?
-        .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type)
+    let result = slf
+        .resolve_with_disambiguation(&tz, dis, state)?
+        .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type)?;
+    if renamed {
+        warn_disambiguate(state, 1)?;
+    }
+    Ok(result)
 }
 
 fn assume_system_tz(
@@ -539,9 +547,8 @@ fn assume_system_tz(
     handle_kwargs("assume_system_tz", kwargs, |k, v, eq| {
         Ok(dis_arg.handle_kwarg(k, v, eq, state))
     })?;
-    let dis = dis_arg
-        .finish("assume_system_tz", state)?
-        .unwrap_or(Disambiguation::Compatible);
+    let (dis, renamed) = dis_arg.finish("assume_system_tz", state)?;
+    let dis = dis.unwrap_or(Disambiguation::Compatible);
     let tz = state.tz_store.get_system_tz()?;
     // Validate and compute first, so a call that raises emits no warning.
     let result = slf
@@ -552,6 +559,9 @@ fn assume_system_tz(
         c"assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
         1,
     )?;
+    if renamed {
+        warn_disambiguate(state, 1)?;
+    }
     Ok(result)
 }
 
@@ -846,7 +856,7 @@ fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
+    let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
@@ -863,7 +873,11 @@ fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let date = parsed
         .date("Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields")?;
     parsed.validate_weekday(date)?;
-    date.at(parsed.time()?).to_obj(cls)
+    let result = date.at(parsed.time()?).to_obj(cls)?;
+    if renamed {
+        warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
+    }
+    Ok(result)
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[

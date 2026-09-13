@@ -315,13 +315,16 @@ impl TzStore {
     /// Fetches the time zone definition for the given IANA time zone ID.
     pub(crate) fn get(&self, key: &str) -> PyResult<Arc<TimeZone>> {
         let Some(validated) = ValidatedKey::new(key) else {
-            return raise(self.exc_notfound, format!("time zone ID '{key}' not found"));
+            return raise(
+                self.exc_notfound,
+                format!("time zone ID {} not found", py_repr(key)),
+            );
         };
         let normalized = NormalizedKey::from(validated);
         self.cache
             .get_or_insert_with(&normalized, || self.load_tzif(&normalized))?
             .ok_or_else_raise(self.exc_notfound, || {
-                format!("time zone ID '{key}' not found")
+                format!("time zone ID {} not found", py_repr(key))
             })
     }
 
@@ -330,7 +333,7 @@ impl TzStore {
         self.get(
             tz_obj
                 .cast_allow_subclass::<PyStr>()
-                .ok_or_type_err("tz must be a string")?
+                .ok_or_type_err("tz must be a string or SYSTEM_TZ")?
                 .as_str()?,
         )
     }
@@ -340,7 +343,7 @@ impl TzStore {
             return TimeZone::parse_posix(key)
                 .map(Arc::new)
                 .ok_or_else_raise(self.exc_notfound, || {
-                    format!("'{key}' is not a time zone ID or POSIX TZ string")
+                    format!("{} is not a time zone ID or POSIX TZ string", py_repr(key))
                 });
         };
         let normalized = NormalizedKey::from(validated);
@@ -348,7 +351,7 @@ impl TzStore {
             .get_or_insert_with(&normalized, || self.load_tzif(&normalized))?
             .or_else(|| TimeZone::parse_posix(key).map(Arc::new))
             .ok_or_else_raise(self.exc_notfound, || {
-                format!("'{key}' is not a time zone ID or POSIX TZ string")
+                format!("{} is not a time zone ID or POSIX TZ string", py_repr(key))
             })
     }
 
@@ -473,6 +476,16 @@ impl TzStore {
         let tz_type = tz_type_obj.to_i64()?;
         let tz_value = tz_value_obj.as_str()?;
 
+        if tz_value.is_empty() {
+            // An empty TZ is UTC, as the C library reads it: the database's
+            // entry when a source has it, else the POSIX string.
+            return match self.get("UTC").catch(self.exc_notfound)? {
+                Some(tz) => Ok(tz),
+                None => Ok(Arc::new(
+                    TimeZone::parse_posix("UTC0").expect("UTC0 is a valid POSIX TZ string"),
+                )),
+            };
+        }
         match tz_type {
             // type 0: a zoneinfo key
             0 => self.get(tz_value),
@@ -482,7 +495,7 @@ impl TzStore {
                 let tzif = self
                     .read_tzif_at_path(&path, None)
                     .ok_or_else_raise(self.exc_notfound, || {
-                        format!("no time zone found at path '{tz_value}'")
+                        format!("no time zone found at path {}", py_repr(tz_value))
                     })?;
                 Ok(Arc::new(tzif))
             }

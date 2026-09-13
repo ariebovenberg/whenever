@@ -20,6 +20,7 @@ from whenever import (
     MonthDay,
     PlainDateTime,
     Time,
+    TimeZoneNotFoundError,
     Weekday,
     WheneverWarning,
     YearMonth,
@@ -183,6 +184,21 @@ def test_today():
     # NOTE: this may fail if the test is run *exactly* at midnight.
     # Mocking this out would make things more complicated than it's worth.
     assert Date.today(SYSTEM_TZ) == Date(py_date.today())
+
+
+@pytest.mark.parametrize("bad", [3, None, b"UTC", ["UTC"]])
+def test_today_non_string_tz(bad):
+    with pytest.raises(TypeError, match="^tz must be a string or SYSTEM_TZ$"):
+        Date.today(bad)
+
+
+@pytest.mark.parametrize("key", ["America/Nowhere", "Europe//Amsterdam", ""])
+def test_today_unknown_tz(key):
+    with pytest.raises(
+        TimeZoneNotFoundError,
+        match="^" + re.escape(f"time zone ID {key!r} not found") + "$",
+    ):
+        Date.today(key)
 
 
 def test_today_differs_from_utc():

@@ -8,7 +8,10 @@ use crate::classes::plain_datetime::DateTimeBoundaryUnit;
 use crate::{
     classes::{date::Date, plain_datetime, time::Time, time_delta::TimeDelta},
     common::{
-        compat::{parse_pattern_keyword, warn_deprecated, warn_lossy_stdlib_subclass},
+        compat::{
+            FORMAT_KEYWORD_WARNING, parse_pattern_keyword, warn_deprecated,
+            warn_lossy_stdlib_subclass,
+        },
         disambiguation::Disambiguation,
         fmt,
         format_args::{self, Suffix},
@@ -1017,7 +1020,7 @@ fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
+    let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
@@ -1039,10 +1042,15 @@ fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
     parsed.validate_weekday(date)?;
     let time = parsed.time()?;
     // offset is already validated (scalar::Offset) — no range check needed here.
-    date.at(time)
+    let result = date
+        .at(time)
         .assume_offset(offset)
         .ok_or_range_err()?
-        .to_obj(cls)
+        .to_obj(cls)?;
+    if renamed {
+        warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
+    }
+    Ok(result)
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[

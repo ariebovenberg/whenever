@@ -30,10 +30,11 @@ System time zone
 .. data:: SYSTEM_TZ
 
    A public sentinel that requests the system time zone. Pass it where a named
-   time zone is accepted to resolve the system time zone at call time, for
-   example ``ZonedDateTime.now(SYSTEM_TZ)`` or
-   ``plain.assume_tz(SYSTEM_TZ)``. The returned datetime stores the resolved
-   time zone, not the sentinel itself.
+   time zone is accepted to resolve the system time zone at call time: the
+   ``ZonedDateTime`` constructor, ``now()``, ``today()``, ``replace()``,
+   ``to_tz()``, and ``assume_tz()``. The returned datetime stores the resolved
+   time zone, not the sentinel itself. A system time zone that cannot be
+   resolved raises :exc:`TimeZoneNotFoundError`.
 
    See :ref:`systemtime` for caching, reset behavior, and system time zones
    without a time zone ID.
