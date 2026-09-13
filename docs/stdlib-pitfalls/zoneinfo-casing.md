@@ -3,14 +3,14 @@ hide-toc: true
 myst:
   html_meta:
     description: >-
-      Why ZoneInfo time zone identifiers are case-sensitive on some filesystems
+      Why ZoneInfo time zone IDs are case-sensitive on some filesystems
       but not others, how that breaks portability and even arithmetic, and how
       whenever normalizes casing.
 ---
 
 # Time zone casing is platform-dependent
 
-{class}`zoneinfo.ZoneInfo` does not normalize IANA time zone identifiers.
+{class}`zoneinfo.ZoneInfo` does not normalize time zone IDs.
 It looks up the given string as a file path, so casing follows the underlying
 filesystem. For example, this typically succeeds on macOS but fails on Linux:
 
@@ -51,7 +51,7 @@ The behavior is discussed in
 [CPython issue #115022](https://github.com/python/cpython/issues/115022).
 The IANA reference implementation is case-sensitive, although its
 [naming rules](https://data.iana.org/time-zones/theory.html#naming) forbid
-identifiers that differ only in case.
+IDs that differ only in case.
 
 ## How `whenever` solves this
 

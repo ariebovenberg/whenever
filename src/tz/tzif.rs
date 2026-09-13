@@ -152,14 +152,14 @@ impl TimeZone {
             })
     }
 
-    /// The next UTC offset transition strictly after `t`, or None.
+    /// The next transition record strictly after `t`, or None.
     pub(crate) fn next_transition(&self, t: EpochSecs) -> Option<(EpochSecs, Offset)> {
         bisect(&self.offsets_by_utc, t)
             .map(|i| self.offsets_by_utc[i])
             .or_else(|| self.end.and_then(|tz| tz.next_transition(t)))
     }
 
-    /// The previous UTC offset transition strictly before `t`, or None.
+    /// The previous transition record strictly before `t`, or None.
     pub(crate) fn prev_transition(&self, t: EpochSecs) -> Option<(EpochSecs, Offset)> {
         // If past all recorded transitions, check POSIX first
         if let Some(tz) = self.end

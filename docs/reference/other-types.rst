@@ -37,7 +37,7 @@ Sunday 7. The module constants are the members:
 
 .. autotype:: DisambiguateStr
 
-   Deprecated alias of :class:`DisambiguationStr`.
+   Deprecated: use :class:`DisambiguationStr`. Removed in 1.0.
 
 
 .. autotype:: DeltaUnitStr
@@ -45,6 +45,9 @@ Sunday 7. The module constants are the members:
 .. autotype:: DateDeltaUnitStr
 .. autotype:: ExactDeltaUnitStr
 .. autotype:: OffsetMismatchStr
+
+   See :ref:`offset-mismatch` for more information.
+
 .. autotype:: TimestampUnitStr
 
    See :ref:`timestamps` for more information.

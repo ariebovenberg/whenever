@@ -36,7 +36,7 @@ class TimeZone:
 
     UTC pair — for mapping an exact UTC instant to a UTC offset:
       _utc_epochs[i]   is the epoch at which transition i occurs (UTC seconds).
-      _utc_offsets[i]  is the UTC offset in seconds active *before* transition i.
+      _utc_offsets[i]  is the UTC offset in seconds active *from* transition i.
       ``bisect_right(_utc_epochs, t) - 1`` gives the index of the active offset.
 
     Local pair — for mapping a local (wall-clock) time to a UTC offset,
@@ -157,7 +157,7 @@ class TimeZone:
             return saving, abbrev
 
     def next_transition(self, t: EpochSecs) -> tuple[EpochSecs, Offset] | None:
-        """Get the (epoch, new_offset) of the next UTC offset transition
+        """Get the (epoch, new_offset) of the next transition record
         strictly after `t`, or None if there is no next transition."""
         idx = _bisect_right(self._utc_epochs, t)
         if idx < len(self._utc_epochs):
@@ -167,7 +167,7 @@ class TimeZone:
         return None  # pragma: no cover
 
     def prev_transition(self, t: EpochSecs) -> tuple[EpochSecs, Offset] | None:
-        """Get the (epoch, new_offset) of the previous UTC offset transition
+        """Get the (epoch, new_offset) of the previous transition record
         strictly before `t`, or None if there is no previous transition."""
         # If past all recorded transitions, check POSIX first
         if self._end is not None and (

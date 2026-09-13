@@ -200,21 +200,30 @@ def normalize_renamed_keyword(
     function_name: str,
     new_name: str,
     old_name: str,
-    warning_stacklevel: int,
-) -> Any:
+) -> tuple[Any, bool]:
+    """The value, and whether it came by the deprecated name.
+
+    The caller warns with ``warn_renamed_keyword`` once its call has
+    succeeded: a call that raises emits no warning.
+    """
     old_value = kwargs.pop(old_name, UNSET)
     if old_value is UNSET:
-        return new_value
+        return new_value, False
     if new_value is not UNSET:
         raise TypeError(
             f"{function_name}() received both '{new_name}' "
             f"and deprecated '{old_name}'"
         )
+    return old_value, True
+
+
+def warn_renamed_keyword(
+    new_name: str, old_name: str, /, *, stacklevel: int
+) -> None:
     warn_deprecated(
         f"'{old_name}' is deprecated; use '{new_name}' instead",
-        stacklevel=warning_stacklevel,
+        stacklevel=stacklevel + 1,
     )
-    return old_value
 
 
 def check_no_kwargs(

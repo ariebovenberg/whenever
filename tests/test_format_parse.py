@@ -1,5 +1,6 @@
 """Tests for custom format/parse patterns."""
 
+import re
 import warnings
 
 import pytest
@@ -18,6 +19,7 @@ from whenever import (
     SkippedTime,
     Time,
     TimeDelta,
+    TimeZoneNotFoundError,
     Weekday,
     WheneverDeprecationWarning,
     WheneverWarning,
@@ -1166,6 +1168,17 @@ class TestZonedDateTimeParse:
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
             )
 
+    @pytest.mark.parametrize("key", ["Europe/Nowhere", "Europe//Paris"])
+    def test_unknown_tz_id(self, key):
+        with pytest.raises(
+            TimeZoneNotFoundError,
+            match="^" + re.escape(f"time zone ID {key!r} not found") + "$",
+        ):
+            ZonedDateTime.parse(
+                f"2024-03-15 14:30+01:00[{key}]",
+                pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+            )
+
     def test_missing_date_fields(self):
         with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
             ZonedDateTime.parse(
@@ -1189,6 +1202,16 @@ class TestZonedDateTimeParse:
                 "2024-03-15 14:30[Europe/Paris]",
                 pattern="YYYY-MM-DD HH:mm'['VV']'",
                 disambiguate="raise",  # type: ignore[call-overload]
+            )
+
+    def test_offset_mismatch_names_database_spelling(self):
+        with pytest.raises(
+            InvalidOffsetError,
+            match="offset \\+03:00 does not match time zone 'Europe/Paris'",
+        ):
+            ZonedDateTime.parse(
+                "2024-03-15 14:30+03:00[europe/paris]",
+                pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
             )
 
     def test_offset_mismatch(self):
@@ -1243,6 +1266,28 @@ class TestZonedDateTimeParse:
                 disambiguation="earlier",
             )
         )
+
+    @pytest.mark.parametrize(
+        "s, pattern",
+        [
+            (
+                "2024-03-15 14:30+01:00[Europe/Paris]",
+                "YYYY-MM-DD HH:mmxxx'['VV']'",
+            ),
+            ("2024-03-15 13:30Z[Europe/Paris]", "YYYY-MM-DD HH:mmXXX'['VV']'"),
+            ("2024-03-15 14:30[Europe/Paris]", "YYYY-MM-DD HH:mm'['VV']'"),
+        ],
+    )
+    def test_invalid_disambiguation(self, s, pattern):
+        # validated on entry, whether or not a written offset settles it
+        with pytest.raises(
+            ValueError, match="^invalid disambiguation: 'bogus'$"
+        ):
+            ZonedDateTime.parse(  # type: ignore[call-overload]
+                s,
+                pattern=pattern,
+                disambiguation="bogus",
+            )
 
     def test_invalid_offset_mismatch(self):
         with pytest.raises(ValueError, match="offset_mismatch"):

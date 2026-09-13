@@ -17,7 +17,6 @@ __all__ = [
     "get_system_tz",
     "_clear_tz_cache",
     "_clear_tz_cache_by_keys",
-    "_get_tzpath",
     "get_tzpath",
     "_set_tzpath",
     "reset_system_tz",
@@ -72,11 +71,11 @@ def _set_tzpath(to: tuple[str, ...]) -> None:
 
 
 def get_tzpath() -> tuple[str, ...]:
-    """Return a snapshot of the current time zone search path."""
+    """The time zone search path: the directories in which ``whenever``
+    looks for time zone data, in order. The tuple is a snapshot: it does
+    not change when :func:`reset_tzpath` is called later.
+    """
     return _TZPATH
-
-
-_get_tzpath = get_tzpath
 
 
 def _clear_tz_cache() -> None:
@@ -93,7 +92,7 @@ def _clear_tz_cache_by_keys(keys: tuple[str, ...]) -> None:
     global _last_tz_key, _last_tz_val
     for k in keys:
         if not isinstance(k, str):
-            raise TypeError("key must be a string")
+            raise TypeError("only_keys must be an iterable of time zone IDs")
     normalized_keys = tuple(k.lower() for k in keys)
     if _last_tz_key in normalized_keys:
         _last_tz_key = None
@@ -157,7 +156,7 @@ def _normalize_tzid(key: str) -> NormalizedTzId:
     # where untyped callers arrive, and without it the validation below
     # fails with a leaked AttributeError (or, for bytes, passes silently).
     if not isinstance(key, str):
-        raise TypeError("tz must be a string")
+        raise TypeError("tz must be a string or SYSTEM_TZ")
     if not _is_valid_tzid(key):
         raise TimeZoneNotFoundError._for_key(key)
     return NormalizedTzId(key.lower())
@@ -325,16 +324,22 @@ def get_system_tz() -> TimeZone:
 
 
 def reset_system_tz() -> None:
-    """Resets the cached system time zone to the currently set system time zone.
+    """Determine the system time zone again and cache it, replacing the
+    cached one. An empty ``TZ`` environment variable means UTC.
 
     >>> os.environ["TZ"] = "America/New_York"
-    >>> reset_system_tz()  # system tz is now New York
+    >>> reset_system_tz()  # the system time zone is now New York
     >>> os.environ["TZ"] = "Europe/London"
-    >>> ZonedDateTime.now(SYSTEM_TZ)  # still uses cached New York tz
+    >>> ZonedDateTime.now(SYSTEM_TZ)  # still the cached New York time zone
     ZonedDateTime("2025-06-18 15:11:08-04:00[America/New_York]")
-    >>> reset_system_tz()  # system tz is now London
+    >>> reset_system_tz()  # the system time zone is now London
     >>> ZonedDateTime.now(SYSTEM_TZ)
     ZonedDateTime("2025-06-18 20:11:08+01:00[Europe/London]")
+
+    Raises
+    ------
+    ~whenever.TimeZoneNotFoundError
+        If the system time zone cannot be resolved; the cached one stays.
     """
     global _CACHED_SYSTEM_TZ
     _CACHED_SYSTEM_TZ = _read_system_tz()
@@ -342,6 +347,13 @@ def reset_system_tz() -> None:
 
 def _read_system_tz() -> TimeZone:
     tz_type, tz_value = system.get_tz()
+    if not tz_value:
+        # An empty TZ is UTC, as the C library reads it: the database's
+        # entry when a source has it, else the POSIX string.
+        try:
+            return get_tz("UTC")
+        except TimeZoneNotFoundError:
+            return TimeZone.parse_posix("UTC0")
     if tz_type == 0:  # IANA TZID
         return get_tz(tz_value)
     elif tz_type == 2:  # IANA TZID or Posix string (we don't know which)
@@ -353,7 +365,7 @@ def _read_system_tz() -> TimeZone:
                 return TimeZone.parse_posix(tz_value)
             except ValueError:
                 raise TimeZoneNotFoundError(
-                    f"'{tz_value}' is not a time zone ID or POSIX TZ string"
+                    f"{tz_value!r} is not a time zone ID or POSIX TZ string"
                 ) from None
     else:  # file-based time zone (no key)
         assert tz_type == 1, "Unknown system time zone type"
@@ -362,13 +374,15 @@ def _read_system_tz() -> TimeZone:
                 return TimeZone.parse_tzif(f.read())
         except (OSError, ValueError):
             raise TimeZoneNotFoundError(
-                f"no time zone found at path '{tz_value}'"
+                f"no time zone found at path {tz_value!r}"
             ) from None
 
 
 class TimeZoneNotFoundError(ValueError):
-    """A time zone with the given ID was not found"""
+    """The string names no time zone: an unknown or malformed time zone ID,
+    or a system time zone that cannot be resolved.
+    """
 
     @classmethod
     def _for_key(cls, key: str) -> TimeZoneNotFoundError:
-        return cls(f"time zone ID '{key}' not found")
+        return cls(f"time zone ID {key!r} not found")

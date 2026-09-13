@@ -41,7 +41,7 @@ political decisions. A recorded offset therefore carries no guarantee about
 which offset applies after shifting or modifying the datetime. Reusing it may
 produce an offset that is stale relative to the original region.
 
-Offsets are excellent for *interchange*, but risky as long-term identifiers.
+Offsets are excellent for *interchange*, but risky as long-term references.
 
 ## Abbreviations
 
@@ -69,7 +69,7 @@ but they are a poor choice for storing or interpreting time programmatically.
 
 The most complete way to describe the relationship between local and exact time
 is using a time zone from the **[IANA Time Zone Database](https://en.wikipedia.org/wiki/Tz_database)**.
-These time zones are identified uniquely by names such as `Europe/Amsterdam` or `America/Los_Angeles`.
+These time zones are identified by IDs such as `Europe/Amsterdam` or `America/Los_Angeles`.
 
 An IANA time zone represents a *set of rules* in a *specific region*:
 
@@ -80,7 +80,7 @@ An IANA time zone represents a *set of rules* in a *specific region*:
 Given a local time and an IANA time zone,
 software can usually determine the corresponding exact time—and vice versa.
 
-These identifiers are the closest thing we have to a "complete" time zone in software.
+These IDs are the closest thing we have to a "complete" time zone in software.
 They are widely supported, regularly updated, and shared across programming languages and systems.
 
 That said, they are not magical. IANA time zones can only reflect **known rules**.
@@ -95,7 +95,7 @@ None of these representations is "the true" time zone. Each answers a different 
 
 * Offsets describe *where local time is relative to UTC at that moment*
 * Abbreviations describe *how humans commonly refer to a time in a time zone*
-* IANA identifiers describe *the evolving rules of local time*
+* Time zone IDs describe *the evolving rules of local time*
 
 Understanding their strengths and limitations helps avoid subtle bugs and incorrect assumptions.
 
@@ -117,7 +117,7 @@ Use {class}`~whenever.ZonedDateTime` when regional rules are known and matter.
 | ---------------------------- | --------------------------- | ---------------------------- | ------------------------------- | ------------------------------- |
 | UTC offset (`+01:00`)        | Observed diff. from UTC | Simple, unambiguous | No regional rules; may be stale after shifting | {class}`~whenever.OffsetDateTime` |
 | Abbreviation (`PST`)         | Human-friendly label        | Compact, readable            | Ambiguous | N/A                            |
-| IANA ID (`Europe/Amsterdam`) | Full time zone rules        | Accurate, widely supported   | Depends on database updates     | {class}`~whenever.ZonedDateTime`   |
+| Time zone ID (`Europe/Amsterdam`) | Full time zone rules        | Accurate, widely supported   | Depends on database updates     | {class}`~whenever.ZonedDateTime`   |
 
 ## What comes next: resolving local times
 

@@ -903,7 +903,8 @@ class TestInitFromPy:
 
     @pytest.mark.parametrize("fold, offset", [(0, 2), (1, 1)])
     def test_fold(self, fold, offset):
-        # in a repeated hour, fold selects the occurrence through the offset
+        # within a repeated local time, `fold` selects the occurrence through
+        # the offset
         d = py_datetime(
             2023, 10, 29, 2, 30, fold=fold, tzinfo=ZoneInfo("Europe/Amsterdam")
         )
@@ -1220,7 +1221,9 @@ class TestAssumeTz:
         )
 
     def test_wrong_type(self):
-        with pytest.raises(TypeError, match="tz must be a string"):
+        with pytest.raises(
+            TypeError, match="^tz must be a string or SYSTEM_TZ$"
+        ):
             OffsetDateTime(2020, 8, 15, offset=hours(2)).assume_tz(3)
 
     @pytest.mark.parametrize("offset", [hours(1), hours(2)])

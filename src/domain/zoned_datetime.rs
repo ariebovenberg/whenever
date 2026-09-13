@@ -11,14 +11,11 @@ use super::{
     scalar::Offset,
     time::Time,
 };
-use crate::tz::tzif::TimeZone;
-use crate::{
-    common::{
-        fmt::{self, Sink},
-        parse::Scan,
-    },
-    tz::tzif::is_valid_key,
+use crate::common::{
+    fmt::{self, Sink},
+    parse::Scan,
 };
+use crate::tz::tzif::TimeZone;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -213,8 +210,10 @@ pub(crate) fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(OffsetInIso
             }
         }
     };
+    // Only the bracket structure is a format concern: whether the ID inside
+    // names a time zone is for the store to decide, as for every other ID.
     let tz = s.rest();
-    (tz.len() > 2
+    (tz.len() >= 2
         && tz[0] == b'['
         && tz.iter().position(|&byte| byte == b']') == Some(tz.len() - 1)
         && tz.is_ascii())
@@ -222,7 +221,6 @@ pub(crate) fn read_offset_and_tzname<'a>(s: &'a mut Scan) -> Option<(OffsetInIso
         // SAFETY: the preceding condition established that the bytes are ASCII.
         unsafe { std::str::from_utf8_unchecked(&tz[1..tz.len() - 1]) }
     })
-    .filter(|tz| is_valid_key(tz))
     .map(|tz| (offset, tz))
 }
 

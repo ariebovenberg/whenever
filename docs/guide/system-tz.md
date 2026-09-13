@@ -25,6 +25,11 @@ ZonedDateTime("2023-12-28 11:30:00-05:00[America/New_York]")
 Date("2023-12-28")
 ```
 
+An empty `TZ` environment variable means UTC, as the C library reads it. A
+system time zone that cannot be resolved raises
+{exc}`~whenever.TimeZoneNotFoundError` when it is first needed or on
+{func}`~whenever.reset_system_tz`.
+
 When working with the time zone of the current system, there
 are a few things to keep in mind.
 

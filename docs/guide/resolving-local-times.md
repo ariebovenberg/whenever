@@ -57,7 +57,7 @@ INPUT: local fields + named time zone
                    └─► discard offset ───────────────────────────┤
                                                                  │
                                                                  ▼
-                    DISAMBIGUATE THE LOCAL TIME IN THE NAMED TIMEZONE
+                    DISAMBIGUATE THE LOCAL TIME IN THE NAMED TIME ZONE
                     ├─ local time is unique ──────────────► DONE
                     ├─ repeated or skipped + explicit policy
                     │                         └───────────► DONE or ERROR
@@ -164,7 +164,7 @@ ZonedDateTime("2023-03-26 03:30:00+02:00[Europe/Paris]")
 ```{admonition} Why extrapolate a skipped time instead of truncating it?
 :class: tip
 
-A skipped wall time cannot retain identical final local fields: those fields
+A skipped local time cannot keep identical final local fields: those fields
 do not exist in that time zone. Extrapolating by the size of the gap preserves
 the intended minute and second, which fits the common case where a clock was
 not adjusted—or was adjusted too early. It also matches almost all other

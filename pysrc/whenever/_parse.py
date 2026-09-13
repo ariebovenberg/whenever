@@ -26,7 +26,11 @@ if TYPE_CHECKING:
 
 
 class InvalidOffsetError(ValueError):
-    """A string has an invalid offset for the given zone"""
+    """The offset in the input matches no offset the time zone applies to
+    the written local time. Raised by the ISO and pattern parsers, the
+    ``datetime`` constructor overload, and ``assume_tz()`` under
+    ``offset_mismatch="raise"``.
+    """
 
     @classmethod
     def _for_tz(cls, offset_secs: int, tzid: str | None) -> InvalidOffsetError:
@@ -206,7 +210,7 @@ class ZonedInput(NamedTuple):
 
 
 def zdt_parts_from_iso(s: str, /) -> ZonedInput:
-    from ._tz import get_tz
+    from ._tz import TimeZoneNotFoundError, get_tz
 
     if len(s) < 11 or "W" in s[:11] or not s.isascii():
         _parse_err(s)
@@ -216,6 +220,10 @@ def zdt_parts_from_iso(s: str, /) -> ZonedInput:
         time, nanos, offset, offset_exact, tzid = _time_offset_tz_from_iso(
             rest
         )
+    except TimeZoneNotFoundError:
+        # A string that names no time zone raises the same exception
+        # wherever it is given; only the text around it is a format error.
+        raise
     except ValueError:
         _parse_err(s)
 

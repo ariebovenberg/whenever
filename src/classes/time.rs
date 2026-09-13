@@ -2,7 +2,8 @@
 use crate::common::{fmt::Sink, parse::Scan};
 use crate::{
     common::{
-        compat::parse_pattern_keyword, fmt, format_args, pattern, pickle, round_args as round,
+        compat::{FORMAT_KEYWORD_WARNING, parse_pattern_keyword, warn_deprecated},
+        fmt, format_args, pattern, pickle, round_args as round,
     },
     docstrings as doc,
     domain::scalar::*,
@@ -334,7 +335,7 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
-    let fmt_obj = parse_pattern_keyword(kwargs, cls.state())?;
+    let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
         .cast_exact::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
@@ -347,7 +348,11 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         *cls.state().warn_whenever,
         *cls.state().warn_deprecation,
     )?;
-    pattern.parse(s).into_value_err()?.time()?.to_obj(cls)
+    let result = pattern.parse(s).into_value_err()?.time()?.to_obj(cls)?;
+    if renamed {
+        warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
+    }
+    Ok(result)
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[

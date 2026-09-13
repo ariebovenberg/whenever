@@ -18,11 +18,11 @@ from ._core import (
     ZonedDateTime,
     _clear_tz_cache,
     _clear_tz_cache_by_keys,
-    _get_tzpath,
     _patch_time_frozen,
     _patch_time_keep_ticking,
     _set_tzpath,
     _unpatch_time,
+    get_tzpath,
 )
 
 # Maintainer's notes:
@@ -40,9 +40,6 @@ __all__ = [
     "clear_tzcache",
     "available_timezones",
 ]
-
-
-get_tzpath = _get_tzpath
 
 
 class TimePatch(Protocol):  # pragma: no cover
@@ -188,7 +185,11 @@ def patch_current_time(
 def reset_tzpath(
     target: Iterable[str | os.PathLike[str]] | None = None, /
 ) -> None:
-    """Reset or set the paths in which ``whenever`` will search for time zone data.
+    """Set the time zone search path: the directories in which ``whenever``
+    looks for time zone data, in order. Each entry is an absolute path, as a
+    ``str`` or a path-like object. Without an argument, the path is read
+    again from the ``PYTHONTZPATH`` environment variable, falling back to the
+    interpreter's compiled-in default, as :func:`zoneinfo.reset_tzpath` does.
 
     It does not affect the :mod:`zoneinfo` module or other libraries.
 
@@ -198,37 +199,66 @@ def reset_tzpath(
     continue to use the already loaded definition. Call :func:`clear_tzcache`
     to make subsequent lookups load from the new path.
 
-    Behaves similarly to :func:`zoneinfo.reset_tzpath`
+    Raises
+    ------
+    TypeError
+        If the argument is a single string or not an iterable of paths.
+    ValueError
+        If an entry is not an absolute path.
     """
-    if target is not None:
-        # This is such a common mistake, that we raise a descriptive error
-        if isinstance(target, (str, bytes)):
-            raise TypeError("tzpath must be an iterable of paths")
-
-        if not all(map(os.path.isabs, target)):
-            raise ValueError("tzpaths must be absolute paths")
-        # mypy doesn't seem to follow, but it appears correct
-        _set_tzpath(tuple(map(os.fspath, target)))  # type: ignore[arg-type]
-    else:
+    if target is None:
         from ._shared import _tzpath_from_env
 
         _set_tzpath(_tzpath_from_env())
+        return
+    # A string is iterable too, so this common mistake needs its own check.
+    if isinstance(target, (str, bytes)):
+        raise TypeError(_TZPATH_ARG_MSG)
+    try:
+        # Read once: an iterator is consumed by the first pass.
+        entries = tuple(target)
+    except TypeError:
+        raise TypeError(_TZPATH_ARG_MSG) from None
+    paths = []
+    for e in entries:
+        try:
+            path = os.fspath(e)
+        except TypeError:
+            raise TypeError(_TZPATH_ARG_MSG) from None
+        if not isinstance(path, str):
+            raise TypeError(_TZPATH_ARG_MSG)
+        if not os.path.isabs(path):
+            raise ValueError(
+                "time zone search path entries must be absolute paths, "
+                f"got {e!r}"
+            )
+        paths.append(path)
+    _set_tzpath(tuple(paths))
+
+
+_TZPATH_ARG_MSG = "reset_tzpath() argument must be an iterable of paths"
 
 
 def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
-    """Clear the time zone cache. If ``only_keys`` is provided, only the cache for those
-    keys will be cleared.
+    """Clear the time zone cache. With ``only_keys``, clear only the entries
+    for those time zone IDs, matched case-insensitively; an ID that is not
+    cached is a no-op.
 
     Caution
     -------
     Calling this function may change the behavior of existing ``ZonedDateTime``
     instances in surprising ways. Most significantly, ``strict_eq()`` may
-    return ``False`` between two time zone instances with the same TZ ID,
-    if this time zone definition was changed on disk.
+    return ``False`` between two time zone instances with the same time zone
+    ID, if this time zone definition was changed on disk.
 
     **Use this function only if you know that you need to.**
 
     Behaves similarly to :meth:`zoneinfo.ZoneInfo.clear_cache`.
+
+    Raises
+    ------
+    TypeError
+        If ``only_keys`` is a single string or not an iterable of strings.
     """
     if only_keys is None:
         _clear_tz_cache()
@@ -240,11 +270,12 @@ def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
 
 
 def available_timezones() -> set[str]:
-    """Gather the set of all available time zones.
+    """Gather the set of all available time zone IDs.
 
-    Each call to this function will recalculate the available time zone names
-    depending on the current time zone search path (see :func:`get_tzpath`),
-    and the presence of the ``tzdata`` package.
+    Each call recalculates the set from the current time zone search path
+    (see :func:`get_tzpath`) and the ``tzdata`` package, when it is installed.
+    The special entries ``posixrules`` and ``localtime`` are excluded, as are
+    the ``posix/`` and ``right/`` directories.
 
     Warning
     -------
@@ -253,14 +284,8 @@ def available_timezones() -> set[str]:
 
     Note
     ----
-
-    This function behaves similarly to :func:`zoneinfo.available_timezones`,
-    which means it ignores the "special" zones (e.g. posixrules, right/posix, etc.)
-
-    It should give the same result as :func:`zoneinfo.available_timezones`,
-    unless ``whenever`` was configured to use a different tzpath
-    using :func:`reset_tzpath`.
-
+    On the same time zone search path, the result equals
+    :func:`zoneinfo.available_timezones` minus ``localtime``.
     """
     zones: set[str] = set()
     # Get the zones from the tzdata package, if available
@@ -275,7 +300,7 @@ def available_timezones() -> set[str]:
         pass
 
     # Get the zones from the tzpath directories
-    for base in _get_tzpath():
+    for base in get_tzpath():
         zones.update(_find_all_tznames(base))
 
     # special files that shouldn't be included

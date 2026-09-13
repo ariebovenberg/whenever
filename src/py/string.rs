@@ -65,6 +65,13 @@ impl ToPy for &str {
     }
 }
 
+/// The Python `repr()` of a string, for quoting a value in a message.
+pub(crate) fn py_repr(s: &str) -> String {
+    s.to_py()
+        .or_clear()
+        .map_or_else(|| format!("{s:?}"), |obj| obj.to_string())
+}
+
 impl ToPy for &CStr {
     fn to_py(self) -> PyReturn {
         unsafe { PyUnicode_FromString(self.as_ptr()) }.own()

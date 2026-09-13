@@ -68,6 +68,38 @@ def deprecated(call: Callable[[], Any], /, *, match: str) -> Any:
             ),
         ),
         (
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").subtract(  # type: ignore[deprecated]
+                hours=1, disambiguate="raise"
+            ),
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").subtract(
+                hours=1, disambiguation="raise"
+            ),
+        ),
+        (
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").replace(  # type: ignore[deprecated]
+                hour=1, disambiguate="raise"
+            ),
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").replace(
+                hour=1, disambiguation="raise"
+            ),
+        ),
+        (
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").replace_date(  # type: ignore[deprecated]
+                Date(2020, 8, 16), disambiguate="raise"
+            ),
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").replace_date(
+                Date(2020, 8, 16), disambiguation="raise"
+            ),
+        ),
+        (
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").replace_time(  # type: ignore[deprecated]
+                Time(1), disambiguate="raise"
+            ),
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").replace_time(
+                Time(1), disambiguation="raise"
+            ),
+        ),
+        (
             lambda: PlainDateTime(2020, 8, 15).assume_tz(  # type: ignore[deprecated]
                 "UTC", disambiguate="raise"
             ),
@@ -81,6 +113,121 @@ def test_disambiguate_keyword(old, new):
     assert deprecated(old, match="'disambiguate' is deprecated").strict_eq(
         new()
     )
+
+
+class TestDeprecatedSpellingOnRaise:
+    """A call that raises emits no warning: the deprecated spelling is
+    validated with the rest of the arguments, and warns only on success.
+    """
+
+    @pytest.mark.parametrize(
+        "call, exc",
+        [
+            (
+                lambda: ZonedDateTime(
+                    2023, 6, 1, tz="Foo/Bar", disambiguate="raise"
+                ),  # type: ignore[deprecated]
+                TimeZoneNotFoundError,
+            ),
+            (
+                lambda: ZonedDateTime(
+                    2023, 13, 1, tz="Europe/Amsterdam", disambiguate="raise"
+                ),  # type: ignore[deprecated]
+                ValueError,
+            ),
+            (
+                lambda: ZonedDateTime(2023, 6, 1, tz="UTC").replace(  # type: ignore[deprecated]
+                    tz="Foo/Bar", disambiguate="raise"
+                ),
+                TimeZoneNotFoundError,
+            ),
+            (
+                lambda: ZonedDateTime(2023, 6, 1, tz="UTC").replace(  # type: ignore[deprecated]
+                    minute=99, disambiguate="raise"
+                ),
+                ValueError,
+            ),
+            (
+                lambda: ZonedDateTime(2023, 6, 1, tz="UTC").replace_date(  # type: ignore[call-overload]
+                    1, disambiguate="raise"
+                ),
+                (TypeError, AttributeError),
+            ),
+            (
+                lambda: ZonedDateTime(2023, 6, 1, tz="UTC").replace_time(  # type: ignore[call-overload]
+                    1, disambiguate="raise"
+                ),
+                (TypeError, AttributeError),
+            ),
+            (
+                lambda: ZonedDateTime(2023, 6, 1, tz="UTC").add(  # type: ignore[call-overload]
+                    hours=1, disambiguate="bogus"
+                ),
+                ValueError,
+            ),
+            (
+                lambda: ZonedDateTime(2023, 6, 1, tz="UTC").subtract(  # type: ignore[deprecated]
+                    years=99999, disambiguate="raise"
+                ),
+                ValueError,
+            ),
+            (
+                lambda: ZonedDateTime.parse_iso(
+                    "garbage", disambiguate="raise"
+                ),  # type: ignore[deprecated]
+                ValueError,
+            ),
+            (
+                lambda: PlainDateTime(2023, 6, 1).assume_tz(  # type: ignore[deprecated]
+                    "Foo/Bar", disambiguate="raise"
+                ),
+                TimeZoneNotFoundError,
+            ),
+            (
+                lambda: PlainDateTime(2023, 6, 1).assume_system_tz(  # type: ignore[deprecated, call-arg]
+                    disambiguate="bogus"
+                ),
+                ValueError,
+            ),
+            (
+                lambda: ZonedDateTime.from_system_tz(2023, 13, 1),  # type: ignore[deprecated]
+                ValueError,
+            ),
+            (
+                lambda: ZonedDateTime.from_system_tz(2023, 1, 1, foo=1),  # type: ignore[call-overload]
+                TypeError,
+            ),
+            (
+                lambda: ZonedDateTime.from_system_tz(  # type: ignore[call-overload]
+                    2023, 1, 1, disambiguation="raise", disambiguate="raise"
+                ),
+                TypeError,
+            ),
+            (
+                lambda: Date.parse("garbage", format="YYYY-MM-DD"),  # type: ignore[deprecated]
+                ValueError,
+            ),
+            (
+                lambda: ZonedDateTime.parse(  # type: ignore[deprecated]
+                    "2020-08-15 14:30+02:00[Foo/Bar]",
+                    format="YYYY-MM-DD HH:mmxxx'['VV']'",
+                ),
+                TimeZoneNotFoundError,
+            ),
+            (
+                lambda: ZonedDateTime(2020, 8, 15, tz="UTC").format_iso(  # type: ignore[call-overload]
+                    tz="bogus"
+                ),
+                ValueError,
+            ),
+        ],
+    )
+    def test_no_warning(self, call, exc):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with pytest.raises(exc):
+                call()
+        assert caught == []
 
 
 def test_both_disambiguation_keywords_rejected():
@@ -452,9 +599,10 @@ def test_system_timezone_wrappers():
     ).strict_eq(
         ZonedDateTime(2020, 8, 15, tz=SYSTEM_TZ, disambiguation="compatible")
     )
-    # The method warns before parsing its arguments, so the TypeError
-    # arrives after the deprecation warning.
-    with warns_here(WheneverDeprecationWarning, match=from_system_tz_msg):
+    # The arguments are validated before the method warns, so a call that
+    # raises emits no warning.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         with pytest.raises(
             TypeError,
             match="both 'disambiguation' and deprecated 'disambiguate'",
@@ -462,6 +610,7 @@ def test_system_timezone_wrappers():
             ZonedDateTime.from_system_tz(  # type: ignore[call-overload]
                 2020, 8, 15, disambiguation="raise", disambiguate="raise"
             )
+    assert caught == []
 
     plain = PlainDateTime(2020, 8, 15)
     assume_system_tz_msg = r"assume_system_tz\(\) is deprecated"
@@ -471,7 +620,7 @@ def test_system_timezone_wrappers():
         match=assume_system_tz_msg,
     ).strict_eq(assumed)
     with warns_here(WheneverDeprecationWarning) as caught:
-        actual = plain.assume_system_tz(disambiguate="raise")  # type: ignore[deprecated]
+        actual = plain.assume_system_tz(disambiguate="raise")  # type: ignore[deprecated, call-arg]
     assert actual.strict_eq(assumed)
     assert {str(w.message) for w in caught} == {
         "assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
@@ -489,7 +638,7 @@ def test_system_timezone_wrappers():
             TypeError,
             match="both 'disambiguation' and deprecated 'disambiguate'",
         ):
-            plain.assume_system_tz(  # type: ignore[deprecated]
+            plain.assume_system_tz(  # type: ignore[deprecated, call-arg]
                 disambiguation="raise", disambiguate="raise"
             )
     assert caught == []
@@ -744,7 +893,9 @@ class TestZonedTimestampFactoryWrapperArguments:
         with pytest.raises(ValueError, match="out of range"):
             method(-1_000_000_000_000_000_000 * factor, tz="America/Nuuk")
 
-        with pytest.raises(TypeError, match="tz must be a string"):
+        with pytest.raises(
+            TypeError, match="^tz must be a string or SYSTEM_TZ$"
+        ):
             method(0, tz=3)
 
         with pytest.raises(TypeError):

@@ -146,7 +146,7 @@ class TestAssumeTz:
             ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
         )
 
-    def test_ambiguous(self):
+    def test_repeated_time(self):
         d = PlainDateTime(2023, 10, 29, 2, 15)
 
         with pytest.raises(RepeatedTime, match="02:15.*Europe/Amsterdam"):
@@ -197,14 +197,16 @@ class TestAssumeTz:
         assert implicit.strict_eq(explicit)
 
     def test_wrong_type(self):
-        with pytest.raises(TypeError, match="tz must be a string"):
+        with pytest.raises(
+            TypeError, match="^tz must be a string or SYSTEM_TZ$"
+        ):
             PlainDateTime(2020, 8, 15).assume_tz(3)
 
     def test_unknown_tz_id(self):
         with pytest.raises(TimeZoneNotFoundError):
             PlainDateTime(2020, 8, 15).assume_tz("Europe/Nowhere")
 
-    def test_nonexistent(self):
+    def test_skipped_time(self):
         d = PlainDateTime(2023, 3, 26, 2, 15)
 
         with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
@@ -253,7 +255,7 @@ class TestAssumeSystemTz:
             AMS_TZ_POSIX,
         ],
     )
-    def test_ambiguous(self, tz):
+    def test_repeated_time(self, tz):
         with system_tz(tz):
             d = PlainDateTime(2023, 10, 29, 2, 15)
 
@@ -290,7 +292,7 @@ class TestAssumeSystemTz:
         ],
     )
     @suppress(NaiveArithmeticWarning)
-    def test_nonexistent(self, tz):
+    def test_skipped_time(self, tz):
         with system_tz(tz):
             d = PlainDateTime(2023, 3, 26, 2, 15)
 
@@ -476,7 +478,7 @@ def test_equality():
     assert d != d.assume_utc()  # type: ignore[comparison-overlap]
     assert d != d.assume_fixed_offset(hours(3))  # type: ignore[comparison-overlap]
 
-    # Ambiguity in system time zone doesn't affect equality
+    # A repeated local time in the system time zone doesn't affect equality
     with system_tz_ams():
         assert PlainDateTime(2023, 10, 29, 2, 15) == PlainDateTime(
             py_datetime(2023, 10, 29, 2, 15, fold=1)

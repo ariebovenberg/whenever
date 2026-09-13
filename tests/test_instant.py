@@ -690,7 +690,8 @@ class TestInitFromPy:
 
     @pytest.mark.parametrize("fold, hour", [(0, 0), (1, 1)])
     def test_fold(self, fold, hour):
-        # in a repeated hour, fold selects the occurrence through the offset
+        # within a repeated local time, `fold` selects the occurrence through
+        # the offset
         d = py_datetime(
             2023, 10, 29, 2, 30, fold=fold, tzinfo=ZoneInfo("Europe/Amsterdam")
         )
@@ -979,7 +980,7 @@ def test_to_tz():
     with pytest.raises(ValueError, match="out of range"):
         Instant.MAX.to_tz("Asia/Tokyo")
 
-    with pytest.raises(TypeError, match="tz must be a string"):
+    with pytest.raises(TypeError, match="^tz must be a string or SYSTEM_TZ$"):
         d.to_tz(3)
 
     with pytest.raises(TimeZoneNotFoundError):

@@ -14,11 +14,12 @@ myst:
 `whenever` loads named time zones from the IANA time zone database installed on
 your system. It uses the configured **time zone search path** (see
 {func}`~whenever.get_tzpath`) first and falls back to the `tzdata` package
-when it is installed.
+when it is installed. {func}`~whenever.available_timezones` lists the time
+zone IDs those sources provide.
 
-## Time zone identifiers
+## Time zone IDs
 
-IANA time zone identifiers are matched case-insensitively for ASCII letters.
+Time zone IDs are matched case-insensitively for ASCII letters.
 After a successful lookup, `whenever` uses the spelling from the selected
 database in `tz_id`, representations, ISO output, and pickles:
 
@@ -27,17 +28,30 @@ database in `tz_id`, representations, ISO output, and pickles:
 'Europe/Amsterdam'
 ```
 
-This normalizes spelling only; it does not replace aliases with primary zones.
+This normalizes spelling only; aliases are not replaced by the IDs they
+link to.
 For example, `us/eastern` becomes `US/Eastern`, not `America/New_York`.
-An identifier that no configured source knows raises
+An ID that no configured source knows raises
 {exc}`~whenever.TimeZoneNotFoundError`, a `ValueError`, so the same
-`except ValueError` that catches a malformed string catches an unknown zone.
+`except ValueError` that catches a malformed string catches an unknown ID.
+
+## Transitions
+
+{meth}`~whenever.ZonedDateTime.next_transition` and
+{meth}`~whenever.ZonedDateTime.prev_transition` step to the nearest change of
+the time zone's rules, returned as the first instant at which the new rules
+apply. A change of the UTC offset, the DST offset, or the abbreviation counts.
+They return `None` where nothing changes any more: UTC and fixed offsets, and
+before the first recorded change; a time zone with daylight saving has a next
+transition for every year through 9999. The step is strict, so a datetime
+sitting on a transition is not its own previous transition. The methods hang
+off a datetime because `whenever` has no time zone type of its own.
 
 ## Choosing time zone data
 
 Use {func}`~whenever.reset_tzpath` to replace the search path with one or more
 absolute directories. Sources are searched in order, so the first source with
-a matching identifier wins.
+a matching ID wins.
 
 ```python
 from whenever import reset_tzpath
@@ -46,9 +60,9 @@ reset_tzpath(["/srv/app/tzdata", "/usr/share/zoneinfo"])
 ```
 
 The configured directories are trusted database locations. A database that
-contains identifiers differing only by ASCII case is unsupported; the selected
+contains IDs differing only by ASCII case is unsupported; the selected
 entry is unspecified. Lookup examines only the directory components of the
-requested identifier rather than indexing the complete database.
+requested ID rather than indexing the complete database.
 
 The initial search path comes from the `PYTHONTZPATH` environment variable,
 falling back to the interpreter's compiled-in `TZPATH`: the same sources
@@ -71,6 +85,6 @@ reset_tzpath(["/srv/app/tzdata"])
 clear_tzcache()
 ```
 
-`clear_tzcache(only_keys=[...])` also matches identifiers case-insensitively.
+`clear_tzcache(only_keys=[...])` also matches IDs case-insensitively.
 Clearing a cache can make otherwise identical time zone IDs refer to different
 database versions, so use it only when updating time zone data deliberately.

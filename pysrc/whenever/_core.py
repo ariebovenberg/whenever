@@ -6,7 +6,6 @@ try:  # pragma: no cover
     from ._whenever import (
         _clear_tz_cache as _clear_tz_cache,
         _clear_tz_cache_by_keys as _clear_tz_cache_by_keys,
-        _get_tzpath as _get_tzpath,
         _patch_time_frozen as _patch_time_frozen,
         _patch_time_keep_ticking as _patch_time_keep_ticking,
         _set_tzpath as _set_tzpath,
@@ -45,7 +44,6 @@ except ModuleNotFoundError as e:
         _unpkl_time,
         _unpkl_utc,
         _unpkl_zoned,
-        get_tzpath as _get_tzpath,
     )
 
     _EXTENSION_LOADED = False

@@ -75,6 +75,138 @@ else:
 TEST_DIR = Path(__file__).parent
 
 
+INVALID_TZ_IDS = [
+    "America/Nowhere",  # unknown
+    "/America/New_York",  # slash at the beginning
+    "America/New_York/",  # slash at the end
+    "America/New\0York",  # null byte
+    "America\\New_York",  # backslash
+    "../America/New_York/",  # relative path
+    "America/New_York/..",  # other dots
+    "America//New_York",  # double slash
+    "./America/New_York",  # start with dot
+    "America/../America/New_York",  # not normalized
+    "America/./America/New_York",  # not normalized
+    "+VERSION",  # in tz path, but not a tzif file
+    "leapseconds",  # in tz path, but not a tzif file
+    "Europe",  # a directory
+    "__init__.py",  # file in tzdata package
+    "",
+    ".",
+    "/",
+    " ",
+    "Foo" * 100,  # too long
+    # invalid file path characters
+    "foo:bar",
+    "bla*",
+    "*",
+    "**",
+    ":",
+    "&",
+    # non-ascii
+    "🇨🇦",
+    "America/Bogotá",
+    # invalid start characters
+    "+B",
+    "+",
+    "-",
+    "-foo",
+]
+
+# Every entry point that takes a time zone ID resolves it through one
+# function, so the same string gets the same rejection everywhere.
+TZ_ENTRY_POINTS = [
+    pytest.param(
+        lambda tz: ZonedDateTime(2020, 8, 15, 5, 12, tz=tz), id="constructor"
+    ),
+    pytest.param(lambda tz: ZonedDateTime.now(tz), id="now"),
+    pytest.param(
+        lambda tz: ZonedDateTime(2020, 8, 15, tz="UTC").replace(tz=tz),
+        id="replace",
+    ),
+    pytest.param(
+        lambda tz: ZonedDateTime(2020, 8, 15, tz="UTC").to_tz(tz), id="to_tz"
+    ),
+    pytest.param(
+        lambda tz: Instant.from_utc(2020, 8, 15).to_tz(tz), id="Instant.to_tz"
+    ),
+    pytest.param(
+        lambda tz: OffsetDateTime(2020, 8, 15, offset=hours(2)).to_tz(tz),
+        id="OffsetDateTime.to_tz",
+    ),
+    pytest.param(
+        lambda tz: PlainDateTime(2020, 8, 15).assume_tz(tz),
+        id="PlainDateTime.assume_tz",
+    ),
+    pytest.param(
+        lambda tz: OffsetDateTime(2020, 8, 15, offset=hours(2)).assume_tz(tz),
+        id="OffsetDateTime.assume_tz",
+    ),
+]
+
+# The ISO parser reads the ID out of a string, so a non-ASCII one never
+# reaches the lookup: the string fails as text first. The pattern parser
+# scans `VV` with its own character class; test_format_parse.py covers it.
+TZ_PARSE_ENTRY_POINTS = [
+    pytest.param(
+        lambda tz: ZonedDateTime.parse_iso(f"2020-08-15T05:12:00+00:00[{tz}]"),
+        id="parse_iso",
+    ),
+    pytest.param(
+        lambda tz: ZonedDateTime(f"2020-08-15T05:12:00+00:00[{tz}]"),
+        id="constructor_iso",
+    ),
+]
+
+
+class TestTzIdRejection:
+    @pytest.mark.parametrize("call", TZ_ENTRY_POINTS)
+    @pytest.mark.parametrize("key", INVALID_TZ_IDS)
+    def test_not_found(self, call, key: str):
+        with pytest.raises(
+            TimeZoneNotFoundError,
+            match="^" + re.escape(f"time zone ID {key!r} not found") + "$",
+        ):
+            call(key)
+
+    @pytest.mark.parametrize("call", TZ_PARSE_ENTRY_POINTS)
+    @pytest.mark.parametrize("key", [k for k in INVALID_TZ_IDS if k.isascii()])
+    def test_not_found_in_parsed_string(self, call, key: str):
+        with pytest.raises(
+            TimeZoneNotFoundError,
+            match="^" + re.escape(f"time zone ID {key!r} not found") + "$",
+        ):
+            call(key)
+
+    @pytest.mark.parametrize("call", TZ_PARSE_ENTRY_POINTS)
+    @pytest.mark.parametrize(
+        "key", [k for k in INVALID_TZ_IDS if not k.isascii()]
+    )
+    def test_non_ascii_in_parsed_string_is_not_a_string_to_parse(
+        self, call, key: str
+    ):
+        with pytest.raises(ValueError, match="ASCII|invalid format") as exc:
+            call(key)
+        assert not isinstance(exc.value, TimeZoneNotFoundError)
+
+    @pytest.mark.parametrize("call", TZ_ENTRY_POINTS)
+    @pytest.mark.parametrize(
+        "bad",
+        [3, None, b"UTC", 3.5, ["UTC"], hours(34), type(SYSTEM_TZ)()],  # type: ignore[call-arg]
+    )
+    def test_non_string(self, call, bad):
+        with pytest.raises(
+            TypeError, match="^tz must be a string or SYSTEM_TZ$"
+        ):
+            call(bad)
+
+    def test_str_subclass_is_an_id(self):
+        class MyStr(str):
+            pass
+
+        assert ZonedDateTime.now(MyStr("Iceland")).tz_id == "Iceland"
+
+
 class TestInit:
     def test_unambiguous(self):
         zone = "America/New_York"
@@ -164,7 +296,9 @@ class TestInit:
         )
 
     def test_invalid_zone(self):
-        with pytest.raises(TypeError, match="tz must be a string"):
+        with pytest.raises(
+            TypeError, match="^tz must be a string or SYSTEM_TZ$"
+        ):
             ZonedDateTime(
                 2020,
                 8,
@@ -173,50 +307,6 @@ class TestInit:
                 12,
                 tz=hours(34),
             )
-
-    @pytest.mark.parametrize(
-        "key",
-        [
-            "America/Nowhere",  # non-existent
-            "/America/New_York",  # slash at the beginning
-            "America/New_York/",  # slash at the end
-            "America/New\0York",  # null byte
-            "America\\New_York",  # backslash
-            "../America/New_York/",  # relative path
-            "America/New_York/..",  # other dots
-            "America//New_York",  # double slash
-            "./America/New_York",  # start with dot
-            "America/../America/New_York",  # not normalized
-            "America/./America/New_York",  # not normalized
-            "+VERSION",  # in tz path, but not a tzif file
-            "leapseconds",  # in tz path, but not a tzif file
-            "Europe",  # a directory
-            "__init__.py",  # file in tzdata package
-            "",
-            ".",
-            "/",
-            " ",
-            "Foo" * 100,  # too long
-            # invalid file path characters
-            "foo:bar",
-            "bla*",
-            "*",
-            "**",
-            ":",
-            "&",
-            # non-ascii
-            "🇨🇦",
-            "America/Bogotá",
-            # invalid start characters
-            "+B",
-            "+",
-            "-",
-            "-foo",
-        ],
-    )
-    def test_invalid_key(self, key: str):
-        with pytest.raises(TimeZoneNotFoundError):
-            ZonedDateTime(2020, 8, 15, 5, 12, tz=key)
 
     @pytest.mark.order(-3)
     def test_timezone_id_casing(self, tmp_path: Path):
@@ -558,7 +648,7 @@ class TestInit:
         # exact_eq() works again
         assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc).strict_eq(d)
 
-        fold = ZonedDateTime(
+        repeated = ZonedDateTime(
             2023,
             11,
             5,
@@ -568,7 +658,7 @@ class TestInit:
             disambiguation="later",
         )
         clear_tzcache(only_keys=[nyc])
-        assert fold.replace(tz=nyc).strict_eq(fold)
+        assert repeated.replace(tz=nyc).strict_eq(repeated)
 
         # check exception handling invalid arguments
         with pytest.raises(TypeError, match="iterable"):
@@ -735,7 +825,7 @@ class TestInit:
             ZonedDateTime(2020, 8, 15, 5, 12, 60, tz="America/New_York")
 
 
-# NOTE: there's a separate test for changing the tzpath and
+# NOTE: there's a separate test for changing the search path and
 # its effect on available_timezones()
 # We run this test relatively late to allow the cache to be used more
 # organically throughout other tests instead of immediately loading everything
@@ -1387,7 +1477,7 @@ class TestEquality:
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
     )
-    def test_different_fold_ambiguity(self, tz: str):
+    def test_repeated_time_differs_by_offset(self, tz: str):
         d = create_zdt(2023, 10, 29, 2, 15, 30, tz=tz)
         d2 = d.replace(disambiguation="later")
         assert d != d2
@@ -1531,7 +1621,7 @@ class TestIsRepeated:
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
     )
-    def test_fold(self, tz: str):
+    def test_repeated_time(self, tz: str):
         d = create_zdt(
             2023,
             10,
@@ -1551,9 +1641,9 @@ class TestIsRepeated:
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
     )
-    def test_gap(self, tz: str):
+    def test_skipped_time(self, tz: str):
         d = create_zdt(2023, 3, 26, 2, 15, 30, tz=tz)
-        # skipped times are shifted into non-ambiguous times
+        # skipped local times are shifted into unambiguous ones
         assert not d.is_repeated()
 
         # same for different disambiguation
@@ -1578,6 +1668,8 @@ class TestNextTransition:
         assert t.strict_eq(
             create_zdt(2023, 10, 29, 2, tz=tz, disambiguation="later")
         )
+        # the same time zone: None for the POSIX and raw-file ones
+        assert t.tz_id == d.tz_id
 
     @pytest.mark.parametrize(
         "tz",
@@ -1594,9 +1686,27 @@ class TestNextTransition:
         d = create_zdt(2024, 6, 15, 12, tz="Etc/UTC")
         assert d.next_transition() is None
 
+    def test_fixed_offset_returns_none(self):
+        d = create_zdt(2024, 6, 15, 12, tz="Etc/GMT+2")
+        assert d.next_transition() is None
+
     def test_no_dst_returns_none(self):
         d = create_zdt(2024, 6, 15, 12, tz="Asia/Kolkata")
         assert d.next_transition() is None
+
+    def test_same_offset_london_1968(self):
+        # British Standard Time: the offset stays +01:00, but the rules
+        # change from summer time to standard time, so it is a transition
+        d = ZonedDateTime(1968, 6, 1, tz="Europe/London")
+        t = d.next_transition()
+        assert t is not None
+        assert t.strict_eq(ZonedDateTime(1968, 10, 27, tz="Europe/London"))
+        assert t.offset == d.offset == hours(1)
+        assert t.dst_offset() == TimeDelta.ZERO
+        assert t.tz_abbrev() == "BST"
+        before = t.subtract(nanoseconds=1)
+        assert before.dst_offset() == hours(1)
+        assert before.tz_abbrev() == "BST"
 
     def test_chain_nyc(self):
         d = ZonedDateTime(2024, 1, 1, tz="America/New_York")
@@ -1695,20 +1805,13 @@ class TestNextTransition:
         )
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_iqaluit_none_before_first_transition(self):
-        """No transition before the very first one."""
-        d = ZonedDateTime(1940, 1, 1, tz="America/Iqaluit")
-        t = d.prev_transition()
-        assert t is None
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
     def test_palmer_before_first_transition(self):
         """Antarctica/Palmer: first transition at 1965-01-01 is directly into DST."""
         d = ZonedDateTime(1963, 1, 1, tz="Antarctica/Palmer")
         t = d.next_transition()
         assert t is not None
         # First transition: 1965-01-01 00:00:00 UTC → -03:00 (DST)
-        # This is a fall-back; local time 21:00 is ambiguous, use "later"
+        # This is a fall-back; local time 21:00 is repeated, use "later"
         assert t.strict_eq(
             ZonedDateTime(
                 1964,
@@ -1737,17 +1840,6 @@ class TestNextTransition:
         # 2051-03-26 01:00:00 UTC → 2051-03-26T03:00:00+02:00
         assert t.strict_eq(create_zdt(2051, 3, 26, 3, tz=tz))
 
-    @pytest.mark.parametrize(
-        "tz",
-        [AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_prev_transition_after_posix_boundary(self, tz: str):
-        """prev_transition in POSIX territory returns correct spring-forward."""
-        d = create_zdt(2051, 4, 1, tz=tz)
-        t = d.prev_transition()
-        assert t is not None
-        assert t.strict_eq(create_zdt(2051, 3, 26, 3, tz=tz))
-
 
 class TestPrevTransition:
     @pytest.mark.parametrize(
@@ -1760,6 +1852,8 @@ class TestPrevTransition:
         assert t is not None
         # Previous transition is spring-forward in March 2023
         assert t.strict_eq(create_zdt(2023, 3, 26, 3, tz=tz))
+        # the same time zone: None for the POSIX and raw-file ones
+        assert t.tz_id == d.tz_id
 
     @pytest.mark.parametrize(
         "tz",
@@ -1778,6 +1872,20 @@ class TestPrevTransition:
     def test_utc_returns_none(self):
         d = create_zdt(2024, 6, 15, 12, tz="Etc/UTC")
         assert d.prev_transition() is None
+
+    def test_fixed_offset_returns_none(self):
+        d = create_zdt(2024, 6, 15, 12, tz="Etc/GMT+2")
+        assert d.prev_transition() is None
+
+    def test_same_offset_london_1968(self):
+        # the same-offset transition next_transition() finds from June 1968
+        d = ZonedDateTime(1969, 6, 1, tz="Europe/London")
+        t = d.prev_transition()
+        assert t is not None
+        assert t.strict_eq(ZonedDateTime(1968, 10, 27, tz="Europe/London"))
+        assert t.offset == hours(1)
+        assert t.dst_offset() == TimeDelta.ZERO
+        assert t.tz_abbrev() == "BST"
 
     def test_kolkata_historical(self):
         # Asia/Kolkata has no transitions in modern times
@@ -1867,6 +1975,13 @@ class TestPrevTransition:
     # -- First transition is into DST --
 
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
+    def test_iqaluit_none_before_first_transition(self):
+        """No transition before the very first one."""
+        d = ZonedDateTime(1940, 1, 1, tz="America/Iqaluit")
+        t = d.prev_transition()
+        assert t is None
+
+    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
     def test_iqaluit_from_first_dst_period(self):
         """During the first DST period, prev_transition returns the entry into it."""
         d = ZonedDateTime(1943, 1, 1, tz="America/Iqaluit")
@@ -1896,17 +2011,6 @@ class TestPrevTransition:
         )
 
     # -- Array-to-POSIX TZ string handoff --
-
-    @pytest.mark.parametrize(
-        "tz",
-        [AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_next_transition_after_posix_boundary(self, tz: str):
-        """next_transition crossing the POSIX TZ boundary returns correct result."""
-        d = create_zdt(2050, 12, 1, tz=tz)
-        t = d.next_transition()
-        assert t is not None
-        assert t.strict_eq(create_zdt(2051, 3, 26, 3, tz=tz))
 
     @pytest.mark.parametrize(
         "tz",
@@ -1949,7 +2053,7 @@ class TestDstOffset:
         d = create_zdt(2020, 8, 15, 12, tz="Asia/Tokyo")
         assert d.dst_offset() == TimeDelta()
 
-    def test_fold_earlier(self):
+    def test_repeated_earlier(self):
         d = create_zdt(
             2023,
             10,
@@ -1961,7 +2065,7 @@ class TestDstOffset:
         )
         assert d.dst_offset() == TimeDelta(hours=1)
 
-    def test_fold_later(self):
+    def test_repeated_later(self):
         d = create_zdt(
             2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguation="later"
         )
@@ -2020,7 +2124,7 @@ class TestDstOffset:
     def test_dublin_transition_autumn(self):
         """Around fall-back in Dublin (last Sun of October)"""
         zi = ZoneInfo("Europe/Dublin")
-        # Before transition (earlier fold): 2020-10-25 1:30 IST
+        # Before transition (earlier occurrence): 2020-10-25 1:30 IST
         d_earlier = create_zdt(
             2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguation="earlier"
         )
@@ -2028,7 +2132,7 @@ class TestDstOffset:
         assert d_earlier.dst_offset() == TimeDelta(
             py_earlier.dst()  # type: ignore[arg-type]
         )
-        # After transition (later fold): 2020-10-25 1:30 GMT
+        # After transition (later occurrence): 2020-10-25 1:30 GMT
         d_later = create_zdt(
             2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguation="later"
         )
@@ -2095,7 +2199,7 @@ class TestDstOffset:
     def test_sydney_transition_end(self):
         """DST ends first Sun of April in Sydney"""
         zi = ZoneInfo("Australia/Sydney")
-        # Earlier fold: 2020-04-05 2:30 AEDT
+        # Earlier occurrence: 2020-04-05 2:30 AEDT
         d_earlier = create_zdt(
             2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguation="earlier"
         )
@@ -2103,7 +2207,7 @@ class TestDstOffset:
         assert d_earlier.dst_offset() == TimeDelta(
             py_earlier.dst()  # type: ignore[arg-type]
         )
-        # Later fold: 2020-04-05 2:30 AEST
+        # Later occurrence: 2020-04-05 2:30 AEST
         d_later = create_zdt(
             2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguation="later"
         )
@@ -2216,7 +2320,7 @@ class TestDstOffset:
     def test_new_york_fall_back(self):
         """First Sunday of November: 2:00 AM falls back to 1:00 AM"""
         zi = ZoneInfo("America/New_York")
-        # Earlier fold: 2020-11-01 1:30 EDT
+        # Earlier occurrence: 2020-11-01 1:30 EDT
         d_earlier = create_zdt(
             2020, 11, 1, 1, 30, tz="America/New_York", disambiguation="earlier"
         )
@@ -2224,7 +2328,7 @@ class TestDstOffset:
         assert d_earlier.dst_offset() == TimeDelta(
             py_earlier.dst()  # type: ignore[arg-type]
         )
-        # Later fold: 2020-11-01 1:30 EST
+        # Later occurrence: 2020-11-01 1:30 EST
         d_later = create_zdt(
             2020, 11, 1, 1, 30, tz="America/New_York", disambiguation="later"
         )
@@ -2416,13 +2520,13 @@ class TestTzAbbrev:
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
     def test_dublin_transition_autumn(self):
         zi = ZoneInfo("Europe/Dublin")
-        # Earlier fold: 2020-10-25 1:30 IST
+        # Earlier occurrence: 2020-10-25 1:30 IST
         d_earlier = create_zdt(
             2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguation="earlier"
         )
         py_earlier = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=0)
         assert d_earlier.tz_abbrev() == py_earlier.tzname()
-        # Later fold: 2020-10-25 1:30 GMT
+        # Later occurrence: 2020-10-25 1:30 GMT
         d_later = create_zdt(
             2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguation="later"
         )
@@ -2471,13 +2575,13 @@ class TestTzAbbrev:
     @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
     def test_sydney_transition_end(self):
         zi = ZoneInfo("Australia/Sydney")
-        # Earlier fold: 2020-04-05 2:30 AEDT
+        # Earlier occurrence: 2020-04-05 2:30 AEDT
         d_earlier = create_zdt(
             2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguation="earlier"
         )
         py_earlier = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=0)
         assert d_earlier.tz_abbrev() == py_earlier.tzname()
-        # Later fold: 2020-04-05 2:30 AEST
+        # Later occurrence: 2020-04-05 2:30 AEST
         d_later = create_zdt(
             2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguation="later"
         )
@@ -2576,13 +2680,13 @@ class TestTzAbbrev:
 
     def test_new_york_fall_back(self):
         zi = ZoneInfo("America/New_York")
-        # Earlier fold: 2020-11-01 1:30 EDT
+        # Earlier occurrence: 2020-11-01 1:30 EDT
         d_earlier = create_zdt(
             2020, 11, 1, 1, 30, tz="America/New_York", disambiguation="earlier"
         )
         py_earlier = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=0)
         assert d_earlier.tz_abbrev() == py_earlier.tzname()
-        # Later fold: 2020-11-01 1:30 EST
+        # Later occurrence: 2020-11-01 1:30 EST
         d_later = create_zdt(
             2020, 11, 1, 1, 30, tz="America/New_York", disambiguation="later"
         )
@@ -2831,7 +2935,7 @@ def test_to_tz(ams_tz: str):
     with pytest.raises(ValueError, match="out of range"):
         big_zdt.to_tz("Asia/Tokyo")
 
-    with pytest.raises(TypeError, match="tz must be a string"):
+    with pytest.raises(TypeError, match="^tz must be a string or SYSTEM_TZ$"):
         nyc.to_tz(3)
 
     with pytest.raises(TimeZoneNotFoundError):
@@ -3334,7 +3438,6 @@ class TestParseIso:
             # bracket problems
             "2020-08-15T12:08:30+02:00[Europe/Amsterdam",
             "2020-08-15T12:08:30+02:00[Europe][Amsterdam]",
-            "2020-08-15T12:08:30+02:00[Europe/ Amsterdam]",
             "2020-08-15T12:08:30+02:00Europe/Amsterdam]",
             "2023-10-29T02:15:30+02:00(Europe/Amsterdam)",
             # separator problems
@@ -3396,9 +3499,27 @@ class TestParseIso:
         with pytest.raises(TimeZoneNotFoundError):
             ZonedDateTime.parse_iso("2020-08-15T12:08:30Z[X]")
 
-        with pytest.raises(ValueError, match="invalid format"):
+        # a malformed ID is one that names no time zone, not a format error
+        with pytest.raises(TimeZoneNotFoundError, match="not found"):
             ZonedDateTime.parse_iso(f"2023-10-29T02:15:30+02:00[{'X' * 9999}]")
 
+        with pytest.raises(
+            TimeZoneNotFoundError,
+            match="^time zone ID 'Europe//Amsterdam' not found$",
+        ):
+            ZonedDateTime.parse_iso(
+                "2023-10-29T02:15:30+02:00[Europe//Amsterdam]"
+            )
+
+        with pytest.raises(
+            TimeZoneNotFoundError,
+            match=r"^time zone ID 'Europe/Amster\\x00dam' not found$",
+        ):
+            ZonedDateTime.parse_iso(
+                "2023-10-29T02:15:30+02:00[Europe/Amster\x00dam]"
+            )
+
+        # a non-ASCII string is not an ISO string, so no ID is read from it
         with pytest.raises(ValueError, match="invalid format"):
             ZonedDateTime.parse_iso(
                 f"2023-10-29T02:15:30+02:00[{chr(1600)}]",
@@ -3428,10 +3549,10 @@ class TestParseIso:
         ):
             ZonedDateTime.parse_iso("2023-05-01T12:00+03:00[Europe/Amsterdam]")
 
-        # the ID is echoed back as written, not canonicalized
+        # the message quotes the database spelling, not the ID as written
         with pytest.raises(
             InvalidOffsetError,
-            match="offset \\+03:00 does not match time zone 'europe/amsterdam'",
+            match="offset \\+03:00 does not match time zone 'Europe/Amsterdam'",
         ):
             ZonedDateTime.parse_iso("2023-05-01T12:00+03:00[europe/amsterdam]")
 
@@ -3523,7 +3644,7 @@ class TestTimestamp:
             == 1_597_493_310
         )
 
-        ambiguous = ZonedDateTime(
+        repeated = ZonedDateTime(
             2023,
             10,
             29,
@@ -3534,8 +3655,8 @@ class TestTimestamp:
             disambiguation="earlier",
         )
         assert (
-            ambiguous.timestamp()
-            != ambiguous.replace(disambiguation="later").timestamp()
+            repeated.timestamp()
+            != repeated.replace(disambiguation="later").timestamp()
         )
 
 
@@ -3614,7 +3735,7 @@ class TestComparison:
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
     )
-    def test_same_timezone_ambiguity(self, tz: str):
+    def test_same_timezone_repeated_time(self, tz: str):
         d = create_zdt(
             2023,
             10,
@@ -3750,7 +3871,7 @@ class TestComparison:
 
 
 class TestToStdlib:
-    def test_iana_tz_id(self):
+    def test_tz_id(self):
         d = ZonedDateTime(
             2020,
             8,
@@ -3775,7 +3896,7 @@ class TestToStdlib:
         # This isn't checked by the comparison above!
         assert py_dt.tzinfo is ZoneInfo("Europe/Amsterdam")
 
-        # ambiguous time
+        # a repeated local time
         d2 = ZonedDateTime(
             2023,
             10,
@@ -4061,6 +4182,15 @@ class TestInitFromPy:
         ):
             ZonedDateTime(py_dt)
 
+    def test_zoneinfo_key_not_a_string(self):
+        with TEST_DIR.joinpath("tzif/Amsterdam.tzif").open("rb") as f:
+            tz = ZoneInfo.from_file(f, key=1)  # type: ignore[arg-type]
+
+        py_dt = py_datetime(2020, 8, 15, 12, 8, 30, tzinfo=tz)
+
+        with pytest.raises(TypeError, match="^ZoneInfo key must be a string$"):
+            ZonedDateTime(py_dt)
+
 
 class TestInitFromPyResolution:
     """The standard-library overload follows the same resolution flow as the
@@ -4260,7 +4390,7 @@ class TestExactEquality:
         assert a == c
         assert not a.strict_eq(c)
 
-    def test_same_timezone_ambiguity(self):
+    def test_same_timezone_repeated_time(self):
         a = ZonedDateTime(
             2023,
             10,
@@ -4275,7 +4405,7 @@ class TestExactEquality:
         assert a != b
         assert not a.strict_eq(b)
 
-    def test_same_ambiguous(self):
+    def test_same_repeated_time(self):
         a = ZonedDateTime(
             2023,
             10,
@@ -4629,6 +4759,42 @@ class TestAddSubtractTimeUnits:
             ItemizedDelta(days=1), disambiguation="compatible"
         ) == d.subtract(days=1, disambiguation="compatible")
 
+    @pytest.mark.parametrize("bad", [None, 1, "bogus"])
+    @pytest.mark.parametrize(
+        "shift",
+        [
+            pytest.param(
+                lambda m, bad: m(hours=1, disambiguation=bad), id="time_kwargs"
+            ),
+            pytest.param(
+                lambda m, bad: m(days=0, disambiguation=bad), id="zero_days"
+            ),
+            pytest.param(
+                lambda m, bad: m(hours(1), disambiguation=bad), id="TimeDelta"
+            ),
+            pytest.param(
+                lambda m, bad: m(ItemizedDelta(hours=1), disambiguation=bad),
+                id="ItemizedDelta",
+            ),
+            pytest.param(
+                lambda m, bad: m(
+                    ItemizedDateDelta(days=0), disambiguation=bad
+                ),
+                id="ItemizedDateDelta",
+            ),
+            pytest.param(lambda m, bad: m(disambiguation=bad), id="no_delta"),
+        ],
+    )
+    @pytest.mark.parametrize("name", ["add", "subtract"])
+    def test_invalid_disambiguation(self, name, shift, bad):
+        # validated on entry, whether or not the shift consults it
+        d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
+        with pytest.raises(
+            ValueError,
+            match="^" + re.escape(f"invalid disambiguation: {bad!r}") + "$",
+        ):
+            shift(getattr(d, name), bad)
+
     def test_invalid_arguments(self):
         d = ZonedDateTime(2020, 8, 15, tz="UTC")
         with pytest.raises(TypeError):
@@ -4655,7 +4821,7 @@ class TestAddSubtractTimeUnits:
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
     )
-    def test_ambiguous_plus_zero(self, tz: str):
+    def test_repeated_time_plus_zero(self, tz: str):
         d = create_zdt(
             2023,
             10,
@@ -6014,7 +6180,7 @@ class TestPickle:
         assert len(dumped) <= len(pickle.dumps(d.to_stdlib()))
         assert pickle.loads(pickle.dumps(d)).strict_eq(d)
 
-    def test_ambiguous(self):
+    def test_repeated_time(self):
         d1 = ZonedDateTime(
             2023,
             10,

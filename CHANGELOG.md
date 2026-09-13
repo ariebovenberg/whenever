@@ -98,10 +98,10 @@ deprecated interfaces are removed.
 
 **Added and improved**
 
-- IANA time zone identifiers now accept ASCII letter casing case-insensitively.
+- IANA time zone IDs now accept ASCII letter casing case-insensitively.
   Successful lookup uses the database spelling in time zone attributes,
   representations, ISO output, and pickles while preserving aliases such
-  as `US/Eastern`.
+  as `US/Eastern`. `clear_tzcache(only_keys=)` matches IDs the same way.
 - Added `ImplicitDisambiguationWarning` when a repeated or skipped local time
   is resolved without an explicit `disambiguation=` policy.
 - Added `offset_mismatch=` to `ZonedDateTime` parsing. A numeric offset is
@@ -139,12 +139,20 @@ deprecated interfaces are removed.
   0.10.4).
 - `Date()` emits `WheneverWarning` when given a `datetime`, whose time it
   drops; call `.date()` first to convert explicitly.
+- An empty `TZ` environment variable resolves to UTC, as the C library reads
+  it, instead of raising `TimeZoneNotFoundError`.
 - `ZonedDateTime()` accepts a `datetime` whose tzinfo is a `ZoneInfo`
   subclass. The messages for a non-`ZoneInfo` tzinfo and for a `ZoneInfo`
   without a key are reworded.
 - `strict_eq()` names the expected type when given another
   (`strict_eq() argument must be an Instant`), and a sub-second offset is
   rejected with `offset must be a whole number of seconds` everywhere.
+- A string that names no time zone raises `TimeZoneNotFoundError` (a
+  `ValueError`) wherever it is given: a malformed time zone ID inside an ISO
+  string now raises it like an unknown one, instead of the generic format
+  error. Every "not found" message quotes the ID in `repr` form, and the
+  `TypeError` for a non-string time zone reads `tz must be a string or
+  SYSTEM_TZ`.
 - The deprecated `from_timestamp*()` factories of `OffsetDateTime` and
   `ZonedDateTime` and `assume_system_tz()` validate their arguments before
   they warn, so a call that raises emits no warning. A local result outside
@@ -155,6 +163,11 @@ deprecated interfaces are removed.
 
 - `PlainDateTime()` no longer carries the `fold` of its `datetime` argument
   into `to_stdlib()` in the pure-Python backend.
+- The pure-Python build accepted an invalid `disambiguation=` on `add()`,
+  `subtract()`, and `parse()` when the policy was not consulted; it is now
+  validated on entry, as in the Rust extension. The deprecated
+  `disambiguate=` and `format=` spellings no longer warn on a call that
+  raises.
 - `TimeDelta()` rejects a `timedelta` above `TimeDelta.MAX` by less than a
   second in the Rust extension too.
 - Methods that take keyword arguments have a `__doc__` when bound to an
@@ -202,6 +215,9 @@ deprecated interfaces are removed.
   previously had three different messages depending on type and version.
 - `clear_tzcache(only_keys="...")` now raises `TypeError` instead of iterating
   the string's characters and clearing nothing.
+- `reset_tzpath()` given an iterator set an empty search path, and the
+  pure-Python build accepted `bytes` entries. Both now raise or work as the
+  documentation says; the search path messages are the same on both backends.
 - Parsing an out-of-range timestamp now consistently raises `ValueError`
   or `OverflowError` on all platforms.
 - `ZonedDateTime.round()` and `day_length()` now handle daylight-saving gaps
