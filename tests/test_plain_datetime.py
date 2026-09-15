@@ -727,6 +727,62 @@ class TestShiftMethods:
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.add(nanoseconds=1 << 127 - 1)
 
+    @pytest.mark.parametrize(
+        ("call", "exc", "message"),
+        [
+            (
+                lambda d: d.add(hours="x"),
+                TypeError,
+                "hours must be an integer or float",
+            ),
+            (
+                lambda d: d.add(hours=1, days=1.5),
+                TypeError,
+                "days must be an integer",
+            ),
+            (
+                lambda d: d.subtract(hours=float("nan")),
+                ValueError,
+                "value or calculation out of range",
+            ),
+            (
+                lambda d: d.add(hours=1, bogus=1),
+                TypeError,
+                "add() got an unexpected keyword argument 'bogus'",
+            ),
+            (
+                lambda d: d.add(hours(1), hours=1),
+                TypeError,
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda d: d.subtract(hours(1), hours(1)),
+                TypeError,
+                "subtract() takes at most one positional argument (2 given)",
+            ),
+            (
+                lambda d: d.add(4),
+                TypeError,
+                "add() argument must be a TimeDelta, ItemizedDelta, or ItemizedDateDelta",
+            ),
+        ],
+    )
+    def test_rejected_argument_does_not_warn(self, call, exc, message):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
+            call(d)
+
+    def test_operator_out_of_range(self):
+        with suppress(NaiveArithmeticWarning):
+            with pytest.raises(
+                ValueError, match="^value or calculation out of range$"
+            ):
+                PlainDateTime.MAX + hours(1)
+            with pytest.raises(
+                ValueError, match="^value or calculation out of range$"
+            ):
+                PlainDateTime.MIN - hours(1)
+
     @given(
         years=integers(),
         months=integers(),
@@ -778,6 +834,37 @@ class TestNaiveArithmeticOkKwarg:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             d.difference(other, naive_arithmetic_ok=True)
+        with warns_here(NaiveArithmeticWarning) as w:
+            d.difference(other)
+        assert len(w) == 1
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda d, **kw: d.add(hours=1, **kw),
+            lambda d, **kw: d.subtract(hours=1, **kw),
+            lambda d, **kw: d.add(hours(1), **kw),
+            lambda d, **kw: d.subtract(hours(1), **kw),
+            lambda d, **kw: d.add(ItemizedDelta(hours=1), **kw),
+            lambda d, **kw: d.add(months=1, hours=1, **kw),
+        ],
+    )
+    def test_every_exact_form_warns_once(self, call):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        with warns_here(NaiveArithmeticWarning) as w:
+            call(d)
+        assert len(w) == 1
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            call(d, naive_arithmetic_ok=True)
+
+    def test_read_by_truthiness(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.add(hours=1, naive_arithmetic_ok=1)  # type: ignore[call-overload]
+        with warns_here(NaiveArithmeticWarning):
+            d.add(hours=1, naive_arithmetic_ok="")  # type: ignore[call-overload]
 
     def test_since(self):
         a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
@@ -831,6 +918,11 @@ class TestShiftOperators:
         with warns_here(NaiveArithmeticWarning) as w:
             d + TimeDelta(hours=48, seconds=5, nanoseconds=3)
         assert len(w) == 1
+        assert (
+            "pass `naive_arithmetic_ok=True` to `add()`, `subtract()`, "
+            "`difference()`, `since()`, or `until()`; `+` and `-` take no "
+            "keyword" in str(w[0].message)
+        )
 
         # operators trigger warning (exactly one warning each)
         with warns_here(NaiveArithmeticWarning) as w:
@@ -871,6 +963,18 @@ class TestDifference:
 
         with pytest.raises(TypeError):
             d - 43  # type: ignore[operator]
+
+    @pytest.mark.parametrize(
+        "other",
+        [43, hours(1), OffsetDateTime(2020, 8, 15, offset=hours(1))],
+    )
+    def test_rejects_other_types_without_warning(self, other):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        with pytest.raises(
+            TypeError,
+            match="^difference\\(\\) argument must be a PlainDateTime$",
+        ):
+            d.difference(other)
 
 
 class TestRound:
@@ -1114,8 +1218,59 @@ class TestSince:
     def test_total_subsecond_units(self, unit, expected):
         a = PlainDateTime(2023, 2, 15)
         b = PlainDateTime(2023, 2, 14)
-        with suppress(NaiveArithmeticWarning):
+        with warns_here(NaiveArithmeticWarning):
             assert a.since(b, total=unit) == expected
+
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            (
+                {"in_units": ["hours"], "round_mode": "bad"},
+                "invalid round_mode: 'bad'",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": 0},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": -1},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": 1.5},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": None},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["hours", "nanoseconds"]},
+                "nanoseconds can only be specified together with seconds",
+            ),
+            ({"total": "foo"}, "invalid unit: 'foo'"),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["since", "until"])
+    def test_rejected_argument_does_not_warn(self, method, kwargs, message):
+        a = PlainDateTime(2023, 2, 15)
+        b = PlainDateTime(2023, 2, 14)
+        with pytest.raises(
+            (TypeError, ValueError), match="^" + re.escape(message) + "$"
+        ):
+            getattr(a, method)(b, **kwargs)
+
+    @pytest.mark.parametrize("method", ["since", "until"])
+    def test_rejects_other_types(self, method):
+        a = PlainDateTime(2023, 2, 15)
+        with pytest.raises(
+            TypeError,
+            match=f"^{method}\\(\\) argument must be a PlainDateTime$",
+        ):
+            getattr(a, method)(
+                OffsetDateTime(2023, 2, 14, offset=hours(1)),
+                total="hours",
+            )
 
     @pytest.mark.parametrize(
         "a, b, units, kwargs, expect",

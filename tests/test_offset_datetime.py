@@ -1030,7 +1030,10 @@ class TestAddSubtractOperators:
         assert "mathematically valid" in str(w[0].message)
         assert "stale relative to the source time zone" in str(w[0].message)
         assert "even after an exact shift" in str(w[0].message)
-        assert "stale_offset_ok=True" in str(w[0].message)
+        assert (
+            "pass `stale_offset_ok=True` to `add()` or `subtract()`; "
+            "`+` and `-` take no keyword" in str(w[0].message)
+        )
         assert "choosing-a-type.html#offset-datetime-guidance" in str(
             w[0].message
         )
@@ -1064,6 +1067,78 @@ class TestShiftMethods:
     def test_itemized_delta_arguments(self, delta, kwargs):
         d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(2))
         assert d.add(delta).strict_eq(d.add(**kwargs))
+
+    @pytest.mark.parametrize(
+        ("call", "exc", "message"),
+        [
+            (
+                lambda d: d.add(1),
+                TypeError,
+                "add() argument must be a TimeDelta, ItemizedDelta, or ItemizedDateDelta",
+            ),
+            (
+                lambda d: d.add(hours(1), days=1),
+                TypeError,
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda d: d.subtract(hours(1), hours(1)),
+                TypeError,
+                "subtract() takes at most one positional argument (2 given)",
+            ),
+            (
+                lambda d: d.add(bogus=1),
+                TypeError,
+                "add() got an unexpected keyword argument 'bogus'",
+            ),
+            (
+                lambda d: d.add(hours="x"),
+                TypeError,
+                "hours must be an integer or float",
+            ),
+            (
+                lambda d: d.add(years=1.5),
+                TypeError,
+                "years must be an integer",
+            ),
+            (
+                lambda d: d.subtract(weeks=float("nan")),
+                TypeError,
+                "weeks must be an integer",
+            ),
+            (
+                lambda d: d.add(days=1, hours=float("nan")),
+                ValueError,
+                "value or calculation out of range",
+            ),
+        ],
+    )
+    def test_rejected_argument_does_not_warn(self, call, exc, message):
+        # the suite escalates warnings, so a warning before the error would
+        # surface as the wrong exception type
+        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(4))
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
+            call(d)
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda d: d.add(),
+            lambda d: d.add(hours=1),
+            lambda d: d.subtract(hours=1),
+            lambda d: d.add(days=1),
+            lambda d: d.add(hours(1)),
+            lambda d: d.subtract(hours(1)),
+            lambda d: d.add(ItemizedDelta(hours=1)),
+            lambda d: d.add(ItemizedDateDelta(days=1)),
+            lambda d: d.subtract(ItemizedDateDelta(days=1)),
+        ],
+    )
+    def test_every_form_warns_at_the_caller(self, call):
+        d = OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(4))
+        with warns_here(StaleOffsetWarning) as w:
+            call(d)
+        assert len(w) == 1
 
     @suppress(StaleOffsetWarning)
     def test_invalid(self):
@@ -1099,6 +1174,16 @@ class TestShiftMethods:
             OffsetDateTime(9999, 12, 31, 19, 0, offset=hours(-4)).add(hours=2)
         with pytest.raises(ValueError, match="out of range"):
             OffsetDateTime(1, 1, 1, 5, 0, offset=hours(5)).subtract(hours=2)
+
+        # the operators say the same, not the stdlib's OverflowError
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            OffsetDateTime(9999, 12, 31, 23, offset=hours(0)) + hours(2)
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            OffsetDateTime(1, 1, 1, offset=hours(0)) - hours(2)
 
     @given(
         years=integers(),
@@ -1388,6 +1473,15 @@ class TestAssumeTz:
 
 
 class TestDifference:
+    def test_rejects_a_delta(self):
+        d = OffsetDateTime(2020, 8, 15, offset=hours(5))
+        with pytest.raises(
+            TypeError,
+            match="^difference\\(\\) argument must be an Instant, "
+            "OffsetDateTime, or ZonedDateTime$",
+        ):
+            d.difference(hours(1))  # type: ignore[arg-type]
+
     def test_offset(self):
         d = OffsetDateTime(
             2020, 8, 15, 23, 12, 9, nanosecond=3, offset=hours(5)
@@ -2279,7 +2373,8 @@ class TestRound:
 class TestSince:
     # The underlying calendar/exact diff logic is thoroughly tested
     # in PlainDateTime. Here we only test OffsetDateTime-specific behavior:
-    # offset validation, no-warning guarantees, and cross-offset exact diffs.
+    # offset validation, the stale-remainder warning, and cross-offset
+    # exact diffs.
 
     @pytest.mark.parametrize(
         "a, b, units, kwargs, expect",
@@ -2358,47 +2453,209 @@ class TestSince:
         kwargs: dict[str, Any],
         expect: ItemizedDelta,
     ):
-        assert a.since(b, in_units=units, **kwargs).strict_eq(expect)
+        assert a.since(
+            b, in_units=units, stale_offset_ok=True, **kwargs
+        ).strict_eq(expect)
 
-    def test_calendar_units_different_offset_raises(self):
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda a, b: a.since(b, in_units=["days"]),
+            lambda a, b: a.until(b, total="months"),
+            lambda a, b: a.since(b, total="weeks"),
+            lambda a, b: a.since(b, total="days", stale_offset_ok=True),
+        ],
+    )
+    def test_calendar_units_different_offset_raises(self, call):
         a = OffsetDateTime(2023, 10, 29, offset=hours(2))
         b = OffsetDateTime(2023, 10, 28, offset=hours(5))
-        with pytest.raises(ValueError, match="same offset"):
-            a.since(b, in_units=["days"])
-        with pytest.raises(ValueError, match="same offset"):
-            a.until(b, total="months")
+        with pytest.raises(
+            ValueError,
+            match="^calendar units require the same offset, "
+            "got \\+02:00 and \\+05:00$",
+        ):
+            call(a, b)
 
-    def test_no_warning(self):
-        """No warning should be emitted for OffsetDateTime since/until."""
-        import warnings
-
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda a, b: a.since(b, in_units=["days", "hours"]),
+            lambda a, b: a.until(b, in_units=["months", "days", "minutes"]),
+            lambda a, b: a.since(b, total="days"),
+            lambda a, b: a.until(b, total="years"),
+        ],
+    )
+    def test_exact_remainder_warns(self, call):
         a = OffsetDateTime(2023, 2, 15, hour=13, offset=hours(2))
         b = OffsetDateTime(2021, 7, 3, hour=1, offset=hours(2))
+        with warns_here(StaleOffsetWarning) as w:
+            call(a, b)
+        assert len(w) == 1
+        assert "pass `stale_offset_ok=True` to `since()` or `until()`" in str(
+            w[0].message
+        )
 
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda a, b: a.since(b, in_units=["years", "months", "days"]),
+            lambda a, b: a.since(b, in_units=["hours", "minutes"]),
+            lambda a, b: a.until(b, total="hours"),
+            lambda a, b: a.since(b, total="nanoseconds"),
+            lambda a, b: a.since(b, total="days", stale_offset_ok=True),
+            lambda a, b: a.until(
+                b, in_units=["days", "hours"], stale_offset_ok=True
+            ),
+        ],
+    )
+    def test_whole_units_and_exact_units_are_silent(self, call):
+        a = OffsetDateTime(2023, 2, 15, hour=13, offset=hours(2))
+        b = OffsetDateTime(2021, 7, 3, hour=1, offset=hours(2))
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            a.since(b, in_units=["hours", "minutes"])
-            a.until(b, total="hours")
+            call(a, b)
+
+    def test_remainder_is_computed_under_the_fixed_offset(self):
+        # In Europe/Amsterdam the same instants are 273 days and 23 hours
+        # apart: the transition on 2024-10-27 falls in the final partial day.
+        a = OffsetDateTime(2024, 10, 27, 12, offset=hours(1))
+        b = OffsetDateTime(2024, 1, 27, 14, offset=hours(1))
+        assert a.since(
+            b, in_units=["days", "hours"], stale_offset_ok=True
+        ).strict_eq(ItemizedDelta(days=273, hours=22))
+
+    @pytest.mark.parametrize("method", ["since", "until"])
+    @pytest.mark.parametrize(
+        "other",
+        [
+            ZonedDateTime(2021, 7, 3, tz="Europe/Amsterdam"),
+            Instant.from_utc(2021, 7, 3),
+            PlainDateTime(2021, 7, 3),
+            hours(1),
+        ],
+    )
+    def test_rejects_other_types(self, method, other):
+        a = OffsetDateTime(2023, 2, 15, offset=hours(2))
+        with pytest.raises(
+            TypeError,
+            match=f"^{method}\\(\\) argument must be an OffsetDateTime$",
+        ):
+            getattr(a, method)(other, total="hours")
+
+    def test_units_may_be_any_iterable(self):
+        a = OffsetDateTime(2023, 2, 15, offset=hours(2))
+        b = OffsetDateTime(2023, 2, 14, offset=hours(2))
+        assert a.since(b, in_units=iter(["hours"])) == ItemizedDelta(hours=24)  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            ({"in_units": []}, "units must not be empty"),
+            (
+                {"in_units": ["hours", "hours"]},
+                "units cannot contain duplicates",
+            ),
+            ({"in_units": ["foo"]}, "invalid unit: 'foo'"),
+            (
+                {"in_units": ["minutes", "hours"]},
+                "units must be in decreasing order of size",
+            ),
+            (
+                {"in_units": "hours"},
+                "units must be a sequence of strings, not a single string",
+            ),
+            (
+                {"in_units": ["hours", "nanoseconds"]},
+                "nanoseconds can only be specified together with seconds",
+            ),
+            (
+                {"in_units": ["hours"], "round_mode": "bad"},
+                "invalid round_mode: 'bad'",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": 0},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": -1},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": 1.5},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": "1"},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": None},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": 2**63},
+                "value or calculation out of range",
+            ),
+            ({"total": "foo"}, "invalid unit: 'foo'"),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["since", "until"])
+    def test_invalid_units_and_rounding(self, method, kwargs, message):
+        a = OffsetDateTime(2023, 2, 15, offset=hours(2))
+        b = OffsetDateTime(2023, 2, 14, offset=hours(2))
+        with pytest.raises(
+            (TypeError, ValueError), match="^" + re.escape(message) + "$"
+        ):
+            getattr(a, method)(b, **kwargs)
 
     def test_until_is_inverse(self):
         a = OffsetDateTime(2023, 2, 15, hour=3, offset=hours(-5))
         b = OffsetDateTime(2021, 7, 3, offset=hours(-5))
         assert a.since(
-            b, in_units=["years", "months", "days", "hours"]
-        ).strict_eq(b.until(a, in_units=["years", "months", "days", "hours"]))
+            b,
+            in_units=["years", "months", "days", "hours"],
+            stale_offset_ok=True,
+        ).strict_eq(
+            b.until(
+                a,
+                in_units=["years", "months", "days", "hours"],
+                stale_offset_ok=True,
+            )
+        )
 
     def test_single_unit_returns_float(self):
         a = OffsetDateTime(2025, 3, 15, offset=hours(1))
         b = OffsetDateTime(2023, 3, 15, offset=hours(1))
-        # OffsetDateTime.since() never warns — calendar and exact units alike
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
+        with warns_here(StaleOffsetWarning):
             result = a.since(b, total="years")
         assert isinstance(result, float)
         assert result == 2.0
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            a.since(b, total="hours")
+            assert a.since(b, total="hours") == 17_544.0
+
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("months", 1 / 28),
+            ("weeks", 1 / 7),
+            ("days", 1.0),
+            ("minutes", 1440.0),
+            ("seconds", 86_400.0),
+        ],
+    )
+    def test_total_per_unit(self, unit, expected):
+        a = OffsetDateTime(2023, 2, 15, 9, offset=hours(9))
+        b = OffsetDateTime(2023, 2, 14, 9, offset=hours(9))
+        assert a.since(b, total=unit, stale_offset_ok=True) == pytest.approx(
+            expected
+        )
+
+    def test_exact_total_across_offsets(self):
+        a = OffsetDateTime(2024, 6, 1, 14, offset=hours(2))
+        b = OffsetDateTime(2024, 6, 1, 10, offset=hours(0))
+        assert a.since(b, total="hours") == 2.0
+        assert b.until(a, total="minutes") == 120.0
 
     def test_very_large_increment(self):
         a = OffsetDateTime(2023, 2, 15, offset=hours(9))
@@ -3038,6 +3295,22 @@ class TestStaleOffsetOkKwarg:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             odt.subtract(hours=1, stale_offset_ok=True)
+
+    def test_since_until(self):
+        a = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
+        b = OffsetDateTime(2024, 1, 15, 14, offset=hours(5))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            a.since(b, total="months", stale_offset_ok=True)
+            a.until(b, in_units=["months", "hours"], stale_offset_ok=True)
+
+    def test_read_by_truthiness(self):
+        odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            odt.add(hours=1, stale_offset_ok=1)  # type: ignore[call-overload]
+        with warns_here(StaleOffsetWarning):
+            odt.add(hours=1, stale_offset_ok="")  # type: ignore[call-overload]
 
     def test_replace(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))

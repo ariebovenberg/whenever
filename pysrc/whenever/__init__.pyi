@@ -319,8 +319,6 @@ class Date(_DateOrTimeMixin):
         ] = ...,
         round_increment: int = ...,
     ) -> ItemizedDateDelta: ...
-    def __add__(self, p: ItemizedDateDelta, /) -> Self: ...
-    def __sub__(self, d: ItemizedDateDelta, /) -> Self: ...
 
 @final
 class YearMonth(_DateOrTimeMixin):
@@ -1615,6 +1613,18 @@ class ItemizedDelta(
     def __sub__(self, other: ItemizedDelta, /) -> ItemizedDelta: ...
     @overload
     def __sub__(self, other: ItemizedDateDelta, /) -> ItemizedDelta: ...
+    @overload
+    def __radd__(self, other: ZonedDateTime, /) -> ZonedDateTime: ...
+    @overload
+    def __radd__(self, other: PlainDateTime, /) -> PlainDateTime: ...
+    @overload
+    def __radd__(self, other: OffsetDateTime, /) -> OffsetDateTime: ...
+    @overload
+    def __rsub__(self, other: ZonedDateTime, /) -> ZonedDateTime: ...
+    @overload
+    def __rsub__(self, other: PlainDateTime, /) -> PlainDateTime: ...
+    @overload
+    def __rsub__(self, other: OffsetDateTime, /) -> OffsetDateTime: ...
     def __bool__(self) -> bool: ...
     def __hash__(self) -> int: ...
     def sign(self) -> Literal[1, 0, -1]: ...
@@ -2068,6 +2078,22 @@ class ItemizedDateDelta(
     def __sub__(self, other: ItemizedDateDelta, /) -> ItemizedDateDelta: ...
     @overload
     def __sub__(self, other: ItemizedDelta, /) -> ItemizedDelta: ...
+    @overload
+    def __radd__(self, other: Date, /) -> Date: ...
+    @overload
+    def __radd__(self, other: ZonedDateTime, /) -> ZonedDateTime: ...
+    @overload
+    def __radd__(self, other: PlainDateTime, /) -> PlainDateTime: ...
+    @overload
+    def __radd__(self, other: OffsetDateTime, /) -> OffsetDateTime: ...
+    @overload
+    def __rsub__(self, other: Date, /) -> Date: ...
+    @overload
+    def __rsub__(self, other: ZonedDateTime, /) -> ZonedDateTime: ...
+    @overload
+    def __rsub__(self, other: PlainDateTime, /) -> PlainDateTime: ...
+    @overload
+    def __rsub__(self, other: OffsetDateTime, /) -> OffsetDateTime: ...
     def __bool__(self) -> bool: ...
     def __hash__(self) -> int: ...
 
@@ -2125,7 +2151,7 @@ class _LocalTime:
     @overload
     def since(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         total: Literal[
@@ -2143,7 +2169,7 @@ class _LocalTime:
     @overload
     def since(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         total: Literal["nanoseconds"],
@@ -2151,7 +2177,7 @@ class _LocalTime:
     @overload
     def since(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         in_units: Sequence[
@@ -2182,7 +2208,7 @@ class _LocalTime:
     @overload
     def until(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         total: Literal[
@@ -2200,7 +2226,7 @@ class _LocalTime:
     @overload
     def until(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         total: Literal["nanoseconds"],
@@ -2208,7 +2234,7 @@ class _LocalTime:
     @overload
     def until(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         in_units: Sequence[
@@ -2429,7 +2455,7 @@ class Instant(_PyDateTimeMixin, _ExactTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        days_assumed_24h_ok: bool = False,
+        days_assumed_24h_ok: bool = ...,
     ) -> Self: ...
     @overload
     def subtract(self, delta: TimeDelta, /) -> Self: ...
@@ -2445,7 +2471,7 @@ class Instant(_PyDateTimeMixin, _ExactTime):
         milliseconds: float = 0,
         microseconds: float = 0,
         nanoseconds: int = 0,
-        days_assumed_24h_ok: bool = False,
+        days_assumed_24h_ok: bool = ...,
     ) -> Self: ...
     @overload
     def round(
@@ -2773,6 +2799,126 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     def __sub__(
         self, other: TimeDelta | ItemizedDelta | ItemizedDateDelta, /
     ) -> Self: ...
+    @overload
+    def since(
+        self,
+        other: Self,
+        /,
+        *,
+        total: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "milliseconds",
+            "microseconds",
+        ],
+        stale_offset_ok: bool = ...,
+    ) -> float: ...
+    @overload
+    def since(
+        self,
+        other: Self,
+        /,
+        *,
+        total: Literal["nanoseconds"],
+        stale_offset_ok: bool = ...,
+    ) -> int: ...
+    @overload
+    def since(
+        self,
+        other: Self,
+        /,
+        *,
+        in_units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+        stale_offset_ok: bool = ...,
+    ) -> ItemizedDelta: ...
+    @overload
+    def until(
+        self,
+        other: Self,
+        /,
+        *,
+        total: Literal[
+            "years",
+            "months",
+            "weeks",
+            "days",
+            "hours",
+            "minutes",
+            "seconds",
+            "milliseconds",
+            "microseconds",
+        ],
+        stale_offset_ok: bool = ...,
+    ) -> float: ...
+    @overload
+    def until(
+        self,
+        other: Self,
+        /,
+        *,
+        total: Literal["nanoseconds"],
+        stale_offset_ok: bool = ...,
+    ) -> int: ...
+    @overload
+    def until(
+        self,
+        other: Self,
+        /,
+        *,
+        in_units: Sequence[
+            Literal[
+                "years",
+                "months",
+                "weeks",
+                "days",
+                "hours",
+                "minutes",
+                "seconds",
+                "nanoseconds",
+            ]
+        ],
+        round_mode: Literal[
+            "ceil",
+            "expand",
+            "floor",
+            "trunc",
+            "half_ceil",
+            "half_expand",
+            "half_floor",
+            "half_trunc",
+            "half_even",
+        ] = ...,
+        round_increment: int = ...,
+        stale_offset_ok: bool = ...,
+    ) -> ItemizedDelta: ...
 
 @final
 class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
@@ -3010,7 +3156,6 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
         nanoseconds: int = 0,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
-    # FUTURE: allow disambiguate here for API consistency
     @overload
     def add(self, delta: TimeDelta, /) -> Self: ...
     @overload
@@ -3343,7 +3488,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     @overload
     def since(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         total: Literal[
@@ -3362,7 +3507,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     @overload
     def since(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         total: Literal["nanoseconds"],
@@ -3371,7 +3516,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     @overload
     def since(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         in_units: Sequence[
@@ -3403,7 +3548,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     @overload
     def until(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         total: Literal[
@@ -3422,7 +3567,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     @overload
     def until(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         total: Literal["nanoseconds"],
@@ -3431,7 +3576,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
     @overload
     def until(
         self,
-        b: Self,
+        other: Self,
         /,
         *,
         in_units: Sequence[

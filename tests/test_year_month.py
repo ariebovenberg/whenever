@@ -101,15 +101,38 @@ class TestShift:
         with pytest.raises(TypeError, match="days"):
             YearMonth(2024, 3).add(**ItemizedDateDelta(months=1, days=1))  # type: ignore[arg-type]
 
+    def test_no_days_or_positional_delta(self):
+        with pytest.raises(TypeError, match="days"):
+            YearMonth(2024, 3).add(days=1)  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            YearMonth(2024, 3).add(ItemizedDateDelta(months=1))  # type: ignore[arg-type, call-arg]
+
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            ({"years": 1.5}, "years must be an integer"),
+            ({"months": "1"}, "months must be an integer"),
+            ({"months": None}, "months must be an integer"),
+        ],
+    )
+    def test_non_integer(self, kwargs, message):
+        with pytest.raises(TypeError, match="^" + re.escape(message) + "$"):
+            YearMonth(2024, 3).add(**kwargs)
+        with pytest.raises(TypeError, match="^" + re.escape(message) + "$"):
+            YearMonth(2024, 3).subtract(**kwargs)
+
     @pytest.mark.parametrize(
         "operation",
         [
             lambda: YearMonth.MAX.add(months=1),
             lambda: YearMonth.MIN.subtract(months=1),
+            lambda: YearMonth(2024, 1).add(years=10**6),
         ],
     )
     def test_out_of_range(self, operation):
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
             operation()
 
 

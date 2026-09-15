@@ -94,9 +94,10 @@ CI runs this coverage check on Python 3.14.
   Sub-microsecond precision is floored on the way to the stdlib.
 - **Exceptions**: out of domain is `ValueError`, `OverflowError` only for a
   machine-integer overflow. A wrong type raises whatever falls out, usually
-  `TypeError` or `AttributeError`; the type checker is the guard. Add an
-  explicit type check only where a wrong type would pass silently, such as a
-  string where a sequence of strings is expected. A flag (`basic`, every
+  `TypeError` or `AttributeError`; the type checker is the guard. A check is
+  added only where a wrong type would pass silently, such as a string where
+  a sequence of strings is expected; its message is the one for a wrong
+  operand, `<method>() argument must be a <Type>`. A flag (`basic`, every
   `_ok`, `keep_ticking`) is read by truthiness, as CPython's `p` converter
   does; no flag is type-checked.
 - **`None`**: never a stand-in for omitting an argument. Accepted only where
@@ -114,11 +115,16 @@ CI runs this coverage check on Python 3.14.
   reported first is unspecified.
 - **Warnings**: each escapable warning has one call-local escape ending in
   `_ok`, named in its message; `ImplicitDisambiguationWarning` is escaped by
-  stating `disambiguation=`. A call that raises emits no warning: validate,
-  compute, then warn. A library-internal calendar shift on a
+  stating `disambiguation=`. A call that rejects an argument emits no
+  warning: validate, then warn; a result out of range may follow one. A
+  library-internal calendar shift on a
   `ZonedDateTime` passes `_warn_stacklevel=` so its
   `ImplicitDisambiguationWarning` lands on the caller; never catch and
   re-emit.
+- **Arithmetic**: calendar units apply first (years and months, clamped,
+  then weeks and days), in local time, then exact units. `+` and `-` take
+  no escape; the methods do. Calendar units in `since()`/`until()` require
+  the same time zone or offset.
 - **Spelling**: *time zone* in prose, `timezone` in identifiers.
 - **Attribute or method**: a field of the value's own notation (`year`,
   `offset`, `tz_id`, `week`) is an attribute; everything derived

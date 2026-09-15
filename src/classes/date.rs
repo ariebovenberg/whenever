@@ -372,10 +372,14 @@ fn shift_method(
 ) -> PyReturn {
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
-    let shift = match (args, kwargs.original_len()) {
-        (&[arg], 0) => parse_calendar_shift_arg(fname, arg, state)?,
-        ([], _) => parse_calendar_shift_kwargs(fname, kwargs, state)?,
-        _ => raise_mixed_args(fname)?,
+    let shift = match handle_opt_arg(fname, args)? {
+        Some(arg) => {
+            if kwargs.original_len() != 0 {
+                raise_mixed_args(fname)?;
+            }
+            parse_calendar_shift_arg(fname, arg, state)?
+        }
+        None => parse_calendar_shift_kwargs(fname, kwargs, state)?,
     };
 
     slf.shift_by(shift.negate_if(negate))

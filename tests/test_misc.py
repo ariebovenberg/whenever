@@ -107,6 +107,32 @@ def test_itemized_delta_datetime_operators(dt, delta, expected):
 
 
 @pytest.mark.parametrize(
+    "dt, expected",
+    [
+        (
+            ZonedDateTime(2023, 3, 25, 12, tz="Europe/Amsterdam"),
+            ZonedDateTime(2023, 3, 27, 12, tz="Europe/Amsterdam"),
+        ),
+        (
+            OffsetDateTime(2023, 3, 25, 12, offset=hours(1)),
+            OffsetDateTime(2023, 3, 27, 12, offset=hours(1)),
+        ),
+        (
+            PlainDateTime(2023, 3, 25, 12),
+            PlainDateTime(2023, 3, 27, 12),
+        ),
+    ],
+)
+def test_calendar_units_apply_before_exact_units(dt, expected):
+    # The day is added in local time first (23 hours across Amsterdam's
+    # transition), then the 24 hours; the other order gives 13:00.
+    warning = isinstance(dt, (PlainDateTime, OffsetDateTime))
+    with pytest.warns(Warning) if warning else nullcontext():
+        assert dt.add(days=1, hours=24) == expected
+        assert (dt + ItemizedDelta(days=1, hours=24)) == expected
+
+
+@pytest.mark.parametrize(
     "operation",
     [
         lambda dt, delta: dt + delta,
@@ -964,6 +990,14 @@ class _Idx:
         lambda n: MonthDay(1, 1).in_year(n),
         lambda n: IsoWeekDate(2024, n, MONDAY),
         lambda n: Date(2024, 1, 1).nth_weekday(n, MONDAY),
+        lambda n: Date(2024, 1, 1).add(days=n),
+        lambda n: YearMonth(2024, 1).add(months=n),
+        lambda n: Instant.from_utc(2024, 1, 1).add(nanoseconds=n),
+        lambda n: OffsetDateTime(2024, 1, 1, offset=hours(2)).subtract(
+            weeks=n, stale_offset_ok=True
+        ),
+        lambda n: ZonedDateTime(2024, 1, 1, tz="Europe/Paris").add(years=n),
+        lambda n: PlainDateTime(2024, 1, 1).add(months=n),
     ],
 )
 def test_integer_keywords_read_the_index_protocol(call):
@@ -1084,7 +1118,18 @@ def test_deprecation_warning_is_shown_by_default():
 def test_naive_arithmetic_warning_names_its_escape():
     with warns_here(NaiveArithmeticWarning) as caught:
         PlainDateTime(2024, 1, 1).add(hours=1)
-    assert "naive_arithmetic_ok=True" in str(caught[0].message)
+    assert (
+        "pass `naive_arithmetic_ok=True` to `add()`, `subtract()`, "
+        "`difference()`, `since()`, or `until()`; `+` and `-` take no keyword"
+        in str(caught[0].message)
+    )
+    with warns_here(NaiveArithmeticWarning) as caught:
+        PlainDateTime(2024, 1, 1).since(
+            PlainDateTime(2023, 1, 1), total="hours"
+        )
+    assert "`since()`, or `until()`; `+` and `-` take no keyword" in str(
+        caught[0].message
+    )
 
 
 def test_time_patch_shift_warning_location():

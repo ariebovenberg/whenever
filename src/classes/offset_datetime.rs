@@ -911,8 +911,23 @@ fn offset_since(
         .ok_or_else_type_err(|| format!("{fname}() argument must be an OffsetDateTime"))?;
 
     let same_offset = slf.offset == other.offset;
+    let mut suppress_stale = false;
+    let spec = DifferenceSpec::parse_with(fname, kwargs, state, |k, v, eq| {
+        if eq(k, *state.strs.stale_offset_ok) {
+            suppress_stale = v.is_truthy()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    })?;
+    let offset_mismatch = || {
+        raise_value_err(format!(
+            "calendar units require the same offset, got {} and {}",
+            slf.offset, other.offset
+        ))
+    };
 
-    match DifferenceSpec::parse(fname, kwargs, state)? {
+    match spec {
         DifferenceSpec::Total(unit) => {
             let (a, b) = if flip { (other, slf) } else { (slf, other) };
             // Single unit: return float
@@ -929,15 +944,15 @@ fn offset_since(
                     }
                 }
                 Err(_) => {
-                    // Calendar unit: requires same offset, delegate to plain float
+                    // Calendar unit: requires same offset, delegate to plain float.
+                    // The fraction after the whole units is a remainder under
+                    // the fixed offset.
                     if !same_offset {
-                        return raise_value_err(
-                            "Calendar units can only be used to compare OffsetDateTimes \
-                             with the same offset",
-                        );
+                        return offset_mismatch();
                     }
-                    // OffsetDateTime.since() never warns; same-offset calendar
-                    // units are well-defined and exact units are always correct.
+                    if !suppress_stale {
+                        offset_stale_warning(state, doc::OFFSET_DIFFERENCE_STALE_MSG)?;
+                    }
                     plain_datetime::plain_since_inner(
                         state,
                         a.to_plain(),
@@ -955,21 +970,23 @@ fn offset_since(
         } => {
             match (units.has_calendar(), same_offset) {
                 // same offset: use the plain datetime rounding logic (days are always 24h)
-                (true, true) => plain_datetime::plain_since_inner(
-                    state,
-                    slf.to_plain(),
-                    other.to_plain(),
-                    DifferenceSpec::InUnits {
-                        units,
-                        mode,
-                        increment,
-                    },
-                    flip,
-                ),
-                (true, false) => raise_value_err(
-                    "Calendar units can only be used to compare OffsetDateTimes \
-                     with the same offset",
-                ),
+                (true, true) => {
+                    if units.has_exact() && !suppress_stale {
+                        offset_stale_warning(state, doc::OFFSET_DIFFERENCE_STALE_MSG)?;
+                    }
+                    plain_datetime::plain_since_inner(
+                        state,
+                        slf.to_plain(),
+                        other.to_plain(),
+                        DifferenceSpec::InUnits {
+                            units,
+                            mode,
+                            increment,
+                        },
+                        flip,
+                    )
+                }
+                (true, false) => offset_mismatch(),
                 _ => {
                     // Different offsets, exact units only: compute via TimeDelta
                     let (a, b) = if flip { (other, slf) } else { (slf, other) };

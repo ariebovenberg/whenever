@@ -38,15 +38,6 @@ whenever\..*\.__copy__
 whenever\..*\.__deepcopy__
 whenever\..*\.__get_pydantic_core_schema__
 
-# Session 6 of GRILLING_SCHEDULE.md decides the operator declarations of
-# `Date` and the reflected operators of the itemized deltas.
-whenever\.Date\.__add__
-whenever\.Date\.__sub__
-whenever\.ItemizedDelta\.__radd__
-whenever\.ItemizedDelta\.__rsub__
-whenever\.ItemizedDateDelta\.__radd__
-whenever\.ItemizedDateDelta\.__rsub__
-
 # The 0.11 deprecation shims absorb their old keyword (`format=`,
 # `disambiguate=`, `tz=`) through a catch-all that the Rust text signatures
 # do not list. Remove with the shims in 1.0.

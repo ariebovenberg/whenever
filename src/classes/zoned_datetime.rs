@@ -1286,7 +1286,13 @@ fn shift_method(
 
     let shift = match handle_opt_arg(fname, args)? {
         Some(arg) => {
-            handle_kwargs(fname, kwargs, &mut handle)?;
+            // A component keyword next to the positional delta is a mix, not
+            // an unknown keyword.
+            for (key, value) in kwargs.by_ref() {
+                if !handle(key, value, |a, b| a.ptr_eq(b))? && !handle(key, value, unicode_eq)? {
+                    raise_mixed_args(fname)?;
+                }
+            }
             parse_datetime_shift_arg(fname, arg, state)?
         }
         None => parse_datetime_shift_kwargs(fname, kwargs, state, &mut handle)?,
@@ -1433,10 +1439,15 @@ fn zoned_since(
     let kwargs = DifferenceSpec::parse(fname, kwargs, state)?;
 
     if kwargs.has_calendar() && !slf.same_tz(other) {
-        raise_value_err(
-            "Calendar units can only be used to compare ZonedDateTimes \
-             with the same time zone",
-        )?;
+        let tz_id = |z: &ZonedDateTime| match z.tz.key.as_ref() {
+            Some(key) => format!("'{key}'"),
+            None => "None".to_string(),
+        };
+        raise_value_err(format!(
+            "calendar units require the same time zone, got {} and {}",
+            tz_id(slf),
+            tz_id(other)
+        ))?;
     }
     let (a, b) = if flip { (other, slf) } else { (slf, other) };
     let a_inst = a.to_instant();

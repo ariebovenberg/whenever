@@ -7,6 +7,7 @@ from datetime import (
     datetime as py_datetime,
     timezone as py_timezone,
 )
+from fractions import Fraction
 from itertools import chain
 from typing import Literal
 
@@ -461,11 +462,36 @@ class TestAdd:
         with pytest.raises(TypeError):
             py_date(2020, 1, 1) + Date(2021, 1, 1)  # type: ignore[operator]
 
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda d: d - d,
+            lambda d: d + 1,
+            lambda d: d - 1,
+            lambda d: 1 + d,
+        ],
+    )
+    def test_rejected_operands(self, call):
+        d = Date(2021, 1, 1)
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            call(d)
+
 
 class TestShiftMethods:
     def test_no_arguments(self):
         d = Date(2021, 1, 1)
         assert d.add() == d
+
+    def test_keywords(self):
+        assert Date(2021, 1, 2).add(years=1, months=2, days=3) == Date(
+            2022, 3, 5
+        )
+        assert Date(2021, 1, 2).subtract(weeks=1) == Date(2020, 12, 26)
+        # months and years clamp to the last day of the month
+        assert Date(2024, 1, 31).add(months=1) == Date(2024, 2, 29)
+        assert Date(2020, 2, 29).add(years=1) == Date(2021, 2, 28)
+        # months first, clamped, then days
+        assert Date(2024, 1, 30).add(months=1, days=1) == Date(2024, 3, 1)
 
     def test_invalid_arguments(self):
         d = Date(2021, 1, 1)
@@ -473,6 +499,38 @@ class TestShiftMethods:
             d.add(4)  # type: ignore[call-overload]
         with pytest.raises(TypeError):
             d.add(ItemizedDateDelta(days=1), days=1)  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize(
+        ("call", "message"),
+        [
+            (
+                lambda d: d.add(4),
+                "add() argument must be an ItemizedDateDelta",
+            ),
+            (
+                lambda d: d.add(ItemizedDateDelta(days=1), days=1),
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda d: d.add(
+                    ItemizedDateDelta(days=1), ItemizedDateDelta(days=1)
+                ),
+                "add() takes at most one positional argument (2 given)",
+            ),
+            (
+                lambda d: d.add(hours=1),
+                "add() got an unexpected keyword argument 'hours'",
+            ),
+            (lambda d: d.subtract(weeks=1.5), "weeks must be an integer"),
+            (lambda d: d.add(days=float("nan")), "days must be an integer"),
+            (lambda d: d.add(years="1"), "years must be an integer"),
+            (lambda d: d.add(months=None), "months must be an integer"),
+        ],
+    )
+    def test_rejections(self, call, message):
+        d = Date(2021, 1, 1)
+        with pytest.raises(TypeError, match="^" + re.escape(message) + "$"):
+            call(d)
 
 
 _EXAMPLE_DATES = [
@@ -517,6 +575,66 @@ _EXAMPLE_DATES = [
 
 
 class TestSinceAndUntil:
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            (
+                {"in_units": ["days"], "round_mode": "bad"},
+                "invalid round_mode: 'bad'",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": 0},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": -1},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {
+                    "in_units": ["days"],
+                    "round_increment": -1,
+                    "round_mode": "ceil",
+                },
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["months"], "round_increment": 10**9},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": 1.5},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": "1"},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": None},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": Fraction(1, 2)},
+                "round_increment must be an integer",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["since", "until"])
+    def test_invalid_rounding(self, method, kwargs, message):
+        d1 = Date(2021, 1, 1)
+        d2 = Date(2020, 1, 1)
+        with pytest.raises(
+            (TypeError, ValueError), match="^" + re.escape(message) + "$"
+        ):
+            getattr(d1, method)(d2, **kwargs)
+
+    def test_units_may_be_any_iterable(self):
+        assert Date(2021, 1, 1).since(
+            Date(2020, 1, 1),
+            in_units=iter(["days"]),  # type: ignore[call-overload]
+        ) == ItemizedDateDelta(days=366)
+
     @pytest.mark.parametrize(
         "d1, d2, unit, expected",
         [

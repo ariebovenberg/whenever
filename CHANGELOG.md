@@ -178,6 +178,16 @@ deprecated interfaces are removed.
   `ItemizedDateDelta` returns an `ItemizedDateDelta` whenever both operands
   are date deltas, whatever the reference; `ItemizedDateDelta.in_units()`
   and `total()` accept a datetime reference the same way, reading its date.
+- `OffsetDateTime.since()` and `until()` emit `StaleOffsetWarning` when
+  a calendar difference has a remainder in exact units (`in_units` mixing
+  the two kinds, or `total=` of a calendar unit), since that remainder is
+  computed with the offset held fixed. Escaped by `stale_offset_ok=`.
+- The `NaiveArithmeticWarning` and `StaleOffsetWarning` messages name the
+  methods that take the escape; `+` and `-` take none.
+- The type stubs declare `Date + ItemizedDateDelta` through the delta's
+  reflected operators, and `disambiguation=` only on the forms of
+  `ZonedDateTime.add()`/`subtract()` that can land on a repeated or
+  skipped local time. The operand of `since()`/`until()` is named `other`.
 
 **Fixed**
 
@@ -198,6 +208,16 @@ deprecated interfaces are removed.
   messages of the delta family are identical on both backends: one wording
   per condition, and every out-of-range result is a `ValueError`. The
   `units` argument of every delta method accepts any iterable of unit names.
+- The arithmetic methods no longer warn before rejecting an argument.
+- The error messages of `add()`, `subtract()`, `difference()`, `since()`,
+  and `until()` are identical on both backends: a non-integer calendar
+  component, a `TimeDelta` passed to `difference()`, an operand of another
+  type, and an invalid `round_mode` or `round_increment` are rejected
+  with the same `TypeError` or `ValueError` everywhere, and calendar units
+  across time zones or offsets name the two values in the message. The
+  pure-Python backend accepted several of these before.
+- `in_units` accepts any iterable, and `PlainDateTime.since()` warns for
+  `total="milliseconds"` and `"microseconds"` like the other exact units.
 - `OffsetDateTime.assume_tz()` rejects an invalid `disambiguation` up front
   in the pure-Python backend, and `OffsetDateTime(py_datetime, ...)` and
   `PlainDateTime(py_datetime, ...)` name the class when rejecting a keyword.

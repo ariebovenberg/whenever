@@ -22,7 +22,7 @@ The main types are:
   This type is analogous to a UNIX timestamp or UTC.
 - {class}`~whenever.PlainDateTime`—how humans represent time (e.g. *"January 23rd, 2023, 3:30pm"*),
   also known as **"local time"**.
-  This type is analogous to an "naive" datetime in the standard library.
+  This type is analogous to a "naive" datetime in the standard library.
 - {class}`~whenever.ZonedDateTime`—A combination of the two concepts above:
   an exact time paired with a local time at a specific location.
   This type is analogous to an "aware" standard library datetime with `tzinfo` set to a `ZoneInfo` instance.
@@ -164,7 +164,7 @@ shift.
 
 When the intended meaning depends on that original time zone, shifting or
 modifying an {class}`~whenever.OffsetDateTime` is roughly as unsafe as doing
-arithmetic that depends on the time zone on a naive
+arithmetic that depends on the time zone on a
 {class}`~whenever.PlainDateTime`: both lack the regional rules needed to
 account for transitions. The offset pins down the original instant, but it
 does not make a later or modified local time safe.

@@ -49,8 +49,9 @@ OFFSET_SHIFT_STALE_MSG = (
     "offset may therefore be stale relative to the source time zone, even after "
     "an exact shift. If the originating time zone is known, convert to "
     "ZonedDateTime first using .assume_tz(). If fixed-offset arithmetic is "
-    "intentional or the risk is accepted, pass `stale_offset_ok=True`. For "
-    "an entirely fixed-offset domain, configure StaleOffsetWarning globally. "
+    "intentional or the risk is accepted, pass `stale_offset_ok=True` to "
+    "`add()` or `subtract()`; `+` and `-` take no keyword. For an entirely "
+    "fixed-offset domain, configure StaleOffsetWarning globally. "
     + OFFSET_DATETIME_DOCS_MSG
     + " "
     + WARNING_HANDLING_DOCS_MSG
@@ -85,7 +86,9 @@ PLAIN_SHIFT_UNAWARE_MSG = (
     "transition, so only 1 real hour has passed). "
     "Use .assume_tz('<tz>') + delta if you know the time zone. "
     "If time zone transitions are intentionally irrelevant here, pass "
-    "`naive_arithmetic_ok=True`. " + WARNING_HANDLING_DOCS_MSG
+    "`naive_arithmetic_ok=True` to `add()`, `subtract()`, `difference()`, "
+    "`since()`, or `until()`; `+` and `-` take no keyword. "
+    + WARNING_HANDLING_DOCS_MSG
 )
 
 DAYS_NOT_ALWAYS_24H_MSG = (

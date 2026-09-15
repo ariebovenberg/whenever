@@ -1998,8 +1998,8 @@ class TestReferenceRule:
 
 
 class TestInternalShiftWarning:
-    """A calendar shift of the reference that lands in a gap attributes its
-    ``ImplicitDisambiguationWarning`` to the caller."""
+    """A calendar shift of the reference that lands on a skipped local time
+    attributes its ``ImplicitDisambiguationWarning`` to the caller."""
 
     # One day later is 02:30 on the morning the clock skips 02:00-03:00.
     ZONED = ZonedDateTime(2023, 3, 25, 2, 30, tz="Europe/Amsterdam")

@@ -53,6 +53,7 @@ from ._math import (
     TOTAL_UNITS,
     Sign,
     normalize_units,
+    resolve_date_rounding,
     resolve_leap_day,
     resolve_rounding,
 )
@@ -239,33 +240,6 @@ def _items_add(
     sum = Counter(a)
     sum.update(b)
     return sum
-
-
-def _resolve_rounding(
-    round_mode: RoundModeStr, round_increment: int
-) -> tuple[RoundModeStr, int]:
-    return resolve_rounding(
-        "trunc" if round_mode is UNSET else round_mode,
-        1 if round_increment is UNSET else round_increment,
-    )
-
-
-# The widest day count a calendar increment can span, as the Rust extension
-# bounds it.
-_MAX_CALENDAR_INCREMENT = (_date.max - _date.min).days + 1
-
-
-def _resolve_date_rounding(
-    round_mode: RoundModeStr, round_increment: int
-) -> tuple[RoundModeStr, int]:
-    """The rounding pair of a date-only computation, whose increment is a
-    count of calendar units."""
-    round_mode, round_increment = _resolve_rounding(
-        round_mode, round_increment
-    )
-    if round_increment > _MAX_CALENDAR_INCREMENT:
-        raise ValueError("round_increment must be a positive integer in range")
-    return round_mode, round_increment
 
 
 CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG = (
@@ -1357,7 +1331,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         if in_units is UNSET:
             raise TypeError(IN_UNITS_REQUIRED_MSG)
         units = normalize_units(in_units, DELTA_UNITS)
-        round_mode, round_increment = _resolve_rounding(
+        round_mode, round_increment = resolve_rounding(
             round_mode, round_increment
         )
         combined = _items_add(self, other)
@@ -1917,7 +1891,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             The rounding increment for that unit.
         """
         units = normalize_units(units, DATE_DELTA_UNITS)
-        round_mode, round_increment = _resolve_date_rounding(
+        round_mode, round_increment = resolve_date_rounding(
             round_mode, round_increment
         )
         date = _reference_date(relative_to)
@@ -2481,7 +2455,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                     + " when composing with ItemizedDelta"
                 )
             units = normalize_units(in_units, DELTA_UNITS)
-            round_mode, round_increment = _resolve_rounding(
+            round_mode, round_increment = resolve_rounding(
                 round_mode, round_increment
             )
             reference = _resolve_reference(
@@ -2498,7 +2472,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 round_increment=round_increment,
             )
         date_units = normalize_units(in_units, DATE_DELTA_UNITS)
-        round_mode, round_increment = _resolve_date_rounding(
+        round_mode, round_increment = resolve_date_rounding(
             round_mode, round_increment
         )
         date = _reference_date(relative_to)

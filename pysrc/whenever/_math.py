@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from datetime import date as _date, timedelta as _timedelta
 from typing import Literal, TypeVar, cast
 
-from ._common import INCREMENT_MSG, RANGE_MSG, expect_int, invalid
+from ._common import INCREMENT_MSG, RANGE_MSG, UNSET, expect_int, invalid
 from ._typing import (
     DateDeltaUnitStr,
     DeltaUnitStr,
@@ -268,8 +268,13 @@ ROUND_MODES: frozenset[RoundModeStr] = frozenset(
 def resolve_rounding(
     mode: RoundModeStr, increment: int
 ) -> tuple[RoundModeStr, int]:
-    """Validate the ``round_mode``/``round_increment`` pair of ``in_units()``
-    and calendar-aware composition."""
+    """Validate the ``round_mode``/``round_increment`` pair of ``in_units()``,
+    ``since()``/``until()``, and calendar-aware composition, applying the
+    defaults for ``UNSET``."""
+    if mode is UNSET:
+        mode = "trunc"
+    if increment is UNSET:
+        increment = 1
     if mode not in ROUND_MODES:
         raise invalid("round_mode", mode)
     increment = expect_int("round_increment", increment)
@@ -278,7 +283,27 @@ def resolve_rounding(
     return mode, increment
 
 
-def increment_to_ns_for_delta(unit: str, increment: int) -> int:
+# The widest day count a calendar increment can span, as the Rust extension
+# bounds it.
+MAX_CALENDAR_INCREMENT = (_date.max - _date.min).days + 1
+
+
+def resolve_date_rounding(
+    mode: RoundModeStr, increment: int
+) -> tuple[RoundModeStr, int]:
+    """``resolve_rounding`` for a date-only computation, whose increment is
+    a count of calendar units."""
+    mode, increment = resolve_rounding(mode, increment)
+    if increment > MAX_CALENDAR_INCREMENT:
+        raise ValueError("round_increment must be a positive integer in range")
+    return mode, increment
+
+
+# The widest increment the Rust extension represents: whole seconds in 64 bits.
+_MAX_INCREMENT_SECS = 2**64 - 1
+
+
+def _increment_to_ns(unit: str, increment: int) -> int:
     increment = expect_int("increment", increment)
     if increment < 1:
         raise ValueError(INCREMENT_MSG)
@@ -289,8 +314,15 @@ def increment_to_ns_for_delta(unit: str, increment: int) -> int:
     return ns_per_unit * increment
 
 
+def increment_to_ns_for_delta(unit: str, increment: int) -> int:
+    increment_ns = _increment_to_ns(unit, increment)
+    if increment_ns // 1_000_000_000 > _MAX_INCREMENT_SECS:
+        raise ValueError(RANGE_MSG)
+    return increment_ns
+
+
 def increment_to_ns_for_datetime(unit: str, increment: int) -> int:
-    increment_ns = increment_to_ns_for_delta(unit, increment)
+    increment_ns = _increment_to_ns(unit, increment)
     if 86_400_000_000_000 % increment_ns:
         raise ValueError(INCREMENT_MSG)
     return increment_ns

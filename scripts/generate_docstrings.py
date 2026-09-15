@@ -57,8 +57,11 @@ def _unwrap_property(m):
     return m
 
 
+# Each method with the name its docstring constant is derived from: the
+# documenting class and the attribute, not ``__qualname__``, which a method
+# may set for the sake of CPython's own error messages.
 methods = {
-    _unwrap_property(getattr(cls, name))
+    _unwrap_property(getattr(cls, name)): f"{cls.__name__}.{name}"
     for cls in chain(
         classes,
         (
@@ -241,11 +244,10 @@ def print_everything():
             )
         )
 
-    for method in sorted(methods, key=lambda x: x.__qualname__):
+    for method, qualname in sorted(methods.items(), key=lambda x: x[1]):
         if method.__doc__ is None or method in SKIP:
             continue
 
-        qualname = method.__qualname__
         if qualname.startswith("_"):
             qualname = qualname[1:]
         print(

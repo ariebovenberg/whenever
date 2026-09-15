@@ -1,5 +1,6 @@
 import pickle
 import re
+import warnings
 from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
 from typing import Literal
@@ -760,8 +761,65 @@ class TestAddMethod:
             assert d.add(days=1) == d + hours(24)
         with warns_here(DaysAssumed24HoursWarning):
             assert d.add(weeks=1) == d + hours(24 * 7)
+        with warns_here(DaysAssumed24HoursWarning):
+            assert d.subtract(weeks=1) == d - hours(24 * 7)
         # suppressed
         assert d.add(days=1, days_assumed_24h_ok=True) == d + hours(24)
+        assert d.subtract(weeks=1, days_assumed_24h_ok=True) == d - hours(
+            24 * 7
+        )
+        # the delta already acknowledged its days
+        assert d.add(TimeDelta(days=1, days_assumed_24h_ok=True)) == d + hours(
+            24
+        )
+
+    def test_days_assumed_24h_ok_read_by_truthiness(self):
+        d = Instant.from_utc(2020, 8, 15)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.add(days=1, days_assumed_24h_ok=1)  # type: ignore[call-overload]
+        with warns_here(DaysAssumed24HoursWarning):
+            d.add(days=1, days_assumed_24h_ok="")  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize(
+        ("call", "exc", "message"),
+        [
+            (
+                lambda d: d.add(days=1, nanoseconds=1.5),
+                TypeError,
+                "nanoseconds must be an integer",
+            ),
+            (
+                lambda d: d.add(days=1, hours="x"),
+                TypeError,
+                "hours must be an integer or float",
+            ),
+            (
+                lambda d: d.subtract(days=float("nan")),
+                ValueError,
+                "value or calculation out of range",
+            ),
+            (
+                lambda d: d.add(weeks=1, bogus=1),
+                TypeError,
+                "add() got an unexpected keyword argument 'bogus'",
+            ),
+            (
+                lambda d: d.add(hours(1), days=1),
+                TypeError,
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda d: d.add(hours(1), hours(1)),
+                TypeError,
+                "add() takes at most one positional argument (2 given)",
+            ),
+        ],
+    )
+    def test_rejected_argument_does_not_warn(self, call, exc, message):
+        d = Instant.from_utc(2020, 8, 15)
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
+            call(d)
 
     @given(
         hours=floats(),
@@ -861,8 +919,20 @@ class TestShiftOperators:
         with pytest.raises(TypeError, match="unsupported operand type"):
             d + PlainDateTime(2020, 1, 1)  # type: ignore[operator]
 
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d - PlainDateTime(2020, 1, 1)  # type: ignore[operator]
+
 
 class TestDifference:
+    def test_rejects_a_delta(self):
+        d = Instant.from_utc(2020, 8, 15)
+        with pytest.raises(
+            TypeError,
+            match="^difference\\(\\) argument must be an Instant, "
+            "OffsetDateTime, or ZonedDateTime$",
+        ):
+            d.difference(hours(1))  # type: ignore[arg-type]
+
     def test_other_instant(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
         other = Instant.from_utc(

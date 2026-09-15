@@ -74,6 +74,13 @@ length (usually one hour).
 
 .. rubric:: When it can occur
 
+Constructing a :class:`~whenever.TimeDelta` with ``days`` or ``weeks``,
+passing them to :meth:`Instant.add() <whenever.Instant.add>`,
+:meth:`Instant.subtract() <whenever.Instant.subtract>`, or
+:meth:`TimePatch.shift() <whenever.TimePatch.shift>`, and the delta
+methods that read them as exact units, such as
+:meth:`TimeDelta.in_units() <whenever.TimeDelta.in_units>`.
+
 .. code-block:: python
 
     from whenever import TimeDelta, ZonedDateTime
@@ -81,11 +88,11 @@ length (usually one hour).
     # TimeDelta(days=1) is exactly 86 400 seconds — no DST awareness.
     delta = TimeDelta(days=1)  # DaysAssumed24HoursWarning
 
-    # Adding it to a ZonedDateTime on a spring-forward day gives the
-    # wrong local time:
-    eve = ZonedDateTime(2025, 3, 30, 12, tz=\"Europe/Amsterdam\")
+    # Adding it to a ZonedDateTime across a spring-forward night gives
+    # the wrong local time:
+    eve = ZonedDateTime(2025, 3, 29, 12, tz=\"Europe/Amsterdam\")
     eve + delta
-    # ZonedDateTime(\"2025-03-31 13:00:00+02:00[Europe/Amsterdam]\")
+    # ZonedDateTime(\"2025-03-30 13:00:00+02:00[Europe/Amsterdam]\")
     # ^^ 13:00, not 12:00 — one hour lost to the DST transition
 
 .. rubric:: How to fix it
@@ -96,7 +103,7 @@ local time across transitions:
 .. code-block:: python
 
     eve.add(days=1)
-    # ZonedDateTime(\"2025-03-31 12:00:00+02:00[Europe/Amsterdam]\")  ✓
+    # ZonedDateTime(\"2025-03-30 12:00:00+02:00[Europe/Amsterdam]\")  ✓
 
 To suppress when exact 24-hour arithmetic is genuinely intended, pass
 ``days_assumed_24h_ok=True`` (or use Python's standard warning filters):
@@ -160,6 +167,11 @@ hour as equal. If a time zone transition falls in the interval, the result
 may be off by an hour or more.
 
 .. rubric:: When it can occur
+
+Adding or subtracting exact units with ``add()``, ``subtract()``,
+``+``, or ``-``; measuring exact units with ``-``, ``difference()``,
+``since()``, or ``until()``; and a delta method whose ``relative_to``
+is a :class:`~whenever.PlainDateTime`.
 
 .. code-block:: python
 
@@ -473,8 +485,10 @@ pub(crate) const DATE_ADD: &CStr = c"\
 add($self, delta=..., /, *, years=0, months=0, weeks=0, days=0)
 --
 
-Add a components to a date.
+Add components to a date.
 
+Years and months are applied first, clamped to the last day of the
+resulting month, then weeks and days.
 See :ref:`the docs on arithmetic <arithmetic>` for more information.
 
 >>> d = Date(2021, 1, 2)
@@ -672,7 +686,7 @@ A result that is not a valid date raises :class:`ValueError`.
 Date(\"2021-01-04\")
 ";
 pub(crate) const DATE_SINCE: &CStr = c"\
-since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
+since($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Calculate the difference between this date and another date.
@@ -684,7 +698,7 @@ or units.
 ItemizedDateDelta(\"P3y3m\")
 
 >>> d.since(Date(\"2020-01-01\"), total=\"weeks\")
-170.0
+171.42857142857142
 
 Parameters
 ----------
@@ -763,7 +777,7 @@ Equivalent to ``today(SYSTEM_TZ)``.
 Date(\"2021-01-02\")
 ";
 pub(crate) const DATE_UNTIL: &CStr = c"\
-until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
+until($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Companion to :meth:`since` that calculates the difference until another date.
@@ -788,6 +802,12 @@ add($self, delta=..., /, *, weeks=0, days=0, hours=0, minutes=0, seconds=0, mill
 Add a time amount to this instant.
 
 See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
+
+Warning
+-------
+``days`` and ``weeks`` are exact 24-hour and 168-hour units here,
+which emits :class:`~whenever.DaysAssumed24HoursWarning`.
+Pass ``days_assumed_24h_ok=True`` when that is intentional.
 ";
 pub(crate) const INSTANT_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -934,12 +954,22 @@ subtract($self, delta=..., /, *, weeks=0, days=0, hours=0, minutes=0, seconds=0,
 Subtract a time amount from this instant.
 
 See the `docs on arithmetic <https://whenever.rtfd.io/en/latest/guide/arithmetic.html>`__ for more information.
+
+Warning
+-------
+``days`` and ``weeks`` are exact 24-hour and 168-hour units here,
+which emits :class:`~whenever.DaysAssumed24HoursWarning`.
+Pass ``days_assumed_24h_ok=True`` when that is intentional.
 ";
 pub(crate) const OFFSETDATETIME_ADD: &CStr = c"\
 add($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, stale_offset_ok=False)
 --
 
 Add a time amount to this datetime.
+
+Years and months are applied first (clamped), then weeks and days,
+all in local time; then the exact units move the instant.
+``subtract()`` is ``add()`` of the negated components.
 
 Warning
 -------
@@ -1189,7 +1219,7 @@ the `OffsetDateTime guidance
 Pass ``stale_offset_ok=True`` when preserving it is intentional.
 ";
 pub(crate) const OFFSETDATETIME_SINCE: &CStr = c"\
-since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
+since($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=..., stale_offset_ok=...)
 --
 
 Calculate the duration since another OffsetDateTime,
@@ -1204,6 +1234,14 @@ ItemizedDelta(\"PT25h15m\")
 
 When calculating calendar units (years, months, weeks, days),
 both datetimes must have the same offset.
+
+Warning
+-------
+Whole calendar units are exact, but a remainder in exact units
+after them (``in_units`` mixing the two kinds, or ``total=`` of a
+calendar unit) is computed with the offset held fixed, which emits
+:class:`~whenever.StaleOffsetWarning`. Pass ``stale_offset_ok=True``
+when the fixed offset is intentional.
 ";
 pub(crate) const OFFSETDATETIME_START_OF: &CStr = c"\
 start_of($self, unit, /, *, stale_offset_ok=...)
@@ -1230,7 +1268,7 @@ Subtract a time amount from this datetime.
 See :meth:`add` for more information.
 ";
 pub(crate) const OFFSETDATETIME_UNTIL: &CStr = c"\
-until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
+until($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=..., stale_offset_ok=...)
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
@@ -1239,6 +1277,10 @@ add($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes
 --
 
 Add a time amount to this datetime.
+
+Years and months are applied first (clamped), then weeks and days;
+then the exact units. ``subtract()`` is ``add()`` of the negated
+components.
 
 Warning
 -------
@@ -1419,7 +1461,7 @@ PlainDateTime(\"2020-08-16 00:00:00\")
 PlainDateTime(\"2020-08-15 23:15:00\")
 ";
 pub(crate) const PLAINDATETIME_SINCE: &CStr = c"\
-since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=...)
+since($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=...)
 --
 
 Calculate the duration since another PlainDateTime,
@@ -1431,6 +1473,14 @@ in terms of the specified units.
 ...          round_increment=15,
 ...          round_mode=\"ceil\")
 ItemizedDelta(\"PT25h15m\")
+
+Warning
+-------
+Exact units in the result (``total=`` of one, or ``in_units``
+containing any) emit :class:`~whenever.NaiveArithmeticWarning`:
+a difference in hours between two local times ignores the
+time zone transitions between them. Pass ``naive_arithmetic_ok=True``
+when that is intentional.
 ";
 pub(crate) const PLAINDATETIME_START_OF: &CStr = c"\
 The start of the given unit
@@ -1449,7 +1499,7 @@ Subtract a time amount from this datetime.
 See :meth:`add` for more information.
 ";
 pub(crate) const PLAINDATETIME_UNTIL: &CStr = c"\
-until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=...)
+until($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=...)
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
@@ -1739,10 +1789,14 @@ add($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes
 
 Return a new ``ZonedDateTime`` shifted by the given time amounts
 
+Years and months are applied first (clamped), then weeks and days,
+all in local time; then the exact units move the instant.
+``subtract()`` is ``add()`` of the negated components.
+
 Important
 ---------
 Shifting by **calendar units** (e.g. months, weeks)
-may result in an ambiguous time (e.g. during a DST transition).
+may land on a repeated or skipped local time (e.g. during a DST transition).
 Therefore, when adding calendar units, it's recommended to
 specify how to handle such a situation using the ``disambiguation`` argument.
 
@@ -2108,7 +2162,7 @@ Notes
   Amsterdam, 11:31 therefore rounds down and 12:31 rounds up.
 ";
 pub(crate) const ZONEDDATETIME_SINCE: &CStr = c"\
-since($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
+since($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Calculate the duration since another ZonedDateTime,
@@ -2219,7 +2273,7 @@ if the ``ZonedDateTime`` was created from a :ref:`system time zone
 <systemtime>` without a time zone ID.
 ";
 pub(crate) const ZONEDDATETIME_UNTIL: &CStr = c"\
-until($self, b, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
+until($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=...)
 --
 
 Inverse of the ``since()`` method. See :meth:`since` for more information.";
@@ -2254,8 +2308,8 @@ This method returns the exact elapsed :class:`TimeDelta` between
 two instants in time. Equivalent to the subtraction operator (``-``).
 
 Use :meth:`~whenever.ZonedDateTime.since` or
-:meth:`~whenever.ZonedDateTime.until` for more advanced
-options such as calendar units, unit decomposition, and rounding.
+:meth:`~whenever.ZonedDateTime.until` on the local datetimes for
+calendar units, unit decomposition, and rounding.
 ";
 pub(crate) const EXACTTIME_EXACT_EQ: &CStr = c"\
 Deprecated alias for :meth:`strict_eq`.
@@ -2422,15 +2476,16 @@ pub(crate) const IMPLICIT_DISAMBIGUATION_MSG: &CStr = c"resolving a local dateti
 pub(crate) const INCREMENT_MSG: &CStr = c"invalid increment: must be positive and divide a 24-hour day evenly";
 pub(crate) const INTEGER_OFFSET_DEPRECATION_MSG: &CStr = c"integer offsets are deprecated because their unit is implicit; pass a TimeDelta instead, for example hours(2)";
 pub(crate) const OFFSET_DATETIME_DOCS_MSG: &CStr = c"For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples.";
+pub(crate) const OFFSET_DIFFERENCE_STALE_MSG: &CStr = c"You are calculating a difference in calendar units between OffsetDateTimes with a remainder in exact units. The whole calendar units are correct in any time zone, but the remainder after the last whole unit is computed with the offset held fixed, and a time zone transition inside that final partial unit shifts it by the transition length. Use a ZonedDateTime for a difference that accounts for the time zone. If the fixed-offset assumption is intentional, pass `stale_offset_ok=True` to `since()` or `until()`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"You are converting a timestamp using a fixed UTC offset. The result is correct for that offset, but the offset may be stale relative to the region you intend at this timestamp. If you mean a named time zone, use ZonedDateTime.from_timestamp(ts, tz='<tz>'); if you only need the instant, use Instant.from_timestamp(ts). If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_NOW_STALE_MSG: &CStr = c"You are getting the current time using a fixed UTC offset. A fixed offset has no time zone rules, so it may be stale relative to the region you intend after a DST or other rule change. If you mean a named time zone, use ZonedDateTime.now('<tz>'); if you only need the current instant, use Instant.now(). If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an OffsetDateTime is valid and preserves its observed UTC offset. That offset may be stale relative to the source time zone if the result is in a different DST or time zone rule period (e.g. after replacing the month on a datetime in a European time zone). Convert to ZonedDateTime first (using .assume_tz()) for field replacement that accounts for the time zone. If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_ROUND_STALE_MSG: &CStr = c"Rounding an OffsetDateTime is valid and preserves its observed UTC offset. That offset may be stale relative to the source time zone if the rounded time crosses a DST or other time zone boundary. Convert to a ZonedDateTime first (using .assume_tz()) for rounding that accounts for the time zone. If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const OFFSET_SHIFT_STALE_MSG: &CStr = c"An OffsetDateTime's offset is usually an observation, not a time zone rule. The arithmetic is mathematically valid and preserves that fixed offset, but OffsetDateTime does not retain regional time zone rules. The result's offset may therefore be stale relative to the source time zone, even after an exact shift. If the originating time zone is known, convert to ZonedDateTime first using .assume_tz(). If fixed-offset arithmetic is intentional or the risk is accepted, pass `stale_offset_ok=True`. For an entirely fixed-offset domain, configure StaleOffsetWarning globally. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const OFFSET_SHIFT_STALE_MSG: &CStr = c"An OffsetDateTime's offset is usually an observation, not a time zone rule. The arithmetic is mathematically valid and preserves that fixed offset, but OffsetDateTime does not retain regional time zone rules. The result's offset may therefore be stale relative to the source time zone, even after an exact shift. If the originating time zone is known, convert to ZonedDateTime first using .assume_tz(). If fixed-offset arithmetic is intentional or the risk is accepted, pass `stale_offset_ok=True` to `add()` or `subtract()`; `+` and `-` take no keyword. For an entirely fixed-offset domain, configure StaleOffsetWarning globally. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_START_END_OF_STALE_MSG: &CStr = c"Getting the start or end of a unit on an OffsetDateTime is valid and preserves its observed UTC offset. That offset may be stale relative to the source time zone at the resulting time (e.g. the start of the year may have a different UTC offset due to DST). Convert to ZonedDateTime first (using .assume_tz()) for results that account for the time zone. If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const PLAIN_DIFF_UNAWARE_MSG: &CStr = c"Calculating the difference between two PlainDateTime values does not account for time zone transitions that may have occurred between them: for example, PlainDateTime(2023, 3, 26, 3, 0) - PlainDateTime(2023, 3, 26, 1, 0) gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, so only 1 real hour elapsed. Use .assume_tz('<tz>') for both values if you know the time zone. If time zone transitions are intentionally irrelevant here, pass `naive_arithmetic_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const PLAIN_DIFF_UNAWARE_MSG: &CStr = c"Calculating the difference between two PlainDateTime values does not account for time zone transitions that may have occurred between them: for example, PlainDateTime(2023, 3, 26, 3, 0) - PlainDateTime(2023, 3, 26, 1, 0) gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, so only 1 real hour elapsed. Use .assume_tz('<tz>') for both values if you know the time zone. If time zone transitions are intentionally irrelevant here, pass `naive_arithmetic_ok=True` to `add()`, `subtract()`, `difference()`, `since()`, or `until()`; `+` and `-` take no keyword. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const PLAIN_RELATIVE_TO_UNAWARE_MSG: &CStr = c"Using a PlainDateTime as reference does not account for time zone transitions: without a time zone, converting between calendar units (months, days) and exact time units (hours, seconds) is ambiguous across DST boundaries. Use .assume_tz('<tz>') for results that account for the time zone. If time zone transitions are intentionally irrelevant here, pass `naive_arithmetic_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by exact time units does not account for time zone transitions that may occur in the interval (e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward transition, so only 1 real hour has passed). Use .assume_tz('<tz>') + delta if you know the time zone. If time zone transitions are intentionally irrelevant here, pass `naive_arithmetic_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by exact time units does not account for time zone transitions that may occur in the interval (e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward transition, so only 1 real hour has passed). Use .assume_tz('<tz>') + delta if you know the time zone. If time zone transitions are intentionally irrelevant here, pass `naive_arithmetic_ok=True` to `add()`, `subtract()`, `difference()`, `since()`, or `until()`; `+` and `-` take no keyword. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const RANGE_MSG: &CStr = c"value or calculation out of range";
 pub(crate) const STALE_OFFSET_CALENDAR_MSG: &CStr = c"You are calculating calendar units relative to an OffsetDateTime. Because it contains only a fixed offset, Whenever must assume that the offset remains constant throughout the calculation. That offset may be stale relative to the source time zone during part of the period if the value represents a region that crosses a DST or other rule change. Use a ZonedDateTime for calendar arithmetic that accounts for the time zone. If the fixed-offset assumption is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const WARNING_HANDLING_DOCS_MSG: &CStr = c"For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";

@@ -399,8 +399,9 @@ Dates and datetimes support applying an itemized delta with `+` and `-`.
 Addition is also commutative in spelling, so both `datetime + delta` and
 `delta + datetime` are supported. These operations use the date or datetime
 as their reference and do not emit `CalendarUnitCompositionWarning`.
-As with the equivalent `add()` and `subtract()` methods, calendar clamping
-means that adding and then subtracting the same delta is not always reversible.
+As with the equivalent `add()` and `subtract()` methods, calendar units are
+applied before exact units, and years and months clamp; so adding and then
+subtracting the same delta is not always reversible.
 
 (delta-rounding)=
 ## Rounding

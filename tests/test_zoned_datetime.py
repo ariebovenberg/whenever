@@ -4803,6 +4803,70 @@ class TestAddSubtractTimeUnits:
             d.add(42)  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
+        ("call", "exc", "message"),
+        [
+            (
+                lambda d: d.add(hours(1), hours=1),
+                TypeError,
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda d: d.subtract(hours(1), hours(1)),
+                TypeError,
+                "subtract() takes at most one positional argument (2 given)",
+            ),
+            (
+                lambda d: d.add(bogus=1),
+                TypeError,
+                "add() got an unexpected keyword argument 'bogus'",
+            ),
+            (
+                lambda d: d.add(months=1.5),
+                TypeError,
+                "months must be an integer",
+            ),
+            (
+                lambda d: d.add(days=1, nanoseconds="x"),
+                TypeError,
+                "nanoseconds must be an integer",
+            ),
+            (
+                lambda d: d.add(days=1, hours=float("nan")),
+                ValueError,
+                "value or calculation out of range",
+            ),
+        ],
+    )
+    def test_rejected_argument_does_not_warn(self, call, exc, message):
+        # One day on lands on a skipped local time, so the calendar stage
+        # would warn if it ran before the exact keywords were read.
+        d = ZonedDateTime(2023, 3, 25, 2, 30, tz="Europe/Amsterdam")
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
+            call(d)
+
+    def test_policy_accepted_on_every_form(self):
+        d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
+        # the TimeDelta overload declares no policy: an exact shift never
+        # lands on a repeated or skipped local time
+        assert d.add(hours(1), disambiguation="raise") == d + hours(1)  # type: ignore[call-overload]
+        assert d.subtract(hours(1), disambiguation="raise") == d - hours(1)  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda d: d + 1,
+            lambda d: d - 1,
+            lambda d: 1 + d,
+            lambda d: d - PlainDateTime(2020, 8, 15),
+            lambda d: d + PlainDateTime(2020, 8, 15),
+        ],
+    )
+    def test_rejected_operands(self, call):
+        d = ZonedDateTime(2020, 8, 15, tz="UTC")
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            call(d)
+
+    @pytest.mark.parametrize(
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
     )
@@ -4933,11 +4997,81 @@ class TestAddSubtractCalendarUnits:
 
     def test_skipped_day(self):
         zdt = ZonedDateTime("2011-12-29T12-10:00[Pacific/Apia]")
-        # Samoa skipped 2011-12-30 entirely, so the result lands in a gap
+        # Samoa skipped 2011-12-30 entirely, so the result lands on a
+        # skipped local time
         with warns_here(ImplicitDisambiguationWarning):
             result = zdt.add(days=1)
         assert result.strict_eq(
             ZonedDateTime("2011-12-31 12:00:00+14:00[Pacific/Apia]")
+        )
+
+    def test_policy_onto_skipped_time(self):
+        d = ZonedDateTime(2023, 3, 25, 2, 30, tz="Europe/Amsterdam")
+        with pytest.raises(SkippedTime):
+            d.add(days=1, disambiguation="raise")
+        assert d.add(days=1, disambiguation="earlier").strict_eq(
+            ZonedDateTime(2023, 3, 26, 1, 30, tz="Europe/Amsterdam")
+        )
+        assert d.add(days=1, disambiguation="later").strict_eq(
+            ZonedDateTime(2023, 3, 26, 3, 30, tz="Europe/Amsterdam")
+        )
+
+    def test_policy_onto_repeated_time(self):
+        d = ZonedDateTime(2023, 10, 28, 2, 30, tz="Europe/Amsterdam")
+        with pytest.raises(RepeatedTime):
+            d.add(days=1, disambiguation="raise")
+        assert d.add(days=1, disambiguation="earlier").strict_eq(
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguation="earlier",
+            )
+        )
+        assert d.add(days=1, disambiguation="later").strict_eq(
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguation="later",
+            )
+        )
+
+    def test_carried_offset_matching_neither_occurrence_warns(self):
+        # Amsterdam was at UTC+0:19:32 in 1900, so the carried offset
+        # settles neither occurrence of the repeated local time
+        d = ZonedDateTime(1900, 10, 29, 2, 30, tz="Europe/Amsterdam")
+        with warns_here(ImplicitDisambiguationWarning):
+            result = d.add(years=123)
+        assert result.strict_eq(
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguation="compatible",
+            )
+        )
+
+    def test_calendar_units_apply_before_exact_units(self):
+        # a day first (23 hours across the transition), then 24 hours
+        d = ZonedDateTime(2023, 3, 25, 12, tz="Europe/Amsterdam")
+        assert d.add(days=1, hours=24).strict_eq(
+            ZonedDateTime(2023, 3, 27, 12, tz="Europe/Amsterdam")
+        )
+        # which is why the shift does not reverse across a transition
+        assert (
+            d.add(days=1, hours=24)
+            .subtract(days=1, hours=24)
+            .strict_eq(ZonedDateTime(2023, 3, 25, 11, tz="Europe/Amsterdam"))
         )
 
 
@@ -4958,7 +5092,7 @@ class TestDifference:
     @pytest.mark.parametrize(
         "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]
     )
-    def test_amibiguous(self, tz: str):
+    def test_repeated_time(self, tz: str):
         d = create_zdt(
             2023,
             10,
@@ -4998,6 +5132,15 @@ class TestDifference:
 
         # same with the method
         assert d.difference(other) == d - other
+
+    def test_rejects_a_delta(self):
+        d = ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam")
+        with pytest.raises(
+            TypeError,
+            match="^difference\\(\\) argument must be an Instant, "
+            "OffsetDateTime, or ZonedDateTime$",
+        ):
+            d.difference(hours(1))  # type: ignore[arg-type]
 
 
 class TestSince:
@@ -5620,12 +5763,12 @@ class TestSince:
     @pytest.mark.parametrize(
         "a, b",
         [
-            # spanning a gap
+            # spanning a skipped local time
             (
                 ZonedDateTime(2023, 3, 27, 2, 30, tz="Europe/Amsterdam"),
                 ZonedDateTime(2023, 3, 25, 2, 30, tz="Europe/Amsterdam"),
             ),
-            # spanning a fold
+            # spanning a repeated local time
             (
                 ZonedDateTime(2023, 10, 30, 2, 30, tz="Europe/Amsterdam"),
                 ZonedDateTime(2023, 10, 28, 2, 30, tz="Europe/Amsterdam"),
@@ -5647,12 +5790,130 @@ class TestSince:
             a.until(b, in_units=["days", "hours"])
             b.until(a, in_units=["days", "hours"])
 
-    def test_cal_units_with_different_tz_not_supported(self):
-        with pytest.raises(ValueError, match="same time zone"):
-            ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo").since(
-                ZonedDateTime(2023, 2, 15, tz="America/Los_Angeles"),
-                in_units=["days"],
-            )
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda a, b: a.since(b, in_units=["days"]),
+            lambda a, b: a.until(b, in_units=["months", "hours"]),
+            lambda a, b: a.since(b, total="days"),
+            lambda a, b: a.until(b, total="years"),
+        ],
+    )
+    def test_cal_units_with_different_tz_not_supported(self, call):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2023, 2, 15, tz="America/Los_Angeles")
+        with pytest.raises(
+            ValueError,
+            match="^calendar units require the same time zone, "
+            "got 'Asia/Tokyo' and 'America/Los_Angeles'$",
+        ):
+            call(a, b)
+
+    @pytest.mark.parametrize("method", ["since", "until"])
+    @pytest.mark.parametrize(
+        "other",
+        [
+            OffsetDateTime(2021, 7, 3, offset=hours(9)),
+            Instant.from_utc(2021, 7, 3),
+            PlainDateTime(2021, 7, 3),
+            hours(1),
+        ],
+    )
+    def test_rejects_other_types(self, method, other):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        with pytest.raises(
+            TypeError,
+            match=f"^{method}\\(\\) argument must be a ZonedDateTime$",
+        ):
+            getattr(a, method)(other, total="hours")
+
+    def test_units_may_be_any_iterable(self):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2023, 2, 14, tz="Asia/Tokyo")
+        assert a.since(b, in_units=iter(["hours"])) == ItemizedDelta(hours=24)  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            ({"in_units": []}, "units must not be empty"),
+            (
+                {"in_units": ["hours", "hours"]},
+                "units cannot contain duplicates",
+            ),
+            ({"in_units": ["foo"]}, "invalid unit: 'foo'"),
+            (
+                {"in_units": ["minutes", "hours"]},
+                "units must be in decreasing order of size",
+            ),
+            (
+                {"in_units": "hours"},
+                "units must be a sequence of strings, not a single string",
+            ),
+            (
+                {"in_units": ["hours", "nanoseconds"]},
+                "nanoseconds can only be specified together with seconds",
+            ),
+            (
+                {"in_units": ["hours"], "round_mode": "bad"},
+                "invalid round_mode: 'bad'",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": 0},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": -1},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": 1.5},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": "1"},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": None},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": 2**63},
+                "value or calculation out of range",
+            ),
+            ({"total": "foo"}, "invalid unit: 'foo'"),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["since", "until"])
+    def test_invalid_units_and_rounding(self, method, kwargs, message):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2023, 2, 14, tz="Asia/Tokyo")
+        with pytest.raises(
+            (TypeError, ValueError), match="^" + re.escape(message) + "$"
+        ):
+            getattr(a, method)(b, **kwargs)
+
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("months", 1 / 28),
+            ("weeks", 1 / 7),
+            ("days", 1.0),
+            ("minutes", 1440.0),
+            ("seconds", 86_400.0),
+        ],
+    )
+    def test_total_per_unit(self, unit, expected):
+        a = ZonedDateTime(2023, 2, 15, 9, tz="Asia/Tokyo")
+        b = ZonedDateTime(2023, 2, 14, 9, tz="Asia/Tokyo")
+        assert a.since(b, total=unit) == pytest.approx(expected)
+
+    def test_total_nanoseconds_returns_int(self):
+        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
+        b = ZonedDateTime(2023, 2, 14, tz="Asia/Tokyo")
+        result = a.since(b, total="nanoseconds")
+        assert isinstance(result, int)
+        assert result == 86_400_000_000_000
 
     def test_invalid_units(self):
         with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
@@ -5728,12 +5989,6 @@ class TestSince:
         result = a.since(b, total="years")
         assert isinstance(result, float)
         assert result == 2.0
-
-    def test_total_calendar_unit_different_tz_raises(self):
-        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
-        b = ZonedDateTime(2021, 7, 3, tz="Europe/Paris")
-        with pytest.raises(ValueError, match="[Cc]alendar.*same.*time zone"):
-            a.since(b, total="days")
 
     def test_no_units_raises(self):
         a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
@@ -6996,8 +7251,8 @@ class TestImplicitDisambiguationWarning:
     @pytest.mark.parametrize(
         "func",
         [
-            # A skipped local time (a gap, in PEP 495's words) can never be
-            # resolved by preserving the offset
+            # A skipped local time can never be resolved by preserving the
+            # offset
             lambda: _BEFORE_SKIPPED.add(days=1),
             lambda: _AFTER_SKIPPED.subtract(days=1),
             lambda: _BEFORE_SKIPPED.replace_date(_SKIPPED_DATE),

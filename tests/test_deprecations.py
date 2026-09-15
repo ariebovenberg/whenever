@@ -76,6 +76,22 @@ def deprecated(call: Callable[[], Any], /, *, match: str) -> Any:
             ),
         ),
         (
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").add(  # type: ignore[deprecated]
+                ItemizedDelta(hours=1), disambiguate="raise"
+            ),
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").add(
+                ItemizedDelta(hours=1), disambiguation="raise"
+            ),
+        ),
+        (
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").subtract(  # type: ignore[call-overload]
+                hours(1), disambiguate="raise"
+            ),
+            lambda: ZonedDateTime(2020, 8, 15, tz="UTC").subtract(  # type: ignore[call-overload]
+                hours(1), disambiguation="raise"
+            ),
+        ),
+        (
             lambda: ZonedDateTime(2020, 8, 15, tz="UTC").replace(  # type: ignore[deprecated]
                 hour=1, disambiguate="raise"
             ),

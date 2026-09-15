@@ -34,6 +34,30 @@ calendar units
   days, weeks, months, and years.
   See {ref}`Date-time arithmetic <arithmetic2>`.
 
+DST-safe arithmetic
+  The industry convention that exact units add elapsed time and calendar
+  units keep the local date and clock time, so a result is right on either
+  side of a time zone transition. RFC 5545 states the rule, and modern
+  date-time libraries (Temporal, java.time, NodaTime) follow it, as
+  `ZonedDateTime` does.
+  See {ref}`Date-time arithmetic <arithmetic2>`.
+
+naive arithmetic
+  Exact-unit arithmetic on a local time, which has no time zone and so
+  ignores every transition: two hours added to a `PlainDateTime` move its
+  clock two hours whatever the region's clocks did. Flagged by
+  `NaiveArithmeticWarning`, accepted with `naive_arithmetic_ok=`. *Naive*
+  alone describes a stdlib datetime without a tzinfo; a whenever value is
+  local, never naive.
+  See {ref}`arithmetic-plain`.
+
+clamping
+  A shift by years or months whose result names a day the target month
+  lacks lands on that month's last day: January 31 plus one month is
+  February 29 or 28, and February 29 plus one year is February 28.
+  Preferred over *truncation* and *constrain*.
+  See {ref}`arith-add-cal`.
+
 strict equality
   Equality that also compares what `==` deliberately ignores: the argument's
   type, the offset, the time zone, or a component given explicitly as zero.

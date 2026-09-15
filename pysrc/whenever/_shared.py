@@ -16,10 +16,12 @@ from typing import TYPE_CHECKING, Any, ClassVar, no_type_check, overload
 
 from ._common import (
     DUMMY_LEAP_YEAR,
+    RANGE_MSG,
     SPHINX_RUNNING,
     UNSET,
     _Base,
     add_alternate_constructors,
+    expect_int,
     final,
     warn_deprecated,
 )
@@ -216,9 +218,15 @@ class YearMonth(_Base):
         Raises ``ValueError`` if the result falls outside ``MIN``..``MAX``.
         """
         year, month = divmod(
-            self.year * 12 + self.month - 1 + years * 12 + months,
+            self.year * 12
+            + self.month
+            - 1
+            + expect_int("years", years) * 12
+            + expect_int("months", months),
             12,
         )
+        if not 1 <= year <= 9999:
+            raise ValueError(RANGE_MSG)
         return YearMonth._from_py_unchecked(
             self._py.replace(year=year, month=month + 1)
         )
@@ -230,7 +238,10 @@ class YearMonth(_Base):
         >>> YearMonth(2021, 1).subtract(months=1)
         YearMonth("2020-12")
         """
-        return self.add(years=-years, months=-months)
+        return self.add(
+            years=-expect_int("years", years),
+            months=-expect_int("months", months),
+        )
 
     def on_day(self, day: int, /) -> Date:
         """Create a date from this year-month with a given day
