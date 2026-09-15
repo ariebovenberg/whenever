@@ -129,6 +129,11 @@ deprecated interfaces are removed.
   `llms-full.txt`.
 - `ItemizedDelta` and `ItemizedDateDelta` are hashable, so they can be
   `set` members and `dict` keys.
+- `TimeDelta.total()`, `TimeDelta.in_units()`, `ItemizedDelta.total()`,
+  `ItemizedDelta.in_units()`, and calendar-aware `add()`/`subtract()` accept
+  `naive_arithmetic_ok=` for a `PlainDateTime` reference and
+  `stale_offset_ok=` for an `OffsetDateTime` reference, the escapes their
+  warnings name.
 
 **Changed**
 
@@ -158,6 +163,21 @@ deprecated interfaces are removed.
   they warn, so a call that raises emits no warning. A local result outside
   the supported range raises `ValueError` instead of the standard library's
   `OverflowError`.
+- Multiplying or dividing a `TimeDelta` by a number rounds half-even to the
+  nearest nanosecond on both backends; an integer operand is exact.
+  Previously the pure-Python backend truncated, the Rust extension rounded
+  away from zero, and both lost precision on long deltas.
+- The pure-Python backend now rejects a non-integer itemized delta
+  component up front, as the Rust extension already did:
+  `ItemizedDelta(days=1.5)` and `ItemizedDelta(months=float('nan'))` raise
+  `TypeError` instead of producing a delta whose `str()` failed or that was
+  not equal to itself. Components are read through `operator.index`.
+- `relative_to` on `ItemizedDelta.add()` and `subtract()` accepts
+  `PlainDateTime` and `OffsetDateTime` with the same warnings as
+  `in_units()`, each emitted once. Calendar-aware composition on
+  `ItemizedDateDelta` returns an `ItemizedDateDelta` whenever both operands
+  are date deltas, whatever the reference; `ItemizedDateDelta.in_units()`
+  and `total()` accept a datetime reference the same way, reading its date.
 
 **Fixed**
 
@@ -173,6 +193,11 @@ deprecated interfaces are removed.
 - Methods that take keyword arguments have a `__doc__` when bound to an
   instance or class in the Rust extension, so `help(Instant.from_timestamp)`
   shows their documentation on both backends.
+- Itemized composition no longer warns before raising, and
+  `ItemizedDateDelta.in_units()` validates its rounding options. The error
+  messages of the delta family are identical on both backends: one wording
+  per condition, and every out-of-range result is a `ValueError`. The
+  `units` argument of every delta method accepts any iterable of unit names.
 - `OffsetDateTime.assume_tz()` rejects an invalid `disambiguation` up front
   in the pure-Python backend, and `OffsetDateTime(py_datetime, ...)` and
   `PlainDateTime(py_datetime, ...)` name the class when rejecting a keyword.

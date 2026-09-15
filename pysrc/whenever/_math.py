@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date as _date, timedelta as _timedelta
-from typing import Literal, cast
+from typing import Literal, TypeVar, cast
 
-from ._common import INCREMENT_MSG, RANGE_MSG, invalid
+from ._common import INCREMENT_MSG, RANGE_MSG, expect_int, invalid
 from ._typing import (
     DateDeltaUnitStr,
     DeltaUnitStr,
@@ -30,6 +30,42 @@ EXACT_UNITS = ["weeks", "days", *EXACT_UNITS_STRICT]
 DELTA_UNITS = cast(
     Sequence[DeltaUnitStr], [*DATE_DELTA_UNITS, *EXACT_UNITS_STRICT]
 )
+TOTAL_UNITS = (*DATE_DELTA_UNITS, *EXACT_TOTAL_UNITS)
+
+_Tstr = TypeVar("_Tstr", bound=str)
+
+
+def unit_index(u: str, units: Sequence[str]) -> int:
+    try:
+        return units.index(u)
+    except ValueError:
+        raise invalid("unit", u) from None
+
+
+def normalize_units(
+    units: Sequence[str],
+    valid_units: Sequence[_Tstr],
+) -> tuple[_Tstr, ...]:
+    """The ``units``/``in_units`` argument as a tuple: any iterable of unit
+    names in decreasing order, a bare string and a set excepted."""
+    if isinstance(units, (str, bytes)):
+        raise TypeError(
+            "units must be a sequence of strings, not a single string"
+        )
+    if isinstance(units, (set, frozenset)):
+        raise TypeError("units must be a sequence of strings, not a set")
+    units = tuple(units)
+    if not units:
+        raise ValueError("units must not be empty")
+    if sorted(units, key=lambda u: unit_index(u, valid_units)) != list(units):
+        raise ValueError("units must be in decreasing order of size")
+    if len(set(units)) != len(units):
+        raise ValueError("units cannot contain duplicates")
+    if "nanoseconds" in units and "seconds" not in units:
+        raise ValueError(
+            "nanoseconds can only be specified together with seconds"
+        )
+    return units  # type: ignore[return-value]
 
 
 # A special class to represent February 29th on a year that is not a leap year.
@@ -92,6 +128,8 @@ def years_diff(
 
 
 def _replace_year(d: _date, year: int) -> InterimDate:
+    if not _date.min.year <= year <= _date.max.year:
+        raise ValueError(RANGE_MSG)
     try:
         return d.replace(year=year)
     except ValueError:  # only happens for Feb 29 on non-leap years
@@ -118,6 +156,8 @@ def _add_months(d: InterimDate, delta: int, /) -> _date:
     year_delta, month0_new = divmod(d.month - 1 + delta, 12)
     year_new = d.year + year_delta
     month_new = month0_new + 1
+    if not _date.min.year <= year_new <= _date.max.year:
+        raise ValueError(RANGE_MSG)
     day_new = min(d.day, days_in_month(year_new, month_new))
     return _date(year_new, month_new, day_new)
 
@@ -134,12 +174,14 @@ def days_diff(
 ) -> _AbsoluteDiff:
     b = resolve_leap_day(_b)
     diff = abs((a - b).days) // increment * increment
-
-    return (
-        diff,
-        b + _timedelta(diff * sign),
-        b + _timedelta((diff + increment) * sign),
-    )
+    try:
+        return (
+            diff,
+            b + _timedelta(diff * sign),
+            b + _timedelta((diff + increment) * sign),
+        )
+    except OverflowError:
+        raise ValueError(RANGE_MSG) from None
 
 
 DIFF_FUNCS = {
@@ -223,9 +265,21 @@ ROUND_MODES: frozenset[RoundModeStr] = frozenset(
 )
 
 
+def resolve_rounding(
+    mode: RoundModeStr, increment: int
+) -> tuple[RoundModeStr, int]:
+    """Validate the ``round_mode``/``round_increment`` pair of ``in_units()``
+    and calendar-aware composition."""
+    if mode not in ROUND_MODES:
+        raise invalid("round_mode", mode)
+    increment = expect_int("round_increment", increment)
+    if increment <= 0:
+        raise ValueError("round_increment must be a positive integer in range")
+    return mode, increment
+
+
 def increment_to_ns_for_delta(unit: str, increment: int) -> int:
-    if not isinstance(increment, int):
-        raise TypeError("increment must be an integer")
+    increment = expect_int("increment", increment)
     if increment < 1:
         raise ValueError(INCREMENT_MSG)
     try:
@@ -284,8 +338,7 @@ def exact_units_to_nanos(
             if not isinstance(v, (int, float))
         )
         raise TypeError(f"{name} must be an integer or float")
-    if not isinstance(nanoseconds, int):
-        raise TypeError("nanoseconds must be an integer")
+    nanoseconds = expect_int("nanoseconds", nanoseconds)
     try:
         return (
             int(weeks * 604_800_000_000_000)

@@ -1431,7 +1431,7 @@ class TestSince:
             )
 
     def test_empty_units(self):
-        with pytest.raises(ValueError, match="[Aa]t least one unit"):
+        with pytest.raises(ValueError, match="^units must not be empty$"):
             PlainDateTime(2023, 2, 15).since(
                 PlainDateTime(2023, 2, 15),
                 in_units=(),
@@ -1447,7 +1447,7 @@ class TestSince:
 
     def test_neither_unit_nor_units(self):
         with pytest.raises(
-            TypeError, match="Must specify|total.*or.*in_units"
+            TypeError, match="^must specify either 'total' or 'in_units'$"
         ):
             PlainDateTime(2023, 2, 15).since(
                 PlainDateTime(2023, 2, 15),

@@ -3,7 +3,7 @@ myst:
   html_meta:
     description: >-
       Conceptual guide to whenever's three delta types: normalized versus itemized
-      durations, why calendar units need context, and how to balance units.
+      deltas, why calendar units need context, and how to balance units.
 ---
 
 (guide-deltas)=
@@ -18,14 +18,14 @@ For the full API reference, see {ref}`durations`.
 
 ## Three types for three use cases
 
-`whenever` provides three delta types because durations
+`whenever` provides three delta types because deltas
 have fundamentally different arithmetic rules depending on the units involved:
 
 | Type | Units | When to use |
 |---|---|---|
 | {class}`TimeDelta` | hours, minutes, seconds, … | Measuring exact elapsed time |
 | {class}`ItemizedDateDelta` | years, months, weeks, days | Calendar arithmetic (e.g. "3 months from now") |
-| {class}`ItemizedDelta` | all of the above | Display, ISO 8601 round-tripping, mixed durations |
+| {class}`ItemizedDelta` | all of the above | Display, ISO 8601 round-tripping, mixed deltas |
 
 Keeping these cases separate prevents operations that need context—such as
 comparing `1 month` with `30 days`—from looking like ordinary exact-duration
@@ -34,7 +34,7 @@ or interchange format needs to preserve.
 
 Most of the time you won't create delta objects directly—you'll use
 `add()`, `subtract()`, `since()`, and `until()` on datetime and date objects.
-But deltas become useful when you need to *reuse* a duration, pass it around,
+But deltas become useful when you need to *reuse* a delta, pass it around,
 or inspect its components.
 
 ## Normalized vs. itemized
@@ -83,9 +83,9 @@ combine them in a calendar-aware way.
 ```python
 >>> d = ItemizedDateDelta(months=1)
 >>> d.total("days", relative_to=Date(2024, 1, 15))   # January → February
-31
+31.0
 >>> d.total("days", relative_to=Date(2024, 2, 15))   # February → March
-29   # 2024 is a leap year
+29.0   # 2024 is a leap year
 ```
 
 The same applies to {meth}`~ItemizedDateDelta.in_units`,
@@ -124,7 +124,7 @@ Use {meth}`~whenever.TimeDelta.in_units`:
 
 ```python
 >>> td = TimeDelta(minutes=150)
->>> td.in_units(["hours", "minutes"]).values()
+>>> hours, minutes = td.in_units(["hours", "minutes"]).values()
 (2, 30)
 ```
 
@@ -132,7 +132,7 @@ For itemized deltas with calendar units, balancing requires a reference date:
 
 ```python
 >>> d = ItemizedDateDelta(days=400)
->>> d.in_units(["years", "months", "days"], relative_to=Date(2024, 1, 1)).values()
+>>> years, months, days = d.in_units(["years", "months", "days"], relative_to=Date(2024, 1, 1)).values()
 (1, 1, 3)
 ```
 

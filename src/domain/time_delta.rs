@@ -59,6 +59,38 @@ impl TimeDelta {
         self.secs.get() as f64 * 1e9 + self.subsec.get() as f64
     }
 
+    /// Scale by a float, rounding half-even to the nearest nanosecond.
+    /// `None` for `nan` or a result out of range.
+    pub(crate) fn scale_f64(self, factor: f64, divide: bool) -> Option<Self> {
+        let nanos = self.to_nanos_f64();
+        Self::from_nanos_f64(
+            if divide {
+                nanos / factor
+            } else {
+                nanos * factor
+            }
+            .round_ties_even(),
+        )
+    }
+
+    /// Divide by a nonzero integer, rounding half-even to the nearest nanosecond.
+    pub(crate) fn div_round_half_even(self, divisor: i128) -> Self {
+        debug_assert!(divisor != 0);
+        let nanos = self.total_nanos();
+        let (n_abs, d_abs) = (nanos.unsigned_abs(), divisor.unsigned_abs());
+        let (quotient, remainder) = (n_abs / d_abs, n_abs % d_abs);
+        // Compare against the half without doubling, so a huge divisor can't overflow.
+        let round_up = remainder > d_abs - remainder
+            || (remainder == d_abs - remainder && !quotient.is_multiple_of(2));
+        let quotient = (quotient + u128::from(round_up)) as i128;
+        // SAFETY: the quotient's magnitude never exceeds the dividend's, which is in range.
+        Self::from_nanos_unchecked(if (nanos < 0) != (divisor < 0) {
+            -quotient
+        } else {
+            quotient
+        })
+    }
+
     pub(crate) const fn from_nanos_unchecked(nanos: i128) -> Self {
         TimeDelta {
             secs: DeltaSeconds::new_unchecked(nanos.div_euclid(NS_PER_SEC as i128) as _),

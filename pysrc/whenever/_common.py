@@ -56,6 +56,28 @@ OFFSET_SHIFT_STALE_MSG = (
     + WARNING_HANDLING_DOCS_MSG
 )
 
+PLAIN_RELATIVE_TO_UNAWARE_MSG = (
+    "Using a PlainDateTime as reference does not account for time zone transitions: "
+    "without a time zone, converting between calendar units (months, days) and "
+    "exact time units (hours, seconds) is ambiguous across DST boundaries. "
+    "Use .assume_tz('<tz>') for results that account for the time zone. "
+    "If time zone transitions are intentionally irrelevant here, pass "
+    "`naive_arithmetic_ok=True`. " + WARNING_HANDLING_DOCS_MSG
+)
+
+STALE_OFFSET_CALENDAR_MSG = (
+    "You are calculating calendar units relative to an OffsetDateTime. Because "
+    "it contains only a fixed offset, Whenever must assume that the offset "
+    "remains constant throughout the calculation. That offset may be stale "
+    "relative to the source time zone during part of the period if the value "
+    "represents a region that crosses a DST or other rule change. Use a "
+    "ZonedDateTime for calendar arithmetic that accounts for the time zone. If the fixed-offset "
+    "assumption is intentional, pass `stale_offset_ok=True`. "
+    + OFFSET_DATETIME_DOCS_MSG
+    + " "
+    + WARNING_HANDLING_DOCS_MSG
+)
+
 PLAIN_SHIFT_UNAWARE_MSG = (
     "Shifting a PlainDateTime by exact time units does not account for time zone transitions "
     "that may occur in the interval "
@@ -251,11 +273,17 @@ def invalid(name: str, value: Any, /) -> ValueError:
     return ValueError(f"invalid {name}: {value!r}")
 
 
-def check_nanos(nanosecond: Any, /) -> int:
+def expect_int(name: str, value: Any, /) -> int:
+    """Read an integer through the index protocol, as CPython's own
+    argument parser does. A ``bool`` passes; a ``float`` does not."""
     try:
-        nanos: int = _index(nanosecond)
+        return _index(value)
     except TypeError:
-        raise TypeError("nanosecond must be an integer") from None
+        raise TypeError(f"{name} must be an integer") from None
+
+
+def check_nanos(nanosecond: Any, /) -> int:
+    nanos = expect_int("nanosecond", nanosecond)
     if not 0 <= nanos < 1_000_000_000:
         raise ValueError("invalid time")
     return nanos

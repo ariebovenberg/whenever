@@ -200,14 +200,18 @@ itemized delta
 normalized delta
   A delta reduced to one exact duration, whatever components built it:
   `TimeDelta`. Ninety minutes and an hour and a half are the same value.
-  Preferred over *duration* as a type name.
+  Preferred over *duration* as a type name; a duration is the quantity a
+  delta measures.
   See {ref}`delta-norm`.
 
 component
   One unit's value in an itemized delta, such as `months` or `nanoseconds`.
   A component is present when the delta was given it, an explicit zero
   included; `==` ignores presence, iteration and `strict_eq()` do not.
-  Preferred over *field* and *part*.
+  Preferred over *field* and *part*; *present* over *set*. The *date part*
+  and *time part* of an itemized delta are its calendar and exact
+  components as two groups, what `date_and_time_parts()` splits, never
+  one component.
   See {ref}`delta-norm`.
 
 balancing

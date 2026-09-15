@@ -240,13 +240,9 @@ pub(crate) fn microseconds(state: &State, arg: PyObj) -> PyReturn {
 }
 
 pub(crate) fn nanoseconds(state: &State, arg: PyObj) -> PyReturn {
-    TimeDelta::from_nanos(
-        arg.cast_allow_subclass::<PyInt>()
-            .ok_or_type_err("nanoseconds must be an integer")?
-            .to_i128()?,
-    )
-    .ok_or_range_err()?
-    .to_obj(*state.time_delta_type)
+    TimeDelta::from_nanos(arg.expect_int("nanoseconds")?.to_i128()?)
+        .ok_or_range_err()?
+        .to_obj(*state.time_delta_type)
 }
 
 fn __richcmp__(cls: PyClass<TimeDelta>, a: TimeDelta, arg: PyObj, op: c_int) -> PyReturn {
@@ -315,7 +311,8 @@ fn mul_float(delta_obj: PyObj, factor: f64) -> PyReturn {
     } else {
         // SAFETY: one of the arguments is always the self type (the other is float)
         let (cls, delta) = unsafe { delta_obj.assume_heaptype::<TimeDelta>() };
-        TimeDelta::from_nanos_f64(delta.to_nanos_f64() * factor)
+        delta
+            .scale_f64(factor, false)
             .ok_or_range_err()?
             .to_obj(cls)
     }
@@ -330,21 +327,9 @@ fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
             if factor == 1 {
                 return Ok(Some(a_obj.newref()));
             } else if factor == 0 {
-                raise(exc_zero_division_error(), "Division by zero")?
+                raise(exc_zero_division_error(), "division by zero")?
             }
-            let nanos = delta.total_nanos();
-            // SAFETY: division by integer is never bigger than the original value.
-            Ok(Some(
-                TimeDelta::from_nanos_unchecked(
-                    // NOTE: try integer division if possible to avoid precision loss.
-                    if nanos % factor == 0 {
-                        nanos / factor
-                    } else {
-                        (nanos as f64 / factor as f64).round() as i128
-                    },
-                )
-                .to_obj(cls)?,
-            ))
+            Ok(Some(delta.div_round_half_even(factor).to_obj(cls)?))
         } else if let Some(py_float) = b_obj.cast_allow_subclass::<PyFloat>() {
             // SAFETY: the first operand is a TimeDelta and the second is a float.
             let (cls, delta) = unsafe { a_obj.assume_heaptype::<TimeDelta>() };
@@ -352,16 +337,17 @@ fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
             if factor == 1.0 {
                 return Ok(Some(a_obj.newref()));
             } else if factor == 0.0 {
-                raise(exc_zero_division_error(), "Division by zero")?
+                raise(exc_zero_division_error(), "division by zero")?
             }
             Ok(Some(
-                TimeDelta::from_nanos_f64(delta.to_nanos_f64() / factor)
+                delta
+                    .scale_f64(factor, true)
                     .ok_or_range_err()?
                     .to_obj(cls)?,
             ))
         } else if let BinaryCall::SameType { slf, other, .. } = operands {
             if other.is_zero() {
-                raise(exc_zero_division_error(), "Division by zero")?
+                raise(exc_zero_division_error(), "division by zero")?
             }
             Ok(Some(
                 (slf.total_nanos() as f64 / other.total_nanos() as f64).to_py()?,
@@ -378,7 +364,7 @@ fn __floordiv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
             return Ok(None);
         };
         if other.is_zero() {
-            raise(exc_zero_division_error(), "Division by zero")?
+            raise(exc_zero_division_error(), "division by zero")?
         }
         // NOTE: we can't avoid using i128 *in general*, because the divisor
         //       may be 1 nanosecond and the dividend TimeDelta.MAX
@@ -402,7 +388,7 @@ fn __mod__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
         let slf = slf.total_nanos();
         let other = other.total_nanos();
         if other == 0 {
-            raise(exc_zero_division_error(), "Division by zero")?
+            raise(exc_zero_division_error(), "division by zero")?
         }
         let mut result = slf % other;
         // Adjust for "correct" (Python style) floor division with mixed signs
@@ -647,6 +633,8 @@ fn in_units(
     let mut increment = difference::DifferenceIncrement::MIN;
     let mut relative_to_arg = None;
     let mut suppress_24h_warning = false;
+    let mut naive_arithmetic_ok = false;
+    let mut stale_offset_ok = false;
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
         if eq(key, *state.strs.round_mode) {
@@ -657,6 +645,10 @@ fn in_units(
             relative_to_arg = Some(value);
         } else if eq(key, *state.strs.days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy()?;
+        } else if eq(key, *state.strs.naive_arithmetic_ok) {
+            naive_arithmetic_ok = value.is_truthy()?;
+        } else if eq(key, *state.strs.stale_offset_ok) {
+            stale_offset_ok = value.is_truthy()?;
         } else {
             return Ok(false);
         }
@@ -686,7 +678,12 @@ fn in_units(
 
         // PlainDateTime/OffsetDateTime: treat local time as UTC (no DST).
         // Emit appropriate warnings only when calendar or day/week units are involved.
-        let b_dt = resolve_local_relative_to(arg, state, has_cal_or_date)?;
+        let b_dt = resolve_local_relative_to(
+            arg,
+            state,
+            has_cal_or_date && !naive_arithmetic_ok,
+            has_cal_or_date && !stale_offset_ok,
+        )?;
 
         // Compute the shifted datetime by treating b_dt as UTC anchor.
         let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
@@ -703,6 +700,9 @@ fn in_units(
             false,
         )
     } else {
+        let Some(exact) = units.to_exact_assuming_24h_days() else {
+            return raise_type_err("relative_to is required for years and months");
+        };
         if units.has_days_or_weeks() && !suppress_24h_warning {
             warn_with_class(
                 *state.warn_days_not_always_24h,
@@ -710,14 +710,9 @@ fn in_units(
                 1,
             )?;
         }
-        if let Some(exact) = units.to_exact_assuming_24h_days() {
-            let result = slf
-                .in_exact_units(exact, increment, mode.to_abs_euclid(neg))
-                .ok_or_range_err()?;
-            result.to_obj(state)
-        } else {
-            raise_type_err("years and months units require a `relative_to` argument")
-        }
+        slf.in_exact_units(exact, increment, mode.to_abs_euclid(neg))
+            .ok_or_range_err()?
+            .to_obj(state)
     }
 }
 
@@ -733,11 +728,17 @@ fn total(
 
     let mut relative_to_arg = None;
     let mut suppress_24h_warning = false;
+    let mut naive_arithmetic_ok = false;
+    let mut stale_offset_ok = false;
     handle_kwargs("total", kwargs, |key, value, eq| {
         if eq(key, *state.strs.relative_to) {
             relative_to_arg = Some(value);
         } else if eq(key, *state.strs.days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy()?;
+        } else if eq(key, *state.strs.naive_arithmetic_ok) {
+            naive_arithmetic_ok = value.is_truthy()?;
+        } else if eq(key, *state.strs.stale_offset_ok) {
+            stale_offset_ok = value.is_truthy()?;
         } else {
             return Ok(false);
         }
@@ -768,8 +769,7 @@ fn total(
         Err(calendar_unit) => calendar_unit,
     };
 
-    let arg = relative_to_arg
-        .ok_or_type_err("for calendar units, a `relative_to` argument must be passed")?;
+    let arg = relative_to_arg.ok_or_type_err("relative_to is required for years and months")?;
 
     // ZonedDateTime: full DST-aware path via zoned_target.
     if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
@@ -782,7 +782,7 @@ fn total(
     // diff, emitting appropriate warnings. Same approach as Python's
     // `assume_tz("UTC")` trick (to_tz("UTC") would be wrong: it re-interprets
     // the instant in UTC rather than keeping the local date as the anchor).
-    let b_dt = resolve_local_relative_to(arg, state, true)?;
+    let b_dt = resolve_local_relative_to(arg, state, !naive_arithmetic_ok, !stale_offset_ok)?;
 
     let neg = slf.is_negative();
     let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;

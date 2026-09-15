@@ -766,14 +766,12 @@ class TestSinceAndUntil:
             d.since(Date(2020, 1, 1), total="foos")  # type: ignore[call-overload]
 
         # empty units list
-        with pytest.raises(
-            ValueError, match="units cannot be empty|[Aa]t least one"
-        ):
+        with pytest.raises(ValueError, match="^units must not be empty$"):
             d.since(Date(2020, 1, 1), in_units=())
 
         # neither total nor in_units specified
         with pytest.raises(
-            TypeError, match="Must specify|total.*or.*in_units"
+            TypeError, match="^must specify either 'total' or 'in_units'$"
         ):
             d.since(Date(2020, 1, 1))  # type: ignore[call-overload]
 

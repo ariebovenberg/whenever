@@ -2,7 +2,7 @@
 myst:
   html_meta:
     description: >-
-      API reference for whenever's duration types: TimeDelta, ItemizedDelta, and
+      API reference for whenever's delta types: TimeDelta, ItemizedDelta, and
       ItemizedDateDelta, and how to construct and operate on them.
 ---
 
@@ -37,7 +37,7 @@ For the motivation behind the three types and help choosing one, start with
 | {ref}`Summing into one unit <delta-total>`     | {meth}`~TimeDelta.total` | {meth}`~ItemizedDateDelta.total` [^1] | {meth}`~ItemizedDelta.total` [^1] |
 | {ref}`Comparison <delta-cmp>`           | {meth}`> <TimeDelta.__gt__>` , {meth}`< <TimeDelta.__lt__>` , {meth}`>= <TimeDelta.__ge__>` , {meth}`<= <TimeDelta.__le__>` | n/a                   | n/a                    |
 | {ref}`Addition/subtraction <delta-add-sub>`  | {meth}`~TimeDelta.add` / {meth}`~TimeDelta.subtract` | {meth}`~ItemizedDateDelta.add` / {meth}`~ItemizedDateDelta.subtract` | {meth}`~ItemizedDelta.add` / {meth}`~ItemizedDelta.subtract` |
-| {ref}`Operators <delta-operators>` | {meth}`+ <TimeDelta.__add__>` , {meth}`- <TimeDelta.__sub__>` , {meth}`* <TimeDelta.__mul__>` , {meth}`/ <TimeDelta.__truediv__>` , {meth}`// <TimeDelta.__floordiv__>` , {meth}`% <TimeDelta.__mod__>` | `+`, `-` | `+`, `-` |
+| {ref}`Operators <delta-operators>` | {meth}`+ <TimeDelta.__add__>` , {meth}`- <TimeDelta.__sub__>` , {meth}`* <TimeDelta.__mul__>` , {meth}`/ <TimeDelta.__truediv__>` , {meth}`// <TimeDelta.__floordiv__>` , {meth}`% <TimeDelta.__mod__>` , unary {meth}`- <TimeDelta.__neg__>` and {meth}`+ <TimeDelta.__pos__>` , {meth}`abs() <TimeDelta.__abs__>` | {meth}`+ <ItemizedDateDelta.__add__>` , {meth}`- <ItemizedDateDelta.__sub__>` , unary {meth}`- <ItemizedDateDelta.__neg__>` , {meth}`abs() <ItemizedDateDelta.__abs__>` | {meth}`+ <ItemizedDelta.__add__>` , {meth}`- <ItemizedDelta.__sub__>` , unary {meth}`- <ItemizedDelta.__neg__>` , {meth}`abs() <ItemizedDelta.__abs__>` |
 | {ref}`Rounding <delta-rounding>` | {meth}`~TimeDelta.round`  | with {meth}`~ItemizedDateDelta.in_units`          | with {meth}`~ItemizedDelta.in_units`          |
 | {ref}`Replace components <delta-norm>` | n/a | {meth}`~ItemizedDateDelta.replace` | {meth}`~ItemizedDelta.replace` |
 | Applies to...     | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` <br> {class}`Instant` | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` <br> {class}`Date` | {class}`ZonedDateTime` <br> {class}`OffsetDateTime` <br> {class}`PlainDateTime` |
@@ -70,6 +70,9 @@ where each unit is a key and its value is the corresponding amount:
 >>> dict(d)
 {'hours': 1, 'minutes': 90}
 ```
+
+Unlike a `Counter`, an absent component raises `KeyError` rather than
+counting as zero, and `+` keeps zero components instead of dropping them.
 
 Iteration always runs from the largest unit to the smallest and includes only
 the components you gave. Explicit zeroes remain present:
@@ -163,7 +166,7 @@ if their total duration is the same, regardless of how their components are repr
 
 ```python
 >>> TimeDelta(hours=1, minutes=90) == TimeDelta(hours=2, minutes=30)
-True  # normalized durations are the same
+True  # normalized deltas are the same
 ```
 
 Use {meth}`~ItemizedDelta.strict_eq` when explicit component presence also matters
@@ -224,7 +227,7 @@ ItemizedDelta("PT182m5s")
 For example, 150 minutes balanced into hours and minutes:
 
 ```python
->>> TimeDelta(minutes=150).in_units(["hours", "minutes"]).values()
+>>> hours, minutes = TimeDelta(minutes=150).in_units(["hours", "minutes"]).values()
 (2, 30)
 ```
 
@@ -242,7 +245,7 @@ If you'd like to convert into a single unit instead, see the next section.
 
 All delta types can also be summed into a single unit using their
 {meth}`~TimeDelta.total` method (and its itemized-delta equivalents), which
-returns a `float`.
+returns a `float`, or an `int` for `"nanoseconds"`.
 
 ```python
 >>> d = TimeDelta(hours=2, minutes=30, seconds=6)
@@ -317,11 +320,38 @@ depends on the starting date:
 
 ```python
 >>> one_month = ItemizedDateDelta(months=1)
->>> one_month.add(days=30, relative_to=Date(2023, 1, 1))
+>>> one_month.add(days=30, relative_to=Date(2023, 1, 1), in_units=["months", "days"])
 ItemizedDateDelta("P2m2d")
->>> one_month.add(days=30, relative_to=Date(2023, 2, 28))
+>>> one_month.add(days=30, relative_to=Date(2023, 2, 28), in_units=["months", "days"])
 ItemizedDateDelta("P1m30d")
 ```
+
+```{note}
+`in_units` is required together with `relative_to`, because the sum has no
+single representation. One month plus 30 days from January 1 is 2 months and
+2 days, 61 days, or 8 weeks and 5 days. The coarsest unit decides which one
+you get, so you name it, as you do for {meth}`~ZonedDateTime.since`.
+```
+
+The operands decide the result type. Two {class}`ItemizedDateDelta` operands
+give an {class}`ItemizedDateDelta`, and the reference may then be a
+{class}`Date` or a datetime, of which only the date is read. Any
+{class}`ItemizedDelta` operand gives an {class}`ItemizedDelta`, and needs a
+datetime reference to resolve its exact units. Each reference type has its
+own warning:
+
+- A {class}`ZonedDateTime` resolves calendar units in its time zone and
+  emits no warning.
+- A {class}`PlainDateTime` ignores time zone transitions. It emits
+  {class}`~whenever.NaiveArithmeticWarning` when the computation crosses the
+  calendar/exact boundary, which `naive_arithmetic_ok=True` accepts.
+- An {class}`OffsetDateTime` holds its offset fixed for the whole
+  calculation. It emits {class}`~whenever.StaleOffsetWarning` when calendar
+  units are involved, which `stale_offset_ok=True` accepts.
+
+The same rule applies to `relative_to` on {meth}`~ItemizedDelta.in_units`,
+{meth}`~ItemizedDelta.total`, {meth}`~TimeDelta.in_units`, and
+{meth}`~TimeDelta.total`.
 
 Without a `relative_to` reference, itemized-delta composition is
 component-wise. That preserves the literal components, but it can change the meaning of later
@@ -334,8 +364,13 @@ Exact-only composition does not warn.
 (delta-operators)=
 ## Operators
 
-Multiplication and division are only supported for {class}`TimeDelta`, because
-these operations only make sense for exact time units.
+{class}`TimeDelta` follows the numeric protocol, as
+{class}`~datetime.timedelta` does: `*`, `/`, `//`, `%`, and unary `+` exist
+on it alone, since scaling only makes sense for one exact duration.
+Multiplying or dividing by a number rounds half-even to the nearest
+nanosecond; an integer operand is exact, a `float` operand carries float
+precision. Dividing by another `TimeDelta` gives a `float`; `//` and `%`
+take a `TimeDelta` divisor only.
 
 ```python
 >>> delta = TimeDelta(hours=2, minutes=30)
@@ -343,14 +378,22 @@ these operations only make sense for exact time units.
 TimeDelta("PT5h")
 >>> delta / 2
 TimeDelta("PT1h15m")
+>>> delta / TimeDelta(minutes=30)
+5.0
+>>> delta // TimeDelta(hours=1), delta % TimeDelta(hours=1)
+(2, TimeDelta("PT30m"))
 ```
 
-Itemized deltas also support `+` and `-`, but those operators perform
-component-wise composition and emit
-{class}`~whenever.CalendarUnitCompositionWarning` when either operand contains
-nonzero calendar units. Exact-only composition does not warn.
-Use the method forms if you want to pass `cal_unit_composition_ok=True`
+The itemized deltas are mappings, not numbers: they have `+`, `-`, unary
+`-`, and `abs()`. The binary operators perform component-wise composition
+and emit {class}`~whenever.CalendarUnitCompositionWarning` when either
+operand contains nonzero calendar units. Exact-only composition does not
+warn. Use the method forms if you want to pass `cal_unit_composition_ok=True`
 or if you need calendar-aware composition via `relative_to`.
+
+`sign()` exists where ordering does not: the itemized deltas cannot be
+compared, so it is how you read their sign, whereas a `TimeDelta` compares
+with `TimeDelta.ZERO`.
 
 Dates and datetimes support applying an itemized delta with `+` and `-`.
 Addition is also commutative in spelling, so both `datetime + delta` and

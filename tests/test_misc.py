@@ -186,6 +186,12 @@ def test_multiple_interpreters():
         interpreters.destroy(interp_id)
 
 
+def test_any_delta_runtime_value():
+    from whenever import AnyDelta
+
+    assert AnyDelta == TimeDelta | ItemizedDelta | ItemizedDateDelta
+
+
 def test_type_aliases():
     from whenever import AnyDelta  # noqa
     from whenever import DateDeltaUnitStr  # noqa
@@ -278,12 +284,12 @@ def test_itemized_runtime_annotations_resolve_from_lazy_import():
             "ItemizedDelta = whenever.ItemizedDelta; "
             "ItemizedDateDelta = whenever.ItemizedDateDelta; "
             "assert 'whenever._core' not in sys.modules; "
-            "assert get_type_hints(ItemizedDelta.add)['relative_to'] "
-            "is whenever.ZonedDateTime; "
+            "assert whenever.ZonedDateTime in "
+            "get_type_hints(ItemizedDelta.add)['relative_to'].__args__; "
             "get_type_hints(ItemizedDelta.date_and_time_parts); "
             "get_type_hints(ItemizedDateDelta.__add__); "
-            "assert get_type_hints(ItemizedDateDelta.total)['relative_to'] "
-            "is whenever.Date",
+            "assert whenever.Date in "
+            "get_type_hints(ItemizedDateDelta.total)['relative_to'].__args__",
         ],
         capture_output=True,
         text=True,
@@ -1098,10 +1104,10 @@ def test_itemized_date_delta_accepts_a_plain_reference():
     reference = PlainDateTime(2024, 3, 30, 12)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        result = ItemizedDateDelta(months=1).add(  # type: ignore[call-overload]
+        result = ItemizedDateDelta(months=1).add(
             days=1, relative_to=reference, in_units=["months", "days"]
         )
-    assert result == ItemizedDelta(months=1, days=1)
+    assert result.strict_eq(ItemizedDateDelta(months=1, days=1))
 
 
 @pytest.mark.parametrize(

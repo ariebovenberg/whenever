@@ -42,8 +42,18 @@ Sunday 7. The module constants are the members:
 
 .. autotype:: DeltaUnitStr
 .. autotype:: DeltaTotalUnitStr
+
+   The units ``total()`` accepts, ``milliseconds`` and ``microseconds``
+   included. See :ref:`delta-total`.
+
 .. autotype:: DateDeltaUnitStr
 .. autotype:: ExactDeltaUnitStr
+.. data:: AnyDelta
+
+   ``TimeDelta | ItemizedDelta | ItemizedDateDelta``: the union of the three
+   delta types, for annotating code that takes any of them.
+   See :ref:`durations`.
+
 .. autotype:: OffsetMismatchStr
 
    See :ref:`offset-mismatch` for more information.

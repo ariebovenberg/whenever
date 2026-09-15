@@ -120,7 +120,7 @@ necessary and how to avoid stale-offset arithmetic.
 (faq-why-3-deltas)=
 ## Why are there three delta types?
 
-Date and time durations have fundamentally different arithmetic rules
+Date and time deltas have fundamentally different arithmetic rules
 depending on whether their units are exact or calendar-based. The three types
 make that distinction explicit: {class}`~whenever.TimeDelta` holds normalized
 exact durations, {class}`~whenever.ItemizedDateDelta` holds calendar

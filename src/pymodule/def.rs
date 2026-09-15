@@ -295,6 +295,17 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
     module
         .getattr(c"_unpkl_utc")?
         .setattr(c"__module__", *module_name)?;
+    // As the pure-Python helpers report, so help() and pickling agree.
+    for name in [
+        c"hours",
+        c"minutes",
+        c"seconds",
+        c"milliseconds",
+        c"microseconds",
+        c"nanoseconds",
+    ] {
+        module.getattr(name)?.setattr(c"__module__", *module_name)?;
+    }
 
     unsafe { PyDateTime_IMPORT() };
     unsafe { PyDateTimeAPI().as_ref() }.ok_or(PyErrMarker)?;

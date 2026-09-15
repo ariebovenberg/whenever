@@ -330,9 +330,9 @@ Times can be compared and sorted:
 True
 ";
 pub(crate) const TIMEDELTA: &CStr = c"\
-A duration consisting of a precise time: hours, minutes, (nano)seconds.
-For durations including months or days, use :class:`~ItemizedDelta`,
-or :class:`~whenever.ItemizedDateDelta` for date-only durations.
+A delta consisting of a precise time: hours, minutes, (nano)seconds.
+For deltas including months or days, use :class:`~ItemizedDelta`,
+or :class:`~whenever.ItemizedDateDelta` for date-only deltas.
 
 The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
 for example.
@@ -428,7 +428,7 @@ looks for time zone data, in order. The tuple is a snapshot: it does
 not change when :func:`reset_tzpath` is called later.
 ";
 pub(crate) const HOURS: &CStr = c"\
-Create a :class:`~TimeDelta` with the given number of hours.
+Create a :class:`TimeDelta` with the given number of hours.
 ``hours(1) == TimeDelta(hours=1)``
 ";
 pub(crate) const MICROSECONDS: &CStr = c"\
@@ -1583,7 +1583,14 @@ add($self, delta=..., /, **kwargs)
 Add time to this delta, returning a new delta.
 
 Days and weeks are treated as exact 24-hour and 168-hour units,
-which emits a :class:`~whenever.DaysAssumed24HoursWarning`.";
+which emits a :class:`~whenever.DaysAssumed24HoursWarning` unless
+``days_assumed_24h_ok=True``.
+
+>>> TimeDelta(hours=1).add(minutes=30)
+TimeDelta(\"PT1h30m\")
+>>> TimeDelta(hours=1).add(TimeDelta(minutes=30))
+TimeDelta(\"PT1h30m\")
+";
 pub(crate) const TIMEDELTA_FORMAT_ISO: &CStr = c"\
 Format as the *popular interpretation* of the ISO 8601 duration format.
 May not strictly adhere to (all versions of) the standard.
@@ -1595,44 +1602,45 @@ Inverse of :meth:`parse_iso`.
 'PT1H30M'
 ";
 pub(crate) const TIMEDELTA_IN_UNITS: &CStr = c"\
-in_units($self, units, /, *, round_mode='trunc', round_increment=1, relative_to=..., days_assumed_24h_ok=...)
+in_units($self, units, /, *, round_mode='trunc', round_increment=1, relative_to=..., days_assumed_24h_ok=..., naive_arithmetic_ok=..., stale_offset_ok=...)
 --
 
-Convert to a :class:`ItemizedDelta` with the specified units
+Convert to an :class:`ItemizedDelta` in the given units.
 
 >>> d = TimeDelta(hours=2, minutes=30, seconds=23, milliseconds=500)
 >>> d.in_units(['minutes', 'seconds'])
-ItemizedDelta(\"PT150m24s\")
->>> (hrs, mins) = d.in_units(('hours', 'minutes'), round_mode='ceil').values()
+ItemizedDelta(\"PT150m23s\")
+>>> hrs, mins = d.in_units(('hours', 'minutes'), round_mode='ceil').values()
 (2, 31)
 
 Parameters
 ----------
 units
-    A sequence of plural unit names, in descending order.
-    Valid unit names are: ``weeks``, ``days``, ``hours``,
-    ``minutes``, ``seconds``, ``nanoseconds``.
-    ``years`` and ``months`` are also allowed if ``relative_to``
-    is provided.
+    The units of the result, largest first.
 round_mode
-    The rounding mode to use when rounding before conversion.
-    See :meth:`round` for details.
+    The rounding mode for the smallest unit in ``units``, as on
+    :meth:`round`.
 round_increment
-    The rounding increment to use when rounding before conversion.
-    See :meth:`round` for details.
+    The rounding increment for that unit.
 relative_to
-    A reference datetime required when using calendar units
-    (``years``, ``months``, ``days``, or ``weeks``) to account for variable unit lengths.
-
-    - :class:`ZonedDateTime`: DST-aware; emits no warning
-    - :class:`PlainDateTime`: does not account for time zones; emits
-      :class:`NaiveArithmeticWarning`
-    - :class:`OffsetDateTime`: does not account for DST changes; emits
-      :class:`StaleOffsetWarning`
-
-    The :class:`OffsetDateTime` case has no call-local escape: either
-    convert the reference with :meth:`OffsetDateTime.assume_tz`
-    first, or filter the :class:`StaleOffsetWarning` category.
+    The reference the calendar units are resolved against. Required
+    for years and months, whose length depends on the date. Without
+    it, days and weeks are taken as 24 and 168 hours. A
+    :class:`ZonedDateTime` emits no warning. A :class:`PlainDateTime`
+    ignores time zone transitions, and emits
+    :class:`NaiveArithmeticWarning` when the units include a
+    calendar unit. An :class:`OffsetDateTime` holds its offset fixed
+    for the whole calculation, and emits :class:`StaleOffsetWarning`
+    when the units include a calendar unit.
+days_assumed_24h_ok
+    Accepts the :class:`~whenever.DaysAssumed24HoursWarning` of days
+    or weeks without a reference.
+naive_arithmetic_ok
+    Accepts the :class:`NaiveArithmeticWarning` of a
+    :class:`PlainDateTime` reference.
+stale_offset_ok
+    Accepts the :class:`StaleOffsetWarning` of an
+    :class:`OffsetDateTime` reference.
 ";
 pub(crate) const TIMEDELTA_PARSE_ISO: &CStr = c"\
 Parse the *popular interpretation* of the ISO 8601 duration format.
@@ -1673,13 +1681,18 @@ subtract($self, delta=..., /, **kwargs)
 Subtract time from this delta, returning a new delta.
 
 Days and weeks are treated as exact 24-hour and 168-hour units,
-which emits a :class:`~whenever.DaysAssumed24HoursWarning`.";
+which emits a :class:`~whenever.DaysAssumed24HoursWarning` unless
+``days_assumed_24h_ok=True``.
+
+>>> TimeDelta(hours=1).subtract(minutes=30)
+TimeDelta(\"PT30m\")
+";
 pub(crate) const TIMEDELTA_TO_STDLIB: &CStr = c"\
 Convert to a :class:`~datetime.timedelta`
 
 >>> d = TimeDelta(hours=1, minutes=30)
 >>> d.to_stdlib()
-timedelta(seconds=5400)
+datetime.timedelta(seconds=5400)
 
 Note
 ----
@@ -1687,27 +1700,38 @@ Nanoseconds are floored to microseconds.
 If you need more control over rounding, use :meth:`round` first.
 ";
 pub(crate) const TIMEDELTA_TOTAL: &CStr = c"\
-total($self, unit, /, *, relative_to=..., days_assumed_24h_ok=...)
+total($self, unit, /, *, relative_to=..., days_assumed_24h_ok=..., naive_arithmetic_ok=..., stale_offset_ok=...)
 --
 
-The total size in the given unit, as a float (or int for nanoseconds)
-
-For calendar units (years, months, weeks, days), a ``relative_to``
-argument is required to determine the actual duration of each unit:
-
-- :class:`ZonedDateTime`: DST-aware; emits no warning
-- :class:`PlainDateTime`: no time zone context; emits
-  :class:`NaiveArithmeticWarning`
-- :class:`OffsetDateTime`: fixed offset; emits
-  :class:`StaleOffsetWarning`
-
-The :class:`OffsetDateTime` case has no call-local escape: either
-convert the reference with :meth:`OffsetDateTime.assume_tz` first, or
-filter the :class:`StaleOffsetWarning` category.
+The total duration in the given unit.
 
 >>> d = TimeDelta(hours=1, minutes=30)
 >>> d.total('minutes')
 90.0
+
+Parameters
+----------
+unit
+    The unit to sum into. ``\"nanoseconds\"`` gives an ``int``, any
+    other unit a ``float``.
+relative_to
+    The reference the calendar units are resolved against. Required
+    for years and months, whose length depends on the date. Without
+    it, days and weeks are taken as 24 and 168 hours. A
+    :class:`ZonedDateTime` emits no warning. A :class:`PlainDateTime`
+    ignores time zone transitions, and emits
+    :class:`NaiveArithmeticWarning`. An :class:`OffsetDateTime` holds
+    its offset fixed for the whole calculation, and emits
+    :class:`StaleOffsetWarning`.
+days_assumed_24h_ok
+    Accepts the :class:`~whenever.DaysAssumed24HoursWarning` of a
+    day or week total without a reference.
+naive_arithmetic_ok
+    Accepts the :class:`NaiveArithmeticWarning` of a
+    :class:`PlainDateTime` reference.
+stale_offset_ok
+    Accepts the :class:`StaleOffsetWarning` of an
+    :class:`OffsetDateTime` reference.
 ";
 pub(crate) const ZONEDDATETIME_ADD: &CStr = c"\
 add($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, disambiguation=...)

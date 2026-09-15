@@ -130,16 +130,12 @@ Sometimes an operation is deliberately imprecise — and that's fine, as long as
 the decision is conscious and documented. Each warning that a single call can
 justify has a {term}`call-local escape`: a boolean keyword ending in `_ok`
 that suppresses it for that one call, and is named in the warning's message.
-The exceptions are the `relative_to` forms of `TimeDelta.total()`,
-`TimeDelta.in_units()`, `ItemizedDelta.total()`, and `ItemizedDelta.in_units()`
-with a {class}`~whenever.PlainDateTime` or {class}`~whenever.OffsetDateTime`
-reference: they warn without an escape for now, so filter the category there.
 
 | Keyword argument | Suppresses | Used on |
 |---|---|---|
 | `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | {class}`~whenever.TimeDelta` methods, {class}`~whenever.Instant` `add`/`subtract`, {meth}`TimePatch.shift() <whenever.TimePatch.shift>` |
-| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` `add`/`subtract`, `now()`, `replace()`, `replace_date()`, `replace_time()`, `round()`, `start_of()`, `end_of()` |
-| `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods |
+| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` `add`/`subtract`, `now()`, `replace()`, `replace_date()`, `replace_time()`, `round()`, `start_of()`, `end_of()`; the delta methods `total()`, `in_units()`, `add()`, and `subtract()` with an {class}`~whenever.OffsetDateTime` as `relative_to` |
+| `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods; the delta methods `total()`, `in_units()`, `add()`, and `subtract()` with a {class}`~whenever.PlainDateTime` as `relative_to` |
 | `cal_unit_composition_ok=True` | {class}`~whenever.CalendarUnitCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
 | `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `replace()`, `add`/`subtract`, and `assume_tz()` |
 | none: filter the category | {class}`~whenever.PickleOffsetMismatchWarning` | `pickle.loads()` of a {class}`~whenever.ZonedDateTime` |

@@ -1,15 +1,25 @@
 import pickle
+import re
+import warnings
 from collections import Counter
 from collections.abc import ItemsView, KeysView, Mapping, ValuesView
+from fractions import Fraction
 from typing import Any, Literal, Sequence, cast
 
 import pytest
 from whenever import (
     CalendarUnitCompositionWarning,
     Date,
+    ImplicitDisambiguationWarning,
+    Instant,
     ItemizedDateDelta,
     ItemizedDelta,
+    NaiveArithmeticWarning,
+    OffsetDateTime,
+    PlainDateTime,
+    StaleOffsetWarning,
     ZonedDateTime,
+    hours,
 )
 
 from .common import (
@@ -18,6 +28,14 @@ from .common import (
     NeverEqual,
     warns_here,
 )
+
+
+class _Idx:
+    """An integer-like object: what CPython's own parser accepts for a field."""
+
+    def __index__(self):
+        return 5
+
 
 UNITS = cast(
     Sequence[Literal["years", "months", "weeks", "days"]],
@@ -64,8 +82,47 @@ class TestInit:
             assert d.get(unit, 0) == kwargs.get(unit, 0)
 
     def test_no_components(self):
-        with pytest.raises(ValueError, match="[Aa]t least one"):
+        with pytest.raises(
+            ValueError, match="^at least one component must be present$"
+        ):
             ItemizedDateDelta()
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"days": 1.5},
+            {"years": 1.0},
+            {"months": float("nan")},
+            {"days": Fraction(3, 2)},
+            {"days": "1"},
+        ],
+    )
+    def test_component_must_be_integer(self, kwargs):
+        (name,) = kwargs
+        with pytest.raises(TypeError, match=f"^{name} must be an integer$"):
+            ItemizedDateDelta(**kwargs)
+        with pytest.raises(TypeError, match=f"^{name} must be an integer$"):
+            ItemizedDateDelta(weeks=1).replace(**kwargs)
+        with pytest.raises(TypeError, match=f"^{name} must be an integer$"):
+            ItemizedDateDelta(weeks=1).add(**kwargs)
+        with pytest.raises(TypeError, match=f"^{name} must be an integer$"):
+            ItemizedDateDelta(weeks=1).subtract(**kwargs)
+
+    def test_index_protocol(self):
+        five = cast(int, _Idx())
+        assert ItemizedDateDelta(days=five)["days"] == 5
+        assert type(ItemizedDateDelta(days=True)["days"]) is int
+        assert ItemizedDateDelta(days=True)["days"] == 1
+        assert ItemizedDateDelta(weeks=1).replace(days=five)["days"] == 5
+        d = ItemizedDateDelta(days=1)
+        assert d.add(days=five, cal_unit_composition_ok=True)["days"] == 6
+        assert (
+            d.subtract(days=five, cal_unit_composition_ok=True)["days"] == -4
+        )
+        assert (
+            type(d.add(days=True, cal_unit_composition_ok=True)["days"]) is int
+        )
+        assert str(ItemizedDateDelta(days=True, weeks=five)) == "P5W1D"
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -114,6 +171,8 @@ class TestInit:
             ItemizedDateDelta(years=1, months=0, weeks=9_000, days=1_000),
             {"years": 1, "months": 0, "weeks": 9_000, "days": 1_000},
         ),
+        # an explicit zero is present
+        (ItemizedDateDelta(days=0), {"days": 0}),
     ],
 )
 def test_mapping_like_interface(
@@ -150,6 +209,15 @@ def test_mapping_like_interface(
             d[missing_key]
 
     assert len(d) == len(expected)
+
+    # get() with a default, and keys of another type
+    for key in expected:
+        assert d.get(key, 42) == expected[key]
+    assert d.get("foo", 42) == 42  # type: ignore[call-overload]
+    assert 0 not in d  # type: ignore[comparison-overlap]
+    assert 42 not in d  # type: ignore[comparison-overlap]
+    with pytest.raises(KeyError):
+        d[0]  # type: ignore[index]
 
 
 def test_mapping_views():
@@ -255,8 +323,10 @@ def test_replace():
         .strict_eq(ItemizedDateDelta(years=3, months=1, weeks=0, days=4))
     )
 
-    # last field dropped
-    with pytest.raises(ValueError, match="[Aa]t least one"):
+    # last component removed
+    with pytest.raises(
+        ValueError, match="^at least one component must remain present$"
+    ):
         d.replace(years=None, months=None, weeks=None)
 
     # no arguments
@@ -324,6 +394,8 @@ def test_strict_eq():
         match=r"^strict_eq\(\) argument must be an ItemizedDateDelta$",
     ):
         d1.strict_eq(ItemizedDelta(years=2))  # type: ignore[arg-type]
+    assert not ItemizedDateDelta(days=1).strict_eq(ItemizedDateDelta(days=-1))
+    assert ItemizedDateDelta(days=1) != ItemizedDateDelta(days=-1)
 
 
 class TestHash:
@@ -510,6 +582,20 @@ class TestParseIso:
             ["years", "months", "weeks"],
             {},
             ItemizedDateDelta(years=0, months=0, weeks=0),
+        ),
+        (
+            ItemizedDateDelta(days=45),
+            Date("2021-01-01"),
+            ["months"],
+            {"round_mode": "half_even"},
+            ItemizedDateDelta(months=2),
+        ),
+        (
+            ItemizedDateDelta(days=45),
+            Date("2021-01-01"),
+            ["months"],
+            {"round_mode": "half_floor"},
+            ItemizedDateDelta(months=1),
         ),
     ],
 )
@@ -760,6 +846,14 @@ class TestAddSub:
             full_result = ItemizedDateDelta(days=2) - ItemizedDelta(days=1)
         assert full_result.strict_eq(ItemizedDelta(days=1))
 
+    def test_cal_unit_composition_ok_is_read_by_truthiness(self):
+        d = ItemizedDateDelta(months=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.add(days=1, cal_unit_composition_ok=1)  # type: ignore[call-overload]
+        with warns_here(CalendarUnitCompositionWarning):
+            d.add(days=1, cal_unit_composition_ok="")  # type: ignore[call-overload]
+
     def test_cal_unit_composition_ok_suppresses_warning(self):
         result = ItemizedDateDelta(days=1).add(
             ItemizedDateDelta(days=0), cal_unit_composition_ok=True
@@ -798,7 +892,10 @@ class TestAddSub:
             operation(days=1, relative_to=reference)
         with pytest.raises(TypeError, match="relative_to"):
             operation(days=1, in_units=["days"])
-        with pytest.raises(TypeError, match="rounding"):
+        with pytest.raises(
+            TypeError,
+            match="round_mode and round_increment require relative_to",
+        ):
             operation(days=1, round_mode="ceil")
 
     @pytest.mark.parametrize("method", ["add", "subtract"])
@@ -826,7 +923,10 @@ class TestAddSub:
                 in_units=["days"],
                 **rounding,
             )
-        with pytest.raises(TypeError, match="rounding"):
+        with pytest.raises(
+            TypeError,
+            match="round_mode and round_increment require relative_to",
+        ):
             operation(round_mode="ceil", round_increment=2)
 
     def test_subtract_no_op_and_date_result(self):
@@ -918,6 +1018,321 @@ class TestTotal:
             )
 
 
+RANGE_MSG = "value or calculation out of range"
+_DATE = Date(2024, 1, 1)
+_D: Any = ItemizedDateDelta(days=1)
+
+
+class TestMessages:
+    """One template per condition, identical on both backends."""
+
+    @pytest.mark.parametrize(
+        "call, error, message",
+        [
+            (
+                lambda: _D.add(days=1, in_units=["days"]),
+                TypeError,
+                "in_units requires relative_to",
+            ),
+            (
+                lambda: _D.add(days=1, relative_to=_DATE),
+                TypeError,
+                "in_units is required with relative_to",
+            ),
+            (
+                lambda: _D.add(days=1, round_mode="ceil"),
+                TypeError,
+                "round_mode and round_increment require relative_to",
+            ),
+            (
+                lambda: _D.add(_D, days=1),
+                TypeError,
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda: _D.subtract(_D, days=1),
+                TypeError,
+                "subtract() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda: _D.add(foo=1),
+                TypeError,
+                "ItemizedDateDelta.add() got an unexpected keyword argument 'foo'",
+            ),
+            (
+                lambda: _D.in_units([], relative_to=_DATE),
+                ValueError,
+                "units must not be empty",
+            ),
+            (
+                lambda: _D.in_units(["foo"], relative_to=_DATE),
+                ValueError,
+                "invalid unit: 'foo'",
+            ),
+            (
+                lambda: _D.in_units(["hours"], relative_to=_DATE),
+                ValueError,
+                "invalid unit: 'hours'",
+            ),
+            (
+                lambda: _D.total("foo", relative_to=_DATE),
+                ValueError,
+                "invalid unit: 'foo'",
+            ),
+            (
+                lambda: _D.total("hours", relative_to=_DATE),
+                ValueError,
+                "invalid unit: 'hours'",
+            ),
+            (
+                lambda: _D.add(days=1, relative_to=_DATE, in_units=["hours"]),
+                ValueError,
+                "invalid unit: 'hours'",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["days"], relative_to=_DATE, round_mode="foo"
+                ),
+                ValueError,
+                "invalid round_mode: 'foo'",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["days"], relative_to=_DATE, round_increment=1.5
+                ),
+                TypeError,
+                "round_increment must be an integer",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["days"], relative_to=_DATE, round_increment=0
+                ),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                lambda: _D.add(
+                    days=1,
+                    relative_to=_DATE,
+                    in_units=["days"],
+                    round_increment=0,
+                ),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["days"], relative_to=_DATE, round_increment=10**9
+                ),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["months"], relative_to=_DATE, round_increment=10**9
+                ),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["years"], relative_to=_DATE, round_increment=10**9
+                ),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["days"],
+                    relative_to=Date(9999, 1, 1),
+                    round_increment=3_000_000,
+                ),
+                ValueError,
+                RANGE_MSG,
+            ),
+            (
+                lambda: ItemizedDateDelta(years=1).in_units(
+                    ["days"], relative_to=Date(9999, 6, 1)
+                ),
+                ValueError,
+                RANGE_MSG,
+            ),
+            (
+                lambda: ItemizedDateDelta(years=1).total(
+                    "days", relative_to=Date(9999, 6, 1)
+                ),
+                ValueError,
+                RANGE_MSG,
+            ),
+            # the rounding step, not the shift, leaves the calendar
+            (
+                lambda: ItemizedDateDelta(years=1).in_units(
+                    ["years"], relative_to=Date(9998, 6, 1), round_increment=5
+                ),
+                ValueError,
+                RANGE_MSG,
+            ),
+        ],
+    )
+    def test_messages(self, call, error, message):
+        with pytest.raises(error, match=f"^{re.escape(message)}$"):
+            call()
+
+    def test_units_is_any_iterable(self):
+        d: Any = ItemizedDateDelta(weeks=1, days=3)
+        expected = ItemizedDateDelta(weeks=1, days=3)
+        assert (
+            d.in_units(iter(["weeks", "days"]), relative_to=_DATE) == expected
+        )
+        assert (
+            d.in_units({"weeks": 0, "days": 0}, relative_to=_DATE) == expected
+        )
+        with pytest.raises(TypeError):
+            d.in_units(None, relative_to=_DATE)
+        with pytest.raises(TypeError):
+            d.add(days=1, relative_to=_DATE, in_units=None)
+
+    def test_raising_calls_do_not_warn(self):
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            with pytest.raises(ValueError, match="mixed sign"):
+                ItemizedDateDelta(months=1, days=1).add(days=-2)
+            with pytest.raises(ValueError, match="mixed sign"):
+                ItemizedDateDelta(months=1, days=1) + ItemizedDateDelta(
+                    days=-2
+                )
+            with pytest.raises(ValueError, match="mixed sign"):
+                ItemizedDateDelta(months=1, days=1) - ItemizedDelta(days=2)
+            with pytest.raises(TypeError):
+                _D.add(days=1, foo=2)
+        assert record == []
+
+
+class TestReferenceRule:
+    """The operands decide the result type; a date-only computation reads a
+    datetime reference's date alone, without a warning."""
+
+    DATE = Date(2023, 1, 1)
+    REFERENCES = [
+        Date(2023, 1, 1),
+        ZonedDateTime(2023, 1, 1, 12, tz="Europe/Amsterdam"),
+        PlainDateTime(2023, 1, 1, 12),
+        OffsetDateTime(2023, 1, 1, 12, offset=hours(2)),
+    ]
+
+    @pytest.mark.parametrize("reference", REFERENCES)
+    def test_date_operands_give_a_date_delta(self, reference):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            by_keyword = ItemizedDateDelta(months=1).add(
+                days=30, relative_to=reference, in_units=["months", "days"]
+            )
+            by_delta = ItemizedDateDelta(months=1).subtract(
+                ItemizedDateDelta(days=-30),
+                relative_to=reference,
+                in_units=["months", "days"],
+            )
+        assert type(by_keyword) is ItemizedDateDelta
+        assert by_keyword.strict_eq(ItemizedDateDelta(months=2, days=2))
+        assert by_delta.strict_eq(by_keyword)
+
+    @pytest.mark.parametrize("reference", REFERENCES)
+    def test_date_operands_take_date_units_only(self, reference):
+        with pytest.raises(ValueError, match="^invalid unit: 'hours'$"):
+            ItemizedDateDelta(months=1).add(
+                days=30,
+                relative_to=reference,
+                in_units=["months", "hours"],  # type: ignore[list-item]
+            )
+
+    def test_full_delta_operand_gives_a_full_delta(self):
+        with warns_here(NaiveArithmeticWarning) as caught:
+            result = ItemizedDateDelta(months=1).add(
+                ItemizedDelta(hours=1),
+                relative_to=PlainDateTime(2023, 1, 1),
+                in_units=["days", "hours"],
+            )
+        assert len(caught) == 1
+        assert type(result) is ItemizedDelta
+        assert result.strict_eq(ItemizedDelta(days=31, hours=1))
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_full_delta_operand_reference_rule(self, method):
+        operation = getattr(ItemizedDateDelta(months=1), method)
+        with warns_here(StaleOffsetWarning) as caught:
+            operation(
+                ItemizedDelta(hours=1),
+                relative_to=OffsetDateTime(2023, 1, 1, offset=hours(2)),
+                in_units=["days", "hours"],
+            )
+        assert len(caught) == 1
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            operation(
+                ItemizedDelta(hours=1),
+                relative_to=OffsetDateTime(2023, 1, 1, offset=hours(2)),
+                in_units=["days", "hours"],
+                stale_offset_ok=True,
+            )
+            operation(
+                ItemizedDelta(hours=1),
+                relative_to=PlainDateTime(2023, 1, 1),
+                in_units=["days", "hours"],
+                naive_arithmetic_ok=True,
+            )
+            operation(
+                ItemizedDelta(hours=1),
+                relative_to=ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam"),
+                in_units=["days", "hours"],
+            )
+
+    @pytest.mark.parametrize("reference", REFERENCES)
+    def test_in_units_and_total_read_the_date(self, reference):
+        d = ItemizedDateDelta(months=1, days=40)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            balanced = d.in_units(["months", "days"], relative_to=reference)
+            total = d.total("days", relative_to=reference)
+        assert type(balanced) is ItemizedDateDelta
+        assert balanced.strict_eq(
+            d.in_units(["months", "days"], relative_to=self.DATE)
+        )
+        assert total == d.total("days", relative_to=self.DATE) == 71.0
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda ref: ItemizedDateDelta(days=1).total(
+                "days", relative_to=ref
+            ),
+            lambda ref: ItemizedDateDelta(days=1).in_units(
+                ["days"], relative_to=ref
+            ),
+            lambda ref: ItemizedDateDelta(days=1).add(
+                days=1, relative_to=ref, in_units=["days"]
+            ),
+        ],
+    )
+    def test_invalid_reference_type(self, call):
+        with pytest.raises(
+            TypeError,
+            match="^relative_to must be a Date, ZonedDateTime, PlainDateTime, "
+            "or OffsetDateTime$",
+        ):
+            call(Instant.from_utc(2023, 1, 1))
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_internal_shift_warning_lands_on_the_caller(self, method):
+        # One day later is 02:30 on the morning the clock skips 02:00-03:00.
+        reference = ZonedDateTime(2023, 3, 25, 2, 30, tz="Europe/Amsterdam")
+        with warns_here(ImplicitDisambiguationWarning):
+            getattr(ItemizedDateDelta(days=1), method)(
+                ItemizedDelta(hours=0),
+                relative_to=reference,
+                in_units=["hours"],
+            )
+
+
 def test_abs():
     d = ItemizedDateDelta(days=-5, weeks=-3)
     assert abs(d).strict_eq(ItemizedDateDelta(days=5, weeks=3))
@@ -975,7 +1390,7 @@ def test_pickle(d: ItemizedDateDelta):
 
 def test_compatible_unpickle():
     # This is a pickle of ItemizedDateDelta created with the current format.
-    # Signed values, no separate sign field.
+    # Signed values, no separate sign slot.
     dumped = (
         b"\x80\x04\x95,\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0e_unp"
         b"kl_iddelta\x94\x93\x94(K\x01K\x02K\x03K\x04t\x94R\x94."

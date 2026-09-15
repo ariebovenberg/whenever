@@ -60,6 +60,14 @@ CI runs this coverage check on Python 3.14.
 - **Remove redundant checks**: if a condition is guaranteed by earlier logic, don't re-check it.
   Add a debug assert and/or a comment explaining why it's safe instead.
 - Only comment code where names and types are insufficient to explain the logic. Avoid redundant comments.
+- **Typing across modules**: `_ideltas.py` type-checks against
+  `_pywhenever` (its `_whenever` alias is that module under `TYPE_CHECKING`
+  and the package at runtime), so a call into a datetime type is checked
+  against the real overloads and needs no `cast()`. A `cast(Any, ...)` is
+  warranted only for what the signatures leave out on purpose: a private
+  keyword such as `_warn_stacklevel`, or a component splat whose signs may
+  mix. Keep each in one commented helper (`_shift_reference`), not at the
+  call sites.
 - **Complexity budget**: weigh what an addition costs against what it buys.
   A perfect error message does not weigh up against three helper functions
   with introspection; a convention is a reason to prefer the literal at each
@@ -94,9 +102,11 @@ CI runs this coverage check on Python 3.14.
 - **`None`**: never a stand-in for omitting an argument. Accepted only where
   absence is itself a value: an itemized delta component, removed with
   `replace(x=None)`.
-- **Integers**: integer fields and integer keywords (`replace()`, `n`) are
-  read with `operator.index` semantics on both backends and promise `int`
-  only; a `bool` is an `int`.
+- **Integers**: integer fields, integer keywords (`replace()`, `n`,
+  `round_increment`), and delta components (at construction, in
+  `replace()`, and as `add()`/`subtract()` keywords) are read with
+  `operator.index` semantics on both backends and promise `int` only; a
+  `bool` is an `int`.
 - **Messages**: lowercase, the offending value in `repr` form, the parameter
   named when the call has more than one, glossary headwords. Keep one wording
   per condition on both backends where that costs nothing; stdlib messages
@@ -105,7 +115,10 @@ CI runs this coverage check on Python 3.14.
 - **Warnings**: each escapable warning has one call-local escape ending in
   `_ok`, named in its message; `ImplicitDisambiguationWarning` is escaped by
   stating `disambiguation=`. A call that raises emits no warning: validate,
-  compute, then warn.
+  compute, then warn. A library-internal calendar shift on a
+  `ZonedDateTime` passes `_warn_stacklevel=` so its
+  `ImplicitDisambiguationWarning` lands on the caller; never catch and
+  re-emit.
 - **Spelling**: *time zone* in prose, `timezone` in identifiers.
 - **Attribute or method**: a field of the value's own notation (`year`,
   `offset`, `tz_id`, `week`) is an attribute; everything derived

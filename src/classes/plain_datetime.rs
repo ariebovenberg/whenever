@@ -633,19 +633,20 @@ fn plain_since(
 }
 
 /// Resolve a non-ZonedDateTime `relative_to` argument to a `PlainDateTime`,
-/// emitting the appropriate warning if the condition is met.
-///
-/// If `warn` is true, emit the warning appropriate to the argument type.
+/// with the warning its type carries: `warn_naive` for a `PlainDateTime`,
+/// `warn_stale` for an `OffsetDateTime`. Each is already false when the
+/// caller's escape was passed.
 ///
 /// The caller is responsible for handling the ZonedDateTime case before calling
 /// this function (which always returns `Err` for ZonedDateTime args).
 pub(crate) fn resolve_local_relative_to(
     arg: PyObj,
     state: &State,
-    warn: bool,
+    warn_naive: bool,
+    warn_stale: bool,
 ) -> PyResult<PlainDateTime> {
     if let Some(pdt) = arg.extract(*state.plain_datetime_type) {
-        if warn {
+        if warn_naive {
             warn_with_class(
                 *state.warn_naive_arithmetic,
                 doc::PLAIN_RELATIVE_TO_UNAWARE_MSG,
@@ -654,7 +655,7 @@ pub(crate) fn resolve_local_relative_to(
         }
         Ok(pdt)
     } else if let Some(odt) = arg.extract(*state.offset_datetime_type) {
-        if warn {
+        if warn_stale {
             warn_with_class(
                 *state.warn_potentially_stale_offset,
                 doc::STALE_OFFSET_CALENDAR_MSG,

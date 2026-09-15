@@ -40,9 +40,13 @@ from ._common import (
     INCREMENT_MSG,
     OFFSET_DATETIME_DOCS_MSG,
     OFFSET_SHIFT_STALE_MSG,
+    # The Rust extension takes its copy of the two reference messages from
+    # this module's namespace (scripts/generate_docstrings.py).
+    PLAIN_RELATIVE_TO_UNAWARE_MSG,  # noqa: F401
     PLAIN_SHIFT_UNAWARE_MSG,
     RANGE_MSG,
     SPHINX_RUNNING,
+    STALE_OFFSET_CALENDAR_MSG,  # noqa: F401
     SYSTEM_TZ,
     UNSET,
     WARNING_HANDLING_DOCS_MSG,
@@ -85,7 +89,10 @@ from ._math import (
     increment_to_ns_for_datetime,
     increment_to_ns_for_delta,
     is_leap,
+    normalize_units,
     resolve_leap_day,
+    resolve_rounding,
+    unit_index,
 )
 from ._parse import (
     MONTH_TO_RFC2822,
@@ -1158,12 +1165,12 @@ class Date(_Base):
         """
         if total is not UNSET:
             if in_units is not UNSET:
-                raise TypeError("Cannot specify both 'total' and 'in_units'")
+                raise TypeError("cannot specify both 'total' and 'in_units'")
             if round_mode is not UNSET or round_increment is not UNSET:
                 raise TypeError(
                     "'round_mode' and 'round_increment' cannot be used with 'total'"
                 )
-            _unit_index(total, DATE_DELTA_UNITS)
+            unit_index(total, DATE_DELTA_UNITS)
             sign: Literal[1, -1] = 1 if self._py_date >= b._py_date else -1
             trunc_amount, trunc_date_interim, expand_date_interim = DIFF_FUNCS[
                 total
@@ -1174,9 +1181,9 @@ class Date(_Base):
             num = float((self._py_date - trunc_date).days)
             return (trunc_amount + num / denom) * sign
         elif in_units is UNSET:
-            raise TypeError("Must specify either `in_units` or `total`")
+            raise TypeError("must specify either 'total' or 'in_units'")
 
-        units = _normalize_units(in_units, valid_units=DATE_DELTA_UNITS)
+        units = normalize_units(in_units, valid_units=DATE_DELTA_UNITS)
         effective_increment = (
             1 if round_increment is UNSET else round_increment
         )
@@ -1785,15 +1792,51 @@ Time.NOON = Time(12)
 Time.MAX = Time(23, 59, 59, nanosecond=_MAX_SUBSEC_NANOS)
 
 
+def _round_float_nanos(value: float, /) -> int:
+    """Round half-even to a whole nanosecond count; ``nan`` and infinity
+    are out of range."""
+    try:
+        return round(value)
+    except (ValueError, OverflowError):
+        raise ValueError(RANGE_MSG) from None
+
+
+def _div_round_half_even(n: int, d: int, /) -> int:
+    quotient, remainder = divmod(abs(n), abs(d))
+    if 2 * remainder > abs(d) or (2 * remainder == abs(d) and quotient % 2):
+        quotient += 1
+    return -quotient if (n < 0) != (d < 0) else quotient
+
+
+_TIMEDELTA_SHIFT_KWARGS = frozenset(
+    (
+        "weeks",
+        "days",
+        "hours",
+        "minutes",
+        "seconds",
+        "milliseconds",
+        "microseconds",
+        "nanoseconds",
+        "days_assumed_24h_ok",
+    )
+)
+
+
 def _timedelta_from_shift_kwargs(
-    kwargs: dict[str, Any], /, *, warn_level: int
+    kwargs: dict[str, Any], /, *, fname: str, warn_level: int
 ) -> TimeDelta:
     """Build the TimeDelta for ``TimeDelta.add()``/``subtract()`` keywords.
 
     Constructing it in those methods would attribute the days-are-24-hours
-    warning to their own frame, so emit it here at ``warn_level`` and let the
-    constructor stay quiet.
+    warning to their own frame, so emit it here at ``warn_level``, once the
+    constructor has succeeded, and let the constructor stay quiet.
     """
+    check_no_kwargs(
+        {k: v for k, v in kwargs.items() if k not in _TIMEDELTA_SHIFT_KWARGS},
+        fname,
+    )
+    result = TimeDelta(**{**kwargs, "days_assumed_24h_ok": True})
     if (kwargs.get("weeks") or kwargs.get("days")) and not kwargs.get(
         "days_assumed_24h_ok"
     ):
@@ -1802,14 +1845,14 @@ def _timedelta_from_shift_kwargs(
             DaysAssumed24HoursWarning,
             stacklevel=warn_level,
         )
-    return TimeDelta(**{**kwargs, "days_assumed_24h_ok": True})
+    return result
 
 
 @final
 class TimeDelta(_Base):
-    """A duration consisting of a precise time: hours, minutes, (nano)seconds.
-    For durations including months or days, use :class:`~ItemizedDelta`,
-    or :class:`~whenever.ItemizedDateDelta` for date-only durations.
+    """A delta consisting of a precise time: hours, minutes, (nano)seconds.
+    For deltas including months or days, use :class:`~ItemizedDelta`,
+    or :class:`~whenever.ItemizedDateDelta` for date-only deltas.
 
     The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
     for example.
@@ -1926,44 +1969,51 @@ class TimeDelta(_Base):
         *,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = UNSET,
         days_assumed_24h_ok: bool = UNSET,
+        naive_arithmetic_ok: bool = UNSET,
+        stale_offset_ok: bool = UNSET,
     ) -> float | int:
-        """The total size in the given unit, as a float (or int for nanoseconds)
-
-        For calendar units (years, months, weeks, days), a ``relative_to``
-        argument is required to determine the actual duration of each unit:
-
-        - :class:`ZonedDateTime`: DST-aware; emits no warning
-        - :class:`PlainDateTime`: no time zone context; emits
-          :class:`NaiveArithmeticWarning`
-        - :class:`OffsetDateTime`: fixed offset; emits
-          :class:`StaleOffsetWarning`
-
-        The :class:`OffsetDateTime` case has no call-local escape: either
-        convert the reference with :meth:`OffsetDateTime.assume_tz` first, or
-        filter the :class:`StaleOffsetWarning` category.
+        """The total duration in the given unit.
 
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d.total('minutes')
         90.0
+
+        Parameters
+        ----------
+        unit
+            The unit to sum into. ``"nanoseconds"`` gives an ``int``, any
+            other unit a ``float``.
+        relative_to
+            The reference the calendar units are resolved against. Required
+            for years and months, whose length depends on the date. Without
+            it, days and weeks are taken as 24 and 168 hours. A
+            :class:`ZonedDateTime` emits no warning. A :class:`PlainDateTime`
+            ignores time zone transitions, and emits
+            :class:`NaiveArithmeticWarning`. An :class:`OffsetDateTime` holds
+            its offset fixed for the whole calculation, and emits
+            :class:`StaleOffsetWarning`.
+        days_assumed_24h_ok
+            Accepts the :class:`~whenever.DaysAssumed24HoursWarning` of a
+            day or week total without a reference.
+        naive_arithmetic_ok
+            Accepts the :class:`NaiveArithmeticWarning` of a
+            :class:`PlainDateTime` reference.
+        stale_offset_ok
+            Accepts the :class:`StaleOffsetWarning` of an
+            :class:`OffsetDateTime` reference.
         """
         if unit in ("days", "weeks", "years", "months"):
             if relative_to is not UNSET:
-                # For non-zoned datetimes, we can just pretend to work in
-                # the UTC 'time zone' and continue with the tz aware logic.
-                if isinstance(relative_to, PlainDateTime):
-                    warn(
-                        PLAIN_RELATIVE_TO_UNAWARE_MSG,
-                        NaiveArithmeticWarning,
-                        stacklevel=2,
-                    )
-                    relative_to = relative_to.assume_tz("UTC")
-                elif isinstance(relative_to, OffsetDateTime):
-                    warn(
-                        StaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
-                        stacklevel=2,
-                    )
-                    relative_to = relative_to.to_plain().assume_tz("UTC")
-
+                # A TimeDelta is exact and the unit is a calendar unit, so
+                # the conversion always crosses the boundary.
+                relative_to = _ideltas._resolve_reference(
+                    relative_to,
+                    True,
+                    True,
+                    naive_arithmetic_ok,
+                    stale_offset_ok,
+                    3,
+                )
                 shifted = relative_to + self
                 sign: Literal[1, -1] = 1 if self._total_ns >= 0 else -1
 
@@ -2021,9 +2071,7 @@ class TimeDelta(_Base):
                         stacklevel=2,
                     )
             else:
-                raise TypeError(
-                    f"Cannot convert TimeDelta to {unit!r} without a `relative_to` parameter"
-                )
+                raise TypeError("relative_to is required for years and months")
         elif unit == "nanoseconds":
             return self._total_ns
         try:
@@ -2050,73 +2098,65 @@ class TimeDelta(_Base):
         round_increment: int = 1,
         relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime = UNSET,
         days_assumed_24h_ok: bool = UNSET,
+        naive_arithmetic_ok: bool = UNSET,
+        stale_offset_ok: bool = UNSET,
     ) -> ItemizedDelta:
-        """Convert to a :class:`ItemizedDelta` with the specified units
+        """Convert to an :class:`ItemizedDelta` in the given units.
 
         >>> d = TimeDelta(hours=2, minutes=30, seconds=23, milliseconds=500)
         >>> d.in_units(['minutes', 'seconds'])
-        ItemizedDelta("PT150m24s")
-        >>> (hrs, mins) = d.in_units(('hours', 'minutes'), round_mode='ceil').values()
+        ItemizedDelta("PT150m23s")
+        >>> hrs, mins = d.in_units(('hours', 'minutes'), round_mode='ceil').values()
         (2, 31)
 
         Parameters
         ----------
         units
-            A sequence of plural unit names, in descending order.
-            Valid unit names are: ``weeks``, ``days``, ``hours``,
-            ``minutes``, ``seconds``, ``nanoseconds``.
-            ``years`` and ``months`` are also allowed if ``relative_to``
-            is provided.
+            The units of the result, largest first.
         round_mode
-            The rounding mode to use when rounding before conversion.
-            See :meth:`round` for details.
+            The rounding mode for the smallest unit in ``units``, as on
+            :meth:`round`.
         round_increment
-            The rounding increment to use when rounding before conversion.
-            See :meth:`round` for details.
+            The rounding increment for that unit.
         relative_to
-            A reference datetime required when using calendar units
-            (``years``, ``months``, ``days``, or ``weeks``) to account for variable unit lengths.
-
-            - :class:`ZonedDateTime`: DST-aware; emits no warning
-            - :class:`PlainDateTime`: does not account for time zones; emits
-              :class:`NaiveArithmeticWarning`
-            - :class:`OffsetDateTime`: does not account for DST changes; emits
-              :class:`StaleOffsetWarning`
-
-            The :class:`OffsetDateTime` case has no call-local escape: either
-            convert the reference with :meth:`OffsetDateTime.assume_tz`
-            first, or filter the :class:`StaleOffsetWarning` category.
+            The reference the calendar units are resolved against. Required
+            for years and months, whose length depends on the date. Without
+            it, days and weeks are taken as 24 and 168 hours. A
+            :class:`ZonedDateTime` emits no warning. A :class:`PlainDateTime`
+            ignores time zone transitions, and emits
+            :class:`NaiveArithmeticWarning` when the units include a
+            calendar unit. An :class:`OffsetDateTime` holds its offset fixed
+            for the whole calculation, and emits :class:`StaleOffsetWarning`
+            when the units include a calendar unit.
+        days_assumed_24h_ok
+            Accepts the :class:`~whenever.DaysAssumed24HoursWarning` of days
+            or weeks without a reference.
+        naive_arithmetic_ok
+            Accepts the :class:`NaiveArithmeticWarning` of a
+            :class:`PlainDateTime` reference.
+        stale_offset_ok
+            Accepts the :class:`StaleOffsetWarning` of an
+            :class:`OffsetDateTime` reference.
         """
-        units = _normalize_units(units, DELTA_UNITS)
+        units = normalize_units(units, DELTA_UNITS)
+        round_mode, round_increment = resolve_rounding(
+            round_mode, round_increment
+        )
         has_years_months = "years" in units or "months" in units
         if has_years_months and relative_to is UNSET:
-            raise TypeError(
-                "Years and months units require a `relative_to` argument"
-            )
-        if units[-1] == "nanoseconds" and (
-            len(units) == 1 or units[-2] != "seconds"
-        ):
-            raise ValueError(
-                "Nanoseconds can only be specified together with seconds"
-            )
+            raise TypeError("relative_to is required for years and months")
 
         if relative_to is not UNSET:
-            has_cal = has_years_months or "days" in units or "weeks" in units
-            if isinstance(relative_to, PlainDateTime):
-                if has_cal:
-                    warn(
-                        PLAIN_RELATIVE_TO_UNAWARE_MSG,
-                        NaiveArithmeticWarning,
-                        stacklevel=2,
-                    )
-                relative_to = relative_to.assume_tz("UTC")
-            elif isinstance(relative_to, OffsetDateTime):
-                if has_cal:
-                    warn(
-                        StaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
-                        stacklevel=2,
-                    )
-                relative_to = relative_to.to_plain().assume_tz("UTC")
+            # A TimeDelta is exact: the conversion crosses the boundary
+            # exactly when the target units include a calendar unit.
+            relative_to = _ideltas._resolve_reference(
+                relative_to,
+                True,
+                has_years_months or "days" in units or "weeks" in units,
+                naive_arithmetic_ok,
+                stale_offset_ok,
+                3,
+            )
             return (relative_to + self).since(
                 relative_to,
                 in_units=units,
@@ -2169,7 +2209,7 @@ class TimeDelta(_Base):
 
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d.to_stdlib()
-        timedelta(seconds=5400)
+        datetime.timedelta(seconds=5400)
 
         Note
         ----
@@ -2356,23 +2396,34 @@ class TimeDelta(_Base):
         milliseconds: float = ...,
         microseconds: float = ...,
         nanoseconds: int = ...,
+        days_assumed_24h_ok: bool = ...,
     ) -> TimeDelta: ...
 
     def add(self, delta: TimeDelta = UNSET, /, **kwargs: Any) -> TimeDelta:
         """Add time to this delta, returning a new delta.
 
         Days and weeks are treated as exact 24-hour and 168-hour units,
-        which emits a :class:`~whenever.DaysAssumed24HoursWarning`."""
+        which emits a :class:`~whenever.DaysAssumed24HoursWarning` unless
+        ``days_assumed_24h_ok=True``.
+
+        >>> TimeDelta(hours=1).add(minutes=30)
+        TimeDelta("PT1h30m")
+        >>> TimeDelta(hours=1).add(TimeDelta(minutes=30))
+        TimeDelta("PT1h30m")
+        """
         if kwargs:
             if delta is not UNSET:
                 raise TypeError(
                     "add() cannot mix positional and keyword arguments"
                 )
-            return self + _timedelta_from_shift_kwargs(kwargs, warn_level=3)
-        elif delta is not UNSET:
-            return self + delta
-        else:
+            return self + _timedelta_from_shift_kwargs(
+                kwargs, fname="add", warn_level=3
+            )
+        elif delta is UNSET:
             return self
+        elif not isinstance(delta, TimeDelta):
+            raise TypeError("add() argument must be a TimeDelta")
+        return self + delta
 
     @overload
     def subtract(self, delta: TimeDelta, /) -> TimeDelta: ...
@@ -2390,6 +2441,7 @@ class TimeDelta(_Base):
         milliseconds: float = ...,
         microseconds: float = ...,
         nanoseconds: int = ...,
+        days_assumed_24h_ok: bool = ...,
     ) -> TimeDelta: ...
 
     def subtract(
@@ -2398,17 +2450,25 @@ class TimeDelta(_Base):
         """Subtract time from this delta, returning a new delta.
 
         Days and weeks are treated as exact 24-hour and 168-hour units,
-        which emits a :class:`~whenever.DaysAssumed24HoursWarning`."""
+        which emits a :class:`~whenever.DaysAssumed24HoursWarning` unless
+        ``days_assumed_24h_ok=True``.
+
+        >>> TimeDelta(hours=1).subtract(minutes=30)
+        TimeDelta("PT30m")
+        """
         if kwargs:
             if delta is not UNSET:
                 raise TypeError(
                     "subtract() cannot mix positional and keyword arguments"
                 )
-            return self - _timedelta_from_shift_kwargs(kwargs, warn_level=3)
-        elif delta is not UNSET:
-            return self - delta
-        else:
+            return self - _timedelta_from_shift_kwargs(
+                kwargs, fname="subtract", warn_level=3
+            )
+        elif delta is UNSET:
             return self
+        elif not isinstance(delta, TimeDelta):
+            raise TypeError("subtract() argument must be a TimeDelta")
+        return self - delta
 
     @overload
     def __add__(self, other: TimeDelta, /) -> TimeDelta: ...
@@ -2434,11 +2494,18 @@ class TimeDelta(_Base):
         | ZonedDateTime,
         /,
     ) -> TimeDelta | Instant | PlainDateTime | OffsetDateTime | ZonedDateTime:
-        """Add two deltas together
+        """Add two deltas together, or shift a datetime by this delta
 
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d + TimeDelta(minutes=30)
         TimeDelta("PT2h")
+        >>> d + Instant.from_utc(2022, 10, 24)
+        Instant("2022-10-24 01:30:00Z")
+
+        Shifting a :class:`PlainDateTime` emits
+        :class:`~whenever.NaiveArithmeticWarning` and an
+        :class:`OffsetDateTime` :class:`~whenever.StaleOffsetWarning`, as
+        their ``add()`` methods do; use those to pass the escape.
         """
         if isinstance(
             other, (Instant, PlainDateTime, OffsetDateTime, ZonedDateTime)
@@ -2506,15 +2573,22 @@ class TimeDelta(_Base):
         return bool(self._total_ns)
 
     def __mul__(self, other: float, /) -> TimeDelta:
-        """Multiply by a number
+        """Multiply by a number, as ``d * 2`` or ``2 * d``
+
+        The result is rounded half-even to the nearest nanosecond; an
+        integer operand is exact, a ``float`` operand carries float
+        precision.
 
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d * 2.5
         TimeDelta("PT3h45m")
         """
-        if not isinstance(other, (int, float)):
+        if isinstance(other, int):
+            result = self._total_ns * other
+        elif isinstance(other, float):
+            result = _round_float_nanos(self._total_ns * other)
+        else:
             return NotImplemented
-        result = int(self._total_ns * other)
         if abs(result) > _MAX_DELTA_NANOS:
             raise ValueError(RANGE_MSG)
         return TimeDelta._from_nanos_unchecked(result)
@@ -2550,22 +2624,33 @@ class TimeDelta(_Base):
     def __truediv__(self, other: float | TimeDelta, /) -> TimeDelta | float:
         """Divide by a number or another delta
 
+        Dividing by a number rounds half-even to the nearest nanosecond; an
+        integer operand is exact, a ``float`` operand carries float
+        precision. Dividing by another delta gives a ``float``.
+
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d / 2.5
         TimeDelta("PT36m")
         >>> d / TimeDelta(minutes=30)
         3.0
-
-        Note
-        ----
-        Because TimeDelta is limited to nanosecond precision, the result of
-        division may not be exact.
         """
         if isinstance(other, TimeDelta):
+            if not other._total_ns:
+                raise ZeroDivisionError("division by zero")
             return self._total_ns / other._total_ns
-        elif isinstance(other, (int, float)):
-            return TimeDelta(nanoseconds=int(self._total_ns / other))
-        return NotImplemented
+        elif isinstance(other, int):
+            if not other:
+                raise ZeroDivisionError("division by zero")
+            result = _div_round_half_even(self._total_ns, other)
+        elif isinstance(other, float):
+            if not other:
+                raise ZeroDivisionError("division by zero")
+            result = _round_float_nanos(self._total_ns / other)
+        else:
+            return NotImplemented
+        if abs(result) > _MAX_DELTA_NANOS:
+            raise ValueError(RANGE_MSG)
+        return TimeDelta._from_nanos_unchecked(result)
 
     def __floordiv__(self, other: TimeDelta, /) -> int:
         """Floor division by another delta
@@ -2576,6 +2661,8 @@ class TimeDelta(_Base):
         """
         if not isinstance(other, TimeDelta):
             return NotImplemented
+        if not other._total_ns:
+            raise ZeroDivisionError("division by zero")
         return self._total_ns // other._total_ns
 
     def __mod__(self, other: TimeDelta, /) -> TimeDelta:
@@ -2587,6 +2674,8 @@ class TimeDelta(_Base):
         """
         if not isinstance(other, TimeDelta):
             return NotImplemented
+        if not other._total_ns:
+            raise ZeroDivisionError("division by zero")
         return TimeDelta(nanoseconds=self._total_ns % other._total_ns)
 
     def __abs__(self) -> TimeDelta:
@@ -4694,8 +4783,8 @@ class OffsetDateTime(_ExactAndLocalTime):
         return _offset_since(
             self,
             b,
-            None if total is UNSET else total,
-            None if in_units is UNSET else in_units,
+            total,
+            in_units,
             round_mode,
             round_increment,
         )
@@ -4734,8 +4823,8 @@ class OffsetDateTime(_ExactAndLocalTime):
         return _offset_since(
             b,
             self,
-            None if total is UNSET else total,
-            None if in_units is UNSET else in_units,
+            total,
+            in_units,
             round_mode,
             round_increment,
         )
@@ -5932,8 +6021,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         return _zoned_since(
             self,
             b,
-            None if total is UNSET else total,
-            None if in_units is UNSET else in_units,
+            total,
+            in_units,
             round_mode,
             round_increment,
         )
@@ -5972,8 +6061,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         return _zoned_since(
             b,
             self,
-            None if total is UNSET else total,
-            None if in_units is UNSET else in_units,
+            total,
+            in_units,
             round_mode,
             round_increment,
         )
@@ -7027,8 +7116,8 @@ class PlainDateTime(_LocalTime):
         return _plain_since(
             self,
             b,
-            None if total is UNSET else total,
-            None if in_units is UNSET else in_units,
+            total,
+            in_units,
             round_mode,
             round_increment,
             emit_warn=not naive_arithmetic_ok,
@@ -7071,8 +7160,8 @@ class PlainDateTime(_LocalTime):
         return _plain_since(
             b,
             self,
-            None if total is UNSET else total,
-            None if in_units is UNSET else in_units,
+            total,
+            in_units,
             round_mode,
             round_increment,
             emit_warn=not naive_arithmetic_ok,
@@ -7648,28 +7737,6 @@ PLAIN_DIFF_UNAWARE_MSG = (
     "`naive_arithmetic_ok=True`. " + WARNING_HANDLING_DOCS_MSG
 )
 
-PLAIN_RELATIVE_TO_UNAWARE_MSG = (
-    "Using a PlainDateTime as reference does not account for time zone transitions: "
-    "without a time zone, converting between calendar units (months, days) and "
-    "exact time units (hours, seconds) is ambiguous across DST boundaries. "
-    "Use .assume_tz('<tz>') for results that account for the time zone. "
-    "If time zone transitions are intentionally irrelevant here, pass "
-    "`naive_arithmetic_ok=True`. " + WARNING_HANDLING_DOCS_MSG
-)
-
-STALE_OFFSET_CALENDAR_MSG = (
-    "You are calculating calendar units relative to an OffsetDateTime. Because "
-    "it contains only a fixed offset, Whenever must assume that the offset "
-    "remains constant throughout the calculation. That offset may be stale "
-    "relative to the source time zone during part of the period if the value "
-    "represents a region that crosses a DST or other rule change. Use a "
-    "ZonedDateTime for calendar arithmetic that accounts for the time zone. If the fixed-offset "
-    "assumption is intentional, pass `stale_offset_ok=True`. "
-    + OFFSET_DATETIME_DOCS_MSG
-    + " "
-    + WARNING_HANDLING_DOCS_MSG
-)
-
 CANNOT_ROUND_DAY_MSG = (
     "Cannot round to day, because days do not have a fixed length. "
     "Due to daylight saving time, some days have 23 or 25 hours. "
@@ -7854,18 +7921,11 @@ def _format_dt(
     )
 
 
-def _unit_index(u: str, units: Sequence[str]) -> int:
-    try:
-        return units.index(u)
-    except ValueError:
-        raise invalid("unit", u) from None
-
-
 def _plain_since(
     self: PlainDateTime,
     b: PlainDateTime,
-    total: DeltaTotalUnitStr | None,
-    in_units: Sequence[DeltaUnitStr] | None,
+    total: DeltaTotalUnitStr,
+    in_units: Sequence[DeltaUnitStr],
     round_mode: RoundModeStr = UNSET,
     round_increment: int = UNSET,
     emit_warn: bool = True,
@@ -7873,9 +7933,9 @@ def _plain_since(
     """Shared since() implementation for PlainDateTime and OffsetDateTime.
     Days are always 24 hours (no DST adjustments).
     """
-    if total is not None:
-        if in_units is not None:
-            raise TypeError("Cannot specify both 'total' and 'in_units'")
+    if total is not UNSET:
+        if in_units is not UNSET:
+            raise TypeError("cannot specify both 'total' and 'in_units'")
         if round_mode is not UNSET or round_increment is not UNSET:
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
@@ -7891,14 +7951,14 @@ def _plain_since(
             )
         # Use UTC ZonedDateTime to avoid double-warning inside TimeDelta.total.
         return self._sub(b).total(total, relative_to=b.assume_tz("UTC"))
-    elif in_units is None:
-        raise TypeError("Must specify either `total` or `in_units`")
+    elif in_units is UNSET:
+        raise TypeError("must specify either 'total' or 'in_units'")
 
     effective_increment = 1 if round_increment is UNSET else round_increment
     effective_round_mode: RoundModeStr = (
         "trunc" if round_mode is UNSET else round_mode
     )
-    units = _normalize_units(in_units, valid_units=DELTA_UNITS)
+    units = normalize_units(in_units, valid_units=DELTA_UNITS)
     cal_units, exact_units = _split_calendar_and_exact_units(units)
 
     # Warn only when the output contains exact time units (hours/min/sec/ns).
@@ -7983,8 +8043,8 @@ def _plain_since(
 def _offset_since(
     self: OffsetDateTime,
     b: OffsetDateTime,
-    total: DeltaTotalUnitStr | None,
-    in_units: Sequence[DeltaUnitStr] | None,
+    total: DeltaTotalUnitStr,
+    in_units: Sequence[DeltaUnitStr],
     round_mode: RoundModeStr = UNSET,
     round_increment: int = UNSET,
 ) -> ItemizedDelta | float:
@@ -7993,9 +8053,9 @@ def _offset_since(
     """
     same_offset = self._py_dt.utcoffset() == b._py_dt.utcoffset()
 
-    if total is not None:
-        if in_units is not None:
-            raise TypeError("Cannot specify both 'total' and 'in_units'")
+    if total is not UNSET:
+        if in_units is not UNSET:
+            raise TypeError("cannot specify both 'total' and 'in_units'")
         if round_mode is not UNSET or round_increment is not UNSET:
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
@@ -8010,14 +8070,14 @@ def _offset_since(
         return self._subtract_operator(b).total(
             total, relative_to=b.to_plain().assume_tz("UTC")
         )
-    elif in_units is None:
-        raise TypeError("Must specify either `total` or `in_units`")
+    elif in_units is UNSET:
+        raise TypeError("must specify either 'total' or 'in_units'")
 
     effective_increment = 1 if round_increment is UNSET else round_increment
     effective_round_mode: RoundModeStr = (
         "trunc" if round_mode is UNSET else round_mode
     )
-    resolved_units = _normalize_units(in_units, valid_units=DELTA_UNITS)
+    resolved_units = normalize_units(in_units, valid_units=DELTA_UNITS)
     cal_units, exact_units = _split_calendar_and_exact_units(resolved_units)
 
     if cal_units and not same_offset:
@@ -8031,7 +8091,7 @@ def _offset_since(
         return _plain_since(
             self.to_plain(),
             b.to_plain(),
-            None,
+            UNSET,
             in_units,
             effective_round_mode,
             effective_increment,
@@ -8054,17 +8114,17 @@ def _offset_since(
 def _zoned_since(
     a: ZonedDateTime,
     b: ZonedDateTime,
-    total: DeltaTotalUnitStr | None,
-    in_units: Sequence[DeltaUnitStr] | None,
+    total: DeltaTotalUnitStr,
+    in_units: Sequence[DeltaUnitStr],
     round_mode: RoundModeStr = UNSET,
     round_increment: int = UNSET,
 ) -> ItemizedDelta | float:
     """Shared since() implementation for ZonedDateTime.
     Calendar units require both datetimes to have the same time zone.
     """
-    if total is not None:
-        if in_units is not None:
-            raise TypeError("Cannot specify both 'total' and 'in_units'")
+    if total is not UNSET:
+        if in_units is not UNSET:
+            raise TypeError("cannot specify both 'total' and 'in_units'")
         if round_mode is not UNSET or round_increment is not UNSET:
             raise TypeError(
                 "'round_mode' and 'round_increment' cannot be used with 'total'"
@@ -8075,14 +8135,14 @@ def _zoned_since(
                 "with the same time zone"
             )
         return (a - b).total(total, relative_to=b)
-    elif in_units is None:
-        raise TypeError("Must specify either `total` or `in_units`")
+    elif in_units is UNSET:
+        raise TypeError("must specify either 'total' or 'in_units'")
 
     effective_increment = 1 if round_increment is UNSET else round_increment
     effective_round_mode: RoundModeStr = (
         "trunc" if round_mode is UNSET else round_mode
     )
-    units = _normalize_units(in_units, valid_units=DELTA_UNITS)
+    units = normalize_units(in_units, valid_units=DELTA_UNITS)
     cal_units, exact_units = _split_calendar_and_exact_units(units)
     if cal_units and a.tz_id != b.tz_id:
         raise ValueError(
@@ -8152,31 +8212,6 @@ def _zoned_since(
     )
 
 
-_Tstr = TypeVar("_Tstr", bound=str)
-
-
-def _normalize_units(
-    units: Sequence[str],
-    valid_units: Sequence[_Tstr],
-) -> Sequence[_Tstr]:
-    if isinstance(units, (str, bytes)):
-        raise TypeError(
-            "units must be a sequence of strings, not a single string"
-        )
-    if isinstance(units, (set, frozenset)):
-        raise TypeError("units must be a sequence of strings, not a set")
-    if not units:
-        raise ValueError("At least one unit must be specified")
-    else:
-        if sorted(units, key=lambda u: _unit_index(u, valid_units)) != list(
-            units
-        ):
-            raise ValueError("units must be in decreasing order of size")
-        elif len(set(units)) != len(units):
-            raise ValueError("units cannot contain duplicates")
-        return units  # type: ignore[return-value]
-
-
 def _split_calendar_and_exact_units(
     units: Sequence[DeltaUnitStr],
 ) -> tuple[Sequence[DateDeltaUnitStr], Sequence[ExactDeltaUnitStr]]:
@@ -8221,7 +8256,7 @@ PlainDateTime.MAX = PlainDateTime._from_py_unchecked(
 
 
 def hours(i: float, /) -> TimeDelta:
-    """Create a :class:`~TimeDelta` with the given number of hours.
+    """Create a :class:`TimeDelta` with the given number of hours.
     ``hours(1) == TimeDelta(hours=1)``
     """
     return TimeDelta(hours=i)

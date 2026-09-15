@@ -75,7 +75,7 @@ impl CalendarUnitSet {
         let mut units = Self::EMPTY;
         parse_ordered_units(
             v,
-            "units cannot be empty",
+            "units must not be empty",
             |item| CalendarUnit::from_py(item, state),
             |unit| units.insert(unit),
         )?;
@@ -93,10 +93,10 @@ impl DifferenceUnit {
 
 impl ExactUnit {
     pub(crate) fn parse_py_number(self, v: PyObj) -> PyResult<TimeDelta> {
-        if let Some(i) = v.cast_allow_subclass::<PyInt>() {
+        if self == Self::Nanoseconds {
+            self.parse_py_int(*v.expect_int("nanoseconds")?)
+        } else if let Some(i) = v.cast_allow_subclass::<PyInt>() {
             self.parse_py_int(i)
-        } else if self == Self::Nanoseconds {
-            raise_type_err("nanoseconds must be an integer")
         } else if let Some(f) = v.cast_allow_subclass::<PyFloat>() {
             self.parse_py_float(f)
         } else {
@@ -123,7 +123,7 @@ impl DifferenceUnitSet {
         let mut units = Self::EMPTY;
         parse_ordered_units(
             v,
-            "at least one unit must be provided",
+            "units must not be empty",
             |item| DifferenceUnit::from_py(item, state),
             |unit| units.insert(unit),
         )?;

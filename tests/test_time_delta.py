@@ -3,11 +3,15 @@ import re
 import warnings
 from copy import copy, deepcopy
 from datetime import timedelta as py_timedelta
+from typing import Any, cast
 
 import pytest
 from pytest import approx
 from whenever import (
+    Date,
     DaysAssumed24HoursWarning,
+    Instant,
+    ItemizedDateDelta,
     ItemizedDelta,
     NaiveArithmeticWarning,
     OffsetDateTime,
@@ -34,6 +38,14 @@ from .common import (
 )
 
 MAX_HOURS = 9999 * 366 * 24
+RANGE_MSG = "value or calculation out of range"
+
+
+class _Idx:
+    """An integer-like object: what CPython's own parser accepts for a field."""
+
+    def __index__(self):
+        return 5
 
 
 class TestInit:
@@ -150,7 +162,7 @@ class TestInit:
     )
     def test_invalid_out_of_range(self, kwargs):
         with pytest.raises(
-            (ValueError, OverflowError), match="(range|inf|NaN)"
+            ValueError, match="value or calculation out of range"
         ):
             TimeDelta(**kwargs)
 
@@ -267,8 +279,60 @@ class TestFactories:
         ],
     )
     def test_bounds(self, factory, value):
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             factory(value)
+
+    @pytest.mark.parametrize(
+        "f", [hours, minutes, seconds, milliseconds, microseconds, nanoseconds]
+    )
+    def test_module(self, f):
+        assert f.__module__ == "whenever"
+
+    @pytest.mark.parametrize(
+        "f", [hours, minutes, seconds, milliseconds, microseconds]
+    )
+    def test_special_values(self, f):
+        assert f(True) == f(1)
+        with pytest.raises(ValueError, match=RANGE_MSG):
+            f(float("nan"))
+        with pytest.raises(ValueError, match=RANGE_MSG):
+            f(float("inf"))
+        with pytest.raises(
+            TypeError, match=f"^{f.__name__} must be an integer or float$"
+        ):
+            f("1")
+        with pytest.raises(
+            TypeError, match=f"^{f.__name__} must be an integer or float$"
+        ):
+            f(None)
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), "1", None])
+    def test_nanoseconds_special_values(self, value):
+        with pytest.raises(
+            TypeError, match="^nanoseconds must be an integer$"
+        ):
+            nanoseconds(value)
+
+    def test_nanoseconds_index_protocol(self):
+        with pytest.raises(
+            TypeError, match=r"^nanoseconds must be an integer$"
+        ):
+            nanoseconds(1.5)  # type: ignore[arg-type]
+        with pytest.raises(
+            TypeError, match=r"^nanoseconds must be an integer$"
+        ):
+            TimeDelta.ZERO.add(nanoseconds=1.5)  # type: ignore[call-overload]
+        with pytest.raises(
+            TypeError, match=r"^nanoseconds must be an integer$"
+        ):
+            TimeDelta.ZERO.subtract(nanoseconds="1")  # type: ignore[call-overload]
+        five = cast(int, _Idx())
+        assert nanoseconds(five) == nanoseconds(5)
+        assert nanoseconds(True) == nanoseconds(1)
+        assert TimeDelta(nanoseconds=five) == nanoseconds(5)
+        assert TimeDelta.ZERO.add(nanoseconds=five) == nanoseconds(5)
 
 
 def test_constants():
@@ -277,6 +341,35 @@ def test_constants():
         nanoseconds=9999 * 366 * 24 * 60 * 60 * 1_000_000_000
     )
     assert TimeDelta.MIN == -TimeDelta.MAX
+
+
+class TestExtremes:
+    def test_total(self):
+        assert TimeDelta.MAX.total("hours") == MAX_HOURS
+        assert TimeDelta.MIN.total("hours") == -MAX_HOURS
+        assert (
+            TimeDelta.MAX.total("nanoseconds") == MAX_HOURS * 3_600_000_000_000
+        )
+        assert (
+            TimeDelta.MIN.total("nanoseconds")
+            == -MAX_HOURS * 3_600_000_000_000
+        )
+
+    def test_in_units(self):
+        assert TimeDelta.MAX.in_units(["hours"]).strict_eq(
+            ItemizedDelta(hours=MAX_HOURS)
+        )
+        assert TimeDelta.MIN.in_units(["hours", "minutes"]).strict_eq(
+            ItemizedDelta(hours=-MAX_HOURS, minutes=0)
+        )
+
+    def test_sign_operators(self):
+        assert abs(TimeDelta.MIN) == TimeDelta.MAX
+        assert abs(TimeDelta.MAX) == TimeDelta.MAX
+        assert -TimeDelta.MIN == TimeDelta.MAX
+        assert -TimeDelta.MAX == TimeDelta.MIN
+        assert bool(TimeDelta.MIN) and bool(TimeDelta.MAX)
+        assert not TimeDelta.ZERO
 
 
 def test_boolean():
@@ -429,7 +522,7 @@ class TestTotal:
         d = hours(2000)
 
         with pytest.raises(
-            TypeError, match="months.*relative_to|calendar.*relative_to"
+            TypeError, match="^relative_to is required for years and months$"
         ):
             d.total("months")  # type: ignore[call-overload]
 
@@ -458,7 +551,7 @@ class TestTotal:
         ) == approx(-8.038978494623656)
 
         with pytest.raises(
-            TypeError, match="years.*relative_to|calendar.*relative_to"
+            TypeError, match="^relative_to is required for years and months$"
         ):
             d.total("years")  # type: ignore[call-overload]
 
@@ -572,14 +665,18 @@ class TestTotal:
 
     def test_range_error(self):
         d = TimeDelta(hours=78_840_000)
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             d.total(
                 "days",
                 relative_to=ZonedDateTime(3000, 1, 1, hour=0, tz="UTC"),
             )
 
         d = TimeDelta(hours=-48_840_000)
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             d.total(
                 "days",
                 relative_to=ZonedDateTime(3000, 1, 1, hour=0, tz="UTC"),
@@ -588,6 +685,13 @@ class TestTotal:
     def test_nanoseconds_are_int(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
         assert isinstance(d.total("nanoseconds"), int)
+
+    def test_subsecond_totals_are_float(self):
+        d = seconds(1)
+        assert d.total("milliseconds") == 1_000.0
+        assert isinstance(d.total("milliseconds"), float)
+        assert d.total("microseconds") == 1_000_000.0
+        assert isinstance(d.total("microseconds"), float)
 
     def test_relative_to_plain_datetime(self):
         td = hours(360)  # 15 days
@@ -609,7 +713,7 @@ class TestTotal:
         assert result_yr == approx(1.0)
 
         # negative delta: reference March 16 → shifted March 1
-        # backward span: March 16 → Feb 16 = 28 days (Feb 2023)
+        # backward: March 16 → Feb 16 = 28 days (Feb 2023)
         td_neg = hours(-360)
         pdt_neg = PlainDateTime(2023, 3, 16, 2)
         with suppress(NaiveArithmeticWarning):
@@ -974,6 +1078,33 @@ def test_multiply():
         Ellipsis * d  # type: ignore[operator]
 
 
+class TestMultiplyRounding:
+    def test_float_rounds_half_even(self):
+        assert nanoseconds(7) * 0.5 == nanoseconds(4)
+        assert nanoseconds(5) * 0.5 == nanoseconds(2)
+        assert nanoseconds(-7) * 0.5 == nanoseconds(-4)
+        assert nanoseconds(3) * 0.5 == nanoseconds(2)
+        assert 0.5 * nanoseconds(7) == nanoseconds(4)
+
+    def test_bool_is_int(self):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+        assert d * True == d
+        assert d * False == TimeDelta.ZERO
+        assert True * d == d
+
+    @pytest.mark.parametrize("factor", [float("nan"), float("inf")])
+    def test_nan_and_inf(self, factor):
+        d = TimeDelta(hours=1)
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d * factor
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            factor * d
+
+
 class TestDivision:
     def test_by_number(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
@@ -985,6 +1116,58 @@ class TestDivision:
         )
         assert TimeDelta.MAX / 1.0 == TimeDelta.MAX
         assert TimeDelta.MIN / 1.0 == TimeDelta.MIN
+
+    @pytest.mark.parametrize(
+        "nanos, divisor, expected",
+        [
+            (7, 2, 4),
+            (-7, 2, -4),
+            (7, -2, -4),
+            (-7, -2, 4),
+            (5, 2, 2),
+            (3, 2, 2),
+            (1, 3, 0),
+            (10**18, 3, 333_333_333_333_333_333),
+            (0, 7, 0),
+        ],
+    )
+    def test_by_int_rounds_half_even(self, nanos, divisor, expected):
+        assert nanoseconds(nanos) / divisor == nanoseconds(expected)
+
+    def test_by_int_is_exact_on_long_deltas(self):
+        third = TimeDelta.MAX / 3
+        assert third == nanoseconds(TimeDelta.MAX.total("nanoseconds") // 3)
+        assert TimeDelta.MAX / 1 == TimeDelta.MAX
+        assert TimeDelta.MIN / -1 == TimeDelta.MAX
+        # a huge divisor is not narrowed to a float
+        assert TimeDelta.MAX / (1 << 80) == TimeDelta.ZERO
+
+    def test_by_float_rounds_half_even(self):
+        assert nanoseconds(7) / 2.0 == nanoseconds(4)
+        assert nanoseconds(5) / 2.0 == nanoseconds(2)
+        assert nanoseconds(-7) / 2.0 == nanoseconds(-4)
+        assert nanoseconds(7) / 0.5 == nanoseconds(14)
+
+    def test_bool_is_int(self):
+        d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+        assert d / True == d
+
+    def test_nan_and_inf(self):
+        d = TimeDelta(hours=1)
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d / float("nan")
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d / 1e-300
+        assert d / float("inf") == TimeDelta.ZERO
+        # a finite result beyond the bound
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            TimeDelta.MAX / 0.5
 
     def test_divide_by_timedelta(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
@@ -1000,13 +1183,13 @@ class TestDivision:
 
     def test_divide_by_zero(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(ZeroDivisionError, match="^division by zero$"):
             d / TimeDelta()
 
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(ZeroDivisionError, match="^division by zero$"):
             d / 0
 
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(ZeroDivisionError, match="^division by zero$"):
             d / 0.0
 
     def test_invalid_type(self):
@@ -1044,7 +1227,7 @@ class TestFloorDiv:
 
     def test_divide_by_zero(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(ZeroDivisionError, match="^division by zero$"):
             d // TimeDelta()
 
     def test_invalid(self):
@@ -1091,7 +1274,7 @@ class TestRemainder:
 
     def test_divide_by_zero(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
-        with pytest.raises(ZeroDivisionError):
+        with pytest.raises(ZeroDivisionError, match="^division by zero$"):
             d % TimeDelta()
 
     def test_invalid(self):
@@ -1101,6 +1284,50 @@ class TestRemainder:
 
         with pytest.raises(TypeError):
             5.9 % d  # type: ignore[operator]
+
+
+class TestOtherOperands:
+    """A TimeDelta composes with a TimeDelta alone, and shifts a datetime
+    only from the left of ``+``."""
+
+    @pytest.mark.parametrize(
+        "other",
+        [
+            ItemizedDelta(hours=1),
+            ItemizedDateDelta(days=1),
+            Date(2023, 1, 1),
+        ],
+    )
+    def test_add_sub_wrong_operand(self, other):
+        with pytest.raises(TypeError):
+            hours(1) + other
+        with pytest.raises(TypeError):
+            hours(1) - other
+        with pytest.raises(TypeError):
+            other - hours(1)
+
+    @pytest.mark.parametrize(
+        "dt",
+        [
+            Instant.from_utc(2023, 1, 1),
+            PlainDateTime(2023, 1, 1),
+            OffsetDateTime(2023, 1, 1, offset=hours(2)),
+            ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam"),
+        ],
+    )
+    def test_delta_minus_datetime(self, dt):
+        with pytest.raises(TypeError):
+            hours(1) - dt
+
+    def test_number_divisors(self):
+        with pytest.raises(TypeError):
+            hours(1) // 2  # type: ignore[operator]
+        with pytest.raises(TypeError):
+            hours(1) % 2  # type: ignore[operator]
+        with pytest.raises(TypeError):
+            divmod(hours(1), 2)  # type: ignore[operator]
+        with pytest.raises(TypeError):
+            divmod(hours(1), hours(1))  # type: ignore[operator]
 
 
 def test_negate():
@@ -1586,6 +1813,24 @@ class TestInUnits:
                 ItemizedDelta(hours=2, minutes=51),
             ),
             (
+                TimeDelta(seconds=90),
+                ("minutes",),
+                {"round_mode": "half_even"},
+                ItemizedDelta(minutes=2),
+            ),
+            (
+                TimeDelta(seconds=150),
+                ("minutes",),
+                {"round_mode": "half_even"},
+                ItemizedDelta(minutes=2),
+            ),
+            (
+                TimeDelta(seconds=-150),
+                ("minutes",),
+                {"round_mode": "half_even"},
+                ItemizedDelta(minutes=-2),
+            ),
+            (
                 TimeDelta(hours=2, minutes=51, seconds=30),
                 ("hours", "minutes"),
                 {"round_mode": "floor"},
@@ -1751,7 +1996,7 @@ class TestInUnits:
 
     def test_missing_units(self):
         d = hours(1)
-        with pytest.raises(ValueError, match="[Aa]t least one unit"):
+        with pytest.raises(ValueError, match="^units must not be empty$"):
             d.in_units([])
 
     def test_units_out_of_order(self):
@@ -1767,12 +2012,15 @@ class TestInUnits:
 
     def test_nanoseconds_but_no_seconds(self):
         d = hours(1)
-        with pytest.raises(ValueError, match="[Nn]anoseconds.*seconds"):
+        with pytest.raises(
+            ValueError,
+            match="^nanoseconds can only be specified together with seconds$",
+        ):
             d.in_units(["hours", "nanoseconds"])
 
     def test_invalid_round_mode(self):
         d = hours(1)
-        with pytest.raises(ValueError, match="invalid (round_)?mode: 'foo'"):
+        with pytest.raises(ValueError, match="^invalid round_mode: 'foo'$"):
             d.in_units(["hours"], round_mode="foo")  # type: ignore[call-overload]
 
     def test_24h_days_warning(self):
@@ -1797,7 +2045,7 @@ class TestInUnits:
     def test_calendar_units_require_relative_to(self):
         d = hours(2000)
         with pytest.raises(
-            TypeError, match="months.*relative_to|years.*relative_to"
+            TypeError, match="^relative_to is required for years and months$"
         ):
             d.in_units(["years", "months"])  # type: ignore[list-item]
 
@@ -1882,6 +2130,228 @@ def test_compatible_unpickle():
     assert pickle.loads(dumped) == TimeDelta(
         hours=1, minutes=2, seconds=3, microseconds=4
     )
+
+
+_H: Any = hours(1)
+
+
+class TestMessages:
+    """One template per condition, identical on both backends."""
+
+    @pytest.mark.parametrize(
+        "call, error, message",
+        [
+            (
+                lambda: _H.in_units([]),
+                ValueError,
+                "units must not be empty",
+            ),
+            (
+                lambda: _H.total("months"),
+                TypeError,
+                "relative_to is required for years and months",
+            ),
+            (
+                lambda: _H.in_units(["years", "days"]),
+                TypeError,
+                "relative_to is required for years and months",
+            ),
+            (lambda: _H.total("foo"), ValueError, "invalid unit: 'foo'"),
+            (
+                lambda: _H.in_units(["foo"]),
+                ValueError,
+                "invalid unit: 'foo'",
+            ),
+            (
+                lambda: _H.in_units(["hours", "nanoseconds"]),
+                ValueError,
+                "nanoseconds can only be specified together with seconds",
+            ),
+            (
+                lambda: _H.in_units(["hours"], round_mode="foo"),
+                ValueError,
+                "invalid round_mode: 'foo'",
+            ),
+            (
+                lambda: _H.in_units(["hours"], round_increment=1.5),
+                TypeError,
+                "round_increment must be an integer",
+            ),
+            (
+                lambda: _H.in_units(["hours"], round_increment=0),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                lambda: _H.in_units(["hours"], round_increment=-2),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (lambda: _H / 0, ZeroDivisionError, "division by zero"),
+            (
+                lambda: _H // TimeDelta.ZERO,
+                ZeroDivisionError,
+                "division by zero",
+            ),
+            (
+                lambda: _H % TimeDelta.ZERO,
+                ZeroDivisionError,
+                "division by zero",
+            ),
+            (
+                lambda: _H.add(1),
+                TypeError,
+                "add() argument must be a TimeDelta",
+            ),
+            (
+                lambda: _H.subtract(1),
+                TypeError,
+                "subtract() argument must be a TimeDelta",
+            ),
+            (
+                lambda: _H.add(foo=1),
+                TypeError,
+                "add() got an unexpected keyword argument 'foo'",
+            ),
+            (
+                lambda: _H.subtract(foo=1),
+                TypeError,
+                "subtract() got an unexpected keyword argument 'foo'",
+            ),
+            (
+                lambda: _H.add(_H, hours=1),
+                TypeError,
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda: _H.subtract(_H, hours=1),
+                TypeError,
+                "subtract() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda: _H.total(
+                    "days", relative_to=ZonedDateTime(9999, 12, 31, tz="UTC")
+                ),
+                ValueError,
+                RANGE_MSG,
+            ),
+            (
+                lambda: _H.in_units(
+                    ["days", "hours"],
+                    relative_to=ZonedDateTime(9999, 12, 31, 23, tz="UTC"),
+                ),
+                ValueError,
+                RANGE_MSG,
+            ),
+        ],
+    )
+    def test_messages(self, call, error, message):
+        with pytest.raises(error, match=f"^{re.escape(message)}$"):
+            call()
+
+    def test_units_is_any_iterable(self):
+        d: Any = TimeDelta(hours=1, minutes=30)
+        assert d.in_units(iter(["hours", "minutes"])) == ItemizedDelta(
+            hours=1, minutes=30
+        )
+        assert d.in_units({"hours": 0, "minutes": 0}) == ItemizedDelta(
+            hours=1, minutes=30
+        )
+        with pytest.raises(TypeError):
+            d.in_units(None)
+
+    def test_raising_calls_do_not_warn(self):
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            with pytest.raises(ValueError, match=RANGE_MSG):
+                _H.add(weeks=float("inf"))
+            with pytest.raises(TypeError):
+                _H.in_units(["years", "days"])
+            with pytest.raises(TypeError):
+                _H.add(days=1, foo=2)
+        assert record == []
+
+
+class TestReferenceEscapes:
+    """Each escape suppresses exactly its own warning; a ``ZonedDateTime``
+    reference ignores both."""
+
+    def test_total_plain(self):
+        td = hours(360)
+        pdt = PlainDateTime(2023, 3, 1, 2)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = td.total(
+                "months", relative_to=pdt, naive_arithmetic_ok=True
+            )
+        assert result == approx(15 / 31)
+        with warns_here(NaiveArithmeticWarning):
+            td.total("months", relative_to=pdt, stale_offset_ok=True)  # type: ignore[call-overload]
+
+    def test_total_offset(self):
+        td = hours(360)
+        odt = OffsetDateTime(2023, 3, 1, 2, offset=hours(5))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = td.total("months", relative_to=odt, stale_offset_ok=True)
+        assert result == approx(15 / 31)
+        with warns_here(StaleOffsetWarning):
+            td.total("months", relative_to=odt, naive_arithmetic_ok=True)  # type: ignore[call-overload]
+
+    def test_in_units_plain(self):
+        td = hours(49)
+        pdt = PlainDateTime(2023, 3, 1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = td.in_units(
+                ["days", "hours"], relative_to=pdt, naive_arithmetic_ok=True
+            )
+        assert result == ItemizedDelta(days=2, hours=1)
+        with warns_here(NaiveArithmeticWarning):
+            td.in_units(
+                ["days", "hours"], relative_to=pdt, stale_offset_ok=True
+            )  # type: ignore[call-overload]
+
+    def test_in_units_offset(self):
+        td = hours(49)
+        odt = OffsetDateTime(2023, 3, 1, offset=hours(5))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = td.in_units(
+                ["days", "hours"], relative_to=odt, stale_offset_ok=True
+            )
+        assert result == ItemizedDelta(days=2, hours=1)
+        with warns_here(StaleOffsetWarning):
+            td.in_units(
+                ["days", "hours"], relative_to=odt, naive_arithmetic_ok=True
+            )  # type: ignore[call-overload]
+
+    def test_ignored_with_zoned(self):
+        td = hours(49)
+        zdt = ZonedDateTime(2023, 3, 1, tz="Europe/Amsterdam")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert td.total(
+                "days",
+                relative_to=zdt,
+                naive_arithmetic_ok=True,  # type: ignore[call-overload]
+                stale_offset_ok=True,
+            ) == approx(49 / 24)
+            assert td.in_units(
+                ["days", "hours"],
+                relative_to=zdt,
+                naive_arithmetic_ok=True,  # type: ignore[call-overload]
+                stale_offset_ok=True,
+            ) == ItemizedDelta(days=2, hours=1)
+
+    def test_escapes_read_by_truthiness(self):
+        td = hours(360)
+        pdt = PlainDateTime(2023, 3, 1, 2)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            td.total("months", relative_to=pdt, naive_arithmetic_ok=1)  # type: ignore[call-overload]
+        with warns_here(NaiveArithmeticWarning):
+            td.total("months", relative_to=pdt, naive_arithmetic_ok="")  # type: ignore[call-overload]
 
 
 class TestAssume24hDaysKwarg:

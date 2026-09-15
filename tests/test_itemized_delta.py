@@ -3,12 +3,15 @@ import re
 import warnings
 from collections import Counter
 from collections.abc import ItemsView, KeysView, Mapping, Sequence, ValuesView
+from fractions import Fraction
 from typing import Any, Literal, cast
 
 import pytest
 from typing_extensions import assert_type
 from whenever import (
     CalendarUnitCompositionWarning,
+    Date,
+    ImplicitDisambiguationWarning,
     Instant,
     ItemizedDateDelta,
     ItemizedDelta,
@@ -29,6 +32,14 @@ from .common import (
     warns_here,
 )
 from .test_time_delta import INVALID_TDELTAS
+
+
+class _Idx:
+    """An integer-like object: what CPython's own parser accepts for a field."""
+
+    def __index__(self):
+        return 5
+
 
 UNITS = cast(
     Sequence[
@@ -88,7 +99,7 @@ class TestInit:
 
     def test_no_components(self):
         with pytest.raises(
-            ValueError, match="at least one component must be set"
+            ValueError, match="^at least one component must be present$"
         ):
             ItemizedDelta()
 
@@ -161,6 +172,40 @@ class TestInit:
         with pytest.raises(TypeError):
             ItemizedDelta(days=None)  # type: ignore[call-overload]
 
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"days": 1.5},
+            {"years": 1.0},
+            {"months": float("nan")},
+            {"days": Fraction(3, 2)},
+            {"days": "1"},
+            {"nanoseconds": 1.0},
+        ],
+    )
+    def test_component_must_be_integer(self, kwargs):
+        (name,) = kwargs
+        with pytest.raises(TypeError, match=f"^{name} must be an integer$"):
+            ItemizedDelta(**kwargs)
+        with pytest.raises(TypeError, match=f"^{name} must be an integer$"):
+            ItemizedDelta(hours=1).replace(**kwargs)
+        with pytest.raises(TypeError, match=f"^{name} must be an integer$"):
+            ItemizedDelta(hours=1).add(**kwargs)
+        with pytest.raises(TypeError, match=f"^{name} must be an integer$"):
+            ItemizedDelta(hours=1).subtract(**kwargs)
+
+    def test_index_protocol(self):
+        five = cast(int, _Idx())
+        assert ItemizedDelta(days=five)["days"] == 5
+        assert type(ItemizedDelta(days=True)["days"]) is int
+        assert ItemizedDelta(days=True)["days"] == 1
+        assert ItemizedDelta(hours=1).replace(days=five)["days"] == 5
+        assert type(ItemizedDelta(hours=1).replace(days=True)["days"]) is int
+        assert ItemizedDelta(hours=1).add(hours=five)["hours"] == 6
+        assert ItemizedDelta(hours=1).subtract(hours=five)["hours"] == -4
+        assert type(ItemizedDelta(hours=1).add(hours=True)["hours"]) is int
+        assert str(ItemizedDelta(days=True, hours=five)) == "P1DT5H"
+
 
 @pytest.mark.parametrize(
     "d, expected",
@@ -177,6 +222,11 @@ class TestInit:
         (
             ItemizedDelta(years=1, seconds=9_000_000_000, nanoseconds=1),
             {"years": 1, "seconds": 9_000_000_000, "nanoseconds": 1},
+        ),
+        # an explicit zero is present
+        (
+            ItemizedDelta(hours=0, minutes=5),
+            {"hours": 0, "minutes": 5},
         ),
     ],
 )
@@ -224,6 +274,15 @@ def test_mapping_like_interface(
             d[missing_key]
 
     assert len(d) == len(expected)
+
+    # get() with a default, and keys of another type
+    for key in expected:
+        assert d.get(key, 42) == expected[key]
+    assert d.get("foo", 42) == 42  # type: ignore[call-overload]
+    assert 0 not in d  # type: ignore[comparison-overlap]
+    assert 42 not in d  # type: ignore[comparison-overlap]
+    with pytest.raises(KeyError):
+        d[0]  # type: ignore[index]
 
 
 def test_mapping_views():
@@ -449,6 +508,8 @@ def test_strict_eq():
     assert not d1.strict_eq(d2)
     assert not d1.strict_eq(d3)
     assert not d1.strict_eq(d4)
+    assert not ItemizedDelta(hours=1).strict_eq(ItemizedDelta(hours=-1))
+    assert ItemizedDelta(hours=1) != ItemizedDelta(hours=-1)
     with pytest.raises(
         TypeError, match=r"^strict_eq\(\) argument must be an ItemizedDelta$"
     ):
@@ -715,6 +776,22 @@ class TestParseIso:
             -ItemizedDelta(years=2, days=125),
         ),
         (
+            ItemizedDelta(minutes=90),
+            ZonedDateTime("2021-01-01T00:00Z[UTC]"),
+            ["hours"],
+            {"round_mode": "half_even"},
+            False,
+            ItemizedDelta(hours=2),
+        ),
+        (
+            ItemizedDelta(minutes=150),
+            ZonedDateTime("2021-01-01T00:00Z[UTC]"),
+            ["hours"],
+            {"round_mode": "half_even"},
+            False,
+            ItemizedDelta(hours=2),
+        ),
+        (
             ItemizedDelta(days=0),
             ZonedDateTime(
                 "0023-02-28T14:15Z[Europe/London]",
@@ -866,9 +943,9 @@ class TestInUnitsRelativeToNonZoned:
 
     def test_invalid_relative_to_type(self):
         with pytest.raises(TypeError, match="relative_to"):
-            ItemizedDelta(years=2, hours=9).in_units(
+            ItemizedDelta(years=2, hours=9).in_units(  # type: ignore[call-overload]
                 ["years", "hours"],
-                relative_to=Instant.from_utc(2021, 1, 1),  # type: ignore[arg-type]
+                relative_to=Instant.from_utc(2021, 1, 1),
             )
 
 
@@ -1165,6 +1242,14 @@ class TestAddSub:
             result = ItemizedDateDelta(days=2) - ItemizedDelta(days=1)
         assert result.strict_eq(ItemizedDelta(days=1))
 
+    def test_cal_unit_composition_ok_is_read_by_truthiness(self):
+        d = ItemizedDelta(months=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.add(days=1, cal_unit_composition_ok=1)  # type: ignore[call-overload]
+        with warns_here(CalendarUnitCompositionWarning):
+            d.add(days=1, cal_unit_composition_ok="")  # type: ignore[call-overload]
+
     def test_cal_unit_composition_ok_suppresses_warning(self):
         result = ItemizedDelta(hours=1).add(
             ItemizedDateDelta(days=1),
@@ -1204,7 +1289,10 @@ class TestAddSub:
             operation(hours=1, relative_to=reference)
         with pytest.raises(TypeError, match="relative_to"):
             operation(hours=1, in_units=["hours"])
-        with pytest.raises(TypeError, match="rounding"):
+        with pytest.raises(
+            TypeError,
+            match="round_mode and round_increment require relative_to",
+        ):
             operation(hours=1, round_mode="ceil")
         with pytest.raises((TypeError, AttributeError)):
             operation(hours=1, relative_to=None, in_units=["hours"])
@@ -1234,7 +1322,10 @@ class TestAddSub:
                 in_units=["hours"],
                 **rounding,
             )
-        with pytest.raises(TypeError, match="rounding"):
+        with pytest.raises(
+            TypeError,
+            match="round_mode and round_increment require relative_to",
+        ):
             operation(round_mode="ceil", round_increment=2)
 
     def test_subtract_options_are_keyword_only(self):
@@ -1263,6 +1354,43 @@ class TestTotal:
     @pytest.mark.parametrize(
         "d, relative_to, unit, expected",
         [
+            (
+                ItemizedDelta(years=2),
+                ZonedDateTime("2021-12-31T03Z[America/New_York]"),
+                "years",
+                2.0,
+            ),
+            (
+                ItemizedDelta(days=14),
+                ZonedDateTime("2021-12-31T03Z[America/New_York]"),
+                "weeks",
+                2.0,
+            ),
+            (
+                ItemizedDelta(hours=1),
+                ZonedDateTime("2021-12-31T03Z[America/New_York]"),
+                "minutes",
+                60.0,
+            ),
+            (
+                ItemizedDelta(minutes=1),
+                ZonedDateTime("2021-12-31T03Z[America/New_York]"),
+                "seconds",
+                60.0,
+            ),
+            # a day across the skipped and the repeated Amsterdam hour
+            (
+                ItemizedDelta(days=1),
+                ZonedDateTime(2023, 3, 25, 12, tz="Europe/Amsterdam"),
+                "hours",
+                23.0,
+            ),
+            (
+                ItemizedDelta(days=1),
+                ZonedDateTime(2023, 10, 28, 12, tz="Europe/Amsterdam"),
+                "hours",
+                25.0,
+            ),
             (
                 ItemizedDelta(years=2, months=3, weeks=4, days=5),
                 ZonedDateTime(
@@ -1501,6 +1629,397 @@ class TestTotal:
         assert result == pytest.approx(31.0)
 
 
+RANGE_MSG = "value or calculation out of range"
+_UTC = ZonedDateTime(2024, 1, 1, tz="UTC")
+_D: Any = ItemizedDelta(hours=1)
+
+
+class TestMessages:
+    """One template per condition, identical on both backends."""
+
+    @pytest.mark.parametrize(
+        "call, error, message",
+        [
+            (
+                lambda: _D.add(hours=1, in_units=["hours"]),
+                TypeError,
+                "in_units requires relative_to",
+            ),
+            (
+                lambda: _D.add(hours=1, relative_to=_UTC),
+                TypeError,
+                "in_units is required with relative_to",
+            ),
+            (
+                lambda: _D.subtract(hours=1, relative_to=_UTC),
+                TypeError,
+                "in_units is required with relative_to",
+            ),
+            (
+                lambda: _D.add(hours=1, round_mode="ceil"),
+                TypeError,
+                "round_mode and round_increment require relative_to",
+            ),
+            (
+                lambda: _D.add(hours=1, round_increment=2),
+                TypeError,
+                "round_mode and round_increment require relative_to",
+            ),
+            (
+                lambda: _D.add(_D, hours=1),
+                TypeError,
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda: _D.subtract(_D, hours=1),
+                TypeError,
+                "subtract() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda: _D.add(foo=1),
+                TypeError,
+                "ItemizedDelta.add() got an unexpected keyword argument 'foo'",
+            ),
+            (
+                lambda: _D.subtract(foo=1),
+                TypeError,
+                "ItemizedDelta.subtract() got an unexpected keyword argument 'foo'",
+            ),
+            (
+                lambda: _D.in_units([], relative_to=_UTC),
+                ValueError,
+                "units must not be empty",
+            ),
+            (
+                lambda: _D.add(hours=1, relative_to=_UTC, in_units=[]),
+                ValueError,
+                "units must not be empty",
+            ),
+            (
+                lambda: _D.in_units(["foo"], relative_to=_UTC),
+                ValueError,
+                "invalid unit: 'foo'",
+            ),
+            (
+                lambda: _D.total("foo", relative_to=_UTC),
+                ValueError,
+                "invalid unit: 'foo'",
+            ),
+            (
+                lambda: _D.add(hours=1, relative_to=_UTC, in_units=["foo"]),
+                ValueError,
+                "invalid unit: 'foo'",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["hours", "nanoseconds"], relative_to=_UTC
+                ),
+                ValueError,
+                "nanoseconds can only be specified together with seconds",
+            ),
+            (
+                lambda: _D.add(
+                    hours=1,
+                    relative_to=_UTC,
+                    in_units=["hours", "nanoseconds"],
+                ),
+                ValueError,
+                "nanoseconds can only be specified together with seconds",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["hours"], relative_to=_UTC, round_mode="foo"
+                ),
+                ValueError,
+                "invalid round_mode: 'foo'",
+            ),
+            (
+                lambda: _D.add(
+                    hours=1,
+                    relative_to=_UTC,
+                    in_units=["hours"],
+                    round_mode="foo",
+                ),
+                ValueError,
+                "invalid round_mode: 'foo'",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["hours"], relative_to=_UTC, round_increment=1.5
+                ),
+                TypeError,
+                "round_increment must be an integer",
+            ),
+            (
+                lambda: _D.add(
+                    hours=1,
+                    relative_to=_UTC,
+                    in_units=["hours"],
+                    round_increment=1.5,
+                ),
+                TypeError,
+                "round_increment must be an integer",
+            ),
+            (
+                lambda: _D.in_units(
+                    ["hours"], relative_to=_UTC, round_increment=0
+                ),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                lambda: _D.add(
+                    hours=1,
+                    relative_to=_UTC,
+                    in_units=["hours"],
+                    round_increment=0,
+                ),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                lambda: cast(Any, ItemizedDelta(years=1)).total(
+                    "days", relative_to=ZonedDateTime(9999, 6, 1, tz="UTC")
+                ),
+                ValueError,
+                RANGE_MSG,
+            ),
+            (
+                lambda: ItemizedDelta(years=1).in_units(
+                    ["days"], relative_to=ZonedDateTime(9999, 6, 1, tz="UTC")
+                ),
+                ValueError,
+                RANGE_MSG,
+            ),
+            (
+                lambda: ItemizedDelta(days=1).in_units(
+                    ["days"], relative_to=_UTC, round_increment=10**9
+                ),
+                ValueError,
+                RANGE_MSG,
+            ),
+            (
+                lambda: ItemizedDelta(days=1).in_units(
+                    ["months"], relative_to=_UTC, round_increment=10**9
+                ),
+                ValueError,
+                RANGE_MSG,
+            ),
+        ],
+    )
+    def test_messages(self, call, error, message):
+        with pytest.raises(error, match=f"^{re.escape(message)}$"):
+            call()
+
+    def test_units_is_any_iterable(self):
+        d: Any = ItemizedDelta(hours=1, minutes=30)
+        expected = ItemizedDelta(hours=1, minutes=30)
+        assert (
+            d.in_units(iter(["hours", "minutes"]), relative_to=_UTC)
+            == expected
+        )
+        assert (
+            d.in_units({"hours": 0, "minutes": 0}, relative_to=_UTC)
+            == expected
+        )
+        assert (
+            d.add(relative_to=_UTC, in_units=iter(["hours", "minutes"]))
+            == expected
+        )
+        with pytest.raises(TypeError):
+            d.in_units(None, relative_to=_UTC)
+        with pytest.raises(TypeError):
+            d.add(hours=1, relative_to=_UTC, in_units=None)
+
+    def test_raising_calls_do_not_warn(self):
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            with pytest.raises(ValueError, match="mixed sign"):
+                ItemizedDelta(months=1, days=1).add(days=-2)
+            with pytest.raises(ValueError, match="mixed sign"):
+                ItemizedDelta(months=1, days=1) + ItemizedDelta(days=-2)
+            with pytest.raises(ValueError, match="mixed sign"):
+                ItemizedDelta(months=1, days=1) - ItemizedDelta(days=2)
+            with pytest.raises(TypeError):
+                _D.add(days=1, foo=2)
+        assert record == []
+
+
+class TestReferenceRule:
+    """One rule for every ``relative_to``: a ``ZonedDateTime`` is silent, a
+    ``PlainDateTime`` warns once with ``naive_arithmetic_ok``, an
+    ``OffsetDateTime`` warns once with ``stale_offset_ok``."""
+
+    PLAIN = PlainDateTime(2023, 1, 1)
+    OFFSET = OffsetDateTime(2023, 1, 1, offset=hours(2))
+    ZONED = ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam")
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_composition_warns_once_per_reference(self, method):
+        d = ItemizedDelta(months=1)
+        operation = getattr(d, method)
+        with warns_here(NaiveArithmeticWarning) as caught:
+            result = operation(
+                hours=24, relative_to=self.PLAIN, in_units=["months", "days"]
+            )
+        assert len(caught) == 1
+        assert isinstance(result, ItemizedDelta)
+        with warns_here(StaleOffsetWarning) as caught:
+            operation(
+                hours=24, relative_to=self.OFFSET, in_units=["months", "days"]
+            )
+        assert len(caught) == 1
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            operation(
+                hours=24, relative_to=self.ZONED, in_units=["months", "days"]
+            )
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_composition_escapes(self, method):
+        d = ItemizedDelta(months=1)
+        operation = getattr(d, method)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            plain = operation(
+                hours=24,
+                relative_to=self.PLAIN,
+                in_units=["months", "days"],
+                naive_arithmetic_ok=True,
+            )
+            offset = operation(
+                hours=24,
+                relative_to=self.OFFSET,
+                in_units=["months", "days"],
+                stale_offset_ok=True,
+            )
+        assert plain.strict_eq(offset)
+        # the other escape does not apply
+        with warns_here(NaiveArithmeticWarning):
+            operation(
+                hours=24,
+                relative_to=self.PLAIN,
+                in_units=["months", "days"],
+                stale_offset_ok=True,
+            )
+        with warns_here(StaleOffsetWarning):
+            operation(
+                hours=24,
+                relative_to=self.OFFSET,
+                in_units=["months", "days"],
+                naive_arithmetic_ok=True,
+            )
+
+    def test_composition_plain_reference_no_boundary_no_warning(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = ItemizedDelta(months=1).add(
+                days=30, relative_to=self.PLAIN, in_units=["months", "days"]
+            )
+        assert result.strict_eq(ItemizedDelta(months=2, days=2))
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_composition_rejects_a_date(self, method):
+        operation = getattr(ItemizedDelta(hours=1), method)
+        with pytest.raises(
+            TypeError,
+            match="^relative_to must be a ZonedDateTime, PlainDateTime, "
+            "or OffsetDateTime$",
+        ):
+            operation(
+                hours=1, relative_to=Date(2023, 1, 1), in_units=["hours"]
+            )
+
+    def test_in_units_escapes(self):
+        d = ItemizedDelta(months=1, hours=5)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            plain = d.in_units(
+                ["days", "hours"],
+                relative_to=self.PLAIN,
+                naive_arithmetic_ok=True,
+            )
+            offset = d.in_units(
+                ["days", "hours"],
+                relative_to=self.OFFSET,
+                stale_offset_ok=True,
+            )
+        assert plain.strict_eq(offset)
+        with warns_here(NaiveArithmeticWarning):
+            d.in_units(
+                ["days", "hours"], relative_to=self.PLAIN, stale_offset_ok=True
+            )  # type: ignore[call-overload]
+        with warns_here(StaleOffsetWarning):
+            d.in_units(
+                ["days", "hours"],
+                relative_to=self.OFFSET,
+                naive_arithmetic_ok=True,
+            )  # type: ignore[call-overload]
+
+    def test_total_escapes(self):
+        d = ItemizedDelta(months=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            plain = d.total(
+                "hours", relative_to=self.PLAIN, naive_arithmetic_ok=True
+            )
+            offset = d.total(
+                "hours", relative_to=self.OFFSET, stale_offset_ok=True
+            )
+        assert plain == offset == 744.0
+        with warns_here(NaiveArithmeticWarning):
+            d.total("hours", relative_to=self.PLAIN, stale_offset_ok=True)  # type: ignore[call-overload]
+        with warns_here(StaleOffsetWarning):
+            d.total("hours", relative_to=self.OFFSET, naive_arithmetic_ok=True)  # type: ignore[call-overload]
+
+    def test_escapes_ignored_with_zoned(self):
+        d = ItemizedDelta(months=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.total(
+                "hours",
+                relative_to=self.ZONED,
+                naive_arithmetic_ok=True,
+                stale_offset_ok=True,
+            )  # type: ignore[call-overload]
+            d.in_units(
+                ["hours"],
+                relative_to=self.ZONED,
+                naive_arithmetic_ok=True,
+                stale_offset_ok=True,
+            )  # type: ignore[call-overload]
+
+    def test_total_validates_the_unit_before_warning(self):
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            with pytest.raises(ValueError, match="^invalid unit: 'foo'$"):
+                ItemizedDelta(months=1).total("foo", relative_to=self.PLAIN)  # type: ignore[call-overload]
+        assert record == []
+
+
+class TestInternalShiftWarning:
+    """A calendar shift of the reference that lands in a gap attributes its
+    ``ImplicitDisambiguationWarning`` to the caller."""
+
+    # One day later is 02:30 on the morning the clock skips 02:00-03:00.
+    ZONED = ZonedDateTime(2023, 3, 25, 2, 30, tz="Europe/Amsterdam")
+
+    def test_total(self):
+        with warns_here(ImplicitDisambiguationWarning):
+            ItemizedDelta(days=1).total("hours", relative_to=self.ZONED)
+
+    def test_in_units(self):
+        with warns_here(ImplicitDisambiguationWarning):
+            ItemizedDelta(days=1).in_units(["hours"], relative_to=self.ZONED)
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_composition(self, method):
+        with warns_here(ImplicitDisambiguationWarning):
+            getattr(ItemizedDelta(days=1), method)(
+                hours=0, relative_to=self.ZONED, in_units=["hours"]
+            )
+
+
 def test_replace():
     d = ItemizedDelta(years=2, months=3, seconds=4)
 
@@ -1546,8 +2065,10 @@ def test_replace():
         .strict_eq(ItemizedDelta(years=3, months=1, seconds=0, days=4))
     )
 
-    # last field dropped
-    with pytest.raises(ValueError, match="[Aa]t least one"):
+    # last component removed
+    with pytest.raises(
+        ValueError, match="^at least one component must remain present$"
+    ):
         d.replace(years=None, months=None, seconds=None)
 
     # no arguments
@@ -1648,6 +2169,12 @@ def test_bool():
             None,
             TimeDelta(nanoseconds=1),
         ),
+        # fully negative: both halves carry the sign
+        (
+            ItemizedDelta(years=-1, days=-2, hours=-3, nanoseconds=-4),
+            ItemizedDateDelta(years=-1, days=-2),
+            TimeDelta(hours=-3, nanoseconds=-4),
+        ),
     ],
 )
 def test_parts(
@@ -1691,7 +2218,7 @@ def test_pickle(d: ItemizedDelta):
 
 def test_compatible_unpickle():
     # This is a pickle of ItemizedDelta created with the current format.
-    # Signed values, no separate sign field.
+    # Signed values, no separate sign slot.
     dumped = (
         b"\x80\x04\x953\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_i"
         b"delta\x94\x93\x94(K\x01K\x02K\x03K\x04K\x05K\x06K\x07K\x08t\x94R\x94."
