@@ -9,8 +9,9 @@ from datetime import (
     timedelta as py_timedelta,
     timezone as py_timezone,
 )
+from fractions import Fraction
 from pathlib import Path
-from typing import Any, Literal, Sequence
+from typing import Any, Literal, Sequence, cast
 from zoneinfo import (
     ZoneInfo,
     available_timezones as zoneinfo_available_timezones,
@@ -64,6 +65,7 @@ from .common import (
     tz_rules_from_file,
     warns_here,
 )
+from .test_time_delta import _Idx
 
 try:
     import tzdata  # noqa
@@ -2842,17 +2844,45 @@ class TestDayLength:
 
         # Positive UTC offsets at lower bound are NOT fine
         d_min_pos = ZonedDateTime(1, 1, 1, 12, tz="Asia/Tokyo")
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
             d_min_pos.day_length()
 
         # upper bound is NOT fine
         d_max_pos = ZonedDateTime(9999, 12, 31, 4, tz="Asia/Tokyo")
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
             d_max_pos.day_length()
 
         d_max_neg = ZonedDateTime(9999, 12, 31, 12, tz="America/New_York")
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
             d_max_neg.day_length()
+
+    @pytest.mark.parametrize(
+        "d",
+        [
+            ZonedDateTime(2010, 11, 6, 12, tz="America/Goose_Bay"),
+            ZonedDateTime(2010, 11, 7, 12, tz="America/Goose_Bay"),
+            ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
+            ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"),
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguation="later",
+            ),
+        ],
+    )
+    def test_is_the_difference_of_consecutive_day_starts(self, d):
+        next_start = d.add(hours=30).start_of("day")
+        assert d.day_length() == next_start - d.start_of("day")
 
 
 @pytest.mark.parametrize(
@@ -6258,12 +6288,20 @@ class TestRound:
             )
         )
 
-    def test_invalid_mode(self):
-        d = ZonedDateTime(
-            2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
-        )
-        with pytest.raises(ValueError, match="mode.*foo"):
-            d.round("second", mode="foo")  # type: ignore[call-overload]
+    # a value already on the increment validates the mode too
+    @pytest.mark.parametrize(
+        "d",
+        [
+            ZonedDateTime(
+                2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
+            ),
+            ZonedDateTime(2023, 7, 14, 1, 2, 3, tz="Europe/Paris"),
+        ],
+    )
+    @pytest.mark.parametrize("mode", ["foo", "TRUNC", None, 3])
+    def test_invalid_mode(self, d, mode):
+        with pytest.raises(ValueError, match=f"^invalid mode: {mode!r}$"):
+            d.round("second", mode=mode)
 
     @pytest.mark.parametrize(
         "unit, increment",
@@ -6275,44 +6313,76 @@ class TestRound:
             ("hour", 48),
             ("microsecond", 1542),
             ("microsecond", 7),
+            ("second", 1 << 62),
         ],
     )
-    def test_increment_doesnt_evenly_divide_day(self, unit, increment):
+    def test_increment_does_not_divide_day(self, unit, increment):
         d = ZonedDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
         )
-        with pytest.raises(ValueError, match="24.hour"):
+        with pytest.raises(
+            ValueError, match="^increment must divide a 24-hour day evenly$"
+        ):
             d.round(unit, increment=increment)
+
+    @pytest.mark.parametrize("increment", [0, -5])
+    def test_increment_not_positive(self, increment):
+        d = ZonedDateTime(2023, 7, 14, 1, 2, 3, tz="Europe/Paris")
+        with pytest.raises(
+            ValueError, match="^increment must be a positive integer$"
+        ):
+            d.round("minute", increment=increment)
 
     @pytest.mark.parametrize(
-        "unit, increment",
-        [
-            ("minute", 0),
-            ("minute", -5),
-        ],
+        "increment", [1.5, float("nan"), "5", Fraction(3, 2)]
     )
-    def test_increment_invalid(self, unit, increment):
+    def test_increment_not_an_integer(self, increment):
+        d = ZonedDateTime(2023, 7, 14, 1, 2, 3, tz="Europe/Paris")
+        with pytest.raises(TypeError, match="^increment must be an integer$"):
+            d.round("second", increment=increment)
+
+    def test_increment_read_through_index(self):
+        d = ZonedDateTime(2023, 7, 14, 12, 39, 59, tz="Europe/Paris")
+        assert d.round("minute", increment=True) == d.round("minute")
+        assert d.round("minute", increment=cast(int, _Idx())) == d.round(
+            "minute", increment=5
+        )
+
+    @pytest.mark.parametrize("unit", ["foo", "week", "minutes", None, 5])
+    def test_invalid_unit(self, unit):
         d = ZonedDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
         )
-        with pytest.raises(ValueError, match="[Ii]ncrement"):
-            d.round(unit, increment=increment)
+        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
+            d.round(unit)
 
-    def test_invalid_unit(self):
-        d = ZonedDateTime(
-            2023, 7, 14, 1, 2, 3, nanosecond=4_000, tz="Europe/Paris"
+    def test_range_edges(self):
+        last = ZonedDateTime(
+            9999, 12, 31, 23, 59, 59, nanosecond=999_999_999, tz="Etc/UTC"
         )
-        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
-            d.round("foo")  # type: ignore[call-overload]
+        assert last.round("hour", mode="floor").strict_eq(
+            ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
+        )
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            last.round("hour", mode="ceil")
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            last.round("hour", increment=4)
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            last.round("day")
 
-    def test_out_of_range(self):
-        d = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
-
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d.round("hour", increment=4)
-
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d.round("day")
+        first = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
+        just_after = first.add(seconds=1)
+        assert just_after.round("hour", mode="floor").strict_eq(first)
+        assert just_after.round("day", mode="floor").strict_eq(first)
+        assert just_after.round("hour", mode="ceil").strict_eq(
+            ZonedDateTime(1, 1, 1, 1, tz="Etc/UTC")
+        )
 
     def test_round_by_timedelta(self):
         d = ZonedDateTime(2020, 8, 15, 23, 24, 18, tz="Europe/Amsterdam")
@@ -6326,20 +6396,48 @@ class TestRound:
             2020, 8, 15, 23, 15, tz="Europe/Amsterdam"
         )
 
-    def test_round_by_timedelta_invalid_not_divides_day(self):
+    @pytest.mark.parametrize("unit", [hours(7), hours(25)])
+    def test_round_by_timedelta_not_dividing_day(self, unit):
         d = ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam")
-        with pytest.raises(ValueError, match="24.hour"):
-            d.round(TimeDelta(hours=7))
+        with pytest.raises(
+            ValueError, match="^unit must divide a 24-hour day evenly$"
+        ):
+            d.round(unit)
 
-    def test_round_by_timedelta_negative(self):
+    @pytest.mark.parametrize("unit", [hours(-1), TimeDelta.ZERO])
+    def test_round_by_timedelta_not_positive(self, unit):
         d = ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam")
-        with pytest.raises(ValueError, match="positive"):
-            d.round(TimeDelta(hours=-1))
+        with pytest.raises(
+            ValueError, match="^unit must be a positive TimeDelta$"
+        ):
+            d.round(unit)
 
-    def test_round_by_timedelta_with_increment(self):
+    @pytest.mark.parametrize("increment", [1, 2])
+    def test_round_by_timedelta_with_increment(self, increment):
         d = ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam")
-        with pytest.raises(TypeError):
-            d.round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
+        with pytest.raises(
+            TypeError,
+            match="^cannot specify an increment with a TimeDelta argument$",
+        ):
+            d.round(TimeDelta(hours=1), increment=increment)  # type: ignore[call-overload]
+
+    # Amsterdam clocks fell back from 03:00 to 02:00 on 2023-10-29, so 02:30
+    # occurs twice. A TimeDelta unit follows the time-unit rule: the result
+    # keeps the offset it started from.
+    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
+    def test_round_by_timedelta_inside_a_fold_keeps_the_offset(
+        self, disambiguation
+    ):
+        d = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            30,
+            tz="Europe/Amsterdam",
+            disambiguation=disambiguation,
+        )
+        assert d.round(TimeDelta(minutes=20)).strict_eq(d.replace(minute=40))
 
     # On 2023-10-01, Lord Howe clocks jump from 02:00 to 02:30, so a 20-minute
     # grid has a point (02:20) strictly inside the gap.
@@ -6628,13 +6726,16 @@ class TestStartOf:
         )
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid unit"):
+        with pytest.raises(ValueError, match="^invalid unit: 'invalid'$"):
             ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of(
                 "invalid"  # type: ignore[arg-type]
             )
 
     def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
             ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of(
                 "week"  # type: ignore[arg-type]
             )
@@ -6725,16 +6826,49 @@ class TestStartOf:
         )
         # FUTURE: Tests for folds that don't occur on neat hour boundaries.
 
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        try:
-            ZonedDateTime(1, 1, 1, tz="UTC").start_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            ZonedDateTime(9999, 12, 31, 23, 59, 59, tz="UTC").start_of(unit)
-        except (ValueError, OverflowError):
-            pass
+    # Amsterdam clocks fell back from 03:00 to 02:00 on 2023-10-29, so 02:30
+    # occurs twice
+    AMS_FOLD = [
+        ZonedDateTime(
+            2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguation=d
+        )
+        for d in ("earlier", "later")
+    ]
+
+    @pytest.mark.parametrize("d", AMS_FOLD)
+    @pytest.mark.parametrize(
+        "unit, expect",
+        [
+            ("week_mon", ZonedDateTime(2023, 10, 23, tz="Europe/Amsterdam")),
+            ("week_sun", ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam")),
+            ("month", ZonedDateTime(2023, 10, 1, tz="Europe/Amsterdam")),
+            ("year", ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam")),
+        ],
+    )
+    def test_calendar_unit_inside_a_fold(self, d, unit, expect):
+        # which occurrence the call starts from does not change the boundary
+        assert d.start_of(unit).strict_eq(expect)
+
+    @pytest.mark.parametrize("d", AMS_FOLD)
+    def test_second_inside_a_fold_keeps_the_offset(self, d):
+        assert d.start_of("second").strict_eq(d)
+
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        first = ZonedDateTime(1, 1, 1, tz="UTC")
+        assert first.start_of("week_mon").strict_eq(first)
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            first.start_of("week_sun")
+
+        last = ZonedDateTime(9999, 12, 31, 23, 59, 59, tz="UTC")
+        assert last.start_of("week_mon").strict_eq(
+            ZonedDateTime(9999, 12, 27, tz="UTC")
+        )
+        assert last.start_of("week_sun").strict_eq(
+            ZonedDateTime(9999, 12, 26, tz="UTC")
+        )
 
 
 class TestEndOf:
@@ -6915,16 +7049,34 @@ class TestEndOf:
         )
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid unit"):
+        with pytest.raises(ValueError, match="^invalid unit: 'invalid'$"):
             ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").end_of(
                 "invalid"  # type: ignore[arg-type]
             )
 
     def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
             ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").end_of(
                 "week"  # type: ignore[arg-type]
             )
+
+    def test_month_feb_non_leap(self):
+        zdt = ZonedDateTime(2023, 2, 10, 12, tz="Europe/Amsterdam")
+        assert zdt.end_of("month").strict_eq(
+            ZonedDateTime(
+                2023,
+                2,
+                28,
+                23,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="Europe/Amsterdam",
+            )
+        )
 
     def test_week_mon(self):
         # Thursday Aug 15 -> Sunday Aug 18 end of day
@@ -7112,16 +7264,83 @@ class TestEndOf:
             )
         )
 
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        try:
-            ZonedDateTime(1, 1, 1, tz="UTC").end_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            ZonedDateTime(9999, 12, 31, 23, 59, 59, tz="UTC").end_of(unit)
-        except (ValueError, OverflowError):
-            pass
+    # Amsterdam clocks fell back from 03:00 to 02:00 on 2023-10-29, so 02:30
+    # occurs twice
+    AMS_FOLD = [
+        ZonedDateTime(
+            2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguation=d
+        )
+        for d in ("earlier", "later")
+    ]
+
+    @pytest.mark.parametrize("d", AMS_FOLD)
+    @pytest.mark.parametrize(
+        "unit, next_start",
+        [
+            ("week_mon", ZonedDateTime(2023, 10, 30, tz="Europe/Amsterdam")),
+            ("week_sun", ZonedDateTime(2023, 11, 5, tz="Europe/Amsterdam")),
+            ("month", ZonedDateTime(2023, 11, 1, tz="Europe/Amsterdam")),
+            ("year", ZonedDateTime(2024, 1, 1, tz="Europe/Amsterdam")),
+        ],
+    )
+    def test_calendar_unit_inside_a_fold(self, d, unit, next_start):
+        # which occurrence the call starts from does not change the boundary
+        assert d.end_of(unit).strict_eq(next_start.subtract(nanoseconds=1))
+
+    @pytest.mark.parametrize("d", AMS_FOLD)
+    def test_second_inside_a_fold_keeps_the_offset(self, d):
+        assert d.end_of("second").strict_eq(d.replace(nanosecond=999_999_999))
+
+    # Lord Howe clocks fell back from 02:00 to 01:30 on 2024-04-07, a fold
+    # shorter than an hour but longer than a minute
+    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
+    def test_time_unit_inside_a_short_fold_keeps_the_offset(
+        self, disambiguation
+    ):
+        zdt = ZonedDateTime(
+            2024,
+            4,
+            7,
+            1,
+            45,
+            30,
+            tz="Australia/Lord_Howe",
+            disambiguation=disambiguation,
+        )
+        assert zdt.end_of("second").strict_eq(
+            zdt.replace(nanosecond=999_999_999)
+        )
+        assert zdt.end_of("minute").strict_eq(
+            zdt.replace(second=59, nanosecond=999_999_999)
+        )
+
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        first = ZonedDateTime(1, 1, 1, tz="UTC")
+        assert first.end_of("week_mon").strict_eq(
+            ZonedDateTime(
+                1, 1, 7, 23, 59, 59, nanosecond=999_999_999, tz="UTC"
+            )
+        )
+        assert first.end_of("week_sun").strict_eq(
+            ZonedDateTime(
+                1, 1, 6, 23, 59, 59, nanosecond=999_999_999, tz="UTC"
+            )
+        )
+
+        # the end of a calendar unit is computed from the next start, which
+        # lies past the range for every unit that ends on 9999-12-31
+        last = ZonedDateTime(9999, 12, 31, tz="UTC")
+        assert last.end_of("hour").strict_eq(
+            ZonedDateTime(
+                9999, 12, 31, 0, 59, 59, nanosecond=999_999_999, tz="UTC"
+            )
+        )
+        for unit in ("day", "week_mon", "week_sun", "month", "year"):
+            with pytest.raises(
+                ValueError, match="^value or calculation out of range$"
+            ):
+                last.end_of(unit)
 
 
 class TestDayBoundariesAroundMidnight:
@@ -7207,6 +7426,26 @@ class TestDayBoundariesAroundMidnight:
             ZonedDateTime(2010, 11, day, 12, tz=self.GOOSE_BAY).day_length()
             == expect
         )
+
+    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
+    def test_repeated_midnight_round_and_end_of_day(self, disambiguation):
+        # Both occurrences belong to day Nov 6, which starts at its earlier
+        # midnight and ends at the earlier midnight of Nov 7. The second
+        # occurrence of 23:30 lies past that end (ADR 0003).
+        d = ZonedDateTime(
+            2010,
+            11,
+            6,
+            23,
+            30,
+            tz=self.GOOSE_BAY,
+            disambiguation=disambiguation,
+        )
+        nov_7 = ZonedDateTime(
+            2010, 11, 7, tz=self.GOOSE_BAY, disambiguation="earlier"
+        )
+        assert d.round("day").strict_eq(nov_7)
+        assert d.end_of("day").strict_eq(nov_7.subtract(nanoseconds=1))
 
 
 class TestClearTzCache:
@@ -7316,6 +7555,11 @@ class TestImplicitDisambiguationWarning:
             # Exact-time shifts never resolve a local time
             lambda: _BEFORE_SKIPPED + hours(24),
             lambda: _BEFORE_SKIPPED + ItemizedDelta(hours=24),
+            # The boundary methods take no policy (ADR 0003)
+            lambda: _IN_REPEATED.start_of("hour"),
+            lambda: _IN_REPEATED.end_of("day"),
+            lambda: _IN_REPEATED.round("hour"),
+            lambda: _IN_REPEATED.day_length(),
         ],
     )
     def test_does_not_warn(self, func):

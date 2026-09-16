@@ -51,7 +51,7 @@ impl DateTimeBoundaryUnit {
                     Self::Time(unit)
                 } else if eq(v, *state.strs.week) {
                     return Some(raise_value_err(
-                        "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead.",
+                        "invalid unit: 'week', use 'week_mon' or 'week_sun'",
                     ));
                 } else {
                     None?

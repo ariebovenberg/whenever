@@ -58,6 +58,13 @@ clamping
   Preferred over *truncation* and *constrain*.
   See {ref}`arith-add-cal`.
 
+rounding increment
+  The step a value is rounded to: a count of the unit, passed as
+  `increment=`, or a `TimeDelta` passed as the unit itself. On a datetime
+  or a `Time` it must divide a 24-hour day evenly.
+  Preferred over *quantum*, *step*, *granularity*, and *resolution*.
+  See {ref}`rounding`.
+
 strict equality
   Equality that also compares what `==` deliberately ignores: the argument's
   type, the offset, the time zone, or a component given explicitly as zero.

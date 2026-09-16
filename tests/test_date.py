@@ -1408,67 +1408,43 @@ class TestStartOf:
     def test_month_december(self):
         assert Date(2024, 12, 25).start_of("month") == Date(2024, 12, 1)
 
-    def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid unit"):
-            Date(2024, 8, 15).start_of("day")  # type: ignore[arg-type]
-
-    def test_invalid_unit_arbitrary(self):
-        with pytest.raises(ValueError, match="invalid unit"):
-            Date(2024, 8, 15).start_of("invalid")  # type: ignore[arg-type]
+    # a Date has nothing below a day
+    @pytest.mark.parametrize("unit", ["day", "invalid", None, 5])
+    def test_invalid_unit(self, unit):
+        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
+            Date(2024, 8, 15).start_of(unit)
 
     def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
             Date(2024, 8, 15).start_of("week")  # type: ignore[arg-type]
 
-    @pytest.mark.parametrize(
-        "date, expected",
-        [
-            # Thursday -> preceding Monday
-            (Date(2024, 8, 15), Date(2024, 8, 12)),
-            # Monday itself
-            (Date(2024, 8, 12), Date(2024, 8, 12)),
-            # Sunday -> preceding Monday
-            (Date(2024, 8, 18), Date(2024, 8, 12)),
-            # Saturday -> preceding Monday
-            (Date(2024, 8, 17), Date(2024, 8, 12)),
-            # Tuesday
-            (Date(2024, 8, 13), Date(2024, 8, 12)),
-            # Crosses month boundary: Fri Mar 1 -> Mon Feb 26
-            (Date(2024, 3, 1), Date(2024, 2, 26)),
-        ],
-    )
-    def test_week_mon(self, date, expected):
-        assert date.start_of("week_mon") == expected
+    # Monday 2024-08-12 through Sunday 2024-08-18
+    @pytest.mark.parametrize("day", range(12, 19))
+    def test_week_mon(self, day):
+        assert Date(2024, 8, day).start_of("week_mon") == Date(2024, 8, 12)
 
-    @pytest.mark.parametrize(
-        "date, expected",
-        [
-            # Thursday -> preceding Sunday
-            (Date(2024, 8, 15), Date(2024, 8, 11)),
-            # Sunday itself
-            (Date(2024, 8, 11), Date(2024, 8, 11)),
-            # Saturday -> preceding Sunday
-            (Date(2024, 8, 17), Date(2024, 8, 11)),
-            # Monday
-            (Date(2024, 8, 12), Date(2024, 8, 11)),
-            # Crosses month boundary: Mon Jan 1 -> Sun Dec 31
-            (Date(2024, 1, 1), Date(2023, 12, 31)),
-        ],
-    )
-    def test_week_sun(self, date, expected):
-        assert date.start_of("week_sun") == expected
+    # Sunday 2024-08-11 through Saturday 2024-08-17
+    @pytest.mark.parametrize("day", range(11, 18))
+    def test_week_sun(self, day):
+        assert Date(2024, 8, day).start_of("week_sun") == Date(2024, 8, 11)
 
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        # MIN/MAX may error (overflow) but must not crash
-        try:
-            Date.MIN.start_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            Date.MAX.start_of(unit)
-        except (ValueError, OverflowError):
-            pass
+    def test_week_crosses_month(self):
+        # Fri Mar 1 -> Mon Feb 26; Mon Jan 1 -> Sun Dec 31
+        assert Date(2024, 3, 1).start_of("week_mon") == Date(2024, 2, 26)
+        assert Date(2024, 1, 1).start_of("week_sun") == Date(2023, 12, 31)
+
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        assert Date.MIN.start_of("week_mon") == Date.MIN
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            Date.MIN.start_of("week_sun")
+        assert Date.MAX.start_of("week_mon") == Date(9999, 12, 27)
+        assert Date.MAX.start_of("week_sun") == Date(9999, 12, 26)
 
 
 class TestEndOf:
@@ -1506,62 +1482,41 @@ class TestEndOf:
     def test_month_already_last_day(self):
         assert Date(2024, 8, 31).end_of("month") == Date(2024, 8, 31)
 
-    def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid unit"):
-            Date(2024, 8, 15).end_of("day")  # type: ignore[arg-type]
-
-    def test_invalid_unit_arbitrary(self):
-        with pytest.raises(ValueError, match="invalid unit"):
-            Date(2024, 8, 15).end_of("hour")  # type: ignore[arg-type]
+    @pytest.mark.parametrize("unit", ["day", "hour", None, 5])
+    def test_invalid_unit(self, unit):
+        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
+            Date(2024, 8, 15).end_of(unit)
 
     def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
             Date(2024, 8, 15).end_of("week")  # type: ignore[arg-type]
 
-    @pytest.mark.parametrize(
-        "date, expected",
-        [
-            # Thursday -> following Sunday
-            (Date(2024, 8, 15), Date(2024, 8, 18)),
-            # Sunday itself (already end of week)
-            (Date(2024, 8, 18), Date(2024, 8, 18)),
-            # Monday -> following Sunday
-            (Date(2024, 8, 12), Date(2024, 8, 18)),
-            # Saturday -> following Sunday
-            (Date(2024, 8, 17), Date(2024, 8, 18)),
-            # Crosses month boundary: Mon Jul 29 -> Sun Aug 4
-            (Date(2024, 7, 29), Date(2024, 8, 4)),
-        ],
-    )
-    def test_week_mon(self, date, expected):
-        assert date.end_of("week_mon") == expected
+    # Monday 2024-08-12 through Sunday 2024-08-18
+    @pytest.mark.parametrize("day", range(12, 19))
+    def test_week_mon(self, day):
+        assert Date(2024, 8, day).end_of("week_mon") == Date(2024, 8, 18)
 
-    @pytest.mark.parametrize(
-        "date, expected",
-        [
-            # Thursday -> following Saturday
-            (Date(2024, 8, 15), Date(2024, 8, 17)),
-            # Saturday itself (already end of week)
-            (Date(2024, 8, 17), Date(2024, 8, 17)),
-            # Sunday -> following Saturday
-            (Date(2024, 8, 11), Date(2024, 8, 17)),
-            # Friday
-            (Date(2024, 8, 16), Date(2024, 8, 17)),
-            # Crosses month boundary: Sun Dec 29 -> Sat Jan 4
-            (Date(2024, 12, 29), Date(2025, 1, 4)),
-        ],
-    )
-    def test_week_sun(self, date, expected):
-        assert date.end_of("week_sun") == expected
+    # Sunday 2024-08-11 through Saturday 2024-08-17
+    @pytest.mark.parametrize("day", range(11, 18))
+    def test_week_sun(self, day):
+        assert Date(2024, 8, day).end_of("week_sun") == Date(2024, 8, 17)
 
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        # MIN/MAX may error (overflow) but must not crash
-        try:
-            Date.MIN.end_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            Date.MAX.end_of(unit)
-        except (ValueError, OverflowError):
-            pass
+    def test_week_crosses_month(self):
+        # Mon Jul 29 -> Sun Aug 4; Sun Dec 29 -> Sat Jan 4
+        assert Date(2024, 7, 29).end_of("week_mon") == Date(2024, 8, 4)
+        assert Date(2024, 12, 29).end_of("week_sun") == Date(2025, 1, 4)
+
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        assert Date.MIN.end_of("week_mon") == Date(1, 1, 7)
+        assert Date.MIN.end_of("week_sun") == Date(1, 1, 6)
+        assert Date.MAX.end_of("year") == Date.MAX
+        assert Date.MAX.end_of("month") == Date.MAX
+        for unit in ("week_mon", "week_sun"):
+            with pytest.raises(
+                ValueError, match="^value or calculation out of range$"
+            ):
+                Date.MAX.end_of(unit)

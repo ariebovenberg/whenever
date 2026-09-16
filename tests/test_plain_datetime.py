@@ -2,7 +2,8 @@ import pickle
 import re
 import warnings
 from datetime import datetime as py_datetime, timezone
-from typing import Any, Literal, Sequence
+from fractions import Fraction
+from typing import Any, Literal, Sequence, cast
 
 import pytest
 from hypothesis import given
@@ -41,6 +42,7 @@ from .common import (
     system_tz_ams,
     warns_here,
 )
+from .test_time_delta import _Idx
 
 
 class TestInit:
@@ -1102,10 +1104,18 @@ class TestRound:
             2023, 7, 14, 1, 2, 8
         )
 
-    def test_invalid_mode(self):
-        d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
-            d.round("second", mode="foo")  # type: ignore[call-overload]
+    # a value already on the increment validates the mode too
+    @pytest.mark.parametrize(
+        "d",
+        [
+            PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000),
+            PlainDateTime(2023, 7, 14, 1, 2, 3),
+        ],
+    )
+    @pytest.mark.parametrize("mode", ["foo", "TRUNC", None, 3])
+    def test_invalid_mode(self, d, mode):
+        with pytest.raises(ValueError, match=f"^invalid mode: {mode!r}$"):
+            d.round("second", mode=mode)
 
     @pytest.mark.parametrize(
         "unit, increment",
@@ -1116,12 +1126,43 @@ class TestRound:
             ("day", 2),
             ("hour", 48),
             ("microsecond", 2001),
+            ("second", 1 << 62),
         ],
     )
-    def test_invalid_increment(self, unit, increment):
+    def test_increment_does_not_divide_day(self, unit, increment):
         d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="[Ii]ncrement"):
+        with pytest.raises(
+            ValueError, match="^increment must divide a 24-hour day evenly$"
+        ):
             d.round(unit, increment=increment)
+
+    @pytest.mark.parametrize("increment", [0, -1])
+    def test_increment_not_positive(self, increment):
+        d = PlainDateTime(2023, 7, 14, 1, 2, 3)
+        with pytest.raises(
+            ValueError, match="^increment must be a positive integer$"
+        ):
+            d.round("second", increment=increment)
+
+    @pytest.mark.parametrize(
+        "increment", [1.5, float("nan"), "5", Fraction(3, 2)]
+    )
+    def test_increment_not_an_integer(self, increment):
+        d = PlainDateTime(2023, 7, 14, 1, 2, 3)
+        with pytest.raises(TypeError, match="^increment must be an integer$"):
+            d.round("second", increment=increment)
+
+    def test_increment_read_through_index(self):
+        d = PlainDateTime(2023, 7, 14, 12, 39, 59)
+        assert d.round("minute", increment=True) == d.round("minute")
+        assert d.round("minute", increment=cast(int, _Idx())) == d.round(
+            "minute", increment=5
+        )
+
+    @pytest.mark.parametrize("hour, expect", [(12, 12), (13, 14)])
+    def test_half_even_tie(self, hour, expect):
+        d = PlainDateTime(2023, 7, 14, hour, 30)
+        assert d.round("hour") == PlainDateTime(2023, 7, 14, expect)
 
     def test_default_increment(self):
         d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=800_000)
@@ -1129,15 +1170,32 @@ class TestRound:
             2023, 7, 14, 1, 2, 3, nanosecond=1_000_000
         )
 
-    def test_invalid_unit(self):
+    @pytest.mark.parametrize("unit", ["foo", "week", "minutes", None, 5])
+    def test_invalid_unit(self, unit):
         d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
-            d.round("foo")  # type: ignore[call-overload]
+        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
+            d.round(unit)
 
-    def test_out_of_range(self):
-        d = PlainDateTime.MAX.replace(nanosecond=0)
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d.round("second", increment=5)
+    def test_range_edges(self):
+        assert PlainDateTime.MAX.round("hour", mode="floor") == PlainDateTime(
+            9999, 12, 31, 23
+        )
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            PlainDateTime.MAX.round("hour", mode="ceil")
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            PlainDateTime.MAX.replace(nanosecond=0).round(
+                "second", increment=5
+            )
+
+        just_after_min = PlainDateTime.MIN.replace(second=1)
+        assert just_after_min.round("hour", mode="floor") == PlainDateTime.MIN
+        assert just_after_min.round("hour", mode="ceil") == PlainDateTime(
+            1, 1, 1, 1
+        )
 
     def test_round_by_timedelta(self):
         d = PlainDateTime(2020, 8, 15, 23, 24, 18)
@@ -1153,20 +1211,30 @@ class TestRound:
         d = PlainDateTime(2020, 8, 15, 23, 50)
         assert d.round(hours(1)) == PlainDateTime(2020, 8, 16)
 
-    def test_round_by_timedelta_invalid_not_divides_day(self):
+    @pytest.mark.parametrize("unit", [hours(7), hours(25)])
+    def test_round_by_timedelta_not_dividing_day(self, unit):
         d = PlainDateTime(2020, 8, 15, 12)
-        with pytest.raises(ValueError, match="24.hour"):
-            d.round(hours(7))
+        with pytest.raises(
+            ValueError, match="^unit must divide a 24-hour day evenly$"
+        ):
+            d.round(unit)
 
-    def test_round_by_timedelta_negative(self):
+    @pytest.mark.parametrize("unit", [hours(-1), TimeDelta.ZERO])
+    def test_round_by_timedelta_not_positive(self, unit):
         d = PlainDateTime(2020, 8, 15, 12)
-        with pytest.raises(ValueError, match="positive"):
-            d.round(hours(-1))
+        with pytest.raises(
+            ValueError, match="^unit must be a positive TimeDelta$"
+        ):
+            d.round(unit)
 
-    def test_round_by_timedelta_with_increment(self):
+    @pytest.mark.parametrize("increment", [1, 2])
+    def test_round_by_timedelta_with_increment(self, increment):
         d = PlainDateTime(2020, 8, 15, 12)
-        with pytest.raises(TypeError):
-            d.round(hours(1), increment=2)  # type: ignore[call-overload]
+        with pytest.raises(
+            TypeError,
+            match="^cannot specify an increment with a TimeDelta argument$",
+        ):
+            d.round(hours(1), increment=increment)  # type: ignore[call-overload]
 
 
 def test_replace_date():
@@ -1881,11 +1949,14 @@ class TestStartOf:
         assert result == PlainDateTime(2024, 8, 15, 14, 30, 45)
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid unit"):
+        with pytest.raises(ValueError, match="^invalid unit: 'invalid'$"):
             PlainDateTime(2024, 8, 15, 14, 30).start_of("invalid")  # type: ignore[arg-type]
 
     def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
             PlainDateTime(2024, 8, 15, 14, 30).start_of("week")  # type: ignore[arg-type]
 
     def test_week_mon(self):
@@ -1910,16 +1981,19 @@ class TestStartOf:
         result = dt.start_of("week_sun")
         assert result == PlainDateTime(2024, 8, 11)
 
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        try:
-            PlainDateTime.MIN.start_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            PlainDateTime.MAX.start_of(unit)
-        except (ValueError, OverflowError):
-            pass
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        assert PlainDateTime.MIN.start_of("week_mon") == PlainDateTime.MIN
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            PlainDateTime.MIN.start_of("week_sun")
+        assert PlainDateTime.MAX.start_of("week_mon") == PlainDateTime(
+            9999, 12, 27
+        )
+        assert PlainDateTime.MAX.start_of("week_sun") == PlainDateTime(
+            9999, 12, 26
+        )
 
 
 class TestEndOf:
@@ -2000,11 +2074,14 @@ class TestEndOf:
         )
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid unit"):
+        with pytest.raises(ValueError, match="^invalid unit: 'invalid'$"):
             PlainDateTime(2024, 8, 15, 14, 30).end_of("invalid")  # type: ignore[arg-type]
 
     def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
             PlainDateTime(2024, 8, 15, 14, 30).end_of("week")  # type: ignore[arg-type]
 
     def test_week_mon(self):
@@ -2039,13 +2116,18 @@ class TestEndOf:
             2024, 8, 17, 23, 59, 59, nanosecond=999_999_999
         )
 
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        try:
-            PlainDateTime.MIN.end_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            PlainDateTime.MAX.end_of(unit)
-        except (ValueError, OverflowError):
-            pass
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        assert PlainDateTime.MIN.end_of("week_mon") == PlainDateTime(
+            1, 1, 7, 23, 59, 59, nanosecond=999_999_999
+        )
+        assert PlainDateTime.MIN.end_of("week_sun") == PlainDateTime(
+            1, 1, 6, 23, 59, 59, nanosecond=999_999_999
+        )
+        assert PlainDateTime.MAX.end_of("day") == PlainDateTime.MAX
+        assert PlainDateTime.MAX.end_of("year") == PlainDateTime.MAX
+        for unit in ("week_mon", "week_sun"):
+            with pytest.raises(
+                ValueError, match="^value or calculation out of range$"
+            ):
+                PlainDateTime.MAX.end_of(unit)

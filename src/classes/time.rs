@@ -299,7 +299,7 @@ fn round(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs)
         increment, mode, ..
     } = round::Args::parse(args, kwargs, cls.state(), round::ArgsContext::Standard)?;
     let increment_ns = match increment {
-        round::RoundIncrement::Day => raise_value_err("cannot round Time to day")?,
+        round::RoundIncrement::Day => raise_value_err("invalid unit: 'day'")?,
         round::RoundIncrement::Exact(incr) => incr.get(),
     };
     slf.round(increment_ns, mode).0.to_obj(cls)

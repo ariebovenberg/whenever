@@ -68,6 +68,8 @@ A {class}`Date` also finds dates near it:
   date, exclusive of the date itself; negative `n` searches backward.
 - {meth}`~Date.nth_weekday_of_month` finds the n-th occurrence of a weekday
   in the date's month; negative `n` counts from the end.
+- {meth}`~Date.start_of` and {meth}`~Date.end_of` give the first and last
+  day of the date's year, month, or week; see {ref}`rounding`.
 
 ## Time
 
@@ -78,6 +80,9 @@ Sub-second precision is supported down to nanoseconds.
 >>> Time(14, 30, nanosecond=500_000_000)
 Time("14:30:00.5")
 ```
+
+{meth}`~Time.round` rounds to a unit from an hour down to a nanosecond,
+wrapping past midnight when it rounds up; see {ref}`rounding`.
 
 ## YearMonth and MonthDay
 

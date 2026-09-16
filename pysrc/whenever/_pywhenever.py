@@ -39,7 +39,6 @@ from warnings import warn
 from . import _ideltas
 from ._common import (
     DAYS_NOT_ALWAYS_24H_MSG,
-    INCREMENT_MSG,
     OFFSET_DATETIME_DOCS_MSG,
     OFFSET_SHIFT_STALE_MSG,
     # The Rust extension takes its copy of the two reference messages from
@@ -488,6 +487,16 @@ _UNITS_FOR_START_END_OF = (
 )
 
 
+WEEK_UNIT_MSG = "invalid unit: 'week', use 'week_mon' or 'week_sun'"
+
+
+def _shift_days(dt: _datetime, days: int) -> _datetime:
+    try:
+        return dt + _timedelta(days=days)
+    except OverflowError:
+        raise ValueError(RANGE_MSG) from None
+
+
 def _start_of_dt(dt: _datetime, unit: str) -> _datetime:
     if unit == "year":
         return dt.replace(month=1, day=1, hour=0, minute=0, second=0)
@@ -495,11 +504,11 @@ def _start_of_dt(dt: _datetime, unit: str) -> _datetime:
         return dt.replace(day=1, hour=0, minute=0, second=0)
     elif unit == "week_mon":
         days_back = dt.isoweekday() - 1
-        d = dt - _timedelta(days=days_back)
+        d = _shift_days(dt, -days_back)
         return d.replace(hour=0, minute=0, second=0)
     elif unit == "week_sun":
         days_back = dt.isoweekday() % 7
-        d = dt - _timedelta(days=days_back)
+        d = _shift_days(dt, -days_back)
         return d.replace(hour=0, minute=0, second=0)
     elif unit == "day":
         return dt.replace(hour=0, minute=0, second=0)
@@ -510,9 +519,7 @@ def _start_of_dt(dt: _datetime, unit: str) -> _datetime:
     elif unit == "second":
         return dt
     elif unit == "week":
-        raise ValueError(
-            "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead."
-        )
+        raise ValueError(WEEK_UNIT_MSG)
     else:
         raise invalid("unit", unit)
 
@@ -529,11 +536,11 @@ def _end_of_dt(dt: _datetime, unit: str) -> _datetime:
         )
     elif unit == "week_mon":
         days_fwd = 7 - dt.isoweekday()
-        d = dt + _timedelta(days=days_fwd)
+        d = _shift_days(dt, days_fwd)
         return d.replace(hour=23, minute=59, second=59)
     elif unit == "week_sun":
         days_fwd = (6 - dt.isoweekday()) % 7
-        d = dt + _timedelta(days=days_fwd)
+        d = _shift_days(dt, days_fwd)
         return d.replace(hour=23, minute=59, second=59)
     elif unit == "day":
         return dt.replace(hour=23, minute=59, second=59)
@@ -544,45 +551,33 @@ def _end_of_dt(dt: _datetime, unit: str) -> _datetime:
     elif unit == "second":
         return dt
     elif unit == "week":
-        raise ValueError(
-            "unit 'week' is ambiguous. Use 'week_mon' or 'week_sun' instead."
-        )
+        raise ValueError(WEEK_UNIT_MSG)
     else:
         raise invalid("unit", unit)
 
 
 def _start_of_next_dt(dt: _datetime, unit: str) -> _datetime:
-    if unit == "year":
-        return dt.replace(
-            year=dt.year + 1,
-            month=1,
-            day=1,
-            hour=0,
-            minute=0,
-            second=0,
-        )
-    elif unit == "month":
-        year, month = divmod(dt.month, 12)
-        return dt.replace(
-            year=dt.year + year,
-            month=month + 1,
-            day=1,
-            hour=0,
-            minute=0,
-            second=0,
-        )
-    elif unit == "week_mon":
-        days_fwd = 8 - dt.isoweekday()
-        d = dt + _timedelta(days=days_fwd)
-        return d.replace(hour=0, minute=0, second=0)
-    elif unit == "week_sun":
-        days_fwd = 7 - dt.isoweekday() % 7
-        d = dt + _timedelta(days=days_fwd)
-        return d.replace(hour=0, minute=0, second=0)
-    else:
-        assert unit == "day"
-        # OPTIMIZE: compute days(1), hours(1) etc. as singletons
-        return (dt + _timedelta(days=1)).replace(hour=0, minute=0, second=0)
+    """The start of the calendar unit after the one containing ``dt``."""
+    last_day = _end_of_dt(dt, unit).replace(hour=0, minute=0, second=0)
+    return _shift_days(last_day, 1)
+
+
+def _round_increment_ns(
+    unit: str | TimeDelta, increment: int, for_delta: bool
+) -> int:
+    """The nanoseconds of a ``round()`` increment: a count of a named unit,
+    or a ``TimeDelta`` passed as the unit itself."""
+    if isinstance(unit, TimeDelta):
+        if increment is not UNSET:
+            raise TypeError(
+                "cannot specify an increment with a TimeDelta argument"
+            )
+        return unit._to_round_increment_ns(for_delta)
+    if increment is UNSET:
+        increment = 1
+    if for_delta:
+        return increment_to_ns_for_delta(unit, increment)
+    return increment_to_ns_for_datetime(unit, increment)
 
 
 @final
@@ -809,20 +804,11 @@ class Date(_Base):
         elif unit == "month":
             return Date._from_py_unchecked(self._py_date.replace(day=1))
         elif unit == "week_mon":
-            days_back = self._py_date.isoweekday() - 1
-            return Date._from_py_unchecked(
-                self._py_date - _timedelta(days=days_back)
-            )
+            return self._add_days(1 - self._py_date.isoweekday())
         elif unit == "week_sun":
-            days_back = self._py_date.isoweekday() % 7
-            return Date._from_py_unchecked(
-                self._py_date - _timedelta(days=days_back)
-            )
+            return self._add_days(-(self._py_date.isoweekday() % 7))
         elif unit == "week":
-            raise ValueError(
-                "unit 'week' is ambiguous. "
-                "Use 'week_mon' or 'week_sun' instead."
-            )
+            raise ValueError(WEEK_UNIT_MSG)
         else:
             raise invalid("unit", unit)
 
@@ -851,20 +837,11 @@ class Date(_Base):
                 )
             )
         elif unit == "week_mon":
-            days_fwd = 7 - self._py_date.isoweekday()
-            return Date._from_py_unchecked(
-                self._py_date + _timedelta(days=days_fwd)
-            )
+            return self._add_days(7 - self._py_date.isoweekday())
         elif unit == "week_sun":
-            days_fwd = (6 - self._py_date.isoweekday()) % 7
-            return Date._from_py_unchecked(
-                self._py_date + _timedelta(days=days_fwd)
-            )
+            return self._add_days((6 - self._py_date.isoweekday()) % 7)
         elif unit == "week":
-            raise ValueError(
-                "unit 'week' is ambiguous. "
-                "Use 'week_mon' or 'week_sun' instead."
-            )
+            raise ValueError(WEEK_UNIT_MSG)
         else:
             raise invalid("unit", unit)
 
@@ -1688,12 +1665,12 @@ class Time(_Base):
         ) = "second",
         /,
         *,
-        increment: int = 1,
+        increment: int = UNSET,
         mode: RoundModeStr = "half_even",
     ) -> Time:
         """Round the time to the specified unit and increment,
         or to a multiple of a :class:`TimeDelta`.
-        Various rounding modes are available.
+        Different rounding modes are available.
 
         >>> Time(12, 39, 59).round("minute", increment=15)
         Time("12:45:00")
@@ -1708,18 +1685,10 @@ class Time(_Base):
         >>> Time(23, 59, 59).round("minute", mode="ceil")
         Time("00:00:00")
         """
-        if isinstance(unit, TimeDelta):
-            if increment != 1:
-                raise TypeError(
-                    "cannot specify an increment with a TimeDelta argument"
-                )
-            increment_ns = unit._to_round_increment_ns(False)
-        else:
-            if unit == "day":  # type: ignore[comparison-overlap]
-                raise ValueError("cannot round Time to day")
-            increment_ns = increment_to_ns_for_datetime(unit, increment)
+        if unit == "day":
+            raise invalid("unit", unit)
         return self._round_unchecked(
-            increment_ns,
+            _round_increment_ns(unit, increment, False),
             mode,
             86_400_000_000_000,
         )[0]
@@ -2369,37 +2338,32 @@ class TimeDelta(_Base):
         ) = "second",
         /,
         *,
-        increment: int = 1,
+        increment: int = UNSET,
         mode: RoundModeStr = "half_even",
         days_assumed_24h_ok: bool = UNSET,
     ) -> TimeDelta:
         """Round the delta to the specified unit and increment,
         or to a multiple of another :class:`TimeDelta`.
-        Various rounding modes are available.
+        Different rounding modes are available.
 
         >>> t = TimeDelta(seconds=12345)
-        TimeDelta("PT3h25m45s")
         >>> t.round("minute")
         TimeDelta("PT3h26m")
         >>> t.round("second", increment=10, mode="floor")
         TimeDelta("PT3h25m40s")
         >>> t.round(TimeDelta(minutes=15))
         TimeDelta("PT3h30m")
+        >>> TimeDelta(hours=50).round("day", days_assumed_24h_ok=True)
+        TimeDelta("PT48h")
+
+        Warning
+        -------
+        ``"day"`` and ``"week"`` are exact 24-hour and 168-hour units here,
+        which emits :class:`~whenever.DaysAssumed24HoursWarning`.
+        Pass ``days_assumed_24h_ok=True`` when that is intentional.
+        A :class:`TimeDelta` unit claims no calendar and never warns.
         """
-        if isinstance(unit, TimeDelta):
-            if increment != 1:
-                raise TypeError(
-                    "cannot specify an increment with a TimeDelta argument"
-                )
-            increment_ns = unit._to_round_increment_ns(not days_assumed_24h_ok)
-        else:
-            if unit in ("day", "week") and not days_assumed_24h_ok:
-                warn(
-                    DAYS_NOT_ALWAYS_24H_MSG,
-                    DaysAssumed24HoursWarning,
-                    stacklevel=2,
-                )
-            increment_ns = increment_to_ns_for_delta(unit, increment)
+        increment_ns = _round_increment_ns(unit, increment, True)
         quotient, remainder_ns = divmod(abs(self._total_ns), increment_ns)
         sign: Literal[1, -1] = 1 if self._total_ns >= 0 else -1
 
@@ -2416,6 +2380,13 @@ class TimeDelta(_Base):
 
         if abs_result > _MAX_DELTA_NANOS:
             raise ValueError(RANGE_MSG)
+        # The named unit claims a calendar; a TimeDelta unit does not.
+        if unit in ("day", "week") and not days_assumed_24h_ok:
+            warn(
+                DAYS_NOT_ALWAYS_24H_MSG,
+                DaysAssumed24HoursWarning,
+                stacklevel=2,
+            )
         return self._from_nanos_unchecked(abs_result * sign)
 
     @overload
@@ -2748,9 +2719,9 @@ class TimeDelta(_Base):
 
     def _to_round_increment_ns(self, for_delta: bool) -> int:
         if (increment_ns := self._total_ns) <= 0:
-            raise ValueError(INCREMENT_MSG)
+            raise ValueError("unit must be a positive TimeDelta")
         if not for_delta and 86_400_000_000_000 % increment_ns:
-            raise ValueError(INCREMENT_MSG)
+            raise ValueError("unit must divide a 24-hour day evenly")
         return increment_ns
 
 
@@ -3724,12 +3695,12 @@ class Instant(_ExactTime):
         ) = "second",
         /,
         *,
-        increment: int = 1,
+        increment: int = UNSET,
         mode: RoundModeStr = "half_even",
     ) -> Instant:
         """Round the instant to the specified unit and increment,
         or to a multiple of a :class:`TimeDelta`.
-        Various rounding modes are available.
+        Different rounding modes are available.
 
         >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round("minute", increment=15)
         Instant("2020-01-01 12:45:00Z")
@@ -3737,21 +3708,18 @@ class Instant(_ExactTime):
         Instant("2020-01-01 08:09:10Z")
         >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(TimeDelta(minutes=15))
         Instant("2020-01-01 12:45:00Z")
+
+        ``"day"`` is rejected: an instant has no calendar, so a day has no
+        midnight to start at. ``round("hour", increment=24)`` gives periods
+        of exactly 24 hours, counted from midnight UTC like every increment
+        on an :class:`Instant`.
         """
-        if isinstance(unit, TimeDelta):
-            if increment != 1:
-                raise TypeError(
-                    "cannot specify an increment with a TimeDelta argument"
-                )
-            increment_ns = unit._to_round_increment_ns(False)
-        else:
-            if unit == "day":  # type: ignore[comparison-overlap]
-                raise ValueError(CANNOT_ROUND_DAY_MSG)
-            increment_ns = increment_to_ns_for_datetime(unit, increment)
+        if unit == "day":
+            raise ValueError(CANNOT_ROUND_DAY_MSG)
         rounded_time, next_day = Time._from_py_unchecked(
             self._py_dt.time(), self._nanos
         )._round_unchecked(
-            increment_ns,
+            _round_increment_ns(unit, increment, False),
             mode,
             86_400_000_000_000,
         )
@@ -4289,14 +4257,14 @@ class OffsetDateTime(_ExactAndLocalTime):
         <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
         Pass ``stale_offset_ok=True`` when preserving it is intentional.
         """
+        new_dt = check_utc_bounds(_start_of_dt(self._py_dt, unit))
         if not stale_offset_ok:
             warn(
                 OFFSET_START_END_OF_STALE_MSG,
                 StaleOffsetWarning,
                 stacklevel=2,
             )
-        new_dt = _start_of_dt(self._py_dt, unit)
-        return self._from_py_unchecked(check_utc_bounds(new_dt), 0)
+        return self._from_py_unchecked(new_dt, 0)
 
     def end_of(
         self,
@@ -4320,17 +4288,22 @@ class OffsetDateTime(_ExactAndLocalTime):
         OffsetDateTime("2024-08-15 23:59:59.999999999+05:00")
 
         See also :meth:`start_of`
+
+        Warning
+        -------
+        The preserved offset may be stale relative to its source time zone. See
+        the `OffsetDateTime guidance
+        <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
+        Pass ``stale_offset_ok=True`` when preserving it is intentional.
         """
+        new_dt = check_utc_bounds(_end_of_dt(self._py_dt, unit))
         if not stale_offset_ok:
             warn(
                 OFFSET_START_END_OF_STALE_MSG,
                 StaleOffsetWarning,
                 stacklevel=2,
             )
-        new_dt = _end_of_dt(self._py_dt, unit)
-        return self._from_py_unchecked(
-            check_utc_bounds(new_dt), _MAX_SUBSEC_NANOS
-        )
+        return self._from_py_unchecked(new_dt, _MAX_SUBSEC_NANOS)
 
     def __hash__(self) -> int:
         return hash((self._py_dt, self._nanos))
@@ -4692,7 +4665,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         ) = "second",
         /,
         *,
-        increment: int = 1,
+        increment: int = UNSET,
         mode: RoundModeStr = "half_even",
         stale_offset_ok: bool = UNSET,
     ) -> OffsetDateTime:
@@ -4705,6 +4678,8 @@ class OffsetDateTime(_ExactAndLocalTime):
         OffsetDateTime("2020-08-16 00:00:00+04:00")
         >>> d.round("minute", increment=15, mode="floor")
         OffsetDateTime("2020-08-15 23:15:00+04:00")
+        >>> d.round(TimeDelta(minutes=15))
+        OffsetDateTime("2020-08-15 23:30:00+04:00")
 
         Warning
         -------
@@ -4713,29 +4688,22 @@ class OffsetDateTime(_ExactAndLocalTime):
         <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
         Pass ``stale_offset_ok=True`` when preserving it is intentional.
         """
+        result = (
+            self.to_plain()
+            ._round_unchecked(
+                _round_increment_ns(unit, increment, False),
+                mode,
+                86_400_000_000_000,
+            )
+            .assume_fixed_offset(self.offset)
+        )
         if not stale_offset_ok:
             warn(
                 OFFSET_ROUND_STALE_MSG,
                 StaleOffsetWarning,
                 stacklevel=2,
             )
-        if isinstance(unit, TimeDelta):
-            if increment != 1:
-                raise TypeError(
-                    "cannot specify an increment with a TimeDelta argument"
-                )
-            increment_ns = unit._to_round_increment_ns(False)
-        else:
-            increment_ns = increment_to_ns_for_datetime(unit, increment)
-        return (
-            self.to_plain()
-            ._round_unchecked(
-                increment_ns,
-                mode,
-                86_400_000_000_000,
-            )
-            .assume_fixed_offset(self.offset)
-        )
+        return result
 
     def assume_tz(
         self,
@@ -6375,6 +6343,8 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         See also :meth:`start_of`. A boundary skipped by a transition snaps to
         the edge of the gap, so that successive intervals stay contiguous.
+        A repeated boundary is whatever the next :meth:`start_of` resolves
+        to; in a fall-back shorter than the unit, that is the later offset.
         """
         if unit in ("year", "month", "week_mon", "week_sun", "day"):
             new_dt = _start_of_next_dt(self._py_dt, unit)
@@ -6407,7 +6377,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         ) = "second",
         /,
         *,
-        increment: int = 1,
+        increment: int = UNSET,
         mode: RoundModeStr = "half_even",
     ) -> ZonedDateTime:
         """Round the datetime to the specified unit and increment,
@@ -6419,6 +6389,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         ZonedDateTime("2020-08-16 00:00:00+02:00[Europe/Paris]")
         >>> d.round("minute", increment=15, mode="floor")
         ZonedDateTime("2020-08-15 23:15:00+02:00[Europe/Paris]")
+        >>> d.round(TimeDelta(minutes=15))
+        ZonedDateTime("2020-08-15 23:30:00+02:00[Europe/Paris]")
 
         Notes
         -----
@@ -6430,17 +6402,9 @@ class ZonedDateTime(_ExactAndLocalTime):
           day with the day's length. On the 23-hour day of 2023-03-26 in
           Amsterdam, 11:31 therefore rounds down and 12:31 rounds up.
         """
-        if isinstance(unit, TimeDelta):
-            if increment != 1:
-                raise TypeError(
-                    "cannot specify an increment with a TimeDelta argument"
-                )
-            increment_ns = unit._to_round_increment_ns(False)
-        elif unit == "day":
-            increment_to_ns_for_datetime(unit, increment)  # validates only
+        increment_ns = _round_increment_ns(unit, increment, False)
+        if unit == "day":
             return self._round_day(mode)
-        else:
-            increment_ns = increment_to_ns_for_datetime(unit, increment)
 
         rounded_local = self.to_plain()._round_unchecked(
             increment_ns, mode, 86_400_000_000_000
@@ -7512,7 +7476,7 @@ class PlainDateTime(_LocalTime):
         ) = "second",
         /,
         *,
-        increment: int = 1,
+        increment: int = UNSET,
         mode: RoundModeStr = "half_even",
     ) -> PlainDateTime:
         """Round the datetime to the specified unit and increment,
@@ -7524,16 +7488,14 @@ class PlainDateTime(_LocalTime):
         PlainDateTime("2020-08-16 00:00:00")
         >>> d.round("minute", increment=15, mode="floor")
         PlainDateTime("2020-08-15 23:15:00")
+        >>> d.round(TimeDelta(minutes=15))
+        PlainDateTime("2020-08-15 23:30:00")
         """
-        if isinstance(unit, TimeDelta):
-            if increment != 1:
-                raise TypeError(
-                    "cannot specify an increment with a TimeDelta argument"
-                )
-            increment_ns = unit._to_round_increment_ns(False)
-        else:
-            increment_ns = increment_to_ns_for_datetime(unit, increment)
-        return self._round_unchecked(increment_ns, mode, 86_400_000_000_000)
+        return self._round_unchecked(
+            _round_increment_ns(unit, increment, False),
+            mode,
+            86_400_000_000_000,
+        )
 
     def _round_unchecked(
         self, increment_ns: int, mode: str, day_ns: int
@@ -7753,7 +7715,7 @@ OFFSET_REPLACE_STALE_MSG = (
 OFFSET_ROUND_STALE_MSG = (
     "Rounding an OffsetDateTime is valid and preserves its observed UTC offset. "
     "That offset may be stale relative to the source time zone if the rounded "
-    "time crosses a DST or other time zone boundary. "
+    "time crosses a time zone transition. "
     "Convert to a ZonedDateTime first (using .assume_tz()) for rounding that accounts for the time zone. "
     "If the fixed offset is intentional, pass `stale_offset_ok=True`. "
     + OFFSET_DATETIME_DOCS_MSG
@@ -7798,9 +7760,8 @@ PLAIN_DIFF_UNAWARE_MSG = (
 )
 
 CANNOT_ROUND_DAY_MSG = (
-    "Cannot round to day, because days do not have a fixed length. "
-    "Due to daylight saving time, some days have 23 or 25 hours. "
-    "If you wish to round to exactly 24 hours, use `round('hour', increment=24)`."
+    "cannot round an Instant to a day: an Instant has no calendar; "
+    "use 'hour' with increment=24 for exactly 24 hours"
 )
 
 ZONEINFO_NO_KEY_MSG = (

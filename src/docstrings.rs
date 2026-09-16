@@ -933,12 +933,12 @@ Note
   comments within folding whitespace are not supported.
 ";
 pub(crate) const INSTANT_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even')
+round($self, unit='second', /, *, increment=..., mode='half_even')
 --
 
 Round the instant to the specified unit and increment,
 or to a multiple of a :class:`TimeDelta`.
-Various rounding modes are available.
+Different rounding modes are available.
 
 >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(\"minute\", increment=15)
 Instant(\"2020-01-01 12:45:00Z\")
@@ -946,6 +946,11 @@ Instant(\"2020-01-01 12:45:00Z\")
 Instant(\"2020-01-01 08:09:10Z\")
 >>> Instant.from_utc(2020, 1, 1, 12, 39, 59).round(TimeDelta(minutes=15))
 Instant(\"2020-01-01 12:45:00Z\")
+
+``\"day\"`` is rejected: an instant has no calendar, so a day has no
+midnight to start at. ``round(\"hour\", increment=24)`` gives periods
+of exactly 24 hours, counted from midnight UTC like every increment
+on an :class:`Instant`.
 ";
 pub(crate) const INSTANT_SUBTRACT: &CStr = c"\
 subtract($self, delta=..., /, *, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, days_assumed_24h_ok=False)
@@ -1008,6 +1013,13 @@ The end of the given unit
 OffsetDateTime(\"2024-08-15 23:59:59.999999999+05:00\")
 
 See also :meth:`start_of`
+
+Warning
+-------
+The preserved offset may be stale relative to its source time zone. See
+the `OffsetDateTime guidance
+<https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
+Pass ``stale_offset_ok=True`` when preserving it is intentional.
 ";
 pub(crate) const OFFSETDATETIME_FORMAT: &CStr = c"\
 Format as a custom pattern string.
@@ -1198,7 +1210,7 @@ carried, so this warns unless ``stale_offset_ok=True``.
 OffsetDateTime(\"2024-03-09 08:30:00-07:00\")
 ";
 pub(crate) const OFFSETDATETIME_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even', stale_offset_ok=...)
+round($self, unit='second', /, *, increment=..., mode='half_even', stale_offset_ok=...)
 --
 
 Round the datetime to the specified unit and increment,
@@ -1210,6 +1222,8 @@ Different rounding modes are available.
 OffsetDateTime(\"2020-08-16 00:00:00+04:00\")
 >>> d.round(\"minute\", increment=15, mode=\"floor\")
 OffsetDateTime(\"2020-08-15 23:15:00+04:00\")
+>>> d.round(TimeDelta(minutes=15))
+OffsetDateTime(\"2020-08-15 23:30:00+04:00\")
 
 Warning
 -------
@@ -1447,7 +1461,7 @@ Create a new instance with the time replaced
 PlainDateTime(\"2021-01-02 08:15:00.000000001\")
 ";
 pub(crate) const PLAINDATETIME_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even')
+round($self, unit='second', /, *, increment=..., mode='half_even')
 --
 
 Round the datetime to the specified unit and increment,
@@ -1459,6 +1473,8 @@ Different rounding modes are available.
 PlainDateTime(\"2020-08-16 00:00:00\")
 >>> d.round(\"minute\", increment=15, mode=\"floor\")
 PlainDateTime(\"2020-08-15 23:15:00\")
+>>> d.round(TimeDelta(minutes=15))
+PlainDateTime(\"2020-08-15 23:30:00\")
 ";
 pub(crate) const PLAINDATETIME_SINCE: &CStr = c"\
 since($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=...)
@@ -1592,12 +1608,12 @@ A result that is not a valid time raises :class:`ValueError`.
 Time(\"12:03:00.000004\")
 ";
 pub(crate) const TIME_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even')
+round($self, unit='second', /, *, increment=..., mode='half_even')
 --
 
 Round the time to the specified unit and increment,
 or to a multiple of a :class:`TimeDelta`.
-Various rounding modes are available.
+Different rounding modes are available.
 
 >>> Time(12, 39, 59).round(\"minute\", increment=15)
 Time(\"12:45:00\")
@@ -1708,21 +1724,29 @@ Any duration with a date part is considered invalid.
 ``PT0S`` is valid, but ``P0D`` is not.
 ";
 pub(crate) const TIMEDELTA_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even', days_assumed_24h_ok=...)
+round($self, unit='second', /, *, increment=..., mode='half_even', days_assumed_24h_ok=...)
 --
 
 Round the delta to the specified unit and increment,
 or to a multiple of another :class:`TimeDelta`.
-Various rounding modes are available.
+Different rounding modes are available.
 
 >>> t = TimeDelta(seconds=12345)
-TimeDelta(\"PT3h25m45s\")
 >>> t.round(\"minute\")
 TimeDelta(\"PT3h26m\")
 >>> t.round(\"second\", increment=10, mode=\"floor\")
 TimeDelta(\"PT3h25m40s\")
 >>> t.round(TimeDelta(minutes=15))
 TimeDelta(\"PT3h30m\")
+>>> TimeDelta(hours=50).round(\"day\", days_assumed_24h_ok=True)
+TimeDelta(\"PT48h\")
+
+Warning
+-------
+``\"day\"`` and ``\"week\"`` are exact 24-hour and 168-hour units here,
+which emits :class:`~whenever.DaysAssumed24HoursWarning`.
+Pass ``days_assumed_24h_ok=True`` when that is intentional.
+A :class:`TimeDelta` unit claims no calendar and never warns.
 ";
 pub(crate) const TIMEDELTA_SUBTRACT: &CStr = c"\
 subtract($self, delta=..., /, **kwargs)
@@ -1842,6 +1866,8 @@ ZonedDateTime(\"2024-08-15 23:59:59.999999999-04:00[America/New_York]\")
 
 See also :meth:`start_of`. A boundary skipped by a transition snaps to
 the edge of the gap, so that successive intervals stay contiguous.
+A repeated boundary is whatever the next :meth:`start_of` resolves
+to; in a fall-back shorter than the unit, that is the later offset.
 ";
 pub(crate) const ZONEDDATETIME_EXACT_EQ: &CStr = c"\
 Deprecated alias for :meth:`strict_eq`.
@@ -2138,7 +2164,7 @@ the new local time; otherwise ``disambiguation=`` decides, with
 ZonedDateTime(\"2023-10-29 12:00:00+01:00[Europe/Paris]\")
 ";
 pub(crate) const ZONEDDATETIME_ROUND: &CStr = c"\
-round($self, unit='second', /, *, increment=1, mode='half_even')
+round($self, unit='second', /, *, increment=..., mode='half_even')
 --
 
 Round the datetime to the specified unit and increment,
@@ -2150,6 +2176,8 @@ Different rounding modes are available.
 ZonedDateTime(\"2020-08-16 00:00:00+02:00[Europe/Paris]\")
 >>> d.round(\"minute\", increment=15, mode=\"floor\")
 ZonedDateTime(\"2020-08-15 23:15:00+02:00[Europe/Paris]\")
+>>> d.round(TimeDelta(minutes=15))
+ZonedDateTime(\"2020-08-15 23:30:00+02:00[Europe/Paris]\")
 
 Notes
 -----
@@ -2469,18 +2497,17 @@ ZonedDateTime(\"2021-01-02 03:04:05+01:00[Europe/Paris]\")
 ";
 pub(crate) const LOCALTIME_YEAR: &CStr = c"\
 The year component of the datetime";
-pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"Cannot round to day, because days do not have a fixed length. Due to daylight saving time, some days have 23 or 25 hours. If you wish to round to exactly 24 hours, use `round('hour', increment=24)`.";
+pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"cannot round an Instant to a day: an Instant has no calendar; use 'hour' with increment=24 for exactly 24 hours";
 pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"You are using days or weeks as exact time, so Whenever will treat each day as exactly 24 hours. A calendar day can be 23 or 25 hours during a DST transition, so this may differ from calendar arithmetic. If you mean calendar days, perform the operation on a ZonedDateTime or pass `relative_to=...` where supported. If fixed 24-hour periods are intentional, pass `days_assumed_24h_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no time zone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system time zone with an unknown ID. To format without the time zone designator, set the `tz_id_display=` argument to 'never' or 'auto'.";
 pub(crate) const IMPLICIT_DISAMBIGUATION_MSG: &CStr = c"resolving a local datetime that is repeated or skipped by a time zone transition without an explicit disambiguation policy can silently select the wrong instant; pass disambiguation='compatible', 'earlier', 'later', or 'raise'. See https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html";
-pub(crate) const INCREMENT_MSG: &CStr = c"invalid increment: must be positive and divide a 24-hour day evenly";
 pub(crate) const INTEGER_OFFSET_DEPRECATION_MSG: &CStr = c"integer offsets are deprecated because their unit is implicit; pass a TimeDelta instead, for example hours(2)";
 pub(crate) const OFFSET_DATETIME_DOCS_MSG: &CStr = c"For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples.";
 pub(crate) const OFFSET_DIFFERENCE_STALE_MSG: &CStr = c"You are calculating a difference in calendar units between OffsetDateTimes with a remainder in exact units. The whole calendar units are correct in any time zone, but the remainder after the last whole unit is computed with the offset held fixed, and a time zone transition inside that final partial unit shifts it by the transition length. Use a ZonedDateTime for a difference that accounts for the time zone. If the fixed-offset assumption is intentional, pass `stale_offset_ok=True` to `since()` or `until()`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"You are converting a timestamp using a fixed UTC offset. The result is correct for that offset, but the offset may be stale relative to the region you intend at this timestamp. If you mean a named time zone, use ZonedDateTime.from_timestamp(ts, tz='<tz>'); if you only need the instant, use Instant.from_timestamp(ts). If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_NOW_STALE_MSG: &CStr = c"You are getting the current time using a fixed UTC offset. A fixed offset has no time zone rules, so it may be stale relative to the region you intend after a DST or other rule change. If you mean a named time zone, use ZonedDateTime.now('<tz>'); if you only need the current instant, use Instant.now(). If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an OffsetDateTime is valid and preserves its observed UTC offset. That offset may be stale relative to the source time zone if the result is in a different DST or time zone rule period (e.g. after replacing the month on a datetime in a European time zone). Convert to ZonedDateTime first (using .assume_tz()) for field replacement that accounts for the time zone. If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const OFFSET_ROUND_STALE_MSG: &CStr = c"Rounding an OffsetDateTime is valid and preserves its observed UTC offset. That offset may be stale relative to the source time zone if the rounded time crosses a DST or other time zone boundary. Convert to a ZonedDateTime first (using .assume_tz()) for rounding that accounts for the time zone. If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const OFFSET_ROUND_STALE_MSG: &CStr = c"Rounding an OffsetDateTime is valid and preserves its observed UTC offset. That offset may be stale relative to the source time zone if the rounded time crosses a time zone transition. Convert to a ZonedDateTime first (using .assume_tz()) for rounding that accounts for the time zone. If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_SHIFT_STALE_MSG: &CStr = c"An OffsetDateTime's offset is usually an observation, not a time zone rule. The arithmetic is mathematically valid and preserves that fixed offset, but OffsetDateTime does not retain regional time zone rules. The result's offset may therefore be stale relative to the source time zone, even after an exact shift. If the originating time zone is known, convert to ZonedDateTime first using .assume_tz(). If fixed-offset arithmetic is intentional or the risk is accepted, pass `stale_offset_ok=True` to `add()` or `subtract()`; `+` and `-` take no keyword. For an entirely fixed-offset domain, configure StaleOffsetWarning globally. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_START_END_OF_STALE_MSG: &CStr = c"Getting the start or end of a unit on an OffsetDateTime is valid and preserves its observed UTC offset. That offset may be stale relative to the source time zone at the resulting time (e.g. the start of the year may have a different UTC offset due to DST). Convert to ZonedDateTime first (using .assume_tz()) for results that account for the time zone. If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const PLAIN_DIFF_UNAWARE_MSG: &CStr = c"Calculating the difference between two PlainDateTime values does not account for time zone transitions that may have occurred between them: for example, PlainDateTime(2023, 3, 26, 3, 0) - PlainDateTime(2023, 3, 26, 1, 0) gives 2h, but in Amsterdam clocks jumped from 2:00 to 3:00 that morning, so only 1 real hour elapsed. Use .assume_tz('<tz>') for both values if you know the time zone. If time zone transitions are intentionally irrelevant here, pass `naive_arithmetic_ok=True` to `add()`, `subtract()`, `difference()`, `since()`, or `until()`; `+` and `-` take no keyword. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
@@ -2489,4 +2516,5 @@ pub(crate) const PLAIN_SHIFT_UNAWARE_MSG: &CStr = c"Shifting a PlainDateTime by 
 pub(crate) const RANGE_MSG: &CStr = c"value or calculation out of range";
 pub(crate) const STALE_OFFSET_CALENDAR_MSG: &CStr = c"You are calculating calendar units relative to an OffsetDateTime. Because it contains only a fixed offset, Whenever must assume that the offset remains constant throughout the calculation. That offset may be stale relative to the source time zone during part of the period if the value represents a region that crosses a DST or other rule change. Use a ZonedDateTime for calendar arithmetic that accounts for the time zone. If the fixed-offset assumption is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const WARNING_HANDLING_DOCS_MSG: &CStr = c"For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const WEEK_UNIT_MSG: &CStr = c"invalid unit: 'week', use 'week_mon' or 'week_sun'";
 pub(crate) const ZONEINFO_NO_KEY_MSG: &CStr = c"tzinfo has no time zone ID (ZoneInfo.key is None); pass key= to ZoneInfo.from_file(), or use OffsetDateTime() to keep only the offset";

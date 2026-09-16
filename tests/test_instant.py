@@ -3,7 +3,8 @@ import re
 import warnings
 from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
-from typing import Literal
+from fractions import Fraction
+from typing import Literal, cast
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -41,6 +42,7 @@ from .test_offset_datetime import (
     VALID_ISO_STRINGS,
     VALID_RFC2822,
 )
+from .test_time_delta import _Idx
 
 BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
 
@@ -1248,6 +1250,27 @@ class TestRound:
                 Instant.from_utc(2023, 7, 14, 1, 2, 3),
                 Instant.from_utc(2023, 7, 14, 1, 2, 3),
             ),
+            # exact halves: an odd and an even second for the to-even tie
+            (
+                Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=500_000_000),
+                1,
+                "second",
+                Instant.from_utc(2023, 7, 14, 1, 2, 3),
+                Instant.from_utc(2023, 7, 14, 1, 2, 4),
+                Instant.from_utc(2023, 7, 14, 1, 2, 3),
+                Instant.from_utc(2023, 7, 14, 1, 2, 4),
+                Instant.from_utc(2023, 7, 14, 1, 2, 4),
+            ),
+            (
+                Instant.from_utc(2023, 7, 14, 1, 2, 8, nanosecond=500_000_000),
+                1,
+                "second",
+                Instant.from_utc(2023, 7, 14, 1, 2, 8),
+                Instant.from_utc(2023, 7, 14, 1, 2, 9),
+                Instant.from_utc(2023, 7, 14, 1, 2, 8),
+                Instant.from_utc(2023, 7, 14, 1, 2, 9),
+                Instant.from_utc(2023, 7, 14, 1, 2, 8),
+            ),
             (
                 Instant.from_utc(
                     2023, 7, 14, 1, 2, 21, nanosecond=459_999_999
@@ -1347,10 +1370,18 @@ class TestRound:
             2023, 7, 14, 1, 2, 8
         )
 
-    def test_invalid_mode(self):
-        d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
-            d.round("second", mode="foo")  # type: ignore[call-overload]
+    # a value already on the increment validates the mode too
+    @pytest.mark.parametrize(
+        "d",
+        [
+            Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000),
+            Instant.from_utc(2023, 7, 14, 1, 2, 3),
+        ],
+    )
+    @pytest.mark.parametrize("mode", ["foo", "TRUNC", None, 3])
+    def test_invalid_mode(self, d, mode):
+        with pytest.raises(ValueError, match=f"^invalid mode: {mode!r}$"):
+            d.round("second", mode=mode)
 
     @pytest.mark.parametrize(
         "unit, increment",
@@ -1359,27 +1390,72 @@ class TestRound:
             ("second", 14),
             ("millisecond", 643),
             ("hour", 48),
+            ("second", 1 << 62),
         ],
     )
-    def test_invalid_increment(self, unit, increment):
+    def test_increment_does_not_divide_day(self, unit, increment):
         d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="[Ii]ncrement"):
+        with pytest.raises(
+            ValueError, match="^increment must divide a 24-hour day evenly$"
+        ):
             d.round(unit, increment=increment)
 
-    def test_invalid_unit(self):
+    @pytest.mark.parametrize("increment", [0, -1])
+    def test_increment_not_positive(self, increment):
+        d = Instant.from_utc(2023, 7, 14, 1, 2, 3)
+        with pytest.raises(
+            ValueError, match="^increment must be a positive integer$"
+        ):
+            d.round("second", increment=increment)
+
+    @pytest.mark.parametrize(
+        "increment", [1.5, float("nan"), "5", Fraction(3, 2)]
+    )
+    def test_increment_not_an_integer(self, increment):
+        d = Instant.from_utc(2023, 7, 14, 1, 2, 3)
+        with pytest.raises(TypeError, match="^increment must be an integer$"):
+            d.round("second", increment=increment)
+
+    def test_increment_read_through_index(self):
+        d = Instant.from_utc(2023, 7, 14, 12, 39, 59)
+        assert d.round("minute", increment=True) == d.round("minute")
+        assert d.round("minute", increment=cast(int, _Idx())) == d.round(
+            "minute", increment=5
+        )
+
+    @pytest.mark.parametrize("unit", ["foo", "week", "minutes", None, 5])
+    def test_invalid_unit(self, unit):
         d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
-            d.round("foo")  # type: ignore[call-overload]
+        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
+            d.round(unit)
 
     def test_day_not_supported(self):
         d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="exactly 24 hours"):
+        with pytest.raises(
+            ValueError,
+            match="^cannot round an Instant to a day: an Instant has no "
+            "calendar; use 'hour' with increment=24 for exactly 24 hours$",
+        ):
             d.round("day")  # type: ignore[call-overload]
 
-    def test_out_of_range(self):
-        d = Instant.MAX.subtract(hours=1)
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d.round("hour", increment=4)
+    def test_range_edges(self):
+        assert Instant.MAX.round("hour", mode="floor") == Instant.from_utc(
+            9999, 12, 31, 23
+        )
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            Instant.MAX.round("hour", mode="ceil")
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            Instant.MAX.subtract(hours=1).round("hour", increment=4)
+
+        just_after_min = Instant.MIN.add(seconds=1)
+        assert just_after_min.round("hour", mode="floor") == Instant.MIN
+        assert just_after_min.round("hour", mode="ceil") == Instant.from_utc(
+            1, 1, 1, 1
+        )
 
     def test_round_by_timedelta(self):
         d = Instant.from_utc(2020, 1, 1, 12, 39, 59)
@@ -1391,22 +1467,27 @@ class TestRound:
             TimeDelta(minutes=15), mode="floor"
         ) == Instant.from_utc(2020, 1, 1, 12, 30)
 
-    def test_round_by_timedelta_invalid_not_divides_day(self):
+    @pytest.mark.parametrize("unit", [hours(7), hours(25)])
+    def test_round_by_timedelta_not_dividing_day(self, unit):
         d = Instant.from_utc(2020, 1, 1, 12)
-        with pytest.raises(ValueError, match="24.hour"):
-            d.round(hours(7))
+        with pytest.raises(
+            ValueError, match="^unit must divide a 24-hour day evenly$"
+        ):
+            d.round(unit)
 
-    def test_round_by_timedelta_negative(self):
+    @pytest.mark.parametrize("unit", [hours(-1), TimeDelta.ZERO])
+    def test_round_by_timedelta_not_positive(self, unit):
         d = Instant.from_utc(2020, 1, 1, 12)
-        with pytest.raises(ValueError, match="positive"):
-            d.round(hours(-1))
+        with pytest.raises(
+            ValueError, match="^unit must be a positive TimeDelta$"
+        ):
+            d.round(unit)
 
-    def test_round_by_timedelta_zero(self):
+    @pytest.mark.parametrize("increment", [1, 2])
+    def test_round_by_timedelta_with_increment(self, increment):
         d = Instant.from_utc(2020, 1, 1, 12)
-        with pytest.raises(ValueError, match="positive"):
-            d.round(TimeDelta())
-
-    def test_round_by_timedelta_with_increment(self):
-        d = Instant.from_utc(2020, 1, 1, 12)
-        with pytest.raises(TypeError):
-            d.round(hours(1), increment=2)  # type: ignore[call-overload]
+        with pytest.raises(
+            TypeError,
+            match="^cannot specify an increment with a TimeDelta argument$",
+        ):
+            d.round(hours(1), increment=increment)  # type: ignore[call-overload]

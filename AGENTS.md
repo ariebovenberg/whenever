@@ -36,7 +36,12 @@ CI runs this coverage check on Python 3.14.
 
 ## General reminders
 
-- Don't forget to update the changelog (for new/breaking features)
+- **Changelog**: an entry describes what a user notices after upgrading,
+  in the user's terms: a call that now works, raises, or warns differently.
+  Size follows importance: a breaking or API change gets its own entry
+  with a **Rationale**; a fix or behaviour change gets a sentence or two;
+  polish a user would barely notice merges into a neighbouring entry.
+  Message wordings, helpers, backend mechanics, and plan steps stay out.
 - When changing the public API, update the Python reference, Rust extension,
   type stubs, tests, documentation, and changelog as applicable.
 - Code coverage for Python code must be complete, with exceptions only for
@@ -125,7 +130,8 @@ CI runs this coverage check on Python 3.14.
   then weeks and days), in local time, then exact units. `+` and `-` take
   no escape; the methods do. Calendar units in `since()`/`until()` require
   the same time zone or offset.
-- **Spelling**: *time zone* in prose, `timezone` in identifiers.
+- **Spelling**: *time zone* in prose, `timezone` in identifiers; *daylight
+  saving time* in prose, *DST* as the abbreviation.
 - **Attribute or method**: a field of the value's own notation (`year`,
   `offset`, `tz_id`, `week`) is an attribute; everything derived
   (`day_of_week()`, `days_in_month()`, `is_repeated()`) is a method.

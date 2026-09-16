@@ -102,8 +102,10 @@ pub(crate) struct Args {
     pub(crate) suppress_stale: bool,
 }
 
-static INCREMENT_DIV_MSG: &str =
-    "invalid increment: must be positive and divide a 24-hour day evenly";
+static INCREMENT_POSITIVE_MSG: &str = "increment must be a positive integer";
+static INCREMENT_DIV_MSG: &str = "increment must divide a 24-hour day evenly";
+static UNIT_POSITIVE_MSG: &str = "unit must be a positive TimeDelta";
+static UNIT_DIV_MSG: &str = "unit must divide a 24-hour day evenly";
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum ArgsContext {
@@ -127,12 +129,9 @@ impl Args {
             if eq(key, *state.strs.mode) {
                 mode = Mode::from_py(value, &state.strs)?;
             } else if eq(key, *state.strs.increment) {
-                let raw_increment = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_type_err("increment must be an integer")?
-                    .to_i64()?;
+                let raw_increment = value.expect_int("increment")?.to_i64()?;
                 if raw_increment <= 0 {
-                    raise_value_err(INCREMENT_DIV_MSG)?;
+                    raise_value_err(INCREMENT_POSITIVE_MSG)?;
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU64::new_unchecked(raw_increment as _) });
@@ -148,16 +147,19 @@ impl Args {
             None => RoundIncrement::Exact(unsafe { NonZeroU64::new_unchecked(1_000_000_000) }),
             Some(arg) => {
                 if let Some(delta) = arg.extract(*state.time_delta_type) {
+                    if increment_kwarg.is_some() {
+                        raise_type_err("cannot specify an increment with a TimeDelta argument")?;
+                    }
+                    if delta.is_negative() || delta.is_zero() {
+                        raise_value_err(UNIT_POSITIVE_MSG)?;
+                    }
                     let nanos = delta
                         .total_nanos()
                         .try_into()
                         .ok()
                         .and_then(NonZero::<u64>::new)
                         .filter(|&n| NS_PER_DAY.is_multiple_of(n.get()))
-                        .ok_or_value_err(INCREMENT_DIV_MSG)?;
-                    if increment_kwarg.is_some() {
-                        raise_type_err("cannot specify an increment with a TimeDelta argument")?;
-                    }
+                        .ok_or_value_err(UNIT_DIV_MSG)?;
                     RoundIncrement::Exact(nanos)
                 } else {
                     let unit = RoundUnit::from_py(arg, state, false)?;
@@ -207,12 +209,9 @@ impl DeltaArgs {
             if eq(key, *state.strs.mode) {
                 mode = Mode::from_py(value, &state.strs)?;
             } else if eq(key, *state.strs.increment) {
-                let raw_increment = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_type_err("increment must be an integer")?
-                    .to_i128()?;
+                let raw_increment = value.expect_int("increment")?.to_i128()?;
                 if raw_increment <= 0 {
-                    raise_value_err(INCREMENT_DIV_MSG)?;
+                    raise_value_err(INCREMENT_POSITIVE_MSG)?;
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU128::new_unchecked(raw_increment as _) });
@@ -234,7 +233,7 @@ impl DeltaArgs {
                         raise_type_err("cannot specify an increment with a TimeDelta argument")?;
                     }
                     if delta.is_negative() || delta.is_zero() {
-                        raise_value_err(INCREMENT_DIV_MSG)?;
+                        raise_value_err(UNIT_POSITIVE_MSG)?;
                     }
                     DeltaIncrement {
                         secs: delta.secs.get() as u64,

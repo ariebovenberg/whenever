@@ -4,6 +4,8 @@ from datetime import (
     time as py_time,
     timezone as py_timezone,
 )
+from fractions import Fraction
+from typing import cast
 
 import pytest
 from whenever import (
@@ -14,6 +16,7 @@ from whenever import (
 )
 
 from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
+from .test_time_delta import _Idx
 
 
 class TestInit:
@@ -554,10 +557,14 @@ class TestRound:
         assert Time(1, 2, 3, nanosecond=500_000_000).round() == Time(1, 2, 4)
         assert Time(1, 2, 8, nanosecond=500_000_000).round() == Time(1, 2, 8)
 
-    def test_invalid_mode(self):
-        t = Time(1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
-            t.round("second", mode="foo")  # type: ignore[call-overload]
+    # a value already on the increment validates the mode too
+    @pytest.mark.parametrize(
+        "t", [Time(1, 2, 3, nanosecond=4_000), Time(1, 2, 3)]
+    )
+    @pytest.mark.parametrize("mode", ["foo", "TRUNC", None, 3])
+    def test_invalid_mode(self, t, mode):
+        with pytest.raises(ValueError, match=f"^invalid mode: {mode!r}$"):
+            t.round("second", mode=mode)
 
     @pytest.mark.parametrize(
         "unit, increment",
@@ -569,22 +576,45 @@ class TestRound:
             ("hour", 48),
             ("hour", 20),
             ("hour", (1 << 63) - 1),
+            ("second", 1 << 62),
         ],
     )
-    def test_invalid_increment(self, unit, increment):
+    def test_increment_does_not_divide_day(self, unit, increment):
         t = Time(1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="[Ii]ncrement"):
+        with pytest.raises(
+            ValueError, match="^increment must divide a 24-hour day evenly$"
+        ):
             t.round(unit, increment=increment)
 
-    def test_invalid_unit(self):
-        t = Time(1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
-            t.round("foo")  # type: ignore[call-overload]
+    @pytest.mark.parametrize("increment", [0, -1])
+    def test_increment_not_positive(self, increment):
+        with pytest.raises(
+            ValueError, match="^increment must be a positive integer$"
+        ):
+            Time(1, 2, 3).round("second", increment=increment)
 
-    def test_no_day_unit(self):
+    @pytest.mark.parametrize(
+        "increment", [1.5, float("nan"), "5", Fraction(3, 2)]
+    )
+    def test_increment_not_an_integer(self, increment):
+        with pytest.raises(TypeError, match="^increment must be an integer$"):
+            Time(1, 2, 3).round("second", increment=increment)
+
+    def test_increment_read_through_index(self):
+        t = Time(12, 39, 59)
+        assert t.round("minute", increment=True) == t.round("minute")
+        assert t.round("minute", increment=cast(int, _Idx())) == t.round(
+            "minute", increment=5
+        )
+
+    # 'day' has nothing below it on a Time; 'week' has no fixed increment
+    @pytest.mark.parametrize(
+        "unit", ["foo", "day", "week", "minutes", None, 5]
+    )
+    def test_invalid_unit(self, unit):
         t = Time(1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="day"):
-            t.round("day")  # type: ignore[call-overload]
+        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
+            t.round(unit)
 
     def test_round_by_timedelta(self):
         t = Time(12, 39, 59)
@@ -596,21 +626,27 @@ class TestRound:
         assert Time(12, 30).round(TimeDelta(hours=1)) == Time(12)
         assert Time(13, 30).round(TimeDelta(hours=1)) == Time(14)
 
-    def test_round_by_timedelta_invalid_not_divides_day(self):
-        with pytest.raises(ValueError, match="24.hour"):
-            Time(12, 0).round(TimeDelta(hours=7))
+    @pytest.mark.parametrize("unit", [TimeDelta(hours=7), TimeDelta(hours=25)])
+    def test_round_by_timedelta_not_dividing_day(self, unit):
+        with pytest.raises(
+            ValueError, match="^unit must divide a 24-hour day evenly$"
+        ):
+            Time(12, 0).round(unit)
 
-    def test_round_by_timedelta_negative(self):
-        with pytest.raises(ValueError, match="positive"):
-            Time(12, 0).round(TimeDelta(hours=-1))
+    @pytest.mark.parametrize("unit", [TimeDelta(hours=-1), TimeDelta.ZERO])
+    def test_round_by_timedelta_not_positive(self, unit):
+        with pytest.raises(
+            ValueError, match="^unit must be a positive TimeDelta$"
+        ):
+            Time(12, 0).round(unit)
 
-    def test_round_by_timedelta_zero(self):
-        with pytest.raises(ValueError, match="positive"):
-            Time(12, 0).round(TimeDelta())
-
-    def test_round_by_timedelta_with_increment(self):
-        with pytest.raises(TypeError):
-            Time(12, 0).round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
+    @pytest.mark.parametrize("increment", [1, 2])
+    def test_round_by_timedelta_with_increment(self, increment):
+        with pytest.raises(
+            TypeError,
+            match="^cannot specify an increment with a TimeDelta argument$",
+        ):
+            Time(12, 0).round(TimeDelta(hours=1), increment=increment)  # type: ignore[call-overload]
 
 
 def test_pickling():

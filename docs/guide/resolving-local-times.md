@@ -123,7 +123,7 @@ like `"keep_instant"`.
 (ambiguity)=
 ## Repeated and skipped local times
 
-Local clocks sometimes move backward or forward because of daylight-saving
+Local clocks sometimes move backward or forward because of daylight saving
 or political changes:
 
 - When the clock moves backward, a range of local times is repeated (a

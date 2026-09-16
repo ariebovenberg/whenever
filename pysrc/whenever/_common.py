@@ -263,12 +263,10 @@ def check_no_kwargs(
         )
 
 
-# The message templates of docs/reference/exceptions.rst. One template per
-# condition, identical on both backends; tests/test_rejections.py pins them.
+# One message template per condition, identical on both backends and pinned
+# by the per-type test files. The templates used at one site are spelled
+# there; this one is shared.
 RANGE_MSG = "value or calculation out of range"
-INCREMENT_MSG = (
-    "invalid increment: must be positive and divide a 24-hour day evenly"
-)
 
 
 def invalid(name: str, value: Any, /) -> ValueError:

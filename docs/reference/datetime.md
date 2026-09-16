@@ -63,6 +63,7 @@ exact points in time:
 |  `strict_eq()`  | {meth}`🔗 <Instant.strict_eq>`       | {meth}`🔗 <ZonedDateTime.strict_eq>`       | {meth}`🔗 <OffsetDateTime.strict_eq>`      |
 |    |   |   |   |
 |  `x + TimeDelta`  | {meth}`🔗 <Instant.__add__>` | {meth}`🔗 <ZonedDateTime.__add__>`  | {meth}`🔗 <OffsetDateTime.__add__>` |
+|  `round()`  | {meth}`🔗 <Instant.round>` | {meth}`🔗 <ZonedDateTime.round>`  | {meth}`🔗 <OffsetDateTime.round>` |
 |    |   |   |   |
 |  `to_stdlib()`  | {meth}`🔗 <Instant.to_stdlib>` | {meth}`🔗 <ZonedDateTime.to_stdlib>`  | {meth}`🔗 <OffsetDateTime.to_stdlib>` |
 

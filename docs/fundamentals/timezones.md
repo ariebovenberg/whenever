@@ -104,7 +104,7 @@ Understanding their strengths and limitations helps avoid subtle bugs and incorr
 Whenever has two classes for dealing with time zones:
 
 - {class}`~whenever.OffsetDateTime` represents a local date and time with a fixed UTC offset.
-  It does not retain daylight-saving or historical rules; see
+  It does not retain daylight saving or historical rules; see
   {ref}`offset-datetime-guidance` for the resulting tradeoffs.
 - {class}`~whenever.ZonedDateTime` represents a local date and time in the context of an IANA time zone.
   It uses the full set of rules to convert between local and exact time.

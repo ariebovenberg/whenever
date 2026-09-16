@@ -2,7 +2,8 @@ import pickle
 import re
 import warnings
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
-from typing import Any, Literal, Sequence
+from fractions import Fraction
+from typing import Any, Literal, Sequence, cast
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -43,6 +44,7 @@ from .common import (
     system_tz_nyc,
     warns_here,
 )
+from .test_time_delta import _Idx
 
 
 class TestInit:
@@ -1111,6 +1113,38 @@ class TestShiftMethods:
                 ValueError,
                 "value or calculation out of range",
             ),
+            (lambda d: d.round("bogus"), ValueError, "invalid unit: 'bogus'"),
+            (
+                lambda d: d.round("minute", increment=7),
+                ValueError,
+                "increment must divide a 24-hour day evenly",
+            ),
+            (
+                lambda d: d.round("minute", increment=0),
+                ValueError,
+                "increment must be a positive integer",
+            ),
+            (
+                lambda d: d.round("minute", mode="bogus"),
+                ValueError,
+                "invalid mode: 'bogus'",
+            ),
+            (
+                lambda d: d.round(TimeDelta(seconds=7)),
+                ValueError,
+                "unit must divide a 24-hour day evenly",
+            ),
+            (
+                lambda d: d.start_of("bogus"),
+                ValueError,
+                "invalid unit: 'bogus'",
+            ),
+            (
+                lambda d: d.start_of("week"),
+                ValueError,
+                "invalid unit: 'week', use 'week_mon' or 'week_sun'",
+            ),
+            (lambda d: d.end_of("bogus"), ValueError, "invalid unit: 'bogus'"),
         ],
     )
     def test_rejected_argument_does_not_warn(self, call, exc, message):
@@ -2273,13 +2307,20 @@ class TestRound:
             2023, 7, 14, 1, 2, 8, offset=hours(2)
         )
 
-    @suppress(StaleOffsetWarning)
-    def test_invalid_mode(self):
-        d = OffsetDateTime(
-            2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=hours(2)
-        )
-        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
-            d.round("second", mode="foo")  # type: ignore[call-overload]
+    # a value already on the increment validates the mode too
+    @pytest.mark.parametrize(
+        "d",
+        [
+            OffsetDateTime(
+                2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=hours(2)
+            ),
+            OffsetDateTime(2023, 7, 14, 1, 2, 3, offset=hours(2)),
+        ],
+    )
+    @pytest.mark.parametrize("mode", ["foo", "TRUNC", None, 3])
+    def test_invalid_mode(self, d, mode):
+        with pytest.raises(ValueError, match=f"^invalid mode: {mode!r}$"):
+            d.round("second", mode=mode)
 
     @pytest.mark.parametrize(
         "unit, increment",
@@ -2290,15 +2331,49 @@ class TestRound:
             ("day", 2),
             ("hour", 48),
             ("microsecond", 2001),
+            ("second", 1 << 62),
         ],
     )
-    @suppress(StaleOffsetWarning)
-    def test_invalid_increment(self, unit, increment):
+    def test_increment_does_not_divide_day(self, unit, increment):
         d = OffsetDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=hours(2)
         )
-        with pytest.raises(ValueError, match="[Ii]ncrement"):
+        with pytest.raises(
+            ValueError, match="^increment must divide a 24-hour day evenly$"
+        ):
             d.round(unit, increment=increment)
+
+    @pytest.mark.parametrize("increment", [0, -1])
+    def test_increment_not_positive(self, increment):
+        d = OffsetDateTime(2023, 7, 14, 1, 2, 3, offset=hours(2))
+        with pytest.raises(
+            ValueError, match="^increment must be a positive integer$"
+        ):
+            d.round("second", increment=increment)
+
+    @pytest.mark.parametrize(
+        "increment", [1.5, float("nan"), "5", Fraction(3, 2)]
+    )
+    def test_increment_not_an_integer(self, increment):
+        d = OffsetDateTime(2023, 7, 14, 1, 2, 3, offset=hours(2))
+        with pytest.raises(TypeError, match="^increment must be an integer$"):
+            d.round("second", increment=increment)
+
+    @suppress(StaleOffsetWarning)
+    def test_increment_read_through_index(self):
+        d = OffsetDateTime(2023, 7, 14, 12, 39, 59, offset=hours(2))
+        assert d.round("minute", increment=True) == d.round("minute")
+        assert d.round("minute", increment=cast(int, _Idx())) == d.round(
+            "minute", increment=5
+        )
+
+    @pytest.mark.parametrize("hour, expect", [(12, 12), (13, 14)])
+    @suppress(StaleOffsetWarning)
+    def test_half_even_tie(self, hour, expect):
+        d = OffsetDateTime(2023, 7, 14, hour, 30, offset=hours(2))
+        assert d.round("hour").strict_eq(
+            OffsetDateTime(2023, 7, 14, expect, offset=hours(2))
+        )
 
     @suppress(StaleOffsetWarning)
     def test_default_increment(self):
@@ -2325,21 +2400,35 @@ class TestRound:
             )
         )
 
-    @suppress(StaleOffsetWarning)
-    def test_invalid_unit(self):
+    @pytest.mark.parametrize("unit", ["foo", "week", "minutes", None, 5])
+    def test_invalid_unit(self, unit):
         d = OffsetDateTime(
             2023, 7, 14, 1, 2, 3, nanosecond=4_000, offset=hours(2)
         )
-        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
-            d.round("foo")  # type: ignore[call-overload]
+        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
+            d.round(unit)
 
     @suppress(StaleOffsetWarning)
-    def test_out_of_range(self):
-        d = PlainDateTime.MAX.replace(nanosecond=0).assume_fixed_offset(
-            hours(0)
+    def test_range_edges(self):
+        last = PlainDateTime.MAX.assume_fixed_offset(hours(0))
+        assert last.round("hour", mode="floor").strict_eq(
+            OffsetDateTime(9999, 12, 31, 23, offset=hours(0))
         )
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d.round("second", increment=5)
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            last.round("hour", mode="ceil")
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            last.replace(nanosecond=0).round("second", increment=5)
+
+        first = PlainDateTime.MIN.assume_fixed_offset(hours(0))
+        just_after = first.add(seconds=1)
+        assert just_after.round("hour", mode="floor").strict_eq(first)
+        assert just_after.round("hour", mode="ceil").strict_eq(
+            OffsetDateTime(1, 1, 1, 1, offset=hours(0))
+        )
 
     @suppress(StaleOffsetWarning)
     def test_round_by_timedelta(self):
@@ -2351,23 +2440,47 @@ class TestRound:
             2020, 8, 15, 23, offset=hours(4)
         )
 
-    @suppress(StaleOffsetWarning)
-    def test_round_by_timedelta_invalid_not_divides_day(self):
+    @pytest.mark.parametrize("unit", [hours(7), hours(25)])
+    def test_round_by_timedelta_not_dividing_day(self, unit):
         d = OffsetDateTime(2020, 8, 15, 12, offset=hours(4))
-        with pytest.raises(ValueError, match="24.hour"):
-            d.round(hours(7))
+        with pytest.raises(
+            ValueError, match="^unit must divide a 24-hour day evenly$"
+        ):
+            d.round(unit)
 
-    @suppress(StaleOffsetWarning)
-    def test_round_by_timedelta_negative(self):
+    @pytest.mark.parametrize("unit", [hours(-1), TimeDelta.ZERO])
+    def test_round_by_timedelta_not_positive(self, unit):
         d = OffsetDateTime(2020, 8, 15, 12, offset=hours(4))
-        with pytest.raises(ValueError, match="positive"):
-            d.round(hours(-1))
+        with pytest.raises(
+            ValueError, match="^unit must be a positive TimeDelta$"
+        ):
+            d.round(unit)
 
-    @suppress(StaleOffsetWarning)
-    def test_round_by_timedelta_with_increment(self):
+    @pytest.mark.parametrize("increment", [1, 2])
+    def test_round_by_timedelta_with_increment(self, increment):
         d = OffsetDateTime(2020, 8, 15, 12, offset=hours(4))
-        with pytest.raises(TypeError):
-            d.round(hours(1), increment=2)  # type: ignore[call-overload]
+        with pytest.raises(
+            TypeError,
+            match="^cannot specify an increment with a TimeDelta argument$",
+        ):
+            d.round(hours(1), increment=increment)  # type: ignore[call-overload]
+
+    # every unit warns: a minute rounding can cross a transition too
+    @pytest.mark.parametrize(
+        "unit", ["nanosecond", "day", TimeDelta(minutes=15)]
+    )
+    def test_emits_stale_offset_warning(self, unit):
+        d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=hours(4))
+        with warns_here(StaleOffsetWarning) as w:
+            d.round(unit)
+        assert len(w) == 1
+
+    def test_stale_offset_ok_suppresses_warning(self):
+        d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=hours(4))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.round("hour", stale_offset_ok=True)
+            d.round(TimeDelta(minutes=15), stale_offset_ok=True)
 
 
 class TestSince:
@@ -2861,16 +2974,17 @@ class TestStartOf:
         result = odt.start_of("day")
         assert result.offset == hours(-7)
 
-    @suppress(StaleOffsetWarning)
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid unit"):
+        with pytest.raises(ValueError, match="^invalid unit: 'invalid'$"):
             OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).start_of(
                 "invalid"  # type: ignore[arg-type]
             )
 
-    @suppress(StaleOffsetWarning)
     def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
             OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).start_of(
                 "week"  # type: ignore[arg-type]
             )
@@ -2894,18 +3008,22 @@ class TestStartOf:
         assert result.strict_eq(OffsetDateTime(2024, 8, 11, offset=hours(5)))
 
     @suppress(StaleOffsetWarning)
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        try:
-            OffsetDateTime(1, 1, 1, offset=hours(0)).start_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            OffsetDateTime(9999, 12, 31, 23, 59, 59, offset=hours(0)).start_of(
-                unit
-            )
-        except (ValueError, OverflowError):
-            pass
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        first = OffsetDateTime(1, 1, 1, offset=hours(0))
+        assert first.start_of("week_mon").strict_eq(first)
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            first.start_of("week_sun")
+
+        last = OffsetDateTime(9999, 12, 31, 23, 59, 59, offset=hours(0))
+        assert last.start_of("week_mon").strict_eq(
+            OffsetDateTime(9999, 12, 27, offset=hours(0))
+        )
+        assert last.start_of("week_sun").strict_eq(
+            OffsetDateTime(9999, 12, 26, offset=hours(0))
+        )
 
     def test_emits_stale_offset_warning(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
@@ -3098,16 +3216,17 @@ class TestEndOf:
         result = odt.end_of("day")
         assert result.offset == hours(-7)
 
-    @suppress(StaleOffsetWarning)
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid unit"):
+        with pytest.raises(ValueError, match="^invalid unit: 'invalid'$"):
             OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).end_of(
                 "invalid"  # type: ignore[arg-type]
             )
 
-    @suppress(StaleOffsetWarning)
     def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
             OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5)).end_of("week")  # type: ignore[arg-type]
 
     @suppress(StaleOffsetWarning)
@@ -3151,18 +3270,32 @@ class TestEndOf:
         )
 
     @suppress(StaleOffsetWarning)
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        try:
-            OffsetDateTime(1, 1, 1, offset=hours(0)).end_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            OffsetDateTime(9999, 12, 31, 23, 59, 59, offset=hours(0)).end_of(
-                unit
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        first = OffsetDateTime(1, 1, 1, offset=hours(0))
+        assert first.end_of("week_mon").strict_eq(
+            OffsetDateTime(
+                1, 1, 7, 23, 59, 59, nanosecond=999_999_999, offset=hours(0)
             )
-        except (ValueError, OverflowError):
-            pass
+        )
+        assert first.end_of("week_sun").strict_eq(
+            OffsetDateTime(
+                1, 1, 6, 23, 59, 59, nanosecond=999_999_999, offset=hours(0)
+            )
+        )
+
+        last = OffsetDateTime(9999, 12, 31, 23, 59, 59, offset=hours(0))
+        assert last.end_of("year").strict_eq(
+            last.replace(nanosecond=999_999_999)
+        )
+        assert last.end_of("day").strict_eq(
+            last.replace(nanosecond=999_999_999)
+        )
+        for unit in ("week_mon", "week_sun"):
+            with pytest.raises(
+                ValueError, match="^value or calculation out of range$"
+            ):
+                last.end_of(unit)
 
     def test_emits_stale_offset_warning(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))

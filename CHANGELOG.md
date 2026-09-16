@@ -188,6 +188,9 @@ deprecated interfaces are removed.
   reflected operators, and `disambiguation=` only on the forms of
   `ZonedDateTime.add()`/`subtract()` that can land on a repeated or
   skipped local time. The operand of `since()`/`until()` is named `other`.
+- The error messages of `round()`, `start_of()`, and `end_of()` name the
+  argument at fault and are the same on both backends. `"week"` is a valid
+  unit only on `TimeDelta.round()`, where a week has a fixed length.
 
 **Fixed**
 
@@ -208,7 +211,8 @@ deprecated interfaces are removed.
   messages of the delta family are identical on both backends: one wording
   per condition, and every out-of-range result is a `ValueError`. The
   `units` argument of every delta method accepts any iterable of unit names.
-- The arithmetic methods no longer warn before rejecting an argument.
+- The arithmetic methods, `round()`, `start_of()`, and `end_of()` no longer
+  warn before rejecting an argument.
 - The error messages of `add()`, `subtract()`, `difference()`, `since()`,
   and `until()` are identical on both backends: a non-integer calendar
   component, a `TimeDelta` passed to `difference()`, an operand of another
@@ -265,7 +269,7 @@ deprecated interfaces are removed.
   documentation says; the search path messages are the same on both backends.
 - Parsing an out-of-range timestamp now consistently raises `ValueError`
   or `OverflowError` on all platforms.
-- `ZonedDateTime.round()` and `day_length()` now handle daylight-saving gaps
+- `ZonedDateTime.round()` and `day_length()` now handle daylight saving gaps
   the same way `start_of()` and `end_of()` do: a boundary inside a gap snaps
   to its edge. Rounding to a day now measures elapsed time rather than the
   clock reading, which matters on days that are not 24 hours long.
@@ -278,6 +282,8 @@ deprecated interfaces are removed.
   `ValueError`. `Date.nth_weekday()` raises `ValueError` instead of
   `OverflowError` past the date range, and both weekday finders reject a
   `float` on both backends.
+- `TimeDelta.round()` with a `TimeDelta` unit no longer raises in the
+  pure-Python backend when `days_assumed_24h_ok=True` is passed.
 
 Migration summary:
 

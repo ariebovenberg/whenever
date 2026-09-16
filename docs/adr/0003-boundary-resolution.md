@@ -13,7 +13,11 @@ when the boundary they compute falls in a repeated or skipped local time.
   `week_sun`, `day`) resolves to the earlier occurrence. A repeated
   time-unit boundary (`hour`, `minute`, `second`) keeps the value's current
   offset when that is one of the two, and otherwise takes the earlier
-  occurrence.
+  occurrence. That rule is stated for `start_of()`; `end_of()` inherits
+  whatever the next `start_of()` resolves to, which in a fall-back shorter
+  than the unit is the later offset, because the whole fold lies inside one
+  unit (Lord Howe, 2024-04-07: `end_of("hour")` of 01:15+11:00 is
+  01:59:59.999999999+10:30).
 - `end_of()` is the next `start_of()` minus one nanosecond, and
   `day_length()` is the difference between consecutive `start_of("day")`
   results.
@@ -21,7 +25,11 @@ when the boundary they compute falls in a repeated or skipped local time.
   returns an instant after its input. Rounding to a day compares the time
   elapsed since `start_of("day")` with `day_length()`, as Temporal does.
 - For every unit, every instant lies in exactly one interval: the boundaries
-  partition the timeline.
+  partition the timeline. One shape breaks this: a fall-back shorter than
+  the unit that begins exactly on a boundary of that unit gives the two
+  occurrences different `start_of()` results, so their intervals overlap.
+  No zone in the database has that shape; if one appears, the fix is to
+  stop keeping the current offset in a fold shorter than the unit.
 
 ## Considered options
 
@@ -45,7 +53,7 @@ when the boundary they compute falls in a repeated or skipped local time.
   23:01), the day interval is not the set of instants with that local date:
   the second occurrence of Nov 6 23:30 lies inside day Nov 7. No choice of
   midnight avoids this; the earlier one is the convention.
-- The gap snapping is documented on `start_of()` and `end_of()` only; the
-  resolution guide covers the caller-supplied cases.
+- The gap snapping is documented on `start_of()`, `end_of()`, and `round()`
+  only; the resolution guide covers the caller-supplied cases.
 - A future policy keyword on these methods is additive, and must keep the
   partition.

@@ -3,6 +3,7 @@ import re
 import warnings
 from copy import copy, deepcopy
 from datetime import timedelta as py_timedelta
+from fractions import Fraction
 from typing import Any, cast
 
 import pytest
@@ -1590,14 +1591,35 @@ class TestRound:
             ("millisecond", -100),
         ],
     )
-    def test_invalid_increment(self, unit, increment):
+    def test_increment_not_positive(self, unit, increment):
         t = TimeDelta.ZERO
-        with pytest.raises(ValueError, match="[Ii]ncrement"):
+        with pytest.raises(
+            ValueError, match="^increment must be a positive integer$"
+        ):
             t.round(unit, increment=increment)
 
-    def test_increment_must_be_an_integer(self):
-        with pytest.raises(TypeError, match="increment"):
-            TimeDelta.ZERO.round("second", increment=1.5)  # type: ignore[call-overload]
+    @pytest.mark.parametrize(
+        "increment", [1.5, float("nan"), "5", Fraction(3, 2)]
+    )
+    def test_increment_not_an_integer(self, increment):
+        with pytest.raises(TypeError, match="^increment must be an integer$"):
+            TimeDelta.ZERO.round("second", increment=increment)
+
+    def test_increment_read_through_index(self):
+        t = TimeDelta(minutes=39, seconds=59)
+        assert t.round("minute", increment=True) == t.round("minute")
+        assert t.round("minute", increment=cast(int, _Idx())) == t.round(
+            "minute", increment=5
+        )
+
+    def test_increment_beyond_range(self):
+        # the widest increment is a 64-bit count of seconds
+        t = TimeDelta(hours=1)
+        assert t.round("second", increment=2**64 - 1) == TimeDelta.ZERO
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            t.round("second", increment=2**64)
 
     def test_default_half_even_seconds(self):
         assert TimeDelta(seconds=2, milliseconds=500).round() == TimeDelta(
@@ -1611,15 +1633,20 @@ class TestRound:
         d = TimeDelta(seconds=2, nanoseconds=800)
         assert d.round("microsecond") == TimeDelta(seconds=2, microseconds=1)
 
-    def test_invalid_unit(self):
+    @pytest.mark.parametrize("unit", ["foo", "minutes", None, 5])
+    def test_invalid_unit(self, unit):
         t = TimeDelta.ZERO
-        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
-            t.round("foo")  # type: ignore[call-overload]
+        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
+            t.round(unit)
 
-    def test_invalid_mode(self):
-        t = TimeDelta.ZERO
-        with pytest.raises(ValueError, match="invalid mode: 'foo'"):
-            t.round(mode="foo")  # type: ignore[call-overload]
+    # a value already on the increment validates the mode too
+    @pytest.mark.parametrize(
+        "t", [TimeDelta(hours=12, nanoseconds=4), TimeDelta(hours=12)]
+    )
+    @pytest.mark.parametrize("mode", ["foo", "TRUNC", None, 3])
+    def test_invalid_mode(self, t, mode):
+        with pytest.raises(ValueError, match=f"^invalid mode: {mode!r}$"):
+            t.round("hour", mode=mode)
 
     def test_24h_day_warning(self):
         t = TimeDelta.ZERO
@@ -1629,12 +1656,34 @@ class TestRound:
         with warns_here(DaysAssumed24HoursWarning):
             t.round("week")
 
-    def test_extremes(self):
-        t = TimeDelta.MAX
-        assert t.round(mode="floor") == TimeDelta.MAX
+    def test_timedelta_unit_does_not_warn(self):
+        # the named unit claims a calendar; a TimeDelta unit does not
+        t = TimeDelta(hours=50)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert t.round(hours(24)) == hours(48)
+            assert t.round(TimeDelta(seconds=7)) == TimeDelta(
+                hours=49, minutes=59, seconds=58
+            )
+            assert t.round(
+                TimeDelta(seconds=7), days_assumed_24h_ok=True
+            ) == TimeDelta(hours=49, minutes=59, seconds=58)
 
-        with pytest.raises(ValueError, match="range"):
-            t.round("hour", increment=10)
+    def test_extremes(self):
+        assert TimeDelta.MAX.round(mode="floor") == TimeDelta.MAX
+        assert TimeDelta.MIN.round(mode="ceil") == TimeDelta.MIN
+        assert TimeDelta.MIN.round(
+            "hour", increment=10, mode="ceil"
+        ) == TimeDelta.MIN.add(hours=6)
+
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            TimeDelta.MAX.round("hour", increment=10)
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            TimeDelta.MIN.round("hour", increment=10, mode="floor")
 
     def test_by_timedelta(self):
         t = TimeDelta(hours=1, minutes=23, seconds=45)
@@ -1643,21 +1692,19 @@ class TestRound:
             hours=1, minutes=15
         )
 
-    def test_by_timedelta_negative(self):
+    @pytest.mark.parametrize("unit", [-TimeDelta(minutes=15), TimeDelta.ZERO])
+    def test_by_timedelta_not_positive(self, unit):
         t = TimeDelta(hours=1, minutes=23, seconds=45)
-        with pytest.raises(ValueError, match="positive"):
-            t.round(-TimeDelta(minutes=15))
+        with pytest.raises(
+            ValueError, match="^unit must be a positive TimeDelta$"
+        ):
+            t.round(unit)
 
     def test_by_timedelta_negative_value(self):
         t = -TimeDelta(hours=1, minutes=23, seconds=45)
         assert t.round(TimeDelta(minutes=15)) == -TimeDelta(
             hours=1, minutes=30
         )
-
-    def test_by_timedelta_zero(self):
-        t = hours(1)
-        with pytest.raises(ValueError, match="[Zz]ero|positive"):
-            t.round(TimeDelta.ZERO)
 
     def test_by_timedelta_huge(self):
         t = TimeDelta(nanoseconds=1)
@@ -1675,10 +1722,14 @@ class TestRound:
             mode="ceil",
         ) == TimeDelta(hours=24 * 9999 * 365, nanoseconds=1)
 
-    def test_by_timedelta_not_compatible_with_increment(self):
+    @pytest.mark.parametrize("increment", [1, 2])
+    def test_by_timedelta_not_compatible_with_increment(self, increment):
         t = hours(1)
-        with pytest.raises(TypeError, match="increment"):
-            t.round(TimeDelta(minutes=15), increment=2)  # type: ignore[call-overload]
+        with pytest.raises(
+            TypeError,
+            match="^cannot specify an increment with a TimeDelta argument$",
+        ):
+            t.round(TimeDelta(minutes=15), increment=increment)  # type: ignore[call-overload]
 
     def test_by_timedelta_with_mode(self):
         t = TimeDelta(minutes=45)
@@ -2269,6 +2320,14 @@ class TestMessages:
                 _H.in_units(["years", "days"])
             with pytest.raises(TypeError):
                 _H.add(days=1, foo=2)
+            with pytest.raises(ValueError):
+                _H.round("day", increment=0)
+            with pytest.raises(TypeError):
+                _H.round("day", increment=1.5)
+            with pytest.raises(ValueError):
+                _H.round("day", mode="bogus")
+            with pytest.raises(TypeError):
+                _H.round(TimeDelta(seconds=7), increment=2)
         assert record == []
 
 

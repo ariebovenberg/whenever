@@ -434,6 +434,7 @@ fn start_of(
 ) -> PyReturn {
     let state = cls.state();
     let stale_offset_ok = handle_one_kwarg("start_of", *state.strs.stale_offset_ok, kwargs)?;
+    let unit = DateTimeBoundaryUnit::from_py(handle_one_arg("start_of", args)?, state)?;
     if !match stale_offset_ok {
         Some(value) => value.is_truthy()?,
         None => false,
@@ -441,10 +442,7 @@ fn start_of(
         offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
     }
     slf.to_plain()
-        .start_of_unit(DateTimeBoundaryUnit::from_py(
-            handle_one_arg("start_of", args)?,
-            state,
-        )?)
+        .start_of_unit(unit)
         .ok_or_range_err()?
         .assume_offset(slf.offset)
         .ok_or_range_err()?
@@ -459,6 +457,7 @@ fn end_of(
 ) -> PyReturn {
     let state = cls.state();
     let stale_offset_ok = handle_one_kwarg("end_of", *state.strs.stale_offset_ok, kwargs)?;
+    let unit = DateTimeBoundaryUnit::from_py(handle_one_arg("end_of", args)?, state)?;
     if !match stale_offset_ok {
         Some(value) => value.is_truthy()?,
         None => false,
@@ -466,10 +465,7 @@ fn end_of(
         offset_stale_warning(state, doc::OFFSET_START_END_OF_STALE_MSG)?;
     }
     slf.to_plain()
-        .end_of_unit(DateTimeBoundaryUnit::from_py(
-            handle_one_arg("end_of", args)?,
-            state,
-        )?)
+        .end_of_unit(unit)
         .ok_or_range_err()?
         .assume_offset(slf.offset)
         .ok_or_range_err()?

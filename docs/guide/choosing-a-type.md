@@ -138,7 +138,7 @@ The numeric offset makes an {class}`~whenever.OffsetDateTime` unambiguous on
 the timeline, so it contains more information than a
 {class}`~whenever.PlainDateTime`. It still contains less information than a
 {class}`~whenever.ZonedDateTime`: an offset such as `-07:00` says nothing about
-past or future daylight-saving and political changes.
+past or future daylight saving and political changes.
 
 ### Why offset datetimes are unavoidable
 

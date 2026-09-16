@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date as _date, timedelta as _timedelta
 from typing import Literal, TypeVar, cast
 
-from ._common import INCREMENT_MSG, RANGE_MSG, UNSET, expect_int, invalid
+from ._common import RANGE_MSG, UNSET, expect_int, invalid
 from ._typing import (
     DateDeltaUnitStr,
     DeltaUnitStr,
@@ -303,28 +303,37 @@ def resolve_date_rounding(
 _MAX_INCREMENT_SECS = 2**64 - 1
 
 
-def _increment_to_ns(unit: str, increment: int) -> int:
+# Rounding to weeks or months has no fixed increment on a datetime.
+_NS_PER_DATETIME_ROUND_UNIT = {
+    unit: ns for unit, ns in NS_PER_UNIT_SINGULAR.items() if unit != "week"
+}
+
+
+def _increment_to_ns(
+    unit: str, increment: int, ns_per_unit: Mapping[str, int]
+) -> int:
     increment = expect_int("increment", increment)
     if increment < 1:
-        raise ValueError(INCREMENT_MSG)
+        raise ValueError("increment must be a positive integer")
     try:
-        ns_per_unit = NS_PER_UNIT_SINGULAR[unit]
+        return ns_per_unit[unit] * increment
     except KeyError:
         raise invalid("unit", unit) from None
-    return ns_per_unit * increment
 
 
 def increment_to_ns_for_delta(unit: str, increment: int) -> int:
-    increment_ns = _increment_to_ns(unit, increment)
+    increment_ns = _increment_to_ns(unit, increment, NS_PER_UNIT_SINGULAR)
     if increment_ns // 1_000_000_000 > _MAX_INCREMENT_SECS:
         raise ValueError(RANGE_MSG)
     return increment_ns
 
 
 def increment_to_ns_for_datetime(unit: str, increment: int) -> int:
-    increment_ns = _increment_to_ns(unit, increment)
+    increment_ns = _increment_to_ns(
+        unit, increment, _NS_PER_DATETIME_ROUND_UNIT
+    )
     if 86_400_000_000_000 % increment_ns:
-        raise ValueError(INCREMENT_MSG)
+        raise ValueError("increment must divide a 24-hour day evenly")
     return increment_ns
 
 
