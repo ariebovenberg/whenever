@@ -215,7 +215,7 @@ fn parse_iso(cls: PyClass<Date>, s: PyObj) -> PyReturn {
             .ok_or_type_err("parse_iso() argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("invalid format: {s}"))?
+    .ok_or_else_value_err(|| format!("invalid ISO 8601 string: {s}"))?
     .to_obj(cls)
 }
 
@@ -567,13 +567,10 @@ fn format(cls: PyClass<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(
-        pattern::CategorySet::DATE,
-        "Date",
-        *cls.state().warn_whenever,
-        *cls.state().warn_deprecation,
-    )?;
-    pattern.format(&slf.pattern_values())
+    pattern.validate(pattern::CategorySet::DATE, "Date")?;
+    let result = pattern.format(&slf.pattern_values())?;
+    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
+    Ok(result)
 }
 
 fn __format__(cls: PyClass<Date>, slf: Date, spec_obj: PyObj) -> PyReturn {
@@ -598,17 +595,12 @@ fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(
-        pattern::CategorySet::DATE,
-        "Date",
-        *cls.state().warn_whenever,
-        *cls.state().warn_deprecation,
-    )?;
+    pattern.validate(pattern::CategorySet::DATE, "Date")?;
     let parsed = pattern.parse(s).into_value_err()?;
-    let date = parsed
-        .date("Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields")?;
+    let date = parsed.date()?;
     parsed.validate_weekday(date)?;
     let result = date.to_obj(cls)?;
+    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
     if renamed {
         warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
     }

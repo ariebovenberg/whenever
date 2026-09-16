@@ -443,12 +443,18 @@ class TestParseIso:
         ],
     )
     def test_invalid(self, s):
-        with pytest.raises(ValueError, match=re.escape(repr(s))):
+        with pytest.raises(
+            ValueError,
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
+        ):
             PlainDateTime.parse_iso(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
-        with pytest.raises(ValueError, match=re.escape(repr(s))):
+        with pytest.raises(
+            ValueError,
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
+        ):
             PlainDateTime.parse_iso(s)
 
 
@@ -541,10 +547,23 @@ class TestFormatIso:
                 {"unit": "auto", "basic": False},
                 "2020-08-15T00:00:00.00004",
             ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 45),
+                {"unit": "hour"},
+                "2020-08-15T23",
+            ),
         ],
     )
     def test_variations(self, dt, kwargs, expected):
         assert dt.format_iso(**kwargs) == expected
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{}, {"basic": True}, {"sep": " "}, {"unit": "hour"}],
+    )
+    def test_round_trip(self, kwargs):
+        d = PlainDateTime(2020, 8, 15, 23)
+        assert PlainDateTime.parse_iso(d.format_iso(**kwargs)) == d
 
     def test_invalid(self):
         dt = PlainDateTime(2020, 4, 9, 13)

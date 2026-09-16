@@ -245,7 +245,7 @@ fn parse_iso(cls: PyClass<Time>, s: PyObj) -> PyReturn {
             .ok_or_type_err("parse_iso() argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("invalid format: {s}"))?
+    .ok_or_else_value_err(|| format!("invalid ISO 8601 string: {s}"))?
     .to_obj(cls)
 }
 
@@ -311,13 +311,10 @@ fn format(cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(
-        pattern::CategorySet::TIME,
-        "Time",
-        *cls.state().warn_whenever,
-        *cls.state().warn_deprecation,
-    )?;
-    pattern.format(&slf.pattern_values())
+    pattern.validate(pattern::CategorySet::TIME, "Time")?;
+    let result = pattern.format(&slf.pattern_values())?;
+    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
+    Ok(result)
 }
 
 fn __format__(cls: PyClass<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
@@ -342,13 +339,9 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(
-        pattern::CategorySet::TIME,
-        "Time",
-        *cls.state().warn_whenever,
-        *cls.state().warn_deprecation,
-    )?;
+    pattern.validate(pattern::CategorySet::TIME, "Time")?;
     let result = pattern.parse(s).into_value_err()?.time()?.to_obj(cls)?;
+    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
     if renamed {
         warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
     }

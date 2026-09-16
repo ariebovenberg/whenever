@@ -60,7 +60,7 @@ deprecated interfaces are removed.
   TZPATH` froze at import time, so a later `reset_tzpath()` was invisible to
   it; `get_tzpath()` reads the current path on every call.
 
-- Custom format and parse patterns now use `H`/`HH` for the 24-hour clock.
+- Patterns now use `H`/`HH` for the 24-hour clock.
   The previous `h`/`hh` spellings are deprecated. Optional seconds use a
   limited bracketed tail such as `[:ss]`, `[:ss.fff]`, or `[:ss.FFF]`;
   separator-free optional seconds use `[ss]`. These groups must immediately
@@ -76,7 +76,7 @@ deprecated interfaces are removed.
   nearest minute. Hour-only `x`/`X` patterns reject values
   whose rounded offsets still contain minutes.
 
-- Formatting `VV` without an IANA time zone ID now consistently raises an error.
+- Formatting `VV` without a time zone ID now consistently raises an error.
 
 - Fixed-offset arguments passed as bare integers signifying hours are
   deprecated. Use `TimeDelta` or a factory like `hours()` instead.
@@ -191,6 +191,11 @@ deprecated interfaces are removed.
 - The error messages of `round()`, `start_of()`, and `end_of()` name the
   argument at fault and are the same on both backends. `"week"` is a valid
   unit only on `TimeDelta.round()`, where a week has a fixed length.
+- An invalid ISO 8601 or RFC 2822 string is rejected with a message that
+  names the format, such as `invalid ISO 8601 string: '2020-1-1'`, from the
+  constructors as well as `parse_iso()` and `parse_rfc2822()`. The pattern
+  messages are reworded in the library's style, lowercase with the offending
+  text quoted, and are identical on both backends.
 
 **Fixed**
 
@@ -284,6 +289,11 @@ deprecated interfaces are removed.
   `float` on both backends.
 - `TimeDelta.round()` with a `TimeDelta` unit no longer raises in the
   pure-Python backend when `days_assumed_24h_ok=True` is passed.
+- `parse_rfc2822()` rejects an offset with minutes above 59, such as
+  `+0160`, in the pure-Python backend too, and `IsoWeekDate.parse_iso()`
+  accepts a lowercase `w`.
+- A `format()` or `parse()` that raises no longer warns first about a
+  12-hour clock without AM/PM.
 
 Migration summary:
 

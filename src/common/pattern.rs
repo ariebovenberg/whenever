@@ -187,10 +187,11 @@ impl ParseState {
         }
     }
 
-    pub(crate) fn date(&self, required_fields_message: &str) -> PyResult<Date> {
-        let year = self.year.ok_or_value_err(required_fields_message)?;
-        let month = self.month.ok_or_value_err(required_fields_message)?;
-        let day = self.day.ok_or_value_err(required_fields_message)?;
+    pub(crate) fn date(&self) -> PyResult<Date> {
+        const MISSING: &str = "pattern must include a year, a month, and a day";
+        let year = self.year.ok_or_value_err(MISSING)?;
+        let month = self.month.ok_or_value_err(MISSING)?;
+        let day = self.day.ok_or_value_err(MISSING)?;
         Date::new(year, month, day).ok_or_value_err("invalid date")
     }
 
@@ -208,7 +209,7 @@ impl ParseState {
         if let Some(weekday) = self.weekday
             && date.day_of_week() != weekday
         {
-            raise_value_err("Parsed weekday does not match the date")?;
+            raise_value_err("weekday does not match the date")?;
         }
         Ok(())
     }
@@ -266,14 +267,13 @@ impl<'a> CompiledPattern<'a> {
         compile(pattern).map(|elements| Self { elements })
     }
 
-    pub(crate) fn validate(
-        &self,
-        allowed: CategorySet,
-        type_name: &str,
-        warning_cls: PyObj,
-        deprecation_cls: PyObj,
-    ) -> PyResult<()> {
-        validate_fields(&self.elements, allowed, type_name)?;
+    pub(crate) fn validate(&self, allowed: CategorySet, type_name: &str) -> PyResult<()> {
+        validate_fields(&self.elements, allowed, type_name)
+    }
+
+    /// Emit the pattern warnings. Called after a successful format or
+    /// parse: a call that raises warns about nothing.
+    pub(crate) fn warn(&self, warning_cls: PyObj, deprecation_cls: PyObj) -> PyResult<()> {
         warn_pattern(&self.elements, warning_cls, deprecation_cls)
     }
 
@@ -536,18 +536,26 @@ fn is_reserved_char(ch: u8) -> bool {
     matches!(ch, b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'#')
 }
 
+/// Quote text in a message as Python's `repr()` does. Patterns and inputs
+/// are ASCII by the time a message quotes them, and `escape_ascii` writes
+/// control characters and backslashes as `repr()` does; a quote inside the
+/// text is written as `\'`, where `repr()` would switch to double quotes.
+/// The parity test never passes one.
+fn quoted(s: &[u8]) -> String {
+    format!("'{}'", s.escape_ascii())
+}
+
 // ---- Pattern compilation ----
 
 /// Compile a pattern string into a list of elements.
 fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
     if let Some(i) = pattern.iter().position(|b| !b.is_ascii()) {
         return Err(format!(
-            "Non-ASCII character at position {}. Patterns must be ASCII-only.",
-            i
+            "non-ASCII character at position {i}; patterns must be ASCII-only"
         ));
     }
     if pattern.len() > 1000 {
-        return Err("Pattern string too long (max 1000 characters)".to_string());
+        return Err("pattern too long (max 1000 characters)".to_string());
     }
     let mut elements = Vec::new();
     let n = pattern.len();
@@ -605,16 +613,18 @@ fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
         // Other ASCII letters are errors
         if ch.is_ascii_alphabetic() {
             return Err(format!(
-                "Unrecognized pattern character '{}' at position {}. Use quotes for literal text: '...'",
-                ch as char, i
+                "unrecognized pattern character {} at position {}; use quotes for literal text: '...'",
+                quoted(&[ch]),
+                i
             ));
         }
 
         // Reserved characters
         if is_reserved_char(ch) {
             return Err(format!(
-                "Character '{}' at position {} is reserved for future use. Use quotes for literal: '...'",
-                ch as char, i
+                "character {} at position {} is reserved for future use; use quotes for literal text: '...'",
+                quoted(&[ch]),
+                i
             ));
         }
 
@@ -636,8 +646,9 @@ fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
         }
 
         return Err(format!(
-            "Unexpected character {:?} at position {}. Use quotes for literal text: '...'",
-            ch as char, i
+            "unexpected character {} at position {}; use quotes for literal text: '...'",
+            quoted(&[ch]),
+            i
         ));
     }
 
@@ -689,7 +700,7 @@ fn compile_quoted_literal<'a>(
         i += 1;
     }
     if i >= n {
-        return Err("Unterminated quoted literal in pattern".into());
+        return Err("unterminated quoted literal in pattern".into());
     }
     if i > text_start {
         elements.push(Element::Literal(&pattern[text_start..i]));
@@ -705,19 +716,19 @@ fn compile_optional_seconds(pattern: &[u8], start: usize) -> Result<(usize, Elem
         && end.is_none_or(|e| i < e)
     {
         return Err(format!(
-            "nested optional groups are not supported at position {}",
+            "nested optional seconds are not supported at position {}",
             i
         ));
     }
     let end = end.ok_or_else(|| {
         format!(
-            "missing closing ']' for optional seconds group at position {}",
+            "missing closing ']' for optional seconds at position {}",
             start
         )
     })?;
     let contents = &pattern[start + 1..end];
     if contents.is_empty() {
-        return Err(format!("empty optional group at position {}", start));
+        return Err(format!("empty optional seconds at position {}", start));
     }
 
     let (separator, suffix) = if contents.starts_with(b"ss") {
@@ -726,7 +737,7 @@ fn compile_optional_seconds(pattern: &[u8], start: usize) -> Result<(usize, Elem
         (Some(b':'), &contents[3..])
     } else {
         return Err(format!(
-            "optional group at position {} must start with 'ss' or ':ss'",
+            "optional seconds at position {} must start with 'ss' or ':ss'",
             start
         ));
     };
@@ -735,10 +746,10 @@ fn compile_optional_seconds(pattern: &[u8], start: usize) -> Result<(usize, Elem
         OptionalFraction::None
     } else {
         if suffix[0] != b'.' {
-            let contents = std::str::from_utf8(contents).expect("pattern is ASCII");
             return Err(format!(
-                "unsupported optional group contents {:?} at position {}",
-                contents, start
+                "unsupported optional seconds contents {} at position {}",
+                quoted(contents),
+                start
             ));
         }
         let digits = &suffix[1..];
@@ -787,25 +798,25 @@ fn compile_specifier(
         // Variable-width fields
         b'f' => {
             if count > 9 {
-                return Err("Too many 'f' characters in pattern (max 9)".to_string());
+                return Err("too many 'f' characters in pattern (max 9)".to_string());
             }
             Field::FracExact(count as u8)
         }
         b'F' => {
             if count > 9 {
-                return Err("Too many 'F' characters in pattern (max 9)".to_string());
+                return Err("too many 'F' characters in pattern (max 9)".to_string());
             }
             Field::FracTrim(count as u8)
         }
         b'x' => {
             if count > 5 {
-                return Err("Too many 'x' characters in pattern (max 5)".to_string());
+                return Err("too many 'x' characters in pattern (max 5)".to_string());
             }
             Field::OffsetLower(count as u8)
         }
         b'X' => {
             if count > 5 {
-                return Err("Too many 'X' characters in pattern (max 5)".to_string());
+                return Err("too many 'X' characters in pattern (max 5)".to_string());
             }
             Field::OffsetUpper(count as u8)
         }
@@ -813,49 +824,49 @@ fn compile_specifier(
         b'Y' => match count {
             4 => Field::Year4,
             2 => Field::Year2,
-            _ => return Err(bad_count_err(ch, count, start, "4, 2")),
+            _ => return Err(bad_count_err(ch, count, start, "2, 4")),
         },
         b'M' => match count {
             1 => Field::MonthNumUnpadded,
             2 => Field::MonthNum,
             3 => Field::MonthAbbr,
             4 => Field::MonthFull,
-            _ => return Err(bad_count_err(ch, count, start, "4, 3, 2, 1")),
+            _ => return Err(bad_count_err(ch, count, start, "1, 2, 3, 4")),
         },
         b'D' => match count {
             1 => Field::DayUnpadded,
             2 => Field::Day,
-            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
+            _ => return Err(bad_count_err(ch, count, start, "1, 2")),
         },
         b'E' => match count {
             3 => Field::WeekdayAbbr,
             4 => Field::WeekdayFull,
-            _ => return Err(bad_count_err(ch, count, start, "4, 3")),
+            _ => return Err(bad_count_err(ch, count, start, "3, 4")),
         },
         b'H' => match count {
             1 => Field::Hour24Unpadded,
             2 => Field::Hour24,
-            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
+            _ => return Err(bad_count_err(ch, count, start, "1, 2")),
         },
         b'h' => match count {
             1 => Field::Hour24UnpaddedLegacy,
             2 => Field::Hour24Legacy,
-            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
+            _ => return Err(bad_count_err(ch, count, start, "1, 2")),
         },
         b'i' => match count {
             1 => Field::Hour12Unpadded,
             2 => Field::Hour12,
-            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
+            _ => return Err(bad_count_err(ch, count, start, "1, 2")),
         },
         b'm' => match count {
             1 => Field::MinuteUnpadded,
             2 => Field::Minute,
-            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
+            _ => return Err(bad_count_err(ch, count, start, "1, 2")),
         },
         b's' => match count {
             1 => Field::SecondUnpadded,
             2 => Field::Second,
-            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
+            _ => return Err(bad_count_err(ch, count, start, "1, 2")),
         },
         b'S' => match count {
             2 => Field::SecondOpt,
@@ -864,7 +875,7 @@ fn compile_specifier(
         b'a' => match count {
             1 => Field::AmPmShort,
             2 => Field::AmPmFull,
-            _ => return Err(bad_count_err(ch, count, start, "2, 1")),
+            _ => return Err(bad_count_err(ch, count, start, "1, 2")),
         },
         b'V' => match count {
             2 => Field::TzId,
@@ -881,10 +892,13 @@ fn compile_specifier(
 }
 
 fn bad_count_err(ch: u8, count: usize, start: usize, valid: &str) -> String {
-    let repeated: String = std::iter::repeat_n(ch as char, count).collect();
+    let repeated: Vec<u8> = std::iter::repeat_n(ch, count).collect();
     format!(
-        "Unrecognized specifier '{}' at position {}. Valid counts for '{}': [{}]",
-        repeated, start, ch as char, valid
+        "unrecognized specifier {} at position {}; valid counts for {}: {}",
+        quoted(&repeated),
+        start,
+        quoted(&[ch]),
+        valid
     )
 }
 
@@ -903,14 +917,14 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
                 let name = optional_seconds_name(*separator, *fraction);
                 if i == 0 || !matches!(elements[i - 1], Element::Field(Field::Minute)) {
                     return Err(format!(
-                        "optional seconds group {} must immediately follow fixed-width 'mm'",
+                        "optional seconds {} must immediately follow fixed-width 'mm'",
                         name
                     ));
                 }
                 if let Some(follower) = elements.get(i + 1) {
                     if element_can_be_empty(follower) {
                         return Err(format!(
-                            "optional seconds group {} cannot be followed by an optional field",
+                            "optional seconds {} cannot be followed by an optional specifier",
                             name
                         ));
                     }
@@ -998,7 +1012,7 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
             && !matches!(follower, Element::Literal(s) if !is_tz_id_char(s[0]))
         {
             return Err(
-                "time zone ID field VV must be followed by a literal delimiter that is not valid in a time zone ID".into(),
+                "time zone ID specifier VV must be followed by a literal delimiter that is not valid in a time zone ID".into(),
             );
         }
     }
@@ -1072,7 +1086,7 @@ fn register_state_key(
     let seen = &mut seen_keys[key as usize];
     if let Some(previous) = seen {
         return Err(format!(
-            "Duplicate field: {} conflicts with {} (both set {})",
+            "duplicate specifier: {} conflicts with {} (both set the {})",
             name.display(),
             previous.display(),
             state_key_name(key)
@@ -1322,25 +1336,25 @@ fn write_field<S: Sink>(field: Field, vals: &PatternValues, sink: &mut S) -> Res
         Field::OffsetLower(w) => {
             let offset = vals
                 .offset_secs
-                .ok_or("Cannot format offset: not available for this type")?;
+                .ok_or("cannot format offset: not available for this type")?;
             write_offset(offset.get(), w, false, sink)?;
         }
         Field::OffsetUpper(w) => {
             let offset = vals
                 .offset_secs
-                .ok_or("Cannot format offset: not available for this type")?;
+                .ok_or("cannot format offset: not available for this type")?;
             write_offset(offset.get(), w, true, sink)?;
         }
         Field::TzId => {
             let id = vals
                 .tz_id
-                .ok_or("Cannot format time zone ID: not available for this type")?;
+                .ok_or("the time zone has no ID; VV cannot be written")?;
             sink.write(id.as_bytes());
         }
         Field::TzAbbrev => {
             let abbrev = vals
                 .tz_abbrev
-                .ok_or("Cannot format time zone abbreviation: not available for this type")?;
+                .ok_or("cannot format time zone abbreviation: not available for this type")?;
             sink.write(abbrev.as_bytes());
         }
     }
@@ -1419,10 +1433,10 @@ fn format_to_py(elements: &[Element<'_>], vals: &PatternValues) -> PyReturn {
 /// Parse a string using compiled pattern elements.
 fn parse_to_state(elements: &[Element<'_>], s: &[u8]) -> Result<ParseState, String> {
     if !s.is_ascii() {
-        return Err("Input string must be ASCII-only".to_string());
+        return Err("input must be ASCII-only".to_string());
     }
     if s.len() > 1000 {
-        return Err("Input string too long (max 1000 characters)".to_string());
+        return Err("input too long (max 1000 characters)".to_string());
     }
     let mut state = ParseState::default();
     let mut pos = 0;
@@ -1432,11 +1446,11 @@ fn parse_to_state(elements: &[Element<'_>], s: &[u8]) -> Result<ParseState, Stri
             Element::Literal(text) => {
                 let end = pos + text.len();
                 if end > s.len() || &s[pos..end] != *text {
-                    let expected = std::str::from_utf8(text).unwrap_or("?");
-                    let got = std::str::from_utf8(&s[pos..s.len().min(end)]).unwrap_or("?");
                     return Err(format!(
-                        "Expected {:?} at position {}, got {:?}",
-                        expected, pos, got
+                        "expected {} at position {}, got {}",
+                        quoted(text),
+                        pos,
+                        quoted(&s[pos..s.len().min(end)])
                     ));
                 }
                 pos = end;
@@ -1444,7 +1458,7 @@ fn parse_to_state(elements: &[Element<'_>], s: &[u8]) -> Result<ParseState, Stri
             Element::Field(field) => {
                 if field.is_format_only() {
                     return Err(format!(
-                        "Field {} is only supported for formatting, not parsing",
+                        "specifier {} is only supported for formatting, not parsing",
                         field.display_name()
                     ));
                 }
@@ -1460,10 +1474,10 @@ fn parse_to_state(elements: &[Element<'_>], s: &[u8]) -> Result<ParseState, Stri
     }
 
     if pos != s.len() {
-        let trailing = std::str::from_utf8(&s[pos..]).unwrap_or("?");
         return Err(format!(
-            "Unexpected trailing text at position {}: {:?}",
-            pos, trailing
+            "unexpected trailing text at position {}: {}",
+            pos,
+            quoted(&s[pos..])
         ));
     }
 
@@ -1473,23 +1487,16 @@ fn parse_to_state(elements: &[Element<'_>], s: &[u8]) -> Result<ParseState, Stri
 
 fn parse_digits(s: &[u8], pos: usize, count: usize) -> Result<(u32, usize), String> {
     let end = pos + count;
-    if end > s.len() {
+    let chunk = &s[pos..s.len().min(end)];
+    if chunk.len() < count || !chunk.iter().all(u8::is_ascii_digit) {
         return Err(format!(
-            "Expected {} digits at position {}, but input is too short",
-            count, pos
+            "expected {} digits at position {}, got {}",
+            count,
+            pos,
+            quoted(chunk)
         ));
     }
-    let mut val = 0u32;
-    for &b in &s[pos..end] {
-        if !b.is_ascii_digit() {
-            let chunk = std::str::from_utf8(&s[pos..end]).unwrap_or("?");
-            return Err(format!(
-                "Expected {} digits at position {}, got {:?}",
-                count, pos, chunk
-            ));
-        }
-        val = val * 10 + (b - b'0') as u32;
-    }
+    let val = chunk.iter().fold(0u32, |v, &b| v * 10 + (b - b'0') as u32);
     Ok((val, end))
 }
 
@@ -1506,7 +1513,7 @@ fn fmt_unpadded(val: u8, buf: &mut [u8; 2]) -> &[u8] {
 
 fn parse_1or2_digits(s: &[u8], pos: usize) -> Result<(u32, usize), String> {
     if pos >= s.len() || !s[pos].is_ascii_digit() {
-        return Err(format!("Expected 1-2 digits at position {}", pos));
+        return Err(format!("expected 1-2 digits at position {}", pos));
     }
     let mut val = (s[pos] - b'0') as u32;
     let mut end = pos + 1;
@@ -1568,6 +1575,10 @@ static WEEKDAY_FULL_SORTED: [(usize, &str); 7] = [
     (1, "Tuesday"),
 ];
 
+fn ampm_err(pos: usize, got: &[u8]) -> String {
+    format!("expected AM/PM at position {}, got {}", pos, quoted(got))
+}
+
 fn parse_name_match(
     s: &[u8],
     pos: usize,
@@ -1583,7 +1594,7 @@ fn parse_name_match(
             return Ok((value, pos + name_bytes.len()));
         }
     }
-    Err(format!("Cannot parse {} at position {}", field_name, pos))
+    Err(format!("cannot parse {} at position {}", field_name, pos))
 }
 
 fn parse_offset_value(
@@ -1598,7 +1609,7 @@ fn parse_offset_value(
         return Ok((0, pos + 1, true, true));
     }
     if pos >= s.len() || (s[pos] != b'+' && s[pos] != b'-') {
-        return Err(format!("Expected offset sign at position {}", pos));
+        return Err(format!("expected offset sign at position {}", pos));
     }
     let sign: i32 = if s[pos] == b'+' { 1 } else { -1 };
     let mut p = pos + 1;
@@ -1621,7 +1632,7 @@ fn parse_offset_value(
     } else {
         // width 3 or 5: expect colon
         if p >= s.len() || s[p] != b':' {
-            return Err(format!("Expected ':' at position {}", p));
+            return Err(format!("expected ':' at position {}", p));
         }
         p += 1;
         let (v, new_p) = parse_digits(s, p, 2)?;
@@ -1892,37 +1903,26 @@ fn parse_field(
             parse_dot_frac(s, pos, width as usize, state)
         }
         Field::AmPmShort => {
-            if pos >= s.len() {
-                return Err(format!("Expected AM/PM at position {}", pos));
-            }
-            let ch = s[pos].to_ascii_uppercase();
-            if ch == b'A' {
-                state.ampm = Some(AmPm::Am);
-            } else if ch == b'P' {
-                state.ampm = Some(AmPm::Pm);
-            } else {
-                return Err(format!(
-                    "Expected AM/PM at position {}, got {:?}",
-                    pos,
-                    std::str::from_utf8(&s[pos..pos + 1]).unwrap_or("?")
-                ));
+            let chunk = &s[pos..s.len().min(pos + 1)];
+            match chunk.first().map(u8::to_ascii_uppercase) {
+                Some(b'A') => state.ampm = Some(AmPm::Am),
+                Some(b'P') => state.ampm = Some(AmPm::Pm),
+                _ => return Err(ampm_err(pos, chunk)),
             }
             Ok(pos + 1)
         }
         Field::AmPmFull => {
-            if pos + 2 > s.len() {
-                return Err(format!("Expected AM/PM at position {}", pos));
+            let chunk = &s[pos..s.len().min(pos + 2)];
+            let mut upper = [0u8; 2];
+            for (u, &b) in upper.iter_mut().zip(chunk) {
+                *u = b.to_ascii_uppercase();
             }
-            let mut chunk = [0u8; 2];
-            chunk[0] = s[pos].to_ascii_uppercase();
-            chunk[1] = s[pos + 1].to_ascii_uppercase();
-            if &chunk == b"AM" {
+            if &upper == b"AM" {
                 state.ampm = Some(AmPm::Am);
-            } else if &chunk == b"PM" {
+            } else if &upper == b"PM" {
                 state.ampm = Some(AmPm::Pm);
             } else {
-                let got = std::str::from_utf8(&s[pos..pos + 2]).unwrap_or("?");
-                return Err(format!("Expected AM/PM at position {}, got {:?}", pos, got));
+                return Err(ampm_err(pos, chunk));
             }
             Ok(pos + 2)
         }
@@ -1951,7 +1951,7 @@ fn parse_field(
                 p += 1;
             }
             if p == start {
-                return Err(format!("Expected time zone ID at position {}", pos));
+                return Err(format!("expected time zone ID at position {}", pos));
             }
             // SAFETY: is_tz_id_char only passes ASCII bytes
             state.tz_id = Some(unsafe { std::str::from_utf8_unchecked(&s[start..p]) }.to_string());
@@ -2001,7 +2001,7 @@ fn warn_pattern(
     if has_12h_without_ampm(elements) {
         warn_with_class(
             warning_cls,
-            c"The pattern uses a 12-hour clock (`i` or `ii`) without an AM/PM specifier (`a` or `aa`). A value such as `03:00` could mean either 3 AM or 3 PM. Add `a` or `aa`, or use the 24-hour specifiers `H` or `HH`.",
+            c"the pattern uses a 12-hour clock ('i' or 'ii') without an AM/PM specifier ('a' or 'aa'); a value such as '03:00' could mean 3 AM or 3 PM: add 'a' or 'aa', or use the 24-hour clock ('H' or 'HH')",
             1,
         )?;
     }
@@ -2011,7 +2011,7 @@ fn warn_pattern(
             Element::Field(Field::Hour24UnpaddedLegacy) => {
                 warn_with_class(
                     deprecation_cls,
-                    c"The specifier `h` is deprecated; use `H` instead.",
+                    c"specifier 'h' is deprecated; use 'H' instead",
                     1,
                 )?;
                 continue;
@@ -2019,7 +2019,7 @@ fn warn_pattern(
             Element::Field(Field::Hour24Legacy) => {
                 warn_with_class(
                     deprecation_cls,
-                    c"The specifier `hh` is deprecated; use `HH` instead.",
+                    c"specifier 'hh' is deprecated; use 'HH' instead",
                     1,
                 )?;
                 continue;
@@ -2040,7 +2040,7 @@ fn warn_pattern(
             },
         };
         let message = CString::new(format!(
-            "The specifier `{}` is deprecated; use `{}` instead.",
+            "specifier '{}' is deprecated; use '{}' instead",
             legacy, replacement
         ))
         .expect("deprecation warning contains no NUL bytes");
@@ -2156,8 +2156,8 @@ mod tests {
     fn optional_seconds_errors_are_specific() {
         for (p, m) in [
             ("[:ss", "missing closing ']'"),
-            ("[[:ss]]", "nested optional groups"),
-            ("[]", "empty optional group"),
+            ("[[:ss]]", "nested optional seconds"),
+            ("[]", "empty optional seconds"),
             ("[:s]", "must start with 'ss' or ':ss'"),
             ("[:ss.]", "fraction is missing"),
             ("[:ss.fF]", "must use only 'f' or only 'F'"),
@@ -2171,7 +2171,7 @@ mod tests {
         assert!(
             compile(b"HH:mm[:ss.fff]fff")
                 .unwrap_err()
-                .contains("Duplicate field: fff conflicts with [:ss.fff] (both set nanos)")
+                .contains("duplicate specifier: fff conflicts with [:ss.fff] (both set the nanos)")
         );
     }
 
@@ -2186,7 +2186,7 @@ mod tests {
             (&b"HH:mm[:ss]:"[..], "starts with ':'"),
             (
                 &b"HH:mm[:ss]FFF"[..],
-                "cannot be followed by an optional field",
+                "cannot be followed by an optional specifier",
             ),
             (&b"HH:mm[:ss.FFF]."[..], "starts with '.'"),
         ] {

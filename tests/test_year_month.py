@@ -192,10 +192,18 @@ def test_comparison():
 def test_format_iso():
     assert YearMonth(2021, 12).format_iso() == "2021-12"
     assert YearMonth(2, 1).format_iso() == "0002-01"
+    assert YearMonth.parse_iso(YearMonth(2, 1).format_iso()) == YearMonth(2, 1)
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'foo'"):
+        YearMonth(2, 1).format_iso(foo=1)  # type: ignore[call-arg]
 
 
 def test_str():
-    assert str(YearMonth(2021, 12)) == "2021-12"
+    assert (
+        str(YearMonth(2021, 12))
+        == "2021-12"
+        == YearMonth(2021, 12).format_iso()
+    )
     assert str(YearMonth(2, 1)) == "0002-01"
 
 
@@ -241,7 +249,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"invalid format.*" + re.escape(repr(s)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             YearMonth.parse_iso(s)
 

@@ -1101,6 +1101,8 @@ def test_to_system_tz():
             Instant.from_utc(1, 1, 1, 9, 9),
             "Mon, 01 Jan 0001 09:09:00 GMT",
         ),
+        (Instant.MIN, "Mon, 01 Jan 0001 00:00:00 GMT"),
+        (Instant.MAX, "Fri, 31 Dec 9999 23:59:59 GMT"),
     ],
 )
 def test_rfc2822(i, expect):
@@ -1112,9 +1114,28 @@ class TestParseRFC2822:
     def test_valid(self, s, expected: OffsetDateTime):
         assert Instant.parse_rfc2822(s) == expected.to_instant()
 
+    def test_military_letter_is_utc(self):
+        assert Instant.parse_rfc2822(
+            "Sat, 15 Aug 2020 23:12:00 Z"
+        ) == Instant.from_utc(2020, 8, 15, 23, 12)
+
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "Fri, 31 Dec 9999 23:59:59 -0100",  # out of range once in UTC
+            "Sat, 15 Aug 2020 23:12:00 +0000 (UTC)",  # comment
+        ],
+    )
+    def test_rejected(self, s):
+        with pytest.raises(ValueError):
+            Instant.parse_rfc2822(s)
+
     @pytest.mark.parametrize("s", INVALID_RFC2822)
     def test_invalid(self, s):
-        with pytest.raises(ValueError, match=re.escape(repr(s))):
+        with pytest.raises(
+            ValueError,
+            match=r"^invalid RFC 2822 string: " + re.escape(repr(s)) + "$",
+        ):
             Instant.parse_rfc2822(s)
 
 
@@ -1185,6 +1206,18 @@ class TestFormatIso:
     def test_variations(self, ins, kwargs, expected):
         assert ins.format_iso(**kwargs) == expected
 
+    @pytest.mark.parametrize(
+        "ins, kwargs",
+        [
+            (Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=4), {}),
+            (Instant.from_utc(2020, 8, 15, 23, 12, 9), {"basic": True}),
+            (Instant.from_utc(2020, 8, 15, 23, 12, 9), {"sep": " "}),
+            (Instant.from_utc(2020, 8, 15, 23), {"unit": "hour"}),
+        ],
+    )
+    def test_round_trip(self, ins, kwargs):
+        assert Instant.parse_iso(ins.format_iso(**kwargs)) == ins
+
     def test_invalid(self):
         dt = Instant.from_utc(2020, 4, 9, 13)
         with pytest.raises(ValueError, match="unit"):
@@ -1213,7 +1246,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"invalid format.*" + re.escape(repr(s)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             Instant.parse_iso(s)
 
@@ -1221,7 +1254,7 @@ class TestParseIso:
     def test_fuzzing(self, s: str):
         with pytest.raises(
             ValueError,
-            match=r"invalid format.*" + re.escape(repr(s)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             Instant.parse_iso(s)
 

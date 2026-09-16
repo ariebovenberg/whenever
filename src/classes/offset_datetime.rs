@@ -564,7 +564,7 @@ fn parse_iso(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
             .ok_or_type_err("parse_iso() argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("invalid format: {arg}"))?
+    .ok_or_else_value_err(|| format!("invalid ISO 8601 string: {arg}"))?
     .to_obj(cls)
 }
 
@@ -828,9 +828,9 @@ fn format_rfc2822(_: PyType, slf: OffsetDateTime) -> PyReturn {
 fn parse_rfc2822(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
     let s = arg
         .cast_allow_subclass::<PyStr>()
-        .ok_or_type_err("expected a string")?;
-    let (date, time, offset) =
-        rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("invalid format: {arg}"))?;
+        .ok_or_type_err("parse_rfc2822() argument must be a string")?;
+    let (date, time, offset) = rfc2822::parse(s.as_utf8()?)
+        .ok_or_else_value_err(|| format!("invalid RFC 2822 string: {arg}"))?;
     date.at(time)
         .assume_offset(offset)
         .ok_or_range_err()?
@@ -1009,13 +1009,10 @@ fn format(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj)
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(
-        pattern::CategorySet::DATE_TIME_OFFSET,
-        "OffsetDateTime",
-        *cls.state().warn_whenever,
-        *cls.state().warn_deprecation,
-    )?;
-    pattern.format(&slf.to_plain().pattern_values().with_offset(slf.offset))
+    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "OffsetDateTime")?;
+    let result = pattern.format(&slf.to_plain().pattern_values().with_offset(slf.offset))?;
+    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
+    Ok(result)
 }
 
 fn __format__(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, spec_obj: PyObj) -> PyReturn {
@@ -1040,18 +1037,12 @@ fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(
-        pattern::CategorySet::DATE_TIME_OFFSET,
-        "OffsetDateTime",
-        *cls.state().warn_whenever,
-        *cls.state().warn_deprecation,
-    )?;
+    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "OffsetDateTime")?;
     let parsed = pattern.parse(s).into_value_err()?;
     let offset = parsed
         .offset_secs
-        .ok_or_value_err("OffsetDateTime.parse() pattern must include an offset field (x/X)")?;
-    let date = parsed
-        .date("Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields")?;
+        .ok_or_value_err("pattern must include an offset specifier (x/X)")?;
+    let date = parsed.date()?;
     parsed.validate_weekday(date)?;
     let time = parsed.time()?;
     // offset is already validated (scalar::Offset) — no range check needed here.
@@ -1060,6 +1051,7 @@ fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
         .assume_offset(offset)
         .ok_or_range_err()?
         .to_obj(cls)?;
+    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
     if renamed {
         warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
     }

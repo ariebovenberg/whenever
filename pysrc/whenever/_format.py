@@ -75,15 +75,10 @@ def _parse_digits(s: str, pos: int, count: int) -> tuple[int, int]:
     Returns (value, new_pos).
     """
     end = pos + count
-    if end > len(s):
-        raise ValueError(
-            f"Expected {count} digits at position {pos}, "
-            f"but input is too short"
-        )
     chunk = s[pos:end]
-    if not chunk.isdigit():
+    if len(chunk) < count or not chunk.isdigit():
         raise ValueError(
-            f"Expected {count} digits at position {pos}, got {chunk!r}"
+            f"expected {count} digits at position {pos}, got {chunk!r}"
         )
     return int(chunk), end
 
@@ -94,7 +89,7 @@ def _parse_1or2_digits(s: str, pos: int) -> tuple[int, int]:
     """
     n = len(s)
     if pos >= n or not s[pos].isdigit():
-        raise ValueError(f"Expected 1-2 digits at position {pos}")
+        raise ValueError(f"expected 1-2 digits at position {pos}")
     count = 1
     if pos + 1 < n and s[pos + 1].isdigit():
         count = 2
@@ -114,7 +109,7 @@ def _parse_text_match(
     for key in sorted(lookup, key=len, reverse=True):
         if s_lower.startswith(key):
             return lookup[key], pos + len(key)
-    raise ValueError(f"Cannot parse {field_name} at position {pos}")
+    raise ValueError(f"cannot parse {field_name} at position {pos}")
 
 
 # --- Format values (input to formatting) ---
@@ -810,7 +805,7 @@ class _AmPmShort(_Field):
         elif ch == "P":
             state.ampm = "PM"
         else:
-            raise ValueError(f"Expected AM/PM at position {pos}, got {ch!r}")
+            raise ValueError(f"expected AM/PM at position {pos}, got {ch!r}")
         return pos + 1
 
 
@@ -830,7 +825,7 @@ class _AmPmFull(_Field):
             state.ampm = "PM"
         else:
             raise ValueError(
-                f"Expected AM/PM at position {pos}, got {chunk!r}"
+                f"expected AM/PM at position {pos}, got {chunk!r}"
             )
         return pos + 2
 
@@ -877,7 +872,7 @@ def _parse_offset_value(
     if accept_z and pos < len(s) and s[pos] == "Z":
         return 0, pos + 1, True, True
     if pos >= len(s) or s[pos] not in "+-":
-        raise ValueError(f"Expected offset sign at position {pos}")
+        raise ValueError(f"expected offset sign at position {pos}")
     sign = 1 if s[pos] == "+" else -1
     pos += 1
     oh, pos = _parse_digits(s, pos, 2)
@@ -889,7 +884,7 @@ def _parse_offset_value(
         om, pos = _parse_digits(s, pos, 2)
     else:  # width 3 or 5
         if pos >= len(s) or s[pos] != ":":
-            raise ValueError(f"Expected ':' at position {pos}")
+            raise ValueError(f"expected ':' at position {pos}")
         pos += 1
         om, pos = _parse_digits(s, pos, 2)
     if om >= 60:
@@ -929,7 +924,7 @@ class _OffsetLower(_Field):
     def format_value(self, v: _FormatValues) -> str:
         if v.offset_secs is None:
             raise ValueError(
-                "Cannot format offset: not available for this type"
+                "cannot format offset: not available for this type"
             )
         return _format_offset_value(v.offset_secs, self.width, use_z=False)
 
@@ -960,7 +955,7 @@ class _OffsetUpper(_Field):
     def format_value(self, v: _FormatValues) -> str:
         if v.offset_secs is None:
             raise ValueError(
-                "Cannot format offset: not available for this type"
+                "cannot format offset: not available for this type"
             )
         return _format_offset_value(v.offset_secs, self.width, use_z=True)
 
@@ -986,9 +981,7 @@ class _TzId(_Field):
 
     def format_value(self, v: _FormatValues) -> str:
         if v.tz_id is None:
-            raise ValueError(
-                "Cannot format time zone ID: not available for this type"
-            )
+            raise ValueError("the time zone has no ID; VV cannot be written")
         return v.tz_id
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
@@ -998,7 +991,7 @@ class _TzId(_Field):
         ):
             pos += 1
         if pos == start:
-            raise ValueError(f"Expected time zone ID at position {pos}")
+            raise ValueError(f"expected time zone ID at position {pos}")
         state.tz_id = s[start:pos]
         return pos
 
@@ -1014,7 +1007,7 @@ class _TzAbbrev(_Field):
     def format_value(self, v: _FormatValues) -> str:
         if v.tz_abbrev is None:
             raise ValueError(
-                "Cannot format time zone abbreviation: "
+                "cannot format time zone abbreviation: "
                 "not available for this type"
             )
         return v.tz_abbrev
@@ -1084,15 +1077,15 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
         if isinstance(el, _OptionalSeconds):
             if i == 0 or not isinstance(elements[i - 1], _Minute):
                 raise ValueError(
-                    f"optional seconds group {el!r} must immediately "
+                    f"optional seconds {el!r} must immediately "
                     "follow fixed-width 'mm'"
                 )
             if i + 1 < len(elements):
                 follower = elements[i + 1]
                 if follower.can_be_empty:
                     raise ValueError(
-                        f"optional seconds group {el!r} cannot be followed "
-                        f"by optional field {follower!r}"
+                        f"optional seconds {el!r} cannot be followed "
+                        "by an optional specifier"
                     )
                 if not el.separator and follower.can_start_with_digit:
                     raise ValueError(
@@ -1131,8 +1124,8 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
         for sf in state_fields:
             if sf in seen_state_fields:
                 raise ValueError(
-                    f"Duplicate field: {el!r} conflicts with "
-                    f"{seen_state_fields[sf]!r} (both set {sf})"
+                    f"duplicate specifier: {el!r} conflicts with "
+                    f"{seen_state_fields[sf]!r} (both set the {sf})"
                 )
             seen_state_fields[sf] = el
 
@@ -1174,7 +1167,7 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
             )
         ):
             raise ValueError(
-                "time zone ID field VV must be followed by a literal "
+                "time zone ID specifier VV must be followed by a literal "
                 "delimiter that is not valid in a time zone ID"
             )
 
@@ -1200,7 +1193,7 @@ def _compile_quoted_literal(
     while i < n and pattern[i] != "'":
         i += 1
     if i >= n:
-        raise ValueError("Unterminated quoted literal in pattern")
+        raise ValueError("unterminated quoted literal in pattern")
     return i + 1, _Literal(pattern[start:i])  # skip closing quote
 
 
@@ -1219,7 +1212,7 @@ def _compile_specifier(
         cls, _, max_w = _VARIABLE_SPEC[ch]
         if count > max_w:
             raise ValueError(
-                f"Too many '{ch}' characters in pattern (max {max_w})"
+                f"too many {ch!r} characters in pattern (max {max_w})"
             )
         return i + count, cls(count)
 
@@ -1228,10 +1221,10 @@ def _compile_specifier(
     try:
         return i + count, by_count[count]()
     except KeyError:
-        valid = sorted(by_count, reverse=True)
+        valid = ", ".join(map(str, sorted(by_count)))
         raise ValueError(
-            f"Unrecognized specifier '{ch * count}' at "
-            f"position {i}. Valid counts for '{ch}': {valid}"
+            f"unrecognized specifier {ch * count!r} at "
+            f"position {i}; valid counts for {ch!r}: {valid}"
         )
 
 
@@ -1243,16 +1236,16 @@ def _compile_optional_seconds(
     nested = pattern.find("[", i + 1)
     if nested != -1 and (end == -1 or nested < end):
         raise ValueError(
-            f"nested optional groups are not supported at position {nested}"
+            f"nested optional seconds are not supported at position {nested}"
         )
     if end == -1:
         raise ValueError(
-            f"missing closing ']' for optional seconds group at position {i}"
+            f"missing closing ']' for optional seconds at position {i}"
         )
 
     contents = pattern[i + 1 : end]
     if not contents:
-        raise ValueError(f"empty optional group at position {i}")
+        raise ValueError(f"empty optional seconds at position {i}")
     if contents.startswith("ss"):
         separator = ""
         suffix = contents[2:]
@@ -1261,13 +1254,13 @@ def _compile_optional_seconds(
         suffix = contents[3:]
     else:
         raise ValueError(
-            f"optional group at position {i} must start with 'ss' or ':ss'"
+            f"optional seconds at position {i} must start with 'ss' or ':ss'"
         )
     if not suffix:
         return end + 1, _OptionalSeconds(separator, "none", 0)
     if not suffix.startswith("."):
         raise ValueError(
-            f"unsupported optional group contents {contents!r} at position {i}"
+            f"unsupported optional seconds contents {contents!r} at position {i}"
         )
     fraction = suffix[1:]
     fraction_pos = i + 4 + len(separator)
@@ -1293,11 +1286,11 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
     for i, ch in enumerate(pattern):
         if not ch.isascii():
             raise ValueError(
-                f"Non-ASCII character {ch!r} at position {i}. "
-                f"Patterns must be ASCII-only."
+                f"non-ASCII character at position {i}; "
+                "patterns must be ASCII-only"
             )
     if len(pattern) > 1000:
-        raise ValueError("Pattern string too long (max 1000 characters)")
+        raise ValueError("pattern too long (max 1000 characters)")
     elements: list[_Element] = []
     # A trailing '.' or ':' from the last literal run that may be consumed
     # by the next specifier as part of a compound token (.FFF → _DotFrac,
@@ -1346,16 +1339,15 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
         # Other ASCII letters are errors (reserved for future specifiers)
         if ch.isalpha():
             raise ValueError(
-                f"Unrecognized pattern character '{ch}' at "
-                f"position {i}. "
-                f"Use quotes for literal text: '...'"
+                f"unrecognized pattern character {ch!r} at position {i}; "
+                "use quotes for literal text: '...'"
             )
 
         # Reserved characters
         if ch in _RESERVED_CHARS:
             raise ValueError(
-                f"Character '{ch}' at position {i} is reserved "
-                f"for future use. Use quotes for literal: '...'"
+                f"character {ch!r} at position {i} is reserved for future "
+                "use; use quotes for literal text: '...'"
             )
 
         # '.' and ':' are held as pending — they may be consumed by the next
@@ -1374,8 +1366,8 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
             continue
 
         raise ValueError(
-            f"Unexpected character {ch!r} at position {i}. "
-            f"Use quotes for literal text: '...'"
+            f"unexpected character {ch!r} at position {i}; "
+            "use quotes for literal text: '...'"
         )
 
     # Flush any pending prefix left at end of pattern (e.g. pattern = "HH:mm.")
@@ -1390,40 +1382,41 @@ def validate_fields(
     elements: Sequence[_Element],
     allowed_categories: frozenset[str],
     type_name: str,
-    *,
-    warning_stacklevel: int,
 ) -> None:
-    """Validate fields and emit non-error pattern warnings."""
     for el in elements:
         if isinstance(el, _Field) and el.category not in allowed_categories:
             raise ValueError(f"{type_name} does not support specifier {el!r}")
 
+
+def warn_pattern(elements: Sequence[_Element], *, stacklevel: int) -> None:
+    """Emit the pattern warnings. Called after a successful format or
+    parse: a call that raises warns about nothing."""
     has_12h = any(
         isinstance(el, (_Hour12, _Hour12Unpadded)) for el in elements
     )
     has_ampm = any(isinstance(el, (_AmPmShort, _AmPmFull)) for el in elements)
     if has_12h and not has_ampm:
         warnings.warn(
-            "The pattern uses a 12-hour clock (`i` or `ii`) without an AM/PM "
-            "specifier (`a` or `aa`). A value such as `03:00` could mean "
-            "either 3 AM or 3 PM. Add `a` or `aa`, or use the 24-hour "
-            "specifiers `H` or `HH`.",
+            "the pattern uses a 12-hour clock ('i' or 'ii') without an "
+            "AM/PM specifier ('a' or 'aa'); a value such as '03:00' could "
+            "mean 3 AM or 3 PM: add 'a' or 'aa', or use the 24-hour clock "
+            "('H' or 'HH')",
             WheneverWarning,
-            stacklevel=warning_stacklevel,
+            stacklevel=stacklevel,
         )
 
     for i, el in enumerate(elements):
         if isinstance(el, _Hour24UnpaddedLegacy):
             warnings.warn(
-                "The specifier `h` is deprecated; use `H` instead.",
+                "specifier 'h' is deprecated; use 'H' instead",
                 WheneverDeprecationWarning,
-                stacklevel=warning_stacklevel,
+                stacklevel=stacklevel,
             )
         elif isinstance(el, _Hour24Legacy):
             warnings.warn(
-                "The specifier `hh` is deprecated; use `HH` instead.",
+                "specifier 'hh' is deprecated; use 'HH' instead",
                 WheneverDeprecationWarning,
-                stacklevel=warning_stacklevel,
+                stacklevel=stacklevel,
             )
         elif isinstance(el, (_ColonSec, _SecondOpt)):
             separator = ":" if isinstance(el, _ColonSec) else ""
@@ -1441,10 +1434,10 @@ def validate_fields(
                     replacement = f"[{separator}ss.{'f' * frac_el.width}]"
             legacy = f"{separator}SS"
             warnings.warn(
-                f"The specifier `{legacy}` is deprecated; use "
-                f"`{replacement}` instead.",
+                f"specifier {legacy!r} is deprecated; use "
+                f"{replacement!r} instead",
                 WheneverDeprecationWarning,
-                stacklevel=warning_stacklevel,
+                stacklevel=stacklevel,
             )
 
 
@@ -1500,9 +1493,9 @@ def parse_fields(
 ) -> _ParseState:
     """Parse a string using compiled pattern elements."""
     if not s.isascii():
-        raise ValueError("Input string must be ASCII-only")
+        raise ValueError("input must be ASCII-only")
     if len(s) > 1000:
-        raise ValueError("Input string too long (max 1000 characters)")
+        raise ValueError("input too long (max 1000 characters)")
     state = _ParseState()
     pos = 0
 
@@ -1511,7 +1504,7 @@ def parse_fields(
             end = pos + len(el.text)
             if s[pos:end] != el.text:
                 raise ValueError(
-                    f"Expected {el.text!r} at position {pos}, "
+                    f"expected {el.text!r} at position {pos}, "
                     f"got {s[pos:end]!r}"
                 )
             pos = end
@@ -1519,14 +1512,14 @@ def parse_fields(
             assert isinstance(el, _Field)
             if el.format_only:
                 raise ValueError(
-                    f"Field {el!r} is only supported for "
+                    f"specifier {el!r} is only supported for "
                     f"formatting, not parsing"
                 )
             pos = el.parse_value(s, pos, state)
 
     if pos != len(s):
         raise ValueError(
-            f"Unexpected trailing text at position {pos}: {s[pos:]!r}"
+            f"unexpected trailing text at position {pos}: {s[pos:]!r}"
         )
 
     state.resolve()

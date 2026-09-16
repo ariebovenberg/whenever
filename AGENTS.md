@@ -42,6 +42,10 @@ CI runs this coverage check on Python 3.14.
   with a **Rationale**; a fix or behaviour change gets a sentence or two;
   polish a user would barely notice merges into a neighbouring entry.
   Message wordings, helpers, backend mechanics, and plan steps stay out.
+  So does anything a user of the last release never saw: a defect that
+  appeared and was fixed within the unreleased entry, or a message that
+  named values the same entry introduced. Check the previous release's
+  code before adding a fix.
 - When changing the public API, update the Python reference, Rust extension,
   type stubs, tests, documentation, and changelog as applicable.
 - Code coverage for Python code must be complete, with exceptions only for

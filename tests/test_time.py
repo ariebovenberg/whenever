@@ -124,10 +124,21 @@ class TestFormatIso:
                 {"unit": "auto", "basic": True},
                 "000000",
             ),
+            (Time(23, 12, 9), {"unit": "hour"}, "23"),
         ],
     )
     def test_with_kwargs(self, t, kwargs, expect):
         assert t.format_iso(**kwargs) == expect
+
+    @pytest.mark.parametrize(
+        "t, kwargs",
+        [
+            (Time(1, 2, 3, nanosecond=40_000_000), {"basic": True}),
+            (Time(23), {"unit": "hour"}),
+        ],
+    )
+    def test_round_trip(self, t, kwargs):
+        assert Time.parse_iso(t.format_iso(**kwargs)) == t
 
     def test_invalid(self):
         t = Time(1, 2, 3, nanosecond=40_000_000)
@@ -279,7 +290,7 @@ class TestParseIso:
     def test_invalid(self, input):
         with pytest.raises(
             ValueError,
-            match=r"invalid format.*" + re.escape(repr(input)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(input)) + "$",
         ):
             Time.parse_iso(input)
 

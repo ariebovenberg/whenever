@@ -878,7 +878,7 @@ fn parse_iso_inner(
     let mut s = Scan::new(py_str.as_utf8()?);
     let (dt, (offset, tzstr)) = PlainDateTime::read_iso(&mut s)
         .zip(read_offset_and_tzname(&mut s))
-        .ok_or_else_value_err(|| format!("invalid format: {arg}"))?;
+        .ok_or_else_value_err(|| format!("invalid ISO 8601 string: {arg}"))?;
     let state = cls.state();
     let tz = state.tz_store.get(tzstr)?;
     let (offset, exact) = match offset {
@@ -1486,21 +1486,18 @@ fn format(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) 
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(
-        pattern::CategorySet::DATE_TIME_OFFSET_TZ,
-        "ZonedDateTime",
-        *cls.state().warn_whenever,
-        *cls.state().warn_deprecation,
-    )?;
+    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET_TZ, "ZonedDateTime")?;
     let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
     // SAFETY: TzAbbrev always contains valid ASCII bytes
     let abbrev_str = unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) };
-    pattern.format(
+    let result = pattern.format(
         &slf.to_plain()
             .pattern_values()
             .with_offset(slf.offset)
             .with_timezone(slf.tz.key.as_deref(), abbrev_str),
-    )
+    )?;
+    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
+    Ok(result)
 }
 
 fn __format__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, spec_obj: PyObj) -> PyReturn {
@@ -1546,20 +1543,15 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(
-        pattern::CategorySet::DATE_TIME_OFFSET_TZ,
-        "ZonedDateTime",
-        *cls.state().warn_whenever,
-        *cls.state().warn_deprecation,
-    )?;
+    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET_TZ, "ZonedDateTime")?;
     let parsed = pattern.parse(s).into_value_err()?;
 
     let tz_id = parsed
         .tz_id
         .as_deref()
-        .ok_or_value_err("ZonedDateTime.parse() pattern must include a time zone ID field (VV)")?;
+        .ok_or_value_err("pattern must include a time zone ID specifier (VV)")?;
 
-    let date = parsed.date("Pattern must include year, month, and day fields")?;
+    let date = parsed.date()?;
     parsed.validate_weekday(date)?;
     let dt = date.at(parsed.time()?);
     let tz = state.tz_store.get(tz_id)?;
@@ -1595,6 +1587,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         dt.resolve_with_disambiguation(&tz, dis, state)?
             .into_zoned_obj_unchecked(tz, cls)
     }?;
+    pattern.warn(*state.warn_whenever, *state.warn_deprecation)?;
     if renamed {
         warn_deprecated(state, FORMAT_KEYWORD_WARNING, 1)?;
     }

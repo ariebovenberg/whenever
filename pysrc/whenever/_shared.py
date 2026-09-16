@@ -739,12 +739,19 @@ class IsoWeekDate(_Base):
         )
 
     def format_iso(self, *, basic: bool = False) -> str:
-        """Format as an ISO 8601 week date string
+        """Format as an ISO 8601 week date string, such as ``2024-W01-1``.
+
+        Inverse of :meth:`parse_iso`.
 
         >>> IsoWeekDate(2024, 1, Weekday.MONDAY).format_iso()
         '2024-W01-1'
         >>> IsoWeekDate(2024, 1, Weekday.MONDAY).format_iso(basic=True)
         '2024W011'
+
+        Parameters
+        ----------
+        basic
+            Whether to use the basic ISO format (without separators) instead of the extended one.
         """
         if basic:
             return f"{self._year:04d}W{self._week:02d}{self._weekday.value}"
@@ -836,24 +843,24 @@ def _unpkl_iwd(data: bytes) -> IsoWeekDate:
 def _parse_iso_week_date(s: str) -> tuple[int, int, int]:
     """Parse an ISO 8601 week date string like '2024-W01-1' or '2024W011'"""
     if not s.isascii():
-        raise ValueError(f"invalid format: {s!r}")
-    if len(s) == 10 and s[4] == "-" and s[5] == "W" and s[8] == "-":
+        raise ValueError(f"invalid ISO 8601 string: {s!r}")
+    if len(s) == 10 and s[4] == "-" and s[5] in "Ww" and s[8] == "-":
         # Extended format: YYYY-Www-D
         year = _strict_int(s[:4])
         week = _strict_int(s[6:8])
         day = _strict_int(s[9])
-    elif len(s) == 8 and s[4] == "W":
+    elif len(s) == 8 and s[4] in "Ww":
         # Basic format: YYYYWwwD
         year = _strict_int(s[:4])
         week = _strict_int(s[5:7])
         day = _strict_int(s[7])
     else:
-        raise ValueError(f"invalid format: {s!r}")
+        raise ValueError(f"invalid ISO 8601 string: {s!r}")
     if not 1 <= day <= 7:
-        raise ValueError(f"Invalid ISO weekday: {day}")
+        raise ValueError(f"invalid ISO weekday: {day}")
     max_weeks = 53 if _is_long_year(year) else 52
     if not 1 <= week <= max_weeks:
-        raise ValueError(f"Invalid ISO week: {week}")
+        raise ValueError(f"invalid ISO week: {week}")
     return year, week, day
 
 

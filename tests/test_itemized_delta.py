@@ -577,6 +577,13 @@ class TestFormatIso:
             ItemizedDelta(seconds=0).format_iso(lowercase_units=True) == "PT0s"
         )
 
+    @pytest.mark.parametrize("lowercase_units", [True, False])
+    def test_round_trip(self, lowercase_units):
+        d = ItemizedDelta(weeks=0, days=-4, seconds=-1, nanoseconds=-12_000)
+        assert ItemizedDelta.parse_iso(
+            d.format_iso(lowercase_units=lowercase_units)
+        ).strict_eq(d)
+
 
 def test_repr():
     d = ItemizedDelta(
@@ -606,7 +613,7 @@ def test_str():
         seconds=5,
         nanoseconds=400_000_000,
     )
-    assert str(d) == "P3Y6M4DT12H30M5.4S"
+    assert str(d) == "P3Y6M4DT12H30M5.4S" == d.format_iso()
     assert str(ItemizedDelta(seconds=0)) == "PT0S"
     assert str(ItemizedDelta(days=0)) == "P0D"
 
@@ -664,6 +671,8 @@ INVALID_DELTAS.remove("PT3M")
 INVALID_DELTAS.remove("P1Y2M3W4DT1H2M3S")
 INVALID_DELTAS.remove("P1YT0S")
 INVALID_DELTAS.remove("P1D")
+INVALID_DELTAS.remove("P1W")
+INVALID_DELTAS.remove("P0D")
 INVALID_DELTAS.remove("P1YT4M")
 INVALID_DELTAS.remove("PT4M3H")
 
@@ -739,6 +748,9 @@ class TestParseIso:
             ("PT400h", ItemizedDelta(hours=400)),
             # comma instead of dot
             ("PT1,999997S", ItemizedDelta(seconds=1, nanoseconds=999_997_000)),
+            # calendar units, unlike TimeDelta
+            ("P0D", ItemizedDelta(days=0)),
+            ("P1W", ItemizedDelta(weeks=1)),
         ],
     )
     def test_valid(self, s: str, expected: ItemizedDelta):
@@ -746,7 +758,13 @@ class TestParseIso:
 
     @pytest.mark.parametrize("s", INVALID_DELTAS)
     def test_invalid(self, s: str):
-        with pytest.raises(ValueError):
+        # a range failure after a successful parse keeps its own text
+        with pytest.raises(
+            ValueError,
+            match=r"^(invalid ISO 8601 string: "
+            + re.escape(repr(s))
+            + "|delta out of range)$",
+        ):
             ItemizedDelta.parse_iso(s)
 
 

@@ -1,4 +1,5 @@
 import pickle
+import re
 from copy import copy, deepcopy
 
 import pytest
@@ -93,10 +94,6 @@ class TestConstructor:
     def test_invalid_string(self):
         with pytest.raises(ValueError):
             IsoWeekDate("2024-01-01")
-
-    def test_invalid_string_lowercase_w(self):
-        with pytest.raises(ValueError):
-            IsoWeekDate("2024-w01-1")
 
     def test_invalid_string_missing_weekday(self):
         with pytest.raises(ValueError):
@@ -198,34 +195,60 @@ class TestFormatParse:
             IsoWeekDate(2024, 1, MONDAY).format_iso(basic=True) == "2024W011"
         )
 
+    @pytest.mark.parametrize("basic", [True, False])
+    def test_round_trip(self, basic):
+        iwd = IsoWeekDate(2004, 53, FRIDAY)
+        assert IsoWeekDate.parse_iso(iwd.format_iso(basic=basic)) == iwd
+
     def test_format_iso_basic_week53(self):
         assert (
             IsoWeekDate(2004, 53, FRIDAY).format_iso(basic=True) == "2004W535"
         )
 
-    def test_parse_iso_extended(self):
-        iwd = IsoWeekDate.parse_iso("2024-W01-1")
-        assert iwd == IsoWeekDate(2024, 1, MONDAY)
-
-    def test_parse_iso_basic(self):
-        iwd = IsoWeekDate.parse_iso("2024W011")
-        assert iwd == IsoWeekDate(2024, 1, MONDAY)
+    @pytest.mark.parametrize(
+        "s, expect",
+        [
+            ("2024-W01-1", IsoWeekDate(2024, 1, MONDAY)),
+            ("2024W011", IsoWeekDate(2024, 1, MONDAY)),
+            ("2023-w52-5", IsoWeekDate(2023, 52, FRIDAY)),
+            ("2023w525", IsoWeekDate(2023, 52, FRIDAY)),
+        ],
+    )
+    def test_parse_iso(self, s, expect):
+        assert IsoWeekDate.parse_iso(s) == expect
 
     def test_str(self):
-        assert str(IsoWeekDate(2024, 1, MONDAY)) == "2024-W01-1"
+        iwd = IsoWeekDate(2024, 1, MONDAY)
+        assert str(iwd) == "2024-W01-1" == iwd.format_iso()
 
     def test_repr(self):
         assert (
             repr(IsoWeekDate(2024, 1, MONDAY)) == 'IsoWeekDate("2024-W01-1")'
         )
 
-    def test_parse_invalid(self):
-        with pytest.raises(ValueError):
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "not-a-date",
+            "2024-01-01",  # a calendar date, not a week date
+            "2024-W01-8",  # weekday out of range
+            "2024-W54-1",  # week out of range
+            "2024-W01-\u0661",  # non-ASCII
+        ],
+    )
+    def test_parse_invalid(self, s):
+        with pytest.raises(ValueError, match=re.escape(repr(s)) + "|ISO week"):
+            IsoWeekDate.parse_iso(s)
+
+    def test_parse_invalid_format_names_the_format(self):
+        with pytest.raises(
+            ValueError, match="^invalid ISO 8601 string: 'not-a-date'$"
+        ):
             IsoWeekDate.parse_iso("not-a-date")
 
-    def test_parse_wrong_format(self):
-        with pytest.raises(ValueError):
-            IsoWeekDate.parse_iso("2024-01-01")
+    def test_parse_non_string(self):
+        with pytest.raises((TypeError, AttributeError)):
+            IsoWeekDate.parse_iso(20240101)  # type: ignore[arg-type]
 
 
 class TestComparison:

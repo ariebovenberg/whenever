@@ -557,7 +557,7 @@ fn parse_iso(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
         .ok_or_type_err("parse_iso() argument must be a string")?;
     match TimeDelta::parse_iso(py_str.as_utf8()?) {
         Ok(d) => d.to_obj(cls),
-        Err(ParseError::Invalid) => raise_value_err(format!("invalid format: {arg}")),
+        Err(ParseError::Invalid) => raise_value_err(format!("invalid ISO 8601 string: {arg}")),
         Err(ParseError::OutOfRange) => raise_range_err(),
     }
 }

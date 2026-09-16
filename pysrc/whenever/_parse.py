@@ -41,7 +41,11 @@ class InvalidOffsetError(ValueError):
 
 
 def _parse_err(s: str) -> NoReturn:
-    raise ValueError(f"invalid format: {s!r}") from None
+    raise ValueError(f"invalid ISO 8601 string: {s!r}") from None
+
+
+def _rfc2822_err(s: str) -> NoReturn:
+    raise ValueError(f"invalid RFC 2822 string: {s!r}") from None
 
 
 def _parse_nanos(s: str) -> Nanos:
@@ -445,7 +449,7 @@ def parse_rfc2822(s: str) -> _datetime:
     # Technically, only tab, space and CRLF are allowed in RFC2822,
     # but we allow any ASCII whitespace
     if not s.isascii():
-        _parse_err(s)
+        _rfc2822_err(s)
 
     # Parse the weekday
     try:
@@ -470,17 +474,17 @@ def parse_rfc2822(s: str) -> _datetime:
                 weekday_raw = first[:3]
                 parts = [first[4:], second, *parts]
             else:
-                _parse_err(s)
+                _rfc2822_err(s)
 
             iso_weekday = _RFC2822_WEEKDAY_TO_ISO[weekday_raw.lower()]
     except (ValueError, KeyError):
-        _parse_err(s)
+        _rfc2822_err(s)
 
     # Parse the date
     try:
         day_raw, month_raw, year_raw, *parts = parts
         if len(day_raw) > 2:
-            _parse_err(s)
+            _rfc2822_err(s)
         day = int(day_raw)
         month = _RFC2822_MONTH_NAMES[month_raw.lower()]
         if len(year_raw) == 4:
@@ -494,13 +498,13 @@ def parse_rfc2822(s: str) -> _datetime:
         elif len(year_raw) == 3:
             year = int(year_raw) + 1900
         else:
-            _parse_err(s)
+            _rfc2822_err(s)
         date = _date(year, month, day)
     except (ValueError, KeyError):
-        _parse_err(s)
+        _rfc2822_err(s)
 
     if iso_weekday and iso_weekday != date.isoweekday():
-        _parse_err(s)
+        _rfc2822_err(s)
 
     # Parse the time
     try:
@@ -516,18 +520,19 @@ def parse_rfc2822(s: str) -> _datetime:
                 seconds = 59
             time = _time(int(time_raw[:2]), int(time_raw[3:5]), seconds)
         else:
-            _parse_err(s)
+            _rfc2822_err(s)
     except ValueError:
-        _parse_err(s)
+        _rfc2822_err(s)
 
     # Parse the offset
     try:
         if offset_raw.startswith(("+", "-")) and len(offset_raw) == 5:
             sign = 1 if offset_raw[0] == "+" else -1
+            offset_minutes = int(offset_raw[3:5])
+            if offset_minutes > 59:
+                _rfc2822_err(s)
             offset = (
-                _timedelta(
-                    hours=int(offset_raw[1:3]), minutes=int(offset_raw[3:5])
-                )
+                _timedelta(hours=int(offset_raw[1:3]), minutes=offset_minutes)
                 * sign
             )
         elif offset_raw.isalpha():
@@ -537,10 +542,10 @@ def parse_rfc2822(s: str) -> _datetime:
                 hours=_RFC2822_ZONES.get(offset_raw.upper(), 0)
             )
         else:
-            _parse_err(s)
+            _rfc2822_err(s)
         tzinfo = _timezone(offset)
     except ValueError:
-        _parse_err(s)
+        _rfc2822_err(s)
 
     return check_utc_bounds(_datetime.combine(date, time, tzinfo=tzinfo))
 

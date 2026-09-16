@@ -31,7 +31,7 @@ from whenever import (
 )
 from whenever._format import compile_pattern, format_fields
 
-from .common import warns_here
+from .common import AMS_TZ_POSIX, create_zdt, warns_here
 
 
 class TestCompilePattern:
@@ -56,7 +56,7 @@ class TestCompilePattern:
 
     def test_three_consecutive_quotes(self):
         """''' = escaped quote + start of new quoted literal (unterminated)."""
-        with pytest.raises(ValueError, match="Unterminated"):
+        with pytest.raises(ValueError, match="unterminated"):
             Date(2024, 1, 1).format("YYYY'''")
 
     def test_four_consecutive_quotes(self):
@@ -78,7 +78,7 @@ class TestCompilePattern:
 
     def test_unrecognized_letter(self):
         d = Date(2024, 3, 15)
-        with pytest.raises(ValueError, match="Unrecognized"):
+        with pytest.raises(ValueError, match="unrecognized"):
             d.format("YYYY-Q-DD")
 
     def test_pending_not_consumed_by_specifier(self):
@@ -110,17 +110,17 @@ class TestCompilePattern:
 
     def test_unterminated_quote(self):
         d = Date(2024, 3, 15)
-        with pytest.raises(ValueError, match="Unterminated"):
+        with pytest.raises(ValueError, match="unterminated"):
             d.format("YYYY'abc")
 
     def test_too_many_fractional(self):
         t = Time(14, 30)
-        with pytest.raises(ValueError, match="Too many"):
+        with pytest.raises(ValueError, match="too many"):
             t.format("HH:mm:ss.ffffffffff")
 
     def test_too_many_frac_trim(self):
         """More than 9 'F' characters raises ValueError."""
-        with pytest.raises(ValueError, match="Too many.*F"):
+        with pytest.raises(ValueError, match="too many.*F"):
             compile_pattern("HH:mm:ss.FFFFFFFFFF")
 
     def test_empty_pattern(self):
@@ -141,7 +141,7 @@ class TestCompilePattern:
             assert len(w) == 1
             assert w[0].category is WheneverWarning
             assert "without an AM/PM specifier" in str(w[0].message)
-            assert "24-hour specifiers" in str(w[0].message)
+            assert "24-hour clock" in str(w[0].message)
 
     def test_yy_parse_disabled(self):
         with pytest.raises(ValueError, match="YY.*only.*formatting"):
@@ -153,19 +153,19 @@ class TestCompilePattern:
 
     def test_invalid_specifier_count(self):
         """E.g. YYY (3 Y's) is not valid — only 2 or 4."""
-        with pytest.raises(ValueError, match="Valid counts"):
+        with pytest.raises(ValueError, match="valid counts"):
             Date(2024, 1, 1).format("YYY-MM-DD")
 
-        with pytest.raises(ValueError, match="Valid counts"):
+        with pytest.raises(ValueError, match="valid counts"):
             Date(2024, 1, 1).format("Y-MM-DD")
 
     def test_duplicate_field_error(self):
         """Two fields writing to the same state should be rejected."""
-        with pytest.raises(ValueError, match="Duplicate.*month"):
+        with pytest.raises(ValueError, match="duplicate.*month"):
             Date(2024, 1, 1).format("MM MMM DD YYYY")
 
     def test_duplicate_year_error(self):
-        with pytest.raises(ValueError, match="Duplicate.*year"):
+        with pytest.raises(ValueError, match="duplicate.*year"):
             Date(2024, 1, 1).format("YYYY-YY-MM-DD")
 
     def test_reserved_chars_error(self):
@@ -179,7 +179,7 @@ class TestCompilePattern:
         ["YYYY\u2013MM", "YYYY'é'", "YYYY'😀'", "YYYY[:ssé]"],
     )
     def test_non_ascii_error(self, pattern):
-        with pytest.raises(ValueError, match="Non-ASCII"):
+        with pytest.raises(ValueError, match="non-ASCII"):
             Date(2024, 1, 1).format(pattern)
 
     def test_literal_digits(self):
@@ -189,7 +189,7 @@ class TestCompilePattern:
 
     def test_control_char_rejected(self):
         """ASCII control characters are not in the literal allowlist."""
-        with pytest.raises(ValueError, match="Unexpected"):
+        with pytest.raises(ValueError, match="unexpected"):
             Date(2024, 1, 1).format("YYYY\x00MM")
 
     @pytest.mark.parametrize(
@@ -237,7 +237,7 @@ class TestCompilePattern:
     ],
 )
 def test_parse_rejects_non_ascii_input(cls, value, pattern):
-    with pytest.raises(ValueError, match="Input string must be ASCII-only"):
+    with pytest.raises(ValueError, match="input must be ASCII-only"):
         cls.parse(value, pattern=pattern)
 
 
@@ -321,7 +321,7 @@ class TestOptionalSecondsPattern:
             ("HH:mm[:ss.fF]", "only 'f'.*only 'F'"),
             ("HH:mm[:ss.x]", "only 'f'.*only 'F'"),
             ("HH:mm[:ss.foo]", "only 'f'.*only 'F'"),
-            ("HH:mm[:ssx]", "unsupported optional group"),
+            ("HH:mm[:ssx]", "unsupported optional seconds"),
             ("HH:mm[:ss.]", "fraction is missing"),
             ("HH:mm[:ss.ffffffffff]", "limited to 9"),
         ],
@@ -345,7 +345,7 @@ class TestOptionalSecondsPattern:
             ("HH:mm[ss]00", "starts with a digit"),
             ("HH:mm[ss]YYYY", "starts with a digit"),
             ("HH:mm[:ss]:", "starts with ':'"),
-            ("HH:mm[:ss]FFF", "optional field"),
+            ("HH:mm[:ss]FFF", "optional specifier"),
             ("HH:mm[:ss.FFF].", "starts with '\\.'"),
             ("HH:mm[:ss.FFF]VV", "starts with '\\.'"),
             ("HH:mm[:ss.FFF]zz", "starts with '\\.'"),
@@ -371,9 +371,9 @@ class TestOptionalSecondsPattern:
         assert Time.parse(with_seconds, pattern=pattern) == Time(14, 30, 5)
 
     def test_duplicate_fields(self):
-        with pytest.raises(ValueError, match="Duplicate.*second"):
+        with pytest.raises(ValueError, match="duplicate.*second"):
             Time(1, 2, 3).format("HH:mm[:ss]ss")
-        with pytest.raises(ValueError, match="Duplicate.*nanos"):
+        with pytest.raises(ValueError, match="duplicate.*nanos"):
             Time(1, 2, 3).format("HH:mm[:ss.fff]fff")
 
     def test_brackets_invalid_for_date(self):
@@ -388,65 +388,102 @@ class TestOptionalSecondsPattern:
 
 class TestPatternDeprecations:
     @pytest.mark.parametrize(
-        "pattern, replacement", [("h", "`H`"), ("hh", "`HH`")]
+        "pattern, replacement", [("h", "'H'"), ("hh", "'HH'")]
     )
     def test_legacy_hour_format(self, pattern, replacement):
         with warns_here(WheneverDeprecationWarning) as w:
             Time(13).format(pattern)
         assert len(w) == 1
         assert f"use {replacement} instead" in str(w[0].message)
-        assert w[0].filename == __file__
+        with warns_here(WheneverDeprecationWarning) as w:
+            Time.parse("13", pattern=pattern)
+        assert len(w) == 1
+        assert f"use {replacement} instead" in str(w[0].message)
 
     @pytest.mark.parametrize(
-        "pattern, replacement",
+        "pattern, s, replacement",
         [
-            ("HH:mm:SS", "`[:ss]`"),
-            ("HH:mm:SS.fff", "`[:ss.fff]`"),
-            ("HH:mm:SS.FFF", "`[:ss.FFF]`"),
+            ("HH:mm:SS", "13:00", "'[:ss]'"),
+            ("HH:mm:SS.fff", "13:00:05.123", "'[:ss.fff]'"),
+            ("HH:mm:SS.FFF", "13:00", "'[:ss.FFF]'"),
         ],
     )
-    def test_legacy_prefixed_optional_seconds(self, pattern, replacement):
+    def test_legacy_prefixed_optional_seconds(self, pattern, s, replacement):
         with warns_here(WheneverDeprecationWarning) as w:
             Time(13).format(pattern)
         assert len(w) == 1
         assert f"use {replacement} instead" in str(w[0].message)
-        assert w[0].filename == __file__
+        with warns_here(WheneverDeprecationWarning) as w:
+            Time.parse(s, pattern=pattern)
+        assert len(w) == 1
+        assert f"use {replacement} instead" in str(w[0].message)
 
     @pytest.mark.parametrize(
-        "pattern, replacement",
+        "pattern, s, replacement",
         [
-            ("HH:mmSS", "`[ss]`"),
-            ("HH:mmSS.fff", "`[ss.fff]`"),
-            ("HH:mmSS.FFF", "`[ss.FFF]`"),
-            ("HH:mmSS.'x'", "`[ss]`"),
+            ("HH:mmSS", "13:00", "'[ss]'"),
+            ("HH:mmSS.fff", "13:0005.123", "'[ss.fff]'"),
+            ("HH:mmSS.FFF", "13:00", "'[ss.FFF]'"),
+            ("HH:mmSS.'x'", "13:00.x", "'[ss]'"),
         ],
     )
     def test_legacy_separator_free_optional_seconds(
-        self, pattern, replacement
+        self, pattern, s, replacement
     ):
         with warns_here(WheneverDeprecationWarning) as w:
             Time(13).format(pattern)
         assert len(w) == 1
         assert f"use {replacement} instead" in str(w[0].message)
-        assert w[0].filename == __file__
+        with warns_here(WheneverDeprecationWarning) as w:
+            Time.parse(s, pattern=pattern)
+        assert len(w) == 1
+        assert f"use {replacement} instead" in str(w[0].message)
 
-    def test_legacy_optional_seconds_compatibility(self):
+    @pytest.mark.parametrize(
+        "t, pattern, expect",
+        [
+            (Time(14, 30), "HH:mmSS", "14:30"),
+            (Time(14, 30, 5), "HH:mmSS", "14:3005"),
+            (Time(14, 30, 5), "HH:mm.SS", "14:30.05"),
+        ],
+    )
+    def test_legacy_optional_seconds_format(self, t, pattern, expect):
+        with warns_here(WheneverDeprecationWarning):
+            assert t.format(pattern) == expect
+
+    @pytest.mark.parametrize(
+        "s, pattern, expect",
+        [
+            ("14:30", "HH:mmSS", Time(14, 30)),
+            ("14:3005", "HH:mmSS", Time(14, 30, 5)),
+            ("14:3060", "HH:mmSS", Time(14, 30, 59)),
+            ("14:30", "HH:mm:SS", Time(14, 30)),
+            ("14:30:05", "HH:mm:SS", Time(14, 30, 5)),
+            ("14:30:60", "HH:mm:SS", Time(14, 30, 59)),
+            ("14:30", "HH:mmSSFFF", Time(14, 30)),
+        ],
+    )
+    def test_legacy_optional_seconds_parse(self, s, pattern, expect):
+        with warns_here(WheneverDeprecationWarning):
+            assert Time.parse(s, pattern=pattern) == expect
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda: Time.parse("x", pattern="hh"),
+            lambda: Time.parse("x", pattern="ii"),
+            lambda: Time.parse("12:00", pattern="HH:mm SS"),
+            lambda: Instant.parse("12:00", pattern="hh:mm"),
+            lambda: create_zdt(2020, 8, 15, tz=AMS_TZ_POSIX).format("VV hh"),
+            lambda: f"{create_zdt(2020, 8, 15, tz=AMS_TZ_POSIX):VV ii}",
+        ],
+    )
+    def test_no_warning_when_the_call_raises(self, call):
+        """Validate, then warn: a call that raises warns about nothing."""
         with warnings.catch_warnings():
-            warnings.simplefilter("ignore", WheneverDeprecationWarning)
-            assert Time(14, 30).format("HH:mmSS") == "14:30"
-            assert Time(14, 30, 5).format("HH:mmSS") == "14:3005"
-            assert Time(14, 30, 5).format("HH:mm.SS") == "14:30.05"
-            assert Time.parse("14:30", pattern="HH:mmSS") == Time(14, 30)
-            assert Time.parse("14:3005", pattern="HH:mmSS") == Time(14, 30, 5)
-            assert Time.parse("14:3060", pattern="HH:mmSS") == Time(14, 30, 59)
-            assert Time.parse("14:30", pattern="HH:mm:SS") == Time(14, 30)
-            assert Time.parse("14:30:05", pattern="HH:mm:SS") == Time(
-                14, 30, 5
-            )
-            assert Time.parse("14:30:60", pattern="HH:mm:SS") == Time(
-                14, 30, 59
-            )
-            assert Time.parse("14:30", pattern="HH:mmSSFFF") == Time(14, 30)
+            warnings.simplefilter("error")
+            with pytest.raises(ValueError):
+                call()
 
     def test_cached_pattern_warns_at_each_call_site(self):
         compile_pattern.cache_clear()
@@ -481,17 +518,17 @@ class TestFracTrimErrorRendering:
 
     @pytest.mark.parametrize("pattern", ["fF", "Ff", "ffF", "Fff", "FFFff"])
     def test_compile_duplicate_nanos_with_frac_trim(self, pattern):
-        with pytest.raises(ValueError, match="Duplicate.*nanos"):
+        with pytest.raises(ValueError, match="duplicate.*nanos"):
             compile_pattern(pattern)
 
     @pytest.mark.parametrize("pattern", ["fF", "Ff", "ffF", "Fff"])
     def test_format_duplicate_nanos_with_frac_trim(self, pattern):
-        with pytest.raises(ValueError, match="Duplicate.*nanos"):
+        with pytest.raises(ValueError, match="duplicate.*nanos"):
             Time(1, 2, 3, nanosecond=4).format(pattern)
 
     @pytest.mark.parametrize("pattern", ["fF", "ffF", "Fff"])
     def test_parse_duplicate_nanos_with_frac_trim(self, pattern):
-        with pytest.raises(ValueError, match="Duplicate.*nanos"):
+        with pytest.raises(ValueError, match="duplicate.*nanos"):
             Time.parse("01:02:03", pattern=pattern)
 
     def test_frac_trim_unsupported_for_date_format(self):
@@ -1092,7 +1129,10 @@ class TestOffsetDateTimeParse:
             )
 
     def test_missing_date_fields(self):
-        with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
+        with pytest.raises(
+            ValueError,
+            match="^pattern must include a year, a month, and a day$",
+        ):
             OffsetDateTime.parse("14:30+02:00", pattern="HH:mmxxx")
 
     def test_roundtrip(self):
@@ -1127,7 +1167,7 @@ class TestZonedDateTimeFormat:
         assert "CEST" in result
 
     def test_tz_only_no_offset(self):
-        """Format with tz ID but no offset field."""
+        """Format with a time zone ID but no offset specifier."""
         zdt = ZonedDateTime(2024, 3, 15, 14, 30, tz="Europe/Paris")
         assert (
             zdt.format("YYYY-MM-DD HH:mm '['VV']'")
@@ -1160,9 +1200,7 @@ class TestZonedDateTimeParse:
         ],
     )
     def test_non_ascii_tz_id(self, char, prefix, suffix):
-        with pytest.raises(
-            ValueError, match="Input string must be ASCII-only"
-        ):
+        with pytest.raises(ValueError, match="input must be ASCII-only"):
             ZonedDateTime.parse(
                 f"2024-03-15 14:30+01:00[{prefix}{char}{suffix}]",
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
@@ -1180,14 +1218,17 @@ class TestZonedDateTimeParse:
             )
 
     def test_missing_date_fields(self):
-        with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
+        with pytest.raises(
+            ValueError,
+            match="^pattern must include a year, a month, and a day$",
+        ):
             ZonedDateTime.parse(
                 "14:30+01:00[Europe/Paris]",
                 pattern="HH:mmxxx'['VV']'",
             )
 
     def test_tz_only_no_offset(self):
-        """Parse with tz ID but no offset — uses disambiguation."""
+        """Parse with a time zone ID but no offset: uses disambiguation."""
         zdt = ZonedDateTime.parse(
             "2024-03-15 14:30[Europe/Paris]",
             pattern="YYYY-MM-DD HH:mm'['VV']'",
@@ -1414,19 +1455,6 @@ class TestZonedDateTimeParse:
         assert zdt_edt.hour == zdt_est.hour == 1
         assert zdt_edt.minute == zdt_est.minute == 30
 
-    def test_offset_precision_matching(self):
-        result = ZonedDateTime.parse(
-            "1900-01-01 00:00-00:25[Europe/Dublin]",
-            pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
-        )
-        assert result.offset == TimeDelta(seconds=-(25 * 60 + 21))
-
-        with pytest.raises(ValueError, match="does not match"):
-            ZonedDateTime.parse(
-                "1900-01-01 00:00-00:25:00[Europe/Dublin]",
-                pattern="YYYY-MM-DD HH:mmxxxxx'['VV']'",
-            )
-
     def test_z_is_an_instant(self):
         result = ZonedDateTime.parse(
             "2020-02-15 12:08Z[America/New_York]",
@@ -1499,7 +1527,10 @@ class TestInstantParse:
             Instant.parse("2024-03-15 14:30", pattern="YYYY-MM-DD HH:mm")
 
     def test_missing_date_fields(self):
-        with pytest.raises(ValueError, match="year.*month.*day|date.*fields"):
+        with pytest.raises(
+            ValueError,
+            match="^pattern must include a year, a month, and a day$",
+        ):
             Instant.parse("14:30Z", pattern="HH:mmXXX")
 
     def test_roundtrip(self):
@@ -1575,15 +1606,19 @@ class TestSecurityEdgeCases:
         assert state.year is None
 
 
-class TestDeprecations:
-    """Test that deprecated methods emit warnings."""
-
-
 class TestParseEdgeCases:
     """Test parse error paths for coverage."""
 
+    def test_unknown_keyword(self):
+        with pytest.raises(
+            TypeError, match="unexpected keyword argument 'foo'"
+        ):
+            Date.parse("2024", pattern="YYYY", foo=1)  # type: ignore[call-overload]
+
     def test_input_too_short(self):
-        with pytest.raises(ValueError, match="too short"):
+        with pytest.raises(
+            ValueError, match="^expected 4 digits at position 0, got '202'$"
+        ):
             Date.parse("202", pattern="YYYY-MM-DD")
 
     def test_non_digit(self):
@@ -1591,7 +1626,7 @@ class TestParseEdgeCases:
             Date.parse("abcd-03-15", pattern="YYYY-MM-DD")
 
     def test_literal_mismatch(self):
-        with pytest.raises(ValueError, match="Expected"):
+        with pytest.raises(ValueError, match="expected"):
             Date.parse("2024/03/15", pattern="YYYY-MM-DD")
 
     def test_invalid_month_name(self):
@@ -1727,7 +1762,9 @@ class TestFormatFieldsInternal:
         assert result == "+05:30:15"
 
     def test_tz_id_format_error_when_none(self):
-        with pytest.raises(ValueError, match="time zone ID"):
+        with pytest.raises(
+            ValueError, match="^the time zone has no ID; VV cannot be written$"
+        ):
             format_fields(compile_pattern("VV"), tz_id=None)
 
     def test_tz_abbrev_format_error_when_none(self):

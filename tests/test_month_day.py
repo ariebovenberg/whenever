@@ -118,10 +118,11 @@ def test_comparison():
 def test_format_iso():
     assert MonthDay(11, 12).format_iso() == "--11-12"
     assert MonthDay(2, 1).format_iso() == "--02-01"
+    assert MonthDay.parse_iso(MonthDay(2, 1).format_iso()) == MonthDay(2, 1)
 
 
 def test_str():
-    assert str(MonthDay(10, 31)) == "--10-31"
+    assert str(MonthDay(10, 31)) == "--10-31" == MonthDay(10, 31).format_iso()
     assert str(MonthDay(2, 1)) == "--02-01"
 
 
@@ -171,7 +172,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"invalid format.*" + re.escape(repr(s)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             MonthDay.parse_iso(s)
 

@@ -372,7 +372,7 @@ fn parse_iso(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
             .ok_or_type_err("parse_iso() argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("invalid format: {s_obj}"))?
+    .ok_or_else_value_err(|| format!("invalid ISO 8601 string: {s_obj}"))?
     .to_instant()
     .to_obj(cls)
 }
@@ -466,9 +466,9 @@ fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
 fn parse_rfc2822(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
     let s = s_obj
         .cast_allow_subclass::<PyStr>()
-        .ok_or_type_err("expected a string")?;
-    let (date, time, offset) =
-        rfc2822::parse(s.as_utf8()?).ok_or_else_value_err(|| format!("invalid format: {s_obj}"))?;
+        .ok_or_type_err("parse_rfc2822() argument must be a string")?;
+    let (date, time, offset) = rfc2822::parse(s.as_utf8()?)
+        .ok_or_else_value_err(|| format!("invalid RFC 2822 string: {s_obj}"))?;
     date.at(time)
         .assume_offset(offset)
         .ok_or_range_err()?
@@ -504,17 +504,14 @@ fn format(cls: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
-    pattern.validate(
-        pattern::CategorySet::DATE_TIME_OFFSET,
-        "Instant",
-        *cls.state().warn_whenever,
-        *cls.state().warn_deprecation,
-    )?;
-    pattern.format(
+    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "Instant")?;
+    let result = pattern.format(
         &slf.to_utc_plain()
             .pattern_values()
             .with_offset(Offset::ZERO),
-    )
+    )?;
+    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
+    Ok(result)
 }
 
 fn __format__(cls: PyClass<Instant>, slf: Instant, spec_obj: PyObj) -> PyReturn {
@@ -539,18 +536,12 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
-    pattern.validate(
-        pattern::CategorySet::DATE_TIME_OFFSET,
-        "Instant",
-        *cls.state().warn_whenever,
-        *cls.state().warn_deprecation,
-    )?;
+    pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "Instant")?;
     let parsed = pattern.parse(s).into_value_err()?;
     let offset = parsed
         .offset_secs
-        .ok_or_value_err("Instant.parse() pattern must include an offset field (x/X)")?;
-    let date = parsed
-        .date("Pattern must include year (YYYY/YY), month (MM/MMM/MMMM), and day (DD) fields")?;
+        .ok_or_value_err("pattern must include an offset specifier (x/X)")?;
+    let date = parsed.date()?;
     let time = parsed.time()?;
     // offset is already validated (scalar::Offset) — no range check needed here.
     let result = date
@@ -559,6 +550,7 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
         .shift_by_offset(-offset)
         .ok_or_range_err()?
         .to_obj(cls)?;
+    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
     if renamed {
         warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
     }

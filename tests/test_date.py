@@ -242,6 +242,7 @@ def test_format_iso():
     d = Date(2021, 1, 2)
     assert d.format_iso() == "2021-01-02"
     assert d.format_iso(basic=True) == "20210102"
+    assert Date.parse_iso(d.format_iso(basic=True)) == d
 
     with pytest.raises(TypeError):
         d.format_iso(3)  # type: ignore[arg-type, call-arg]
@@ -252,7 +253,7 @@ def test_format_iso():
 
 def test_str():
     d = Date(2021, 1, 2)
-    assert str(d) == "2021-01-02"
+    assert str(d) == "2021-01-02" == d.format_iso()
 
 
 class TestParseIso:
@@ -336,7 +337,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"invalid format.*" + re.escape(repr(s)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             Date.parse_iso(s)
 

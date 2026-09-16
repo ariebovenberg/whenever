@@ -3,14 +3,13 @@ myst:
   html_meta:
     description: >-
       Formatting and parsing in whenever: ISO 8601 as the canonical
-      round-trippable format, RFC 2822, custom format patterns, and Pydantic
-      integration.
+      round-trippable format, RFC 2822, patterns, and Pydantic integration.
 ---
 
 # Formatting and parsing
 
 `whenever` reads and writes the standard formats: ISO 8601 as the canonical,
-round-trippable representation, plus RFC 2822 for email and HTTP, and custom
+round-trippable representation, plus RFC 2822 for email and HTTP, and
 patterns for everything else.
 
 ## ISO 8601
@@ -30,12 +29,12 @@ PlainDateTime("2023-12-28 11:30:00")
 
 Below are the default ISO string formats produced by each type:
 
-| Type                                    | Default string format                          |
+| Type                                    | ISO 8601 string                                |
 |:----------------------------------------|:-----------------------------------------------|
-| {class}`~whenever.Instant`              | `YYYY-MM-DDTHH:MM:SSZ`                       |
-| {class}`~whenever.PlainDateTime`        | `YYYY-MM-DDTHH:MM:SS`                        |
-| {class}`~whenever.ZonedDateTime`        | `YYYY-MM-DDTHH:MM:SS±HH:MM[IANA TZ ID]` [^1] |
-| {class}`~whenever.OffsetDateTime`       | `YYYY-MM-DDTHH:MM:SS±HH:MM`                  |
+| {class}`~whenever.Instant`              | `2023-12-28T11:30:00Z`                         |
+| {class}`~whenever.PlainDateTime`        | `2023-12-28T11:30:00`                          |
+| {class}`~whenever.ZonedDateTime`        | `2023-12-28T11:30:00+01:00[Europe/Paris]` [^1] |
+| {class}`~whenever.OffsetDateTime`       | `2023-12-28T11:30:00+01:00`                    |
 
 [^1]: The time zone ID is not part of the core ISO 8601 standard,
       but is part of the RFC 9557 extension.
@@ -46,19 +45,14 @@ See the {ref}`reference documentation <iso8601>` for more details on formatting 
 
 ## RFC 2822
 
-[RFC 2822](https://datatracker.ietf.org/doc/html/rfc2822.html#section-3.3) is 
-another common format for representing datetimes. 
-It's used in email headers and HTTP headers. The format is:
+[RFC 2822](https://datatracker.ietf.org/doc/html/rfc2822.html#section-3.3) is
+another common format for representing datetimes, used in email headers and
+HTTP headers. It looks like `Tue, 13 Jul 2021 09:45:00 -0900`: a weekday,
+a date, a time, and a numeric offset.
 
-```text
-Weekday, DD Mon YYYY HH:MM:SS ±HHMM
-```
-
-For example: `Tue, 13 Jul 2021 09:45:00 -0900`
-
-Use the methods {meth}`~whenever.OffsetDateTime.format_rfc2822` and
-{meth}`~whenever.OffsetDateTime.parse_rfc2822` to format and parse
-to this format, respectively:
+{meth}`~whenever.OffsetDateTime.format_rfc2822` and
+{meth}`~whenever.OffsetDateTime.parse_rfc2822` convert to and from
+this format:
 
 ```python
 >>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
@@ -68,14 +62,37 @@ to this format, respectively:
 OffsetDateTime("2021-07-13 09:45:00-09:00")
 ```
 
+{meth}`~whenever.Instant.format_rfc2822` writes the GMT form, which is also
+the HTTP date (IMF-fixdate, RFC 9110), and
+{meth}`~whenever.Instant.parse_rfc2822` applies the offset and gives the
+UTC instant:
+
+```python
+>>> Instant.from_utc(2023, 12, 28, 11, 30).format_rfc2822()
+'Thu, 28 Dec 2023 11:30:00 GMT'
+>>> Instant.parse_rfc2822('Tue, 13 Jul 2021 09:45:00 -0900')
+Instant("2021-07-13 18:45:00Z")
+```
+
+Both parsers accept the zone names `UT` and `GMT` and the North American
+abbreviations `EST` through `PDT`; any other name, including a military
+letter, is read as `+0000`, and comments in folding whitespace are rejected.
+
+{class}`~whenever.ZonedDateTime` has neither method: the format carries a
+numeric offset and no time zone ID, so a parse can never yield a
+`ZonedDateTime`, and formatting one is `to_fixed_offset()` first.
+{class}`~whenever.PlainDateTime` has no offset to write.
+
 RFC 2822 only represents whole seconds and minute-precision offsets.
 Formatting therefore discards nanoseconds and any seconds in the offset; use
 ISO 8601 when those values must round-trip exactly.
 
-## Custom patterns
+## Patterns
 
-All datetime types support custom patterns for formatting and parsing via
-their format and parse methods—for example,
+{class}`~whenever.Date`, {class}`~whenever.Time`, {class}`~whenever.Instant`,
+{class}`~whenever.OffsetDateTime`, {class}`~whenever.ZonedDateTime`, and
+{class}`~whenever.PlainDateTime` format and parse with patterns via
+their `format()` and `parse()` methods—for example,
 {meth}`~whenever.OffsetDateTime.format` and
 {meth}`~whenever.OffsetDateTime.parse`.
 Patterns use specifiers like `YYYY`, `MM`, `DD`, `HH`, `mm`, `ss`.

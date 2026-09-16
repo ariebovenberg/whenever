@@ -437,13 +437,14 @@ The ISO 8601 standard defines formats for specifying durations,
 the [most common](https://en.wikipedia.org/wiki/ISO_8601#Durations) being:
 
 ```text
-±P nY nM nD T nH nM nS     (spaces added for clarity)
+±P nY nM nW nD T nH nM nS     (spaces added for clarity)
 ```
 
 Where:
 
 - ``P`` is the period designator, and ``T`` separates date and time components.
-- ``nY`` is the number of years, ``nM`` is the number of months, etc.
+- ``nY`` is the number of years, ``nM`` is the number of months, ``nW`` the
+  number of weeks, etc.
 - Only seconds may have a fractional part.
 - At least one component must be present (it may be zero).
 
@@ -451,7 +452,8 @@ For example:
 
 - ``P3Y4DT12H30M`` is 3 years, 4 days, 12 hours, and 30 minutes.
 - ``-P2M5D`` is -2 months, and -5 days.
-- ``P0D`` is zero.
+- ``P0D`` is zero for the itemized deltas. {meth}`TimeDelta.parse_iso` rejects
+  it, with ``P1D`` and ``P1W``, since days and weeks are calendar units.
 - ``+PT5M4.25S`` is 5 minutes and 4.25 seconds.
 
 All deltas can be converted to and from this format using the methods:

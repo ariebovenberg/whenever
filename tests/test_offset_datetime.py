@@ -270,6 +270,27 @@ class TestFormatIso:
     def test_variations(self, dt, kwargs, expected):
         assert dt.format_iso(**kwargs) == expected
 
+    @pytest.mark.parametrize(
+        "dt, kwargs",
+        [
+            (OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(-3)), {}),
+            (
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(5)),
+                {"basic": True},
+            ),
+            (
+                OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=hours(5)),
+                {"sep": " "},
+            ),
+            (
+                OffsetDateTime(2020, 8, 15, 23, offset=hours(5)),
+                {"unit": "hour"},
+            ),
+        ],
+    )
+    def test_round_trip(self, dt, kwargs):
+        assert OffsetDateTime.parse_iso(dt.format_iso(**kwargs)).strict_eq(dt)
+
     def test_invalid(self):
         dt = OffsetDateTime(2020, 4, 9, 13, offset=hours(-4))
         with pytest.raises(ValueError, match="unit"):
@@ -315,7 +336,7 @@ INVALID_ISO_STRINGS = [
     "2020-08-15T12:08:30+05:00stuff",  # trailing stuff
     "2020-08-15T12:𝟘8:30+00:00",  # non-ASCII
     "2020-08-15T12:08:30.0034+05:𝟙0",  # non-ASCII
-    "2020-08-15T12:08:30[Iceland]",  # TZ ID but no offset
+    "2020-08-15T12:08:30[Iceland]",  # time zone ID but no offset
     # not enough content
     "",
     "T",
@@ -327,7 +348,7 @@ INVALID_ISO_STRINGS = [
     # out-of-bounds
     "9999-12-31T22:08:30-05:00",
     "0001-01-01 02:08:30+05:00",
-    # invalid tz format
+    # invalid time zone ID format
     "2020-08-15T12:08:30+05:00[",
     "2020-08-15T12:08:30+05:00[[]",
     "2020-08-15T12:08:30+05:00[sdf[]",
@@ -349,6 +370,10 @@ INVALID_ISO_STRINGS = [
 VALID_ISO_STRINGS = [
     (
         "2020-08-15T12:08:30+05:00",
+        OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=hours(5)),
+    ),
+    (
+        "2020-08-15 12:08:30+05:00",  # space separator
         OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=hours(5)),
     ),
     (
@@ -514,7 +539,10 @@ class TestParseIso:
 
     @pytest.mark.parametrize("s", INVALID_ISO_STRINGS)
     def test_invalid(self, s):
-        with pytest.raises(ValueError, match="format.*" + re.escape(repr(s))):
+        with pytest.raises(
+            ValueError,
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
+        ):
             OffsetDateTime.parse_iso(s)
 
     @pytest.mark.parametrize(
@@ -532,7 +560,7 @@ class TestParseIso:
     def test_fuzzing(self, s: str):
         with pytest.raises(
             ValueError,
-            match=r"format.*" + re.escape(repr(s)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             OffsetDateTime.parse_iso(s)
 
@@ -1993,6 +2021,8 @@ INVALID_RFC2822 = [
     "Sat, 15 Aug 2020 23:12 +400",
     "Sat, 15 Aug 2020 23:12 +4060",
     "Sat, 15 Aug 2020 23:12 -4060",
+    "Sat, 15 Aug 2020 23:12:00 +0160",
+    "Sat, 15 Aug 2020 23:12:00 +0060",
     "Sat, 15 Aug 2020 23:12 +MST",
     "Sat, 15 Aug 2020 23:12 -MST",
     "Sat, 15 Aug 2020 23:12 MST4",
@@ -2069,7 +2099,10 @@ class TestParseRFC2822:
 
     @pytest.mark.parametrize("s", INVALID_RFC2822)
     def test_invalid(self, s):
-        with pytest.raises(ValueError, match=re.escape(repr(s))):
+        with pytest.raises(
+            ValueError,
+            match=r"^invalid RFC 2822 string: " + re.escape(repr(s)) + "$",
+        ):
             OffsetDateTime.parse_rfc2822(s)
 
     @pytest.mark.parametrize(

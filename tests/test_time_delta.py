@@ -849,6 +849,7 @@ def test_str():
     d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
     assert str(d) == d.format_iso() == "PT1H2M3.000004S"
     assert str(TimeDelta()) == "PT0S"
+    assert TimeDelta.parse_iso(d.format_iso()) == d
 
 
 VALID_TDELTAS = [
@@ -899,6 +900,8 @@ VALID_TDELTAS = [
 
 INVALID_TDELTAS = [
     "P1D",  # calendar units
+    "P1W",  # calendar units
+    "P0D",  # zero, but still a calendar unit
     "P1YT4M",  # calendar units
     "T1H",  # wrong prefix
     "PT4M3H",  # wrong order
@@ -948,7 +951,7 @@ class TestParseIso:
     def test_invalid(self, s) -> None:
         with pytest.raises(
             ValueError,
-            match=r"invalid format.*" + re.escape(repr(s)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             TimeDelta.parse_iso(s)
 

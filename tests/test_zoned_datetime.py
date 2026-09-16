@@ -187,7 +187,9 @@ class TestTzIdRejection:
     def test_non_ascii_in_parsed_string_is_not_a_string_to_parse(
         self, call, key: str
     ):
-        with pytest.raises(ValueError, match="ASCII|invalid format") as exc:
+        with pytest.raises(
+            ValueError, match="ASCII|invalid ISO 8601 string"
+        ) as exc:
             call(key)
         assert not isinstance(exc.value, TimeZoneNotFoundError)
 
@@ -1219,11 +1221,24 @@ class TestFormatIso:
     )
     def test_tz_id_display(self, tz_id_display, suffix):
         value = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
-        formatted = value.format_iso(tz_id_display=tz_id_display)
-        if suffix:
-            assert formatted.endswith(suffix)
-        else:
-            assert "[" not in formatted
+        assert (
+            value.format_iso(tz_id_display=tz_id_display)
+            == "2020-08-15T00:00:00+02:00" + suffix
+        )
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{}, {"basic": True}, {"sep": " "}, {"unit": "hour"}],
+    )
+    def test_round_trip(self, kwargs):
+        d = ZonedDateTime(2020, 8, 15, 23, tz="Europe/Amsterdam")
+        assert ZonedDateTime.parse_iso(d.format_iso(**kwargs)).strict_eq(d)
+
+    def test_unexpected_keyword(self):
+        with pytest.raises(
+            TypeError, match="unexpected keyword argument 'foo'"
+        ):
+            ZonedDateTime(2020, 8, 15, tz="UTC").format_iso(foo=1)  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
         "d, expected",
@@ -1283,8 +1298,11 @@ class TestFormatIso:
 
     @pytest.mark.parametrize("d", [ZDT_POSIX, ZDT_RAWFILE])
     def test_no_timezone_id(self, d: ZonedDateTime):
-        with pytest.raises(ValueError, match="time zone ID"):
+        msg = "^the time zone has no ID; use tz_id_display='if_available' or 'omit'$"
+        with pytest.raises(ValueError, match=msg):
             d.format_iso()
+        with pytest.raises(ValueError, match=msg):
+            d.format_iso(tz_id_display="required")
 
     @pytest.mark.parametrize(
         "zdt, kwargs, expected",
@@ -3464,7 +3482,7 @@ class TestParseIso:
     @pytest.mark.parametrize(
         "s",
         [
-            "2020-08-15T12:08:30+02:00",  # no tz
+            "2020-08-15T12:08:30+02:00",  # no time zone ID
             # bracket problems
             "2020-08-15T12:08:30+02:00[Europe/Amsterdam",
             "2020-08-15T12:08:30+02:00[Europe][Amsterdam]",
@@ -3517,7 +3535,10 @@ class TestParseIso:
         ],
     )
     def test_invalid(self, s):
-        with pytest.raises(ValueError, match="format.*" + re.escape(s)):
+        with pytest.raises(
+            ValueError,
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
+        ):
             ZonedDateTime.parse_iso(s)
 
     def test_invalid_tz(self):
@@ -3550,7 +3571,7 @@ class TestParseIso:
             )
 
         # a non-ASCII string is not an ISO string, so no ID is read from it
-        with pytest.raises(ValueError, match="invalid format"):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             ZonedDateTime.parse_iso(
                 f"2023-10-29T02:15:30+02:00[{chr(1600)}]",
             )
@@ -3616,7 +3637,7 @@ class TestParseIso:
     def test_fuzzing(self, s: str):
         with pytest.raises(
             ValueError,
-            match=r"invalid format.*" + re.escape(repr(s)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             ZonedDateTime.parse_iso(s)
 
@@ -3730,7 +3751,9 @@ def test_repr(d: ZonedDateTime, expect: str):
 
 def test_format_tz_id_without_id():
     d = create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_POSIX)
-    with pytest.raises(ValueError, match="time zone ID"):
+    with pytest.raises(
+        ValueError, match="^the time zone has no ID; VV cannot be written$"
+    ):
         d.format("VV")
 
 

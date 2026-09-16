@@ -796,6 +796,12 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ... )
         >>> d.format_iso()
         'P1W11DT4H1.000012S'
+
+        Parameters
+        ----------
+        lowercase_units
+            Write the unit designators in lowercase, as ``repr()`` does;
+            ``parse_iso()`` reads both cases.
         """
         y, m, w, d, h, s = "ymwdhs" if lowercase_units else "YMWDHS"
 
@@ -857,7 +863,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> ItemizedDelta.parse_iso("-P1W11DT4H")
         ItemizedDelta("-P1w11dT4h")
         """
-        exc = ValueError(f"invalid format: {s!r}")
+        exc = ValueError(f"invalid ISO 8601 string: {s!r}")
         prev_unit = ""
         years, months, weeks, days, hours, minutes, seconds, nanos = (
             None,
@@ -1940,7 +1946,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         return ItemizedDateDelta(**cast(Any, components))
 
     def format_iso(self, *, lowercase_units: bool = False) -> str:
-        """Convert to the canionical ISO 8601 string representation:
+        """Convert to the canonical ISO 8601 string representation:
 
         .. code-block:: text
 
@@ -1953,6 +1959,12 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> d = ItemizedDateDelta(weeks=1, days=11)
         >>> d.format_iso()
         'P1W11D'
+
+        Parameters
+        ----------
+        lowercase_units
+            Write the unit designators in lowercase, as ``repr()`` does;
+            ``parse_iso()`` reads both cases.
 
         Note
         ----
@@ -1993,7 +2005,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         it doesn't allow fractional values.
         See :ref:`here <iso8601-durations>` for more information.
         """
-        exc = ValueError(f"invalid format: {s!r}")
+        exc = ValueError(f"invalid ISO 8601 string: {s!r}")
 
         # Catch certain invalid strings early, making parsing easier
         if len(s) < 3 or not s.isascii():

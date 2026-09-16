@@ -2,9 +2,9 @@
 myst:
   html_meta:
     description: >-
-      Reference for custom format patterns: date, time, offset, and time zone
-      specifiers, literal text rules, parsing requirements, migrating patterns
-      in 0.11, and how it differs from strftime.
+      Reference for patterns: date, time, offset, and time zone specifiers,
+      literal text rules, parsing requirements, migrating patterns in 0.11,
+      and how it differs from strftime.
 ---
 
 (pattern-format)=
@@ -14,9 +14,9 @@ myst:
 .. currentmodule:: whenever
 ```
 
-Custom format and parse patterns allow you to format datetime values into
-strings and parse strings into datetime values, using a pattern string
-that describes the expected format. The canonical full datetime pattern is
+Patterns allow you to format datetime values into strings and parse
+strings into datetime values, using a pattern string that describes the
+expected format. The canonical full datetime pattern is
 `YYYY-MM-DD HH:mm:ss`.
 
 ## Quick example
@@ -36,7 +36,9 @@ Date("2024-03-15")
 The same six types—{class}`Date`, {class}`Time`, and the four datetime
 types—have a `__format__` that takes a pattern, so `f"{d:YYYY/MM/DD}"` works
 too, and an empty format spec gives `str()`. The other types have no patterns
-and keep `object.__format__`, which accepts only the empty spec.
+and keep `object.__format__`, which accepts only the empty spec: a pattern
+needs a complete calendar date or clock time on both sides, which only these
+six types hold.
 
 ## Specifiers
 
@@ -59,7 +61,7 @@ the corresponding value.
 Whenever deliberately avoids classic datetime-pattern footguns. `Y` is always
 the calendar year, never the ISO week-numbering year. `H` is the 24-hour clock,
 as in almost all other datetime libraries, while the distinct `i` is the
-12-hour clock and makes a missing AM/PM field detectable. `D` is always the
+12-hour clock and makes a missing AM/PM specifier detectable. `D` is always the
 day of the month; day-of-year is not supported. Familiar but unsupported
 letters fail instead of silently acquiring a different meaning.
 :::
@@ -110,7 +112,7 @@ zeroes and omits the decimal point when the fraction is empty.
 The group boundary must remain unambiguous without backtracking.
 Separator-free `[ss...]` therefore cannot be followed by an element that
 starts with a digit, and `[:ss...]` cannot be followed by another colon.
-Fields that may be empty are also rejected as followers when they make the
+Specifiers that may be empty are also rejected as followers when they make the
 boundary ambiguous. A trimmed optional fraction cannot be followed by a
 literal period.
 
@@ -124,7 +126,7 @@ See {ref}`timezones-explained` for background on time zones, offsets, and abbrev
 |:---------|:---------------------------|:---------------|:--------------|
 | `x` | Numeric offset; precision depends on width | `x` <br/> `xx` <br/> `xxx` <br/> `xxxx` <br/> `xxxxx` | `+02` <br/> `+0230` <br/> `+02:30` <br/> `+023045` <br/> `+02:30:45` |
 | `X` | Numeric offset, with `Z` for zero offset; precision depends on width | `X` <br/> `XX` <br/> `XXX` <br/> `XXXX` <br/> `XXXXX` | `+02` <br/> `+0230` <br/> `+02:30` <br/> `+023045` <br/> `+02:30:45` or `Z` when zero |
-| `V` | IANA time zone ID | `VV` | `Europe/Paris` |
+| `V` | time zone ID | `VV` | `Europe/Paris` |
 | `z` | Time zone abbreviation [^6] | `zz` | `CET`, `CEST` |
 
 For `x` and `X`, widths `xx` and `xxx` round offset seconds to the nearest
@@ -137,7 +139,7 @@ When parsing a {class}`ZonedDateTime`, an offset without seconds is matched
 against the time zone offset rounded in the same way. An offset that includes
 seconds, and `Z`, must match exactly.
 
-`VV` requires an IANA time zone ID. Formatting a time zone without one raises
+`VV` requires a time zone ID. Formatting a time zone without one raises
 {class}`ValueError`.
 
 ```{admonition} Choosing between x and X
@@ -205,7 +207,7 @@ To include a literal single quote, use `''`:
   Non-ASCII characters raise ``ValueError``.
 - **Reserved characters**: `<`, `>`, `[`, `]`, `{`, `}`, and `#` cannot
   appear unquoted, except for brackets used by the optional-seconds syntax.
-- **No duplicate fields**: A pattern cannot contain two specifiers that
+- **No duplicate specifiers**: A pattern cannot contain two specifiers that
   set the same value. For example, `MM` and `MMM` both set the month,
   so `"DD MM MMM YYYY"` is invalid.
 
@@ -213,14 +215,14 @@ To include a literal single quote, use `''`:
 
 Parsed input strings must contain only ASCII characters.
 
-Variable-width numeric fields must be separated from following digits. The
-same rule applies to fields that omit optional digits, such as trimmed
+Variable-width numeric specifiers must be separated from following digits. The
+same rule applies to specifiers that omit optional digits, such as trimmed
 fractions and the seconds component of `xxxx`/`xxxxx` offsets. `VV` must be
-the final field or be followed by a literal delimiter that cannot occur in an
-IANA time zone ID. A dotted trimmed fraction cannot be followed by another
+the final specifier or be followed by a literal delimiter that cannot occur in a
+time zone ID. A dotted trimmed fraction cannot be followed by another
 dot. Ambiguous patterns raise {class}`ValueError` when compiled.
 
-Some types require specific fields in the parse pattern:
+Some types require specific specifiers in the parse pattern:
 
 - {meth}`OffsetDateTime.parse() <OffsetDateTime.parse>` requires an offset (`x`/`X`)
 - {meth}`ZonedDateTime.parse() <ZonedDateTime.parse>` requires `VV` (time zone ID).
@@ -273,11 +275,11 @@ The following table maps common `strftime` directives to Whenever patterns:
 | `%p`   | `aa`  |       |
 | `%z`   | `xxxx` | `XXXX` for Z-style |
 | `%:z`   | `xxxxx` | `XXXXX` for Z-style |
-| `%Z`   | —     | Abbreviations are not supported for parsing. See {ref}`timezones-explained`. |
+| `%Z`   | `zz`  | Format only. See {ref}`timezones-explained`. |
 
 [^1]: `YY` is only supported for formatting. When parsing, use `YYYY` to avoid ambiguity.
 [^2]: During parsing, weekday names are validated against the parsed date. A mismatch raises ``ValueError``.
 [^3]: The complete bracketed group is omitted when both seconds and nanoseconds are zero.
 [^4]: Omitted when the value is zero, with preceding `.` also omitted.
-[^5]: AM/PM is determined by the hour value. Using `i`/`ii` without `a`/`aa` emits a warning about ambiguity.
-[^6]: Time zone abbreviations are ambiguous and not supported for parsing. Use `VV` (IANA time zone ID) instead. See {ref}`timezones-explained` for details.
+[^5]: AM/PM is determined by the hour value. Using `i`/`ii` without `a`/`aa` emits a warning, since a value such as `03:00` could mean 3 AM or 3 PM.
+[^6]: Time zone abbreviations are not supported for parsing: an abbreviation names more than one time zone. Use `VV` (time zone ID) instead. See {ref}`timezones-explained` for details.

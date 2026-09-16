@@ -455,6 +455,13 @@ class TestFormatIso:
             ItemizedDateDelta(days=0).format_iso(lowercase_units=True) == "P0d"
         )
 
+    @pytest.mark.parametrize("lowercase_units", [True, False])
+    def test_round_trip(self, lowercase_units):
+        d = ItemizedDateDelta(months=-6, weeks=0, days=-4)
+        assert ItemizedDateDelta.parse_iso(
+            d.format_iso(lowercase_units=lowercase_units)
+        ).strict_eq(d)
+
 
 def test_repr():
     d = ItemizedDateDelta(
@@ -478,7 +485,7 @@ def test_str():
         weeks=9,
         days=4,
     )
-    assert str(d) == "P3Y6M9W4D"
+    assert str(d) == "P3Y6M9W4D" == d.format_iso()
     assert str(ItemizedDateDelta(days=0)) == "P0D"
 
 
@@ -553,7 +560,13 @@ class TestParseIso:
 
     @pytest.mark.parametrize("s", INVALID_DELTAS)
     def test_invalid(self, s: str):
-        with pytest.raises(ValueError):
+        # a range failure after a successful parse keeps its own text
+        with pytest.raises(
+            ValueError,
+            match=r"^(invalid ISO 8601 string: "
+            + re.escape(repr(s))
+            + "|delta out of range)$",
+        ):
             ItemizedDateDelta.parse_iso(s)
 
 

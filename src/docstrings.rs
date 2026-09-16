@@ -571,7 +571,7 @@ pub(crate) const DATE_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, basic=False)
 --
 
-Format as the ISO 8601 date format.
+Format as an ISO 8601 string, such as ``2021-01-02``.
 
 Inverse of :meth:`parse_iso`.
 
@@ -579,6 +579,11 @@ Inverse of :meth:`parse_iso`.
 '2021-01-02'
 >>> Date(1992, 9, 4).format_iso(basic=True)
 '19920904'
+
+Parameters
+----------
+basic
+    Whether to use the basic ISO format (without separators) instead of the extended one.
 ";
 pub(crate) const DATE_IN_LEAP_YEAR: &CStr = c"\
 Whether this date's year is a leap year
@@ -656,7 +661,7 @@ Date(\"2024-03-15\")
 Date(\"2024-03-15\")
 ";
 pub(crate) const DATE_PARSE_ISO: &CStr = c"\
-Parse a date from an ISO8601 string
+Parse a date from an ISO 8601 string
 
 The following formats are accepted:
 - ``YYYY-MM-DD`` (\"extended\" format)
@@ -821,9 +826,15 @@ pub(crate) const INSTANT_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False, sep='T')
 --
 
-Convert to the ISO 8601 string representation.
+Format as an ISO 8601 string, such as ``2020-08-15T23:12:00Z``.
 
-The inverse of the ``parse_iso()`` method.
+Inverse of :meth:`parse_iso`.
+
+>>> Instant.from_utc(2020, 8, 15, hour=23, minute=12).format_iso()
+'2020-08-15T23:12:00Z'
+
+``unit``, ``basic``, and ``sep`` are as on
+:meth:`ZonedDateTime.format_iso`.
 ";
 pub(crate) const INSTANT_FORMAT_RFC2822: &CStr = c"\
 Format as an RFC 2822 string in the fixed UTC/GMT subset.
@@ -890,7 +901,7 @@ parse(s, /, *, pattern=...)
 
 Parse an instant from a custom pattern string.
 
-The pattern **must** include an offset field (``x``/``X``)
+The pattern **must** include an offset specifier (``x``/``X``)
 to unambiguously identify the instant.
 See :ref:`pattern-format` for details.
 
@@ -907,15 +918,20 @@ Instant(\"2024-03-15 14:30:00Z\")
 Instant(\"2024-03-15 09:00:00Z\")
 ";
 pub(crate) const INSTANT_PARSE_ISO: &CStr = c"\
-Parse an ISO 8601 string. Supports basic and extended formats,
-but not week dates or ordinal dates.
+Parse an ISO 8601 string, such as ``2020-08-15T23:12:00Z``.
 
-See the `docs on ISO8601 support <https://whenever.rtfd.io/en/latest/reference/iso8601.html>`__ for more information.
+The basic and extended formats are accepted, but not week dates or
+ordinal dates. ``Z`` or an offset is required, and a non-zero offset
+is converted to UTC. A bracketed time zone ID is accepted and
+ignored. See :ref:`iso8601` for details.
 
-The inverse of the ``format_iso()`` method.
+Inverse of :meth:`format_iso`.
+
+>>> Instant.parse_iso(\"2020-08-15T23:12:00+02:00\")
+Instant(\"2020-08-15 21:12:00Z\")
 ";
 pub(crate) const INSTANT_PARSE_RFC2822: &CStr = c"\
-Parse a UTC datetime in RFC 2822 format.
+Parse an RFC 2822 string; the offset is applied and the result is UTC.
 
 >>> Instant.parse_rfc2822(\"Sat, 15 Aug 2020 23:12:00 GMT\")
 Instant(\"2020-08-15 23:12:00Z\")
@@ -1035,9 +1051,15 @@ pub(crate) const OFFSETDATETIME_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False, sep='T')
 --
 
-Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
+Format as an ISO 8601 string, such as ``2020-08-15T23:12:00+02:00``.
 
-The inverse of the ``parse_iso()`` method.
+Inverse of :meth:`parse_iso`.
+
+>>> OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2)).format_iso()
+'2020-08-15T23:12:00+02:00'
+
+``unit``, ``basic``, and ``sep`` are as on
+:meth:`ZonedDateTime.format_iso`.
 ";
 pub(crate) const OFFSETDATETIME_FORMAT_RFC2822: &CStr = c"\
 Format as an RFC 2822 string.
@@ -1116,7 +1138,7 @@ parse(s, /, *, pattern=...)
 
 Parse an offset datetime from a custom pattern string.
 
-The pattern **must** include an offset field (``x``/``X``).
+The pattern **must** include an offset specifier (``x``/``X``).
 See :ref:`pattern-format` for details.
 
 .. tip::
@@ -1130,13 +1152,11 @@ See :ref:`pattern-format` for details.
 OffsetDateTime(\"2024-03-15 14:30:00+02:00\")
 ";
 pub(crate) const OFFSETDATETIME_PARSE_ISO: &CStr = c"\
-Parse an ISO 8601 string with a UTC offset.
+Parse an ISO 8601 string with an offset, such as
+``2020-08-15T23:12:00+02:00``. A bracketed time zone ID is accepted
+and ignored. See :ref:`iso8601` for the accepted variants.
 
-Supports ``YYYY-MM-DDTHH:MM:SS±HH:MM`` and variants
-(see the `ISO 8601 docs <https://whenever.rtfd.io/en/latest/reference/iso8601.html>`__
-for full details).
-
-The inverse of the ``format_iso()`` method.
+Inverse of :meth:`format_iso`.
 
 >>> OffsetDateTime.parse_iso(\"2020-08-15T23:12:00+02:00\")
 OffsetDateTime(\"2020-08-15 23:12:00+02:00\")
@@ -1411,9 +1431,15 @@ pub(crate) const PLAINDATETIME_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False, sep='T')
 --
 
-Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
+Format as an ISO 8601 string, such as ``2020-08-15T23:12:00``.
 
-The inverse of the ``parse_iso()`` method.
+Inverse of :meth:`parse_iso`.
+
+>>> PlainDateTime(2020, 8, 15, 23, 12).format_iso()
+'2020-08-15T23:12:00'
+
+``unit``, ``basic``, and ``sep`` are as on
+:meth:`ZonedDateTime.format_iso`.
 ";
 pub(crate) const PLAINDATETIME_PARSE: &CStr = c"\
 parse(s, /, *, pattern=...)
@@ -1427,9 +1453,11 @@ See :ref:`pattern-format` for details.
 PlainDateTime(\"2024-03-15 14:30:00\")
 ";
 pub(crate) const PLAINDATETIME_PARSE_ISO: &CStr = c"\
-Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
+Parse an ISO 8601 string without an offset, such as
+``2020-08-15T23:12:00``. An offset or a bracketed time zone ID is
+rejected. See :ref:`iso8601` for the accepted variants.
 
-The inverse of the ``format_iso()`` method.
+Inverse of :meth:`format_iso`.
 
 >>> PlainDateTime.parse_iso(\"2020-08-15T23:12:00\")
 PlainDateTime(\"2020-08-15 23:12:00\")
@@ -1533,7 +1561,7 @@ pub(crate) const TIME_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False)
 --
 
-Format as the ISO 8601 time format.
+Format as an ISO 8601 string, such as ``23:12:00``.
 
 Inverse of :meth:`parse_iso`.
 
@@ -1541,6 +1569,17 @@ Inverse of :meth:`parse_iso`.
 '12:30:00.000'
 >>> Time(4, 0, 59, nanosecond=40_000).format_iso(basic=True)
 '040059.00004'
+
+Parameters
+----------
+unit
+    The smallest unit to include in the output.
+    ``\"auto\"`` is the same as ``\"nanosecond\"``,
+    except that trailing zeroes are omitted from the time part.
+    A unit above ``\"second\"`` drops the smaller fields:
+    ``unit=\"hour\"`` writes ``23``.
+basic
+    Whether to use the basic ISO format (without separators) instead of the extended one.
 ";
 pub(crate) const TIME_HOUR: &CStr = c"\
 The hour component of the time
@@ -1889,9 +1928,10 @@ pub(crate) const ZONEDDATETIME_FORMAT_ISO: &CStr = c"\
 format_iso($self, *, unit='auto', basic=False, sep='T', tz_id_display=...)
 --
 
-Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
+Format as an ISO 8601 string, such as
+``2020-08-15T23:12:00+01:00[Europe/London]``.
 
-The inverse of the ``parse_iso()`` method.
+Inverse of :meth:`parse_iso`.
 
 >>> zdt = ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz=\"Europe/London\")
 >>> zdt.format_iso(unit=\"minute\", basic=True)
@@ -1903,6 +1943,8 @@ unit
     The smallest unit to include in the output.
     ``\"auto\"`` is the same as ``\"nanosecond\"``,
     except that trailing zeroes are omitted from the time part.
+    A unit above ``\"second\"`` drops the smaller fields:
+    ``unit=\"hour\"`` writes ``2020-08-15T23+01:00[Europe/London]``.
 basic
     Whether to use the basic ISO format (without separators) instead of the extended one.
 sep
@@ -2024,10 +2066,10 @@ parse(s, /, *, pattern=..., disambiguation=..., offset_mismatch='raise')
 
 Parse a zoned datetime from a custom pattern string.
 
-The pattern **must** include a time zone ID field (``VV``), which
+The pattern **must** include a time zone ID specifier (``VV``), which
 follows the same rules as ``tz=``: an unknown or malformed ID raises
 :exc:`~whenever.TimeZoneNotFoundError`.
-An offset field (``x``/``X``) is optional but recommended for
+An offset specifier (``x``/``X``) is optional but recommended for
 disambiguation during DST transitions.
 See the :ref:`time zone resolution guide <offset-mismatch>`
 for how ``offset_mismatch`` interacts with ``disambiguation``.
@@ -2059,11 +2101,13 @@ pub(crate) const ZONEDDATETIME_PARSE_ISO: &CStr = c"\
 parse_iso(s, /, *, disambiguation=..., offset_mismatch='raise')
 --
 
-Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
+Parse an ISO 8601 string with a bracketed time zone ID, such as
+``2020-08-15T23:12:00+01:00[Europe/London]``.
 
-The inverse of the ``format_iso()`` method. The bracketed time zone
+Inverse of :meth:`format_iso`. The bracketed time zone
 ID follows the same rules as ``tz=``: an unknown or malformed one
 raises :exc:`~whenever.TimeZoneNotFoundError`.
+See :ref:`iso8601` for the accepted variants.
 
 See the :ref:`time zone resolution guide <offset-mismatch>`
 for how ``offset_mismatch`` interacts with ``disambiguation``.
@@ -2499,7 +2543,7 @@ pub(crate) const LOCALTIME_YEAR: &CStr = c"\
 The year component of the datetime";
 pub(crate) const CANNOT_ROUND_DAY_MSG: &CStr = c"cannot round an Instant to a day: an Instant has no calendar; use 'hour' with increment=24 for exactly 24 hours";
 pub(crate) const DAYS_NOT_ALWAYS_24H_MSG: &CStr = c"You are using days or weeks as exact time, so Whenever will treat each day as exactly 24 hours. A calendar day can be 23 or 25 hours during a DST transition, so this may differ from calendar arithmetic. If you mean calendar days, perform the operation on a ZonedDateTime or pass `relative_to=...` where supported. If fixed 24-hour periods are intentional, pass `days_assumed_24h_ok=True`. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"This ZonedDateTime has no time zone ID and cannot be formatted in the standard ISO format, which requires it. This typically means the ZonedDateTime was created from a system time zone with an unknown ID. To format without the time zone designator, set the `tz_id_display=` argument to 'never' or 'auto'.";
+pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"the time zone has no ID; use tz_id_display='if_available' or 'omit'";
 pub(crate) const IMPLICIT_DISAMBIGUATION_MSG: &CStr = c"resolving a local datetime that is repeated or skipped by a time zone transition without an explicit disambiguation policy can silently select the wrong instant; pass disambiguation='compatible', 'earlier', 'later', or 'raise'. See https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html";
 pub(crate) const INTEGER_OFFSET_DEPRECATION_MSG: &CStr = c"integer offsets are deprecated because their unit is implicit; pass a TimeDelta instead, for example hours(2)";
 pub(crate) const OFFSET_DATETIME_DOCS_MSG: &CStr = c"For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples.";

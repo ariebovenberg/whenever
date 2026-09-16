@@ -77,6 +77,7 @@ from ._format import (
     format_fields,
     parse_fields,
     validate_fields,
+    warn_pattern,
 )
 from ._math import (
     DATE_DELTA_UNITS,
@@ -278,7 +279,9 @@ def _normalize_pattern(
     )
     check_no_kwargs(kwargs, "parse")
     if value is UNSET:
-        raise TypeError("parse() missing required keyword argument 'pattern'")
+        raise TypeError(
+            "parse() missing 1 required keyword-only argument: 'pattern'"
+        )
     return cast(str, value), renamed
 
 
@@ -926,7 +929,7 @@ class Date(_Base):
         )
 
     def format_iso(self, *, basic: bool = False) -> str:
-        """Format as the ISO 8601 date format.
+        """Format as an ISO 8601 string, such as ``2021-01-02``.
 
         Inverse of :meth:`parse_iso`.
 
@@ -934,12 +937,17 @@ class Date(_Base):
         '2021-01-02'
         >>> Date(1992, 9, 4).format_iso(basic=True)
         '19920904'
+
+        Parameters
+        ----------
+        basic
+            Whether to use the basic ISO format (without separators) instead of the extended one.
         """
         return _format_date(self._py_date, basic)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Date:
-        """Parse a date from an ISO8601 string
+        """Parse a date from an ISO 8601 string
 
         The following formats are accepted:
         - ``YYYY-MM-DD`` ("extended" format)
@@ -971,19 +979,19 @@ class Date(_Base):
 
     def _format(self, pattern: str, /) -> str:
         # Shared by format() and __format__(); the stack level counts
-        # from validate_fields() through here to the caller of either.
+        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements, self._PATTERN_CATS, "Date", warning_stacklevel=4
-        )
+        validate_fields(elements, self._PATTERN_CATS, "Date")
         d = self._py_date
-        return format_fields(
+        result = format_fields(
             elements,
             year=d.year,
             month=d.month,
             day=d.day,
             weekday=d.weekday(),
         )
+        warn_pattern(elements, stacklevel=4)
+        return result
 
     def __format__(self, spec: str, /) -> str:
         return str(self) if not spec else self._format(spec)
@@ -1001,21 +1009,17 @@ class Date(_Base):
         """
         pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements, cls._PATTERN_CATS, "Date", warning_stacklevel=3
-        )
+        validate_fields(elements, cls._PATTERN_CATS, "Date")
         state = parse_fields(elements, s)
         if state.year is None or state.month is None or state.day is None:
-            raise ValueError(
-                "Pattern must include year (YYYY/YY), "
-                "month (MM/MMM/MMMM), and day (DD) fields"
-            )
+            raise ValueError("pattern must include a year, a month, and a day")
         result = cls(state.year, state.month, state.day)
         if (
             state.weekday is not None
             and result._py_date.weekday() != state.weekday
         ):
-            raise ValueError("Parsed weekday does not match the date")
+            raise ValueError("weekday does not match the date")
+        warn_pattern(elements, stacklevel=3)
         if renamed:
             _warn_format(stacklevel=2)
         return result
@@ -1527,7 +1531,7 @@ class Time(_Base):
         ] = "auto",
         basic: bool = False,
     ) -> str:
-        """Format as the ISO 8601 time format.
+        """Format as an ISO 8601 string, such as ``23:12:00``.
 
         Inverse of :meth:`parse_iso`.
 
@@ -1535,6 +1539,17 @@ class Time(_Base):
         '12:30:00.000'
         >>> Time(4, 0, 59, nanosecond=40_000).format_iso(basic=True)
         '040059.00004'
+
+        Parameters
+        ----------
+        unit
+            The smallest unit to include in the output.
+            ``"auto"`` is the same as ``"nanosecond"``,
+            except that trailing zeroes are omitted from the time part.
+            A unit above ``"second"`` drops the smaller fields:
+            ``unit="hour"`` writes ``23``.
+        basic
+            Whether to use the basic ISO format (without separators) instead of the extended one.
         """
         return _format_time(self._py, self._nanos, unit, basic)
 
@@ -1565,19 +1580,19 @@ class Time(_Base):
 
     def _format(self, pattern: str, /) -> str:
         # Shared by format() and __format__(); the stack level counts
-        # from validate_fields() through here to the caller of either.
+        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements, self._PATTERN_CATS, "Time", warning_stacklevel=4
-        )
+        validate_fields(elements, self._PATTERN_CATS, "Time")
         t = self._py
-        return format_fields(
+        result = format_fields(
             elements,
             hour=t.hour,
             minute=t.minute,
             second=t.second,
             nanos=self._nanos,
         )
+        warn_pattern(elements, stacklevel=4)
+        return result
 
     def __format__(self, spec: str, /) -> str:
         return str(self) if not spec else self._format(spec)
@@ -1595,9 +1610,7 @@ class Time(_Base):
         """
         pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements, cls._PATTERN_CATS, "Time", warning_stacklevel=3
-        )
+        validate_fields(elements, cls._PATTERN_CATS, "Time")
         state = parse_fields(elements, s)
         result = cls(
             hour=state.hour or 0,
@@ -1605,6 +1618,7 @@ class Time(_Base):
             second=state.second or 0,
             nanosecond=state.nanos,
         )
+        warn_pattern(elements, stacklevel=3)
         if renamed:
             _warn_format(stacklevel=2)
         return result
@@ -2259,7 +2273,7 @@ class TimeDelta(_Base):
         )
 
     def _init_from_iso(self, s: str) -> None:
-        exc = ValueError(f"invalid format: {s!r}")
+        exc = ValueError(f"invalid ISO 8601 string: {s!r}")
         prev_unit = ""
         nanos = 0
 
@@ -2748,7 +2762,7 @@ TimeDelta.MAX = TimeDelta(seconds=9999 * 366 * 24 * 3_600)
 TimeDelta.MIN = TimeDelta(seconds=-9999 * 366 * 24 * 3_600)
 
 
-# Methods for types converting to/from the standard library and ISO8601:
+# Methods for types converting to/from the standard library and ISO 8601:
 #
 # - Instant
 # - PlainDateTime
@@ -3395,12 +3409,17 @@ class Instant(_ExactTime):
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Instant:
-        """Parse an ISO 8601 string. Supports basic and extended formats,
-        but not week dates or ordinal dates.
+        """Parse an ISO 8601 string, such as ``2020-08-15T23:12:00Z``.
 
-        See the `docs on ISO8601 support <https://whenever.rtfd.io/en/latest/reference/iso8601.html>`__ for more information.
+        The basic and extended formats are accepted, but not week dates or
+        ordinal dates. ``Z`` or an offset is required, and a non-zero offset
+        is converted to UTC. A bracketed time zone ID is accepted and
+        ignored. See :ref:`iso8601` for details.
 
-        The inverse of the ``format_iso()`` method.
+        Inverse of :meth:`format_iso`.
+
+        >>> Instant.parse_iso("2020-08-15T23:12:00+02:00")
+        Instant("2020-08-15 21:12:00Z")
         """
         self = _object_new(cls)
         self._init_from_iso(s)
@@ -3426,9 +3445,15 @@ class Instant(_ExactTime):
         basic: bool = False,
         sep: Literal["T", " "] = "T",
     ) -> str:
-        """Convert to the ISO 8601 string representation.
+        """Format as an ISO 8601 string, such as ``2020-08-15T23:12:00Z``.
 
-        The inverse of the ``parse_iso()`` method.
+        Inverse of :meth:`parse_iso`.
+
+        >>> Instant.from_utc(2020, 8, 15, hour=23, minute=12).format_iso()
+        '2020-08-15T23:12:00Z'
+
+        ``unit``, ``basic``, and ``sep`` are as on
+        :meth:`ZonedDateTime.format_iso`.
         """
         return _format_dt(self._py_dt, self._nanos, "Z", unit, sep, basic)
 
@@ -3455,7 +3480,7 @@ class Instant(_ExactTime):
 
     @classmethod
     def parse_rfc2822(cls, s: str, /) -> Instant:
-        """Parse a UTC datetime in RFC 2822 format.
+        """Parse an RFC 2822 string; the offset is applied and the result is UTC.
 
         >>> Instant.parse_rfc2822("Sat, 15 Aug 2020 23:12:00 GMT")
         Instant("2020-08-15 23:12:00Z")
@@ -3488,13 +3513,11 @@ class Instant(_ExactTime):
 
     def _format(self, pattern: str, /) -> str:
         # Shared by format() and __format__(); the stack level counts
-        # from validate_fields() through here to the caller of either.
+        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements, self._PATTERN_CATS, "Instant", warning_stacklevel=4
-        )
+        validate_fields(elements, self._PATTERN_CATS, "Instant")
         d = self._py_dt
-        return format_fields(
+        result = format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -3506,6 +3529,8 @@ class Instant(_ExactTime):
             nanos=self._nanos,
             offset_secs=0,
         )
+        warn_pattern(elements, stacklevel=4)
+        return result
 
     def __format__(self, spec: str, /) -> str:
         return str(self) if not spec else self._format(spec)
@@ -3516,7 +3541,7 @@ class Instant(_ExactTime):
     ) -> Instant:
         """Parse an instant from a custom pattern string.
 
-        The pattern **must** include an offset field (``x``/``X``)
+        The pattern **must** include an offset specifier (``x``/``X``)
         to unambiguously identify the instant.
         See :ref:`pattern-format` for details.
 
@@ -3534,18 +3559,12 @@ class Instant(_ExactTime):
         """
         pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements, cls._PATTERN_CATS, "Instant", warning_stacklevel=3
-        )
+        validate_fields(elements, cls._PATTERN_CATS, "Instant")
         state = parse_fields(elements, s)
         if state.offset_secs is None:
-            raise ValueError(
-                "Instant.parse() pattern must include an offset field (x/X)"
-            )
+            raise ValueError("pattern must include an offset specifier (x/X)")
         if state.year is None or state.month is None or state.day is None:
-            raise ValueError(
-                "Pattern must include year, month, and day fields"
-            )
+            raise ValueError("pattern must include a year, a month, and a day")
         dt = check_utc_bounds(
             _datetime(
                 state.year,
@@ -3557,6 +3576,7 @@ class Instant(_ExactTime):
                 tzinfo=_timezone(_timedelta(seconds=state.offset_secs)),
             )
         ).astimezone(_UTC)
+        warn_pattern(elements, stacklevel=3)
         if renamed:
             _warn_format(stacklevel=2)
         return cls._from_py_unchecked(dt, state.nanos)
@@ -3943,9 +3963,15 @@ class OffsetDateTime(_ExactAndLocalTime):
         basic: bool = False,
         sep: Literal["T", " "] = "T",
     ) -> str:
-        """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM``
+        """Format as an ISO 8601 string, such as ``2020-08-15T23:12:00+02:00``.
 
-        The inverse of the ``parse_iso()`` method.
+        Inverse of :meth:`parse_iso`.
+
+        >>> OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2)).format_iso()
+        '2020-08-15T23:12:00+02:00'
+
+        ``unit``, ``basic``, and ``sep`` are as on
+        :meth:`ZonedDateTime.format_iso`.
         """
         return _format_dt(
             self._py_dt,
@@ -3958,13 +3984,11 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     @classmethod
     def parse_iso(cls, s: str, /) -> OffsetDateTime:
-        """Parse an ISO 8601 string with a UTC offset.
+        """Parse an ISO 8601 string with an offset, such as
+        ``2020-08-15T23:12:00+02:00``. A bracketed time zone ID is accepted
+        and ignored. See :ref:`iso8601` for the accepted variants.
 
-        Supports ``YYYY-MM-DDTHH:MM:SS±HH:MM`` and variants
-        (see the `ISO 8601 docs <https://whenever.rtfd.io/en/latest/reference/iso8601.html>`__
-        for full details).
-
-        The inverse of the ``format_iso()`` method.
+        Inverse of :meth:`format_iso`.
 
         >>> OffsetDateTime.parse_iso("2020-08-15T23:12:00+02:00")
         OffsetDateTime("2020-08-15 23:12:00+02:00")
@@ -4427,16 +4451,11 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     def _format(self, pattern: str, /) -> str:
         # Shared by format() and __format__(); the stack level counts
-        # from validate_fields() through here to the caller of either.
+        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements,
-            self._PATTERN_CATS,
-            "OffsetDateTime",
-            warning_stacklevel=4,
-        )
+        validate_fields(elements, self._PATTERN_CATS, "OffsetDateTime")
         d = self._py_dt
-        return format_fields(
+        result = format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -4450,6 +4469,8 @@ class OffsetDateTime(_ExactAndLocalTime):
                 d.utcoffset().total_seconds()  # type: ignore[union-attr]
             ),
         )
+        warn_pattern(elements, stacklevel=4)
+        return result
 
     def __format__(self, spec: str, /) -> str:
         return str(self) if not spec else self._format(spec)
@@ -4460,7 +4481,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     ) -> OffsetDateTime:
         """Parse an offset datetime from a custom pattern string.
 
-        The pattern **must** include an offset field (``x``/``X``).
+        The pattern **must** include an offset specifier (``x``/``X``).
         See :ref:`pattern-format` for details.
 
         .. tip::
@@ -4475,22 +4496,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         """
         pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements,
-            cls._PATTERN_CATS,
-            "OffsetDateTime",
-            warning_stacklevel=3,
-        )
+        validate_fields(elements, cls._PATTERN_CATS, "OffsetDateTime")
         state = parse_fields(elements, s)
         if state.offset_secs is None:
-            raise ValueError(
-                "OffsetDateTime.parse() pattern must include an offset "
-                "field (x/X)"
-            )
+            raise ValueError("pattern must include an offset specifier (x/X)")
         if state.year is None or state.month is None or state.day is None:
-            raise ValueError(
-                "Pattern must include year, month, and day fields"
-            )
+            raise ValueError("pattern must include a year, a month, and a day")
         result = cls(
             state.year,
             state.month,
@@ -4505,7 +4516,8 @@ class OffsetDateTime(_ExactAndLocalTime):
             state.weekday is not None
             and result._py_dt.weekday() != state.weekday
         ):
-            raise ValueError("Parsed weekday does not match the date")
+            raise ValueError("weekday does not match the date")
+        warn_pattern(elements, stacklevel=3)
         if renamed:
             _warn_format(stacklevel=2)
         return result
@@ -5105,9 +5117,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         ] = UNSET,
         **kwargs: Any,
     ) -> str:
-        """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``.
+        """Format as an ISO 8601 string, such as
+        ``2020-08-15T23:12:00+01:00[Europe/London]``.
 
-        The inverse of the ``parse_iso()`` method.
+        Inverse of :meth:`parse_iso`.
 
         >>> zdt = ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
         >>> zdt.format_iso(unit="minute", basic=True)
@@ -5119,6 +5132,8 @@ class ZonedDateTime(_ExactAndLocalTime):
             The smallest unit to include in the output.
             ``"auto"`` is the same as ``"nanosecond"``,
             except that trailing zeroes are omitted from the time part.
+            A unit above ``"second"`` drops the smaller fields:
+            ``unit="hour"`` writes ``2020-08-15T23+01:00[Europe/London]``.
         basic
             Whether to use the basic ISO format (without separators) instead of the extended one.
         sep
@@ -5194,11 +5209,13 @@ class ZonedDateTime(_ExactAndLocalTime):
         offset_mismatch: OffsetMismatchStr = "raise",
         **kwargs: Any,
     ) -> ZonedDateTime:
-        """Parse from the popular ISO format ``YYYY-MM-DDTHH:MM:SS±HH:MM[TZ_ID]``
+        """Parse an ISO 8601 string with a bracketed time zone ID, such as
+        ``2020-08-15T23:12:00+01:00[Europe/London]``.
 
-        The inverse of the ``format_iso()`` method. The bracketed time zone
+        Inverse of :meth:`format_iso`. The bracketed time zone
         ID follows the same rules as ``tz=``: an unknown or malformed one
         raises :exc:`~whenever.TimeZoneNotFoundError`.
+        See :ref:`iso8601` for the accepted variants.
 
         See the :ref:`time zone resolution guide <offset-mismatch>`
         for how ``offset_mismatch`` interacts with ``disambiguation``.
@@ -5275,16 +5292,11 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     def _format(self, pattern: str, /) -> str:
         # Shared by format() and __format__(); the stack level counts
-        # from validate_fields() through here to the caller of either.
+        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements,
-            self._PATTERN_CATS,
-            "ZonedDateTime",
-            warning_stacklevel=4,
-        )
+        validate_fields(elements, self._PATTERN_CATS, "ZonedDateTime")
         d = self._py_dt
-        return format_fields(
+        result = format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -5300,6 +5312,8 @@ class ZonedDateTime(_ExactAndLocalTime):
             tz_id=self._tz.key,
             tz_abbrev=self.tz_abbrev(),
         )
+        warn_pattern(elements, stacklevel=4)
+        return result
 
     def __format__(self, spec: str, /) -> str:
         return str(self) if not spec else self._format(spec)
@@ -5317,10 +5331,10 @@ class ZonedDateTime(_ExactAndLocalTime):
     ) -> ZonedDateTime:
         """Parse a zoned datetime from a custom pattern string.
 
-        The pattern **must** include a time zone ID field (``VV``), which
+        The pattern **must** include a time zone ID specifier (``VV``), which
         follows the same rules as ``tz=``: an unknown or malformed ID raises
         :exc:`~whenever.TimeZoneNotFoundError`.
-        An offset field (``x``/``X``) is optional but recommended for
+        An offset specifier (``x``/``X``) is optional but recommended for
         disambiguation during DST transitions.
         See the :ref:`time zone resolution guide <offset-mismatch>`
         for how ``offset_mismatch`` interacts with ``disambiguation``.
@@ -5354,22 +5368,14 @@ class ZonedDateTime(_ExactAndLocalTime):
         if offset_mismatch not in ("raise", "keep_instant", "keep_local"):
             raise invalid("offset_mismatch", offset_mismatch)
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements,
-            cls._PATTERN_CATS,
-            "ZonedDateTime",
-            warning_stacklevel=3,
-        )
+        validate_fields(elements, cls._PATTERN_CATS, "ZonedDateTime")
         state = parse_fields(elements, s)
         if state.tz_id is None:
             raise ValueError(
-                "ZonedDateTime.parse() pattern must include a "
-                "time zone ID field (VV)"
+                "pattern must include a time zone ID specifier (VV)"
             )
         if state.year is None or state.month is None or state.day is None:
-            raise ValueError(
-                "Pattern must include year, month, and day fields"
-            )
+            raise ValueError("pattern must include a year, a month, and a day")
         tz = get_tz(state.tz_id)
         dt = _datetime(
             state.year,
@@ -5430,7 +5436,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._nanos = state.nanos
         self._tz = tz
         if state.weekday is not None and resolved.weekday() != state.weekday:
-            raise ValueError("Parsed weekday does not match the date")
+            raise ValueError("weekday does not match the date")
+        warn_pattern(elements, stacklevel=3)
         if renamed:
             _warn_format(stacklevel=2)
         return self
@@ -6704,17 +6711,25 @@ class PlainDateTime(_LocalTime):
         basic: bool = False,
         sep: Literal["T", " "] = "T",
     ) -> str:
-        """Convert to the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
+        """Format as an ISO 8601 string, such as ``2020-08-15T23:12:00``.
 
-        The inverse of the ``parse_iso()`` method.
+        Inverse of :meth:`parse_iso`.
+
+        >>> PlainDateTime(2020, 8, 15, 23, 12).format_iso()
+        '2020-08-15T23:12:00'
+
+        ``unit``, ``basic``, and ``sep`` are as on
+        :meth:`ZonedDateTime.format_iso`.
         """
         return _format_dt(self._py_dt, self._nanos, "", unit, sep, basic)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> PlainDateTime:
-        """Parse the popular ISO format ``YYYY-MM-DDTHH:MM:SS``
+        """Parse an ISO 8601 string without an offset, such as
+        ``2020-08-15T23:12:00``. An offset or a bracketed time zone ID is
+        rejected. See :ref:`iso8601` for the accepted variants.
 
-        The inverse of the ``format_iso()`` method.
+        Inverse of :meth:`format_iso`.
 
         >>> PlainDateTime.parse_iso("2020-08-15T23:12:00")
         PlainDateTime("2020-08-15 23:12:00")
@@ -6743,16 +6758,11 @@ class PlainDateTime(_LocalTime):
 
     def _format(self, pattern: str, /) -> str:
         # Shared by format() and __format__(); the stack level counts
-        # from validate_fields() through here to the caller of either.
+        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements,
-            self._PATTERN_CATS,
-            "PlainDateTime",
-            warning_stacklevel=4,
-        )
+        validate_fields(elements, self._PATTERN_CATS, "PlainDateTime")
         d = self._py_dt
-        return format_fields(
+        result = format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -6763,6 +6773,8 @@ class PlainDateTime(_LocalTime):
             second=d.second,
             nanos=self._nanos,
         )
+        warn_pattern(elements, stacklevel=4)
+        return result
 
     def __format__(self, spec: str, /) -> str:
         return str(self) if not spec else self._format(spec)
@@ -6780,17 +6792,10 @@ class PlainDateTime(_LocalTime):
         """
         pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
-        validate_fields(
-            elements,
-            cls._PATTERN_CATS,
-            "PlainDateTime",
-            warning_stacklevel=3,
-        )
+        validate_fields(elements, cls._PATTERN_CATS, "PlainDateTime")
         state = parse_fields(elements, s)
         if state.year is None or state.month is None or state.day is None:
-            raise ValueError(
-                "Pattern must include year, month, and day fields"
-            )
+            raise ValueError("pattern must include a year, a month, and a day")
         result = cls(
             state.year,
             state.month,
@@ -6804,7 +6809,8 @@ class PlainDateTime(_LocalTime):
             state.weekday is not None
             and result._py_dt.weekday() != state.weekday
         ):
-            raise ValueError("Parsed weekday does not match the date")
+            raise ValueError("weekday does not match the date")
+        warn_pattern(elements, stacklevel=3)
         if renamed:
             _warn_format(stacklevel=2)
         return result
@@ -7777,11 +7783,7 @@ _TZ_ID_DISPLAY_DEPRECATED: dict[
     "never": "omit",
 }
 FORMAT_ISO_NO_TZ_MSG = (
-    "This ZonedDateTime has no time zone ID and cannot be formatted in the "
-    "standard ISO format, which requires it. "
-    "This typically means the ZonedDateTime was created from a system time zone "
-    "with an unknown ID. To format without the time zone designator, set the "
-    "`tz_id_display=` argument to 'never' or 'auto'."
+    "the time zone has no ID; use tz_id_display='if_available' or 'omit'"
 )
 
 
