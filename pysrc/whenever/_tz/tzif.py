@@ -12,6 +12,7 @@ from datetime import datetime as _datetime, timezone as _timezone
 from io import BytesIO
 from typing import IO, MutableSequence, Sequence, final
 
+from .._common import EPOCH_SECS_MAX, EPOCH_SECS_MIN
 from .common import Fold, Gap, LocalMapping, Unique
 from .posix import TzStr, epoch_for_date, year_for_epoch
 
@@ -20,9 +21,6 @@ Offset = int
 OffsetDelta = int
 TransitionMeta = tuple[int, int | None, str]
 Year = int
-
-EPOCH_SECS_MIN = -62135596800
-EPOCH_SECS_MAX = 253402300799
 
 
 @final

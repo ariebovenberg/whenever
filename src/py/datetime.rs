@@ -2,8 +2,9 @@
 use super::{base::*, exc::*, refs::*, typed::*};
 use crate::domain::{
     plain_datetime::PlainDateTime,
-    scalar::{DeltaSeconds, NS_PER_MICROSEC, Offset, S_PER_DAY, SubSecNanos},
+    scalar::{DeltaSeconds, Offset, SubSecNanos},
     time_delta::TimeDelta,
+    units::{NS_PER_DAY, NS_PER_MICROSECOND, NS_PER_SECOND, S_PER_DAY},
 };
 use pyo3_ffi::*;
 
@@ -54,7 +55,7 @@ impl PyDateTimeApiExt for PyDateTime_CAPI {
             (self.Delta_FromDelta)(
                 delta.secs.get().div_euclid(S_PER_DAY.into()) as _,
                 delta.secs.get().rem_euclid(S_PER_DAY.into()) as _,
-                (delta.subsec.get() / NS_PER_MICROSEC as i32) as _,
+                (delta.subsec.get() / NS_PER_MICROSECOND as i32) as _,
                 0,
                 self.DeltaType,
             )
@@ -229,19 +230,20 @@ impl Typed<TimeDeltaTag> {
     pub(crate) fn whole_seconds(self) -> Option<DeltaSeconds> {
         DeltaSeconds::new(
             // SAFETY: timedelta.max days (in seconds) are safely within i64
-            i64::from(self.days_component()) * 86400 + i64::from(self.seconds_component()),
+            i64::from(self.days_component()) * i64::from(S_PER_DAY)
+                + i64::from(self.seconds_component()),
         )
     }
 
     pub(crate) fn subsec(self) -> SubSecNanos {
-        // SAFETY: microseconds are always less than 1_000_000
-        SubSecNanos::new_unchecked(self.microseconds_component() * 1_000)
+        // SAFETY: microseconds are always less than a second
+        SubSecNanos::new_unchecked(self.microseconds_component() * NS_PER_MICROSECOND as i32)
     }
 
     pub(crate) fn total_nanos(self) -> i128 {
-        i128::from(self.days_component()) * 86_400_000_000_000
-            + i128::from(self.seconds_component()) * 1_000_000_000
-            + i128::from(self.microseconds_component()) * 1_000
+        i128::from(self.days_component()) * i128::from(NS_PER_DAY)
+            + i128::from(self.seconds_component()) * i128::from(NS_PER_SECOND)
+            + i128::from(self.microseconds_component()) * i128::from(NS_PER_MICROSECOND)
     }
 }
 

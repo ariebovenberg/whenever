@@ -10,6 +10,7 @@ use super::{
     round,
     scalar::Offset,
     time::Time,
+    units::NS_PER_SECOND,
 };
 use crate::common::{
     fmt::{self, Sink},
@@ -143,7 +144,8 @@ impl PlainDateTime {
             LocalMapping::Fold { before, after, .. } => {
                 let keep_current = match current {
                     Some((offset, unit_ns)) => {
-                        offset == after && before.sub(after).get() as u64 * 1_000_000_000 >= unit_ns
+                        offset == after
+                            && before.sub(after).get() as u64 * NS_PER_SECOND as u64 >= unit_ns
                     }
                     None => false,
                 };

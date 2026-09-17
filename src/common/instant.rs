@@ -1,4 +1,9 @@
-use crate::{domain::instant::Instant, py::*, pymodule::State};
+use crate::{
+    domain::instant::Instant,
+    domain::units::{NS_PER_MICROSECOND, NS_PER_MILLISECOND, NS_PER_SECOND},
+    py::*,
+    pymodule::State,
+};
 
 #[derive(Clone, Copy)]
 pub(crate) enum TimestampUnit {
@@ -7,11 +12,6 @@ pub(crate) enum TimestampUnit {
     Microsecond,
     Nanosecond,
 }
-
-/// The message for a timestamp that falls outside `Instant.MIN..MAX`.
-/// Deliberately distinct from the generic range error: both backends raise a
-/// `ValueError` with exactly this text, on every platform.
-const TIMESTAMP_RANGE_MSG: &str = "value or calculation out of range";
 
 impl TimestampUnit {
     pub(crate) fn name(self) -> &'static str {
@@ -39,12 +39,12 @@ impl TimestampUnit {
     pub(crate) fn timestamp(self, instant: Instant) -> i128 {
         let units_per_second = match self {
             Self::Second => 1,
-            Self::Millisecond => 1_000,
-            Self::Microsecond => 1_000_000,
-            Self::Nanosecond => 1_000_000_000,
+            Self::Millisecond => (NS_PER_SECOND / NS_PER_MILLISECOND) as i128,
+            Self::Microsecond => (NS_PER_SECOND / NS_PER_MICROSECOND) as i128,
+            Self::Nanosecond => NS_PER_SECOND as i128,
         };
         instant.epoch.get() as i128 * units_per_second
-            + instant.subsec.get() as i128 / (1_000_000_000 / units_per_second)
+            + instant.subsec.get() as i128 / (NS_PER_SECOND as i128 / units_per_second)
     }
 
     pub(crate) fn parse(self, obj: PyObj) -> PyResult<Instant> {
@@ -58,15 +58,15 @@ impl TimestampUnit {
                     })?
                     .to_i128()?;
                 let nanos_per_unit = match self {
-                    Self::Millisecond => 1_000_000,
-                    Self::Microsecond => 1_000,
+                    Self::Millisecond => NS_PER_MILLISECOND as i128,
+                    Self::Microsecond => NS_PER_MICROSECOND as i128,
                     Self::Nanosecond => 1,
                     Self::Second => unreachable!(),
                 };
                 value
                     .checked_mul(nanos_per_unit)
                     .and_then(Instant::from_timestamp_nanos)
-                    .ok_or_value_err(TIMESTAMP_RANGE_MSG)
+                    .ok_or_range_err()
             }
         }
     }
@@ -97,5 +97,5 @@ pub(crate) fn parse_timestamp(obj: PyObj) -> PyResult<Instant> {
     } else {
         raise_type_err("timestamp must be an integer or float")?
     }
-    .ok_or_value_err(TIMESTAMP_RANGE_MSG)
+    .ok_or_range_err()
 }

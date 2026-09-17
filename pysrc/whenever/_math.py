@@ -6,7 +6,19 @@ from collections.abc import Mapping, Sequence
 from datetime import date as _date, timedelta as _timedelta
 from typing import Literal, TypeVar, cast
 
-from ._common import RANGE_MSG, UNSET, expect_int, invalid
+from ._common import (
+    NS_PER_DAY,
+    NS_PER_HOUR,
+    NS_PER_MICROSECOND,
+    NS_PER_MILLISECOND,
+    NS_PER_MINUTE,
+    NS_PER_SECOND,
+    NS_PER_WEEK,
+    RANGE_MSG,
+    UNSET,
+    expect_int,
+    invalid,
+)
 from ._typing import (
     DateDeltaUnitStr,
     DeltaUnitStr,
@@ -229,23 +241,23 @@ def days_in_month(year: int, month: int) -> int:
 
 
 NS_PER_UNIT_SINGULAR = {
-    "week": 604_800_000_000_000,
-    "day": 86_400_000_000_000,
-    "hour": 3_600_000_000_000,
-    "minute": 60_000_000_000,
-    "second": 1_000_000_000,
-    "millisecond": 1_000_000,
-    "microsecond": 1_000,
+    "week": NS_PER_WEEK,
+    "day": NS_PER_DAY,
+    "hour": NS_PER_HOUR,
+    "minute": NS_PER_MINUTE,
+    "second": NS_PER_SECOND,
+    "millisecond": NS_PER_MILLISECOND,
+    "microsecond": NS_PER_MICROSECOND,
     "nanosecond": 1,
 }
 NS_PER_UNIT_PLURAL = {
-    "weeks": 604_800_000_000_000,
-    "days": 86_400_000_000_000,
-    "hours": 3_600_000_000_000,
-    "minutes": 60_000_000_000,
-    "seconds": 1_000_000_000,
-    "milliseconds": 1_000_000,
-    "microseconds": 1_000,
+    "weeks": NS_PER_WEEK,
+    "days": NS_PER_DAY,
+    "hours": NS_PER_HOUR,
+    "minutes": NS_PER_MINUTE,
+    "seconds": NS_PER_SECOND,
+    "milliseconds": NS_PER_MILLISECOND,
+    "microseconds": NS_PER_MICROSECOND,
     "nanoseconds": 1,
 }
 
@@ -382,13 +394,13 @@ def exact_units_to_nanos(
     nanoseconds = expect_int("nanoseconds", nanoseconds)
     try:
         return (
-            int(weeks * 604_800_000_000_000)
-            + int(days * 86_400_000_000_000)
-            + int(hours * 3_600_000_000_000)
-            + int(minutes * 60_000_000_000)
-            + int(seconds * 1_000_000_000)
-            + int(milliseconds * 1_000_000)
-            + int(microseconds * 1_000)
+            int(weeks * NS_PER_WEEK)
+            + int(days * NS_PER_DAY)
+            + int(hours * NS_PER_HOUR)
+            + int(minutes * NS_PER_MINUTE)
+            + int(seconds * NS_PER_SECOND)
+            + int(milliseconds * NS_PER_MILLISECOND)
+            + int(microseconds * NS_PER_MICROSECOND)
             + nanoseconds
         )
     except (OverflowError, ValueError):  # infinity or NaN

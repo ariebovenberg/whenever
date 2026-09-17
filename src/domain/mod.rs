@@ -13,4 +13,5 @@ pub mod scalar;
 pub mod shift;
 pub mod time;
 pub mod time_delta;
+pub mod units;
 pub mod zoned_datetime;

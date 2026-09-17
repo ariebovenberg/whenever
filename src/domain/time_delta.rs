@@ -2,10 +2,8 @@ use super::{
     difference::{self, ExactUnit, ExactUnitSet},
     itemized_delta::ItemizedDelta,
     round,
-    scalar::{
-        DeltaField, DeltaNanos, DeltaSeconds, NS_PER_HOUR, NS_PER_MINUTE, NS_PER_SEC, Offset,
-        SubSecNanos,
-    },
+    scalar::{DeltaField, DeltaNanos, DeltaSeconds, Offset, SubSecNanos},
+    units::{NS_PER_HOUR, NS_PER_MINUTE, NS_PER_SECOND},
 };
 use crate::common::parse::extract_digit;
 use std::{fmt, ops::Neg};
@@ -50,8 +48,8 @@ impl TimeDelta {
         }
         let nanos = nanos as i128;
         Some(TimeDelta {
-            secs: DeltaSeconds::new_unchecked(nanos.div_euclid(NS_PER_SEC as i128) as _),
-            subsec: SubSecNanos::new_unchecked(nanos.rem_euclid(NS_PER_SEC as i128) as _),
+            secs: DeltaSeconds::new_unchecked(nanos.div_euclid(NS_PER_SECOND as i128) as _),
+            subsec: SubSecNanos::new_unchecked(nanos.rem_euclid(NS_PER_SECOND as i128) as _),
         })
     }
 
@@ -93,8 +91,8 @@ impl TimeDelta {
 
     pub(crate) const fn from_nanos_unchecked(nanos: i128) -> Self {
         TimeDelta {
-            secs: DeltaSeconds::new_unchecked(nanos.div_euclid(NS_PER_SEC as i128) as _),
-            subsec: SubSecNanos::new_unchecked(nanos.rem_euclid(NS_PER_SEC as i128) as _),
+            secs: DeltaSeconds::new_unchecked(nanos.div_euclid(NS_PER_SECOND as i128) as _),
+            subsec: SubSecNanos::new_unchecked(nanos.rem_euclid(NS_PER_SECOND as i128) as _),
         }
     }
 
@@ -104,7 +102,7 @@ impl TimeDelta {
     }
 
     pub(crate) const fn total_nanos(self) -> i128 {
-        self.secs.get() as i128 * NS_PER_SEC as i128 + self.subsec.get() as i128
+        self.secs.get() as i128 * NS_PER_SECOND as i128 + self.subsec.get() as i128
     }
 
     pub(crate) const fn is_zero(self) -> bool {
@@ -135,7 +133,7 @@ impl TimeDelta {
 
     pub(crate) fn round(self, increment: DeltaIncrement, abs_mode: round::AbsMode) -> Option<Self> {
         debug_assert!(increment.secs > 0 || increment.subsec.get() > 0);
-        if increment.secs == 0 && NS_PER_SEC.is_multiple_of(increment.subsec.as_u32()) {
+        if increment.secs == 0 && NS_PER_SECOND.is_multiple_of(increment.subsec.as_u32()) {
             let (extra_secs, subsec) = self.subsec.round(increment.subsec.as_u32(), abs_mode);
             Some(Self {
                 secs: self.secs.add(extra_secs).unwrap(),
@@ -167,8 +165,8 @@ impl TimeDelta {
         };
         let result_ns = (quotient + i128::from(round_up)) * increment;
         Some(Self {
-            secs: DeltaSeconds::new(result_ns.div_euclid(NS_PER_SEC as i128) as i64)?,
-            subsec: SubSecNanos::new_unchecked(result_ns.rem_euclid(NS_PER_SEC as i128) as i32),
+            secs: DeltaSeconds::new(result_ns.div_euclid(NS_PER_SECOND as i128) as i64)?,
+            subsec: SubSecNanos::new_unchecked(result_ns.rem_euclid(NS_PER_SECOND as i128) as i32),
         })
     }
 
@@ -343,7 +341,7 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(u128, TimeUnit)> {
             b'S' | b's' if i > 0 => {
                 *s = &s[i + 1..];
                 return Some((
-                    tally.checked_mul(NS_PER_SEC as u128)?,
+                    tally.checked_mul(NS_PER_SECOND as u128)?,
                     TimeUnit::Nanos {
                         has_fraction: false,
                     },
@@ -353,7 +351,7 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(u128, TimeUnit)> {
                 let result = parse_nano_fractions(&s[i + 1..]).and_then(|nanos| {
                     Some((
                         tally
-                            .checked_mul(NS_PER_SEC as u128)?
+                            .checked_mul(NS_PER_SECOND as u128)?
                             .checked_add(nanos as u128)?,
                         TimeUnit::Nanos { has_fraction: true },
                     ))
@@ -410,12 +408,12 @@ pub(crate) struct DeltaIncrement {
 impl DeltaIncrement {
     pub(crate) fn from_nanos(nanos: u128) -> Option<Self> {
         (nanos != 0).then_some(Self {
-            secs: u64::try_from(nanos / NS_PER_SEC as u128).ok()?,
+            secs: u64::try_from(nanos / NS_PER_SECOND as u128).ok()?,
             subsec: SubSecNanos::from_remainder(nanos),
         })
     }
 
     pub(crate) fn total_nanos(self) -> u128 {
-        self.secs as u128 * NS_PER_SEC as u128 + self.subsec.as_u32() as u128
+        self.secs as u128 * NS_PER_SECOND as u128 + self.subsec.as_u32() as u128
     }
 }

@@ -11,6 +11,7 @@ use crate::{
         plain_datetime::PlainDateTime,
         scalar::*,
         time::Time,
+        units::*,
     },
 };
 
@@ -42,8 +43,10 @@ pub(crate) fn format(odt: OffsetDateTime) -> [u8; 31] {
     buf[23..25].copy_from_slice(format_2_digits(second).as_ref());
     buf[26] = if offset.get() >= 0 { b'+' } else { b'-' };
     let offset_abs = offset.get().abs();
-    buf[27..29].copy_from_slice(format_2_digits((offset_abs / 3600) as u8).as_ref());
-    buf[29..31].copy_from_slice(format_2_digits(((offset_abs % 3600) / 60) as u8).as_ref());
+    buf[27..29].copy_from_slice(format_2_digits((offset_abs / S_PER_HOUR) as u8).as_ref());
+    buf[29..31].copy_from_slice(
+        format_2_digits(((offset_abs % S_PER_HOUR) / S_PER_MINUTE) as u8).as_ref(),
+    );
     buf
 }
 
@@ -184,20 +187,24 @@ fn parse_time(s: &mut Scan) -> Option<Time> {
 const TIMEZONES: [(&[u8], i32); 10] = [
     (b"GMT", 0),
     (b"UT", 0),
-    (b"EST", -5 * 3600),
-    (b"EDT", -4 * 3600),
-    (b"CST", -6 * 3600),
-    (b"CDT", -5 * 3600),
-    (b"MST", -7 * 3600),
-    (b"MDT", -6 * 3600),
-    (b"PST", -8 * 3600),
-    (b"PDT", -7 * 3600),
+    (b"EST", -5 * S_PER_HOUR),
+    (b"EDT", -4 * S_PER_HOUR),
+    (b"CST", -6 * S_PER_HOUR),
+    (b"CDT", -5 * S_PER_HOUR),
+    (b"MST", -7 * S_PER_HOUR),
+    (b"MDT", -6 * S_PER_HOUR),
+    (b"PST", -8 * S_PER_HOUR),
+    (b"PDT", -7 * S_PER_HOUR),
 ];
 
 fn parse_offset(s: &mut Scan) -> Option<Offset> {
     Some(Offset::new_unchecked(match s.peek()? {
-        b'+' => s.skip(1).digits00_23()? as i32 * 3600 + s.digits00_59()? as i32 * 60,
-        b'-' => -(s.skip(1).digits00_23()? as i32 * 3600 + s.digits00_59()? as i32 * 60),
+        b'+' => {
+            s.skip(1).digits00_23()? as i32 * S_PER_HOUR + s.digits00_59()? as i32 * S_PER_MINUTE
+        }
+        b'-' => {
+            -(s.skip(1).digits00_23()? as i32 * S_PER_HOUR + s.digits00_59()? as i32 * S_PER_MINUTE)
+        }
         _ => {
             let tz = match s.take_until(|b| !b.is_ascii_alphabetic()) {
                 Some(tz) => tz,

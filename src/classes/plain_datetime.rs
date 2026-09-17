@@ -22,6 +22,7 @@ use crate::{
         difference::{self, CalendarIncrement, DifferenceSpec, DifferenceUnitSet},
         local::ResolvePolicy,
         scalar::*,
+        units::*,
     },
     py::*,
     pymodule::State,

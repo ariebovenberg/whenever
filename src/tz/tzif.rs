@@ -3,6 +3,7 @@ use crate::{
     common::parse::Scan,
     domain::local::{LocalMapping, LocalSeconds},
     domain::scalar::*,
+    domain::units::*,
     tz::posix::{TzAbbrev, TzMetaResult, TzStr},
 };
 use std::{cmp::Ordering, fmt};
@@ -408,7 +409,7 @@ fn load_transitions(
         } else if typ.offset == last_std_offset {
             // Standard time moved and DST began at the same moment, so the
             // saving cannot be read off the previous standard offset.
-            3600
+            S_PER_HOUR
         } else {
             typ.offset.get() - last_std_offset.get()
         };

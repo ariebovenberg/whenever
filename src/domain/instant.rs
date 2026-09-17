@@ -2,6 +2,7 @@ use super::{
     plain_datetime::PlainDateTime,
     scalar::{EpochSecs, Offset, SubSecNanos},
     time_delta::TimeDelta,
+    units::{NS_PER_MILLISECOND, NS_PER_SECOND},
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -20,11 +21,12 @@ impl Instant {
     }
 
     pub(crate) fn timestamp_millis(self) -> i64 {
-        self.epoch.get() * 1_000 + self.subsec.get() as i64 / 1_000_000
+        self.epoch.get() * i64::from(NS_PER_SECOND / NS_PER_MILLISECOND)
+            + self.subsec.get() as i64 / i64::from(NS_PER_MILLISECOND)
     }
 
     pub(crate) fn timestamp_nanos(self) -> i128 {
-        self.epoch.get() as i128 * 1_000_000_000 + self.subsec.get() as i128
+        self.epoch.get() as i128 * NS_PER_SECOND as i128 + self.subsec.get() as i128
     }
 
     pub(crate) fn from_timestamp(timestamp: i64) -> Option<Self> {
@@ -44,7 +46,7 @@ impl Instant {
     }
 
     pub(crate) fn from_timestamp_nanos(timestamp: i128) -> Option<Self> {
-        i64::try_from(timestamp.div_euclid(1_000_000_000))
+        i64::try_from(timestamp.div_euclid(NS_PER_SECOND as i128))
             .ok()
             .and_then(EpochSecs::new)
             .map(|epoch| Self {

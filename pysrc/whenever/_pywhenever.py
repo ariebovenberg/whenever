@@ -38,7 +38,12 @@ from warnings import warn
 
 from . import _ideltas
 from ._common import (
+    _MAX_DELTA_NANOS,
+    _MAX_DELTA_SECONDS,
+    _MAX_SUBSEC_NANOS,
     DAYS_NOT_ALWAYS_24H_MSG,
+    DUMMY_LEAP_YEAR,
+    EPOCH_ORDINAL,
     OFFSET_DATETIME_DOCS_MSG,
     OFFSET_SHIFT_STALE_MSG,
     # The Rust extension takes its copy of the two reference messages from
@@ -46,6 +51,9 @@ from ._common import (
     PLAIN_RELATIVE_TO_UNAWARE_MSG,  # noqa: F401
     PLAIN_SHIFT_UNAWARE_MSG,
     RANGE_MSG,
+    S_PER_DAY,
+    S_PER_HOUR,
+    S_PER_MINUTE,
     SPHINX_RUNNING,
     STALE_OFFSET_CALENDAR_MSG,  # noqa: F401
     SYSTEM_TZ,
@@ -211,12 +219,7 @@ __all__ = (
 # Helpers that pre-compute/lookup as much as possible
 _UTC = _timezone.utc
 _object_new = object.__new__
-_MAX_DELTA_HOURS = 9999 * 366 * 24
-_MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
-_MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
-_MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
-_MAX_SUBSEC_NANOS = 999_999_999
-_TIME_UNIT_SECS = {"hour": 3_600, "minute": 60, "second": 1}
+_TIME_UNIT_SECS = {"hour": S_PER_HOUR, "minute": S_PER_MINUTE, "second": 1}
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
 time_ns = _physical_time_ns
@@ -711,7 +714,7 @@ class Date(_Base):
         MonthDay("--01-02")
         """
         return MonthDay._from_py_unchecked(
-            self._py_date.replace(year=_DUMMY_LEAP_YEAR)
+            self._py_date.replace(year=DUMMY_LEAP_YEAR)
         )
 
     def day_of_week(self) -> Weekday:
@@ -1359,9 +1362,6 @@ def _unpkl_date(data: bytes) -> Date:
 
 Date.MIN = Date._from_py_unchecked(_date.min)
 Date.MAX = Date._from_py_unchecked(_date.max)
-
-
-_DUMMY_LEAP_YEAR = 4
 
 
 @final
@@ -2222,7 +2222,9 @@ class TimeDelta(_Base):
         remaining_ns = abs(self._total_ns)
         values = {}
         for u in units:
-            values[u], remaining_ns = divmod(remaining_ns, _DELTA_ITEMS_NS[u])
+            values[u], remaining_ns = divmod(
+                remaining_ns, NS_PER_UNIT_PLURAL[u]
+            )
 
         return values
 
@@ -2748,19 +2750,9 @@ def _unpkl_tdelta(data: bytes) -> TimeDelta:
     return TimeDelta(seconds=s, nanoseconds=ns)
 
 
-_DELTA_ITEMS_NS = {
-    "weeks": 1_000_000_000 * 60 * 60 * 24 * 7,
-    "days": 1_000_000_000 * 60 * 60 * 24,
-    "hours": 1_000_000_000 * 60 * 60,
-    "minutes": 1_000_000_000 * 60,
-    "seconds": 1_000_000_000,
-    "nanoseconds": 1,
-}
-
-
 TimeDelta.ZERO = TimeDelta()
-TimeDelta.MAX = TimeDelta(seconds=9999 * 366 * 24 * 3_600)
-TimeDelta.MIN = TimeDelta(seconds=-9999 * 366 * 24 * 3_600)
+TimeDelta.MAX = TimeDelta(seconds=_MAX_DELTA_SECONDS)
+TimeDelta.MIN = TimeDelta(seconds=-_MAX_DELTA_SECONDS)
 
 
 # Methods for types converting to/from the standard library and ISO 8601:
@@ -7827,7 +7819,8 @@ def _from_epoch_offset(ts: int, offset: int) -> _datetime:
     # make local_ts land inside the valid datetime range even when ts itself
     # is out of range — meaning fromtimestamp() would silently succeed and
     # return a datetime that exceeds Instant.MAX.
-    if (ordinal := ts // 86_400 + 719_163) < 1 or ordinal > _MAX_ORDINAL:
+    ordinal = ts // S_PER_DAY + EPOCH_ORDINAL
+    if ordinal < 1 or ordinal > _MAX_ORDINAL:
         raise ValueError(RANGE_MSG)
     local_ts = ts + offset
     # datetime.fromtimestamp() is faster than manual arithmetic, but may fail

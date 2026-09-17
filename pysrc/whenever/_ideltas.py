@@ -28,6 +28,14 @@ from typing import (
 from warnings import warn
 
 from ._common import (
+    _MAX_DELTA_DAYS,
+    _MAX_DELTA_HOURS,
+    _MAX_DELTA_MINUTES,
+    _MAX_DELTA_MONTHS,
+    _MAX_DELTA_SECONDS,
+    _MAX_DELTA_WEEKS,
+    _MAX_DELTA_YEARS,
+    _MAX_SUBSEC_NANOS,
     OFFSET_SHIFT_STALE_MSG,
     PLAIN_RELATIVE_TO_UNAWARE_MSG,
     PLAIN_SHIFT_UNAWARE_MSG,
@@ -317,14 +325,6 @@ class CalendarUnitCompositionWarning(WheneverWarning):
     __module__ = "whenever"
 
 
-_MAX_DELTA_YEARS = 9999
-_MAX_DELTA_MONTHS = 9999 * 12
-_MAX_DELTA_WEEKS = 9999 * 53
-_MAX_DELTA_DAYS = 9999 * 366
-_MAX_DELTA_HOURS = _MAX_DELTA_DAYS * 24
-_MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
-_MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
-_MAX_SUBSEC_NANOS = 999_999_999
 _OUT_OF_RANGE_MSG = "delta out of range"
 _NANOS_OUT_OF_RANGE_MSG = (
     "nanoseconds must be within ±999,999,999; put whole seconds in seconds="

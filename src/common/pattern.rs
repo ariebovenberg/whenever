@@ -16,6 +16,7 @@ use crate::{
         plain_datetime::PlainDateTime,
         scalar::{Month, Offset, SubSecNanos, Weekday, Year},
         time::Time,
+        units::{S_PER_HOUR, S_PER_MINUTE},
     },
     py::{
         PyAsciiStrBuilder, PyObj, PyResult, PyReturn,
@@ -1205,11 +1206,11 @@ fn frac_trim_is_empty(nanos: SubSecNanos, width: usize) -> bool {
 
 fn write_offset(mut secs: i32, width: u8, use_z: bool, sink: &mut impl Sink) -> Result<(), String> {
     if width <= 3 {
-        secs = secs.signum() * ((secs.abs() + 30) / 60 * 60);
-        if secs.unsigned_abs() >= 24 * 3_600 {
+        secs = secs.signum() * ((secs.abs() + 30) / S_PER_MINUTE * S_PER_MINUTE);
+        if secs.unsigned_abs() >= 24 * S_PER_HOUR as u32 {
             return Err("rounded offset is out of range".into());
         }
-        if width == 1 && secs % 3600 != 0 {
+        if width == 1 && secs % S_PER_HOUR != 0 {
             return Err(
                 "offset cannot be formatted with x/X: rounded offset has nonzero minutes".into(),
             );
@@ -1221,10 +1222,10 @@ fn write_offset(mut secs: i32, width: u8, use_z: bool, sink: &mut impl Sink) -> 
     }
     let sign = if secs >= 0 { b'+' } else { b'-' };
     let total = secs.unsigned_abs();
-    let oh = (total / 3600) as u8;
-    let remainder = total % 3600;
-    let om = (remainder / 60) as u8;
-    let os = (remainder % 60) as u8;
+    let oh = (total / S_PER_HOUR as u32) as u8;
+    let remainder = total % S_PER_HOUR as u32;
+    let om = (remainder / S_PER_MINUTE as u32) as u8;
+    let os = (remainder % S_PER_MINUTE as u32) as u8;
     let h = format_2_digits(oh);
     let m = format_2_digits(om);
     let s_digits = format_2_digits(os);
@@ -1621,7 +1622,7 @@ fn parse_offset_value(
     }
 
     if width == 1 {
-        return Ok((sign * oh as i32 * 3600, p, false, false));
+        return Ok((sign * oh as i32 * S_PER_HOUR, p, false, false));
     }
 
     let om;
@@ -1665,7 +1666,7 @@ fn parse_offset_value(
     }
 
     Ok((
-        sign * (oh as i32 * 3600 + om as i32 * 60 + os as i32),
+        sign * (oh as i32 * S_PER_HOUR + om as i32 * S_PER_MINUTE + os as i32),
         p,
         exact,
         false,

@@ -3,11 +3,12 @@ use std::num::{NonZero, NonZeroU64, NonZeroU128};
 
 use crate::{
     docstrings as doc,
-    domain::scalar::{
-        NS_PER_DAY, NS_PER_HOUR, NS_PER_MICROSEC, NS_PER_MILLISEC, NS_PER_MINUTE, NS_PER_SEC,
-        NS_PER_WEEK, SubSecNanos,
-    },
+    domain::scalar::SubSecNanos,
     domain::time_delta::DeltaIncrement,
+    domain::units::{
+        NS_PER_DAY, NS_PER_HOUR, NS_PER_MICROSECOND, NS_PER_MILLISECOND, NS_PER_MINUTE,
+        NS_PER_SECOND, NS_PER_WEEK,
+    },
     py::*,
     pymodule::{InternedStrings, State},
 };
@@ -74,9 +75,9 @@ impl RoundUnit {
     pub(crate) const fn default_increment(self) -> u64 {
         match self {
             RoundUnit::Nanosecond => 1,
-            RoundUnit::Microsecond => NS_PER_MICROSEC as _,
-            RoundUnit::Millisecond => NS_PER_MILLISEC as _,
-            RoundUnit::Second => NS_PER_SEC as _,
+            RoundUnit::Microsecond => NS_PER_MICROSECOND as _,
+            RoundUnit::Millisecond => NS_PER_MILLISECOND as _,
+            RoundUnit::Second => NS_PER_SECOND as _,
             RoundUnit::Minute => NS_PER_MINUTE,
             RoundUnit::Hour => NS_PER_HOUR,
             RoundUnit::Day => NS_PER_DAY,
@@ -144,7 +145,9 @@ impl Args {
         })?;
 
         let increment = match opt_arg {
-            None => RoundIncrement::Exact(unsafe { NonZeroU64::new_unchecked(1_000_000_000) }),
+            None => {
+                RoundIncrement::Exact(unsafe { NonZeroU64::new_unchecked(NS_PER_SECOND as u64) })
+            }
             Some(arg) => {
                 if let Some(delta) = arg.extract(*state.time_delta_type) {
                     if increment_kwarg.is_some() {

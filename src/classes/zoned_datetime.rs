@@ -25,6 +25,7 @@ use crate::{
         local::{LocalMapping, ResolveError, ResolvePolicy},
         scalar::*,
         shift::DateTimeShift,
+        units::*,
     },
     py::*,
     pymodule::State,
@@ -598,7 +599,7 @@ fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -
             .ok_or_range_err()?
             .resolve_derived(
                 &slf.tz,
-                Some((slf.offset, u.in_secs() as u64 * 1_000_000_000)),
+                Some((slf.offset, u.in_secs() as u64 * NS_PER_SECOND as u64)),
             )
             .ok_or_range_err()?
             .into_zoned_obj_unchecked(slf.tz.clone(), cls),
@@ -805,7 +806,7 @@ fn matching_local_offset(
         let comparable = if exact {
             seconds
         } else {
-            seconds.signum() * ((seconds.abs() + 30) / 60 * 60)
+            seconds.signum() * ((seconds.abs() + 30) / S_PER_MINUTE * S_PER_MINUTE)
         };
         (comparable == parsed.get()).then_some(offset)
     };
@@ -1237,7 +1238,7 @@ fn prev_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn
 fn dst_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let state = cls.state();
     let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
-    TimeDelta::from_nanos_unchecked(meta.dst_saving as i128 * 1_000_000_000)
+    TimeDelta::from_nanos_unchecked(meta.dst_saving as i128 * NS_PER_SECOND as i128)
         .to_obj(*state.time_delta_type)
 }
 

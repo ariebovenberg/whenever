@@ -9,11 +9,12 @@ from __future__ import annotations
 import calendar
 from datetime import date, datetime, time, timedelta, timezone
 
+from .._common import EPOCH_ORDINAL, S_PER_DAY, S_PER_HOUR
 from .common import Fold, Gap, LocalMapping, Unique
 
-DEFAULT_DST = 3600
-DEFAULT_RULE_TIME = 2 * 3600
-MAX_OFFSET = 24 * 3600
+DEFAULT_DST = S_PER_HOUR
+DEFAULT_RULE_TIME = 2 * S_PER_HOUR
+MAX_OFFSET = 24 * S_PER_HOUR
 Weekday = int  # Different than usual! Sunday=0, Saturday=6
 UTC = timezone.utc
 
@@ -21,7 +22,7 @@ UTC = timezone.utc
 def year_for_epoch(ts: int) -> int:
     # Note: we can't use fromtimestamp() because it fails on extreme values
     # on some platforms. Instead, we go through the ordinal.
-    return date.fromordinal(ts // 86400 + 719163).year
+    return date.fromordinal(ts // S_PER_DAY + EPOCH_ORDINAL).year
 
 
 def epoch_for_date(d: date) -> int:

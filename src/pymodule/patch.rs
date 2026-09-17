@@ -1,7 +1,7 @@
 //! Functionality related to patching the current time
 use crate::{
     classes::instant::Instant,
-    domain::{scalar::*, time_delta::TimeDelta},
+    domain::{scalar::*, time_delta::TimeDelta, units::NS_PER_SECOND},
     py::*,
     pymodule::State,
 };
@@ -87,7 +87,7 @@ impl Instant {
 
     fn from_nanos_i64(ns: i64) -> Option<Self> {
         Some(Instant {
-            epoch: EpochSecs::new(ns / 1_000_000_000)?,
+            epoch: EpochSecs::new(ns / i64::from(NS_PER_SECOND))?,
             subsec: SubSecNanos::from_remainder(ns),
         })
     }

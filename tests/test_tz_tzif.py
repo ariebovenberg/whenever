@@ -6,14 +6,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from whenever._common import EPOCH_SECS_MAX, EPOCH_SECS_MIN
 from whenever._tz.common import Fold, Gap, Unique
 from whenever._tz.posix import TzStr
-from whenever._tz.tzif import (
-    EPOCH_SECS_MAX,
-    EPOCH_SECS_MIN,
-    TimeZone,
-    bisect,
-)
+from whenever._tz.tzif import TimeZone, bisect
 
 TZIF_DIR = Path(__file__).parent / "tzif"
 UTC_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)

@@ -1,8 +1,9 @@
 use super::{
     itemized_date_delta::ItemizedDateDelta,
-    scalar::{DeltaField, NS_PER_HOUR, NS_PER_MINUTE, NS_PER_SEC},
+    scalar::DeltaField,
     shift::DateTimeShift,
     time_delta::TimeDelta,
+    units::{NS_PER_HOUR, NS_PER_MINUTE, NS_PER_SECOND},
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -46,7 +47,7 @@ impl ItemizedDelta {
         .to_calendar_shift()?;
         let nanos = self.hours.get_or(0) as i128 * NS_PER_HOUR as i128
             + self.minutes.get_or(0) as i128 * NS_PER_MINUTE as i128
-            + self.seconds.get_or(0) as i128 * NS_PER_SEC as i128
+            + self.seconds.get_or(0) as i128 * NS_PER_SECOND as i128
             + self.nanos.get_or(0) as i128;
         Some(DateTimeShift {
             calendar,

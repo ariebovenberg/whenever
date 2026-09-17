@@ -23,12 +23,48 @@ UTC = _timezone.utc
 DUMMY_LEAP_YEAR = 4
 Nanos = int  # 0-999_999_999
 
+# The unit scalars every other module builds its tables and bounds from.
+S_PER_MINUTE = 60
+S_PER_HOUR = 60 * S_PER_MINUTE
+S_PER_DAY = 24 * S_PER_HOUR
+DAYS_PER_WEEK = 7
+NS_PER_MICROSECOND = 1_000
+NS_PER_MILLISECOND = 1_000 * NS_PER_MICROSECOND
+NS_PER_SECOND = 1_000 * NS_PER_MILLISECOND
+NS_PER_MINUTE = S_PER_MINUTE * NS_PER_SECOND
+NS_PER_HOUR = S_PER_HOUR * NS_PER_SECOND
+NS_PER_DAY = S_PER_DAY * NS_PER_SECOND
+NS_PER_WEEK = DAYS_PER_WEEK * NS_PER_DAY
+
+# The 1-based proleptic Gregorian ordinal of 1970-01-01, as
+# datetime.date.toordinal() counts it. The Rust extension counts days from
+# the same epoch 0-based, so its offset is one smaller.
+EPOCH_ORDINAL = 719_163
+
+# Instant.MIN and Instant.MAX in seconds since the epoch
+EPOCH_SECS_MIN = -62_135_596_800
+EPOCH_SECS_MAX = 253_402_300_799
+
+# The bounds on the fields of TimeDelta, ItemizedDelta, and ItemizedDateDelta.
+# Each year counts at its widest, so a field never rejects a value the delta
+# as a whole can hold.
+_MAX_WEEKS_PER_YEAR = 53
+_MAX_DELTA_YEARS = 9999
+_MAX_DELTA_MONTHS = _MAX_DELTA_YEARS * 12
+_MAX_DELTA_WEEKS = _MAX_DELTA_YEARS * _MAX_WEEKS_PER_YEAR
+_MAX_DELTA_DAYS = _MAX_DELTA_YEARS * 366
+_MAX_DELTA_HOURS = _MAX_DELTA_DAYS * 24
+_MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
+_MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
+_MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * NS_PER_SECOND
+_MAX_SUBSEC_NANOS = NS_PER_SECOND - 1
+
 # unit -> (nanoseconds per unit, units per second)
 _TIMESTAMP_UNITS: dict[TimestampUnitStr, tuple[int, int]] = {
-    "second": (1_000_000_000, 1),
-    "millisecond": (1_000_000, 1_000),
-    "microsecond": (1_000, 1_000_000),
-    "nanosecond": (1, 1_000_000_000),
+    "second": (NS_PER_SECOND, 1),
+    "millisecond": (NS_PER_MILLISECOND, NS_PER_SECOND // NS_PER_MILLISECOND),
+    "microsecond": (NS_PER_MICROSECOND, NS_PER_SECOND // NS_PER_MICROSECOND),
+    "nanosecond": (1, NS_PER_SECOND),
 }
 
 WARNING_HANDLING_DOCS_MSG = (
@@ -331,14 +367,9 @@ def split_timestamp(
         nanos = remainder * nanoseconds_per_unit
     # Check the instant range here, before any time zone arithmetic can
     # overflow on a value far outside it.
-    if not _MIN_TIMESTAMP <= seconds <= _MAX_TIMESTAMP:
+    if not EPOCH_SECS_MIN <= seconds <= EPOCH_SECS_MAX:
         raise ValueError(RANGE_MSG)
     return seconds, nanos
-
-
-# Instant.MIN and Instant.MAX in seconds since the epoch
-_MIN_TIMESTAMP = -62_135_596_800
-_MAX_TIMESTAMP = 253_402_300_799
 
 
 def timestamp_from_parts(

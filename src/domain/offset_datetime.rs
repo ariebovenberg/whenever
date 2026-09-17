@@ -6,6 +6,7 @@ use super::{
     shift::DateTimeShift,
     time::Time,
     time_delta::TimeDelta,
+    units::S_PER_HOUR,
 };
 use crate::{common::parse::Scan, tz::tzif::is_valid_key};
 
@@ -95,7 +96,7 @@ impl Offset {
             Some(b'Z' | b'z') => return Some((Self::ZERO, true)),
             _ => return None,
         };
-        let mut total = s.digits00_23()? as i32 * 3600;
+        let mut total = s.digits00_23()? as i32 * S_PER_HOUR;
         let mut exact = false;
         match s.advance_on(b':') {
             Some(true) => {

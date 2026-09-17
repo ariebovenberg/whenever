@@ -20,7 +20,7 @@ use crate::{
         shift_args::{parse_datetime_shift_arg, parse_datetime_shift_kwargs},
     },
     docstrings as doc,
-    domain::{difference::DifferenceSpec, scalar::*},
+    domain::{difference::DifferenceSpec, scalar::*, units::*},
     py::*,
     pymodule::State,
 };

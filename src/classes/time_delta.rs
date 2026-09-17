@@ -20,6 +20,7 @@ use crate::{
         },
         scalar::*,
         time_delta::ParseError,
+        units::*,
     },
     py::*,
     pymodule::State,
@@ -63,7 +64,7 @@ impl PyPayload for TimeDelta {
     }
 }
 
-pub(crate) const MAX_SECS: u64 = (Year::MAX.get() as u64) * 366 * 24 * S_PER_HOUR as u64;
+pub(crate) const MAX_SECS: u64 = DeltaSeconds::MAX.get() as u64;
 pub(crate) const MAX_HOURS: u64 = MAX_SECS / S_PER_HOUR as u64;
 
 fn handle_exact_unit(value: PyObj, max: u64, name: &str, factor: i128) -> PyResult<i128> {
@@ -81,9 +82,9 @@ fn handle_exact_unit(value: PyObj, max: u64, name: &str, factor: i128) -> PyResu
         raise_type_err(format!("{name} must be an integer or float"))?
     }
 }
-pub(crate) const MAX_MINUTES: u64 = MAX_SECS / 60;
-pub(crate) const MAX_MILLISECONDS: u64 = MAX_SECS * 1_000;
-pub(crate) const MAX_MICROSECONDS: u64 = MAX_SECS * 1_000_000;
+pub(crate) const MAX_MINUTES: u64 = MAX_SECS / S_PER_MINUTE as u64;
+pub(crate) const MAX_MILLISECONDS: u64 = MAX_SECS * (NS_PER_SECOND / NS_PER_MILLISECOND) as u64;
+pub(crate) const MAX_MICROSECONDS: u64 = MAX_SECS * (NS_PER_SECOND / NS_PER_MICROSECOND) as u64;
 
 pub(crate) const SINGLETONS: &[(&CStr, TimeDelta); 3] = &[
     (
@@ -214,7 +215,7 @@ pub(crate) fn seconds(state: &State, arg: PyObj) -> PyReturn {
         arg,
         MAX_SECS,
         "seconds",
-        1_000_000_000_i128,
+        NS_PER_SECOND as i128,
     )?)
     .to_obj(*state.time_delta_type)
 }
