@@ -34,6 +34,8 @@ For example, `us/eastern` becomes `US/Eastern`, not `America/New_York`.
 An ID that no configured source knows raises
 {exc}`~whenever.TimeZoneNotFoundError`, a `ValueError`, so the same
 `except ValueError` that catches a malformed string catches an unknown ID.
+This holds wherever an ID is read: `tz=`, the bracket of an ISO string, the
+`VV` pattern specifier, and the {class}`~zoneinfo.ZoneInfo` of a `datetime`.
 
 ## Transitions
 

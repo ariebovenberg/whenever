@@ -65,6 +65,10 @@ impl CompareOp {
     }
 }
 
+/// The binary slot of a whenever type whose left operand is that type.
+/// Use it for every such slot: pure-Python itemized deltas own reflected
+/// datetime interoperability, and an explicitly symmetric scalar slot such as
+/// `TimeDelta.__mul__` is the one exception.
 pub(crate) fn binary_operation<T: PyPayload>(
     a: PyObj,
     b: PyObj,

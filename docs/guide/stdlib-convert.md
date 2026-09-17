@@ -53,6 +53,11 @@ datetime.datetime(2025, 4, 19, 15, 30, tzinfo=datetime.timezone.utc)
   Nanoseconds are **floored** to microseconds.
 ```
 
+The declared standard library type's own fields are the contract. A field
+the target cannot hold raises {exc}`ValueError`: a `time` with a `tzinfo`,
+an aware `datetime` for {class}`PlainDateTime`, and a naive one for
+{class}`Instant`, {class}`OffsetDateTime`, and {class}`ZonedDateTime`.
+
 ```{warning}
 Subclasses of the standard library types are accepted and read through the
 standard library attributes, so data those attributes cannot represent is

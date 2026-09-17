@@ -1276,8 +1276,9 @@ fn shift_method(
     let fname = if negate { "subtract" } else { "add" };
     let state = cls.state();
     let mut dis_arg = DisambiguationArg::default();
-    // Undocumented: lets a Python-level shim (the itemized-delta operators in
-    // `_ideltas.py`) move our warnings up to its own caller.
+    // Undocumented: a library-internal calendar shift (the itemized-delta
+    // operators in `_ideltas.py`) passes it so its ImplicitDisambiguationWarning
+    // lands on its own caller; never catch and re-emit the warning.
     let mut warn_stacklevel = 1;
     let mut handle = |k: PyObj, v: PyObj, eq: StrEqFn| -> PyResult<bool> {
         if eq(k, *state.strs.warn_stacklevel) {

@@ -5914,9 +5914,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguation: DisambiguationStr = UNSET,
         **kwargs,
     ) -> ZonedDateTime:
-        # Undocumented, and accepted by the Rust backend too: lets the
-        # itemized-delta operators in `_ideltas.py` move our warnings up
-        # to their own caller.
+        # Undocumented, and accepted by the Rust backend too: a
+        # library-internal calendar shift (the itemized-delta operators in
+        # `_ideltas.py`) passes it so its ImplicitDisambiguationWarning
+        # lands on its own caller; never catch and re-emit the warning.
         extra = kwargs.pop("_warn_stacklevel", 1) - 1
         fname = "add" if sign == 1 else "subtract"
         disambiguation, renamed = _normalize_disambiguation(

@@ -73,6 +73,9 @@ from ._typing import (
     RoundModeStr,
 )
 
+# The reference module under the type checker, so a call into a datetime type
+# is checked against the real overloads and needs no cast(); the package at
+# runtime, so it resolves to whichever backend is loaded.
 if TYPE_CHECKING:
     from . import _pywhenever as _whenever
 else:
