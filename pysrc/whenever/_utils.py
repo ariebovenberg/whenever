@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import os.path  # NOTE: we don't use pathlib here to keep our imports light
 from contextlib import contextmanager
-from functools import partial
 from threading import RLock
-from typing import Any, Iterable, Iterator, Protocol, no_type_check
+from typing import Any, Iterable, Iterator, Protocol
 from warnings import warn
 
 from ._common import DAYS_NOT_ALWAYS_24H_MSG, UNSET
@@ -384,38 +383,3 @@ def _is_tzifile(p: str) -> bool:
             return f.read(4) == b"TZif"
     except OSError:  # pragma: no cover
         return False
-
-
-@no_type_check
-def _pydantic_parse(cls: type, v: object) -> object:
-    # exact type comparison is OK: whenever types don't allow subclassing
-    if type(v) is cls:
-        return v
-    elif isinstance(v, str):
-        return cls.parse_iso(v)
-    else:
-        raise ValueError(
-            f"cannot parse {cls.__name__} from type {type(v).__name__}"
-        )
-
-
-@no_type_check
-def pydantic_schema(cls):
-    from pydantic_core import core_schema
-
-    return core_schema.json_or_python_schema(
-        # NOTE: We can't use no_info_plain_validator_function here, because
-        # this breaks JSON schema generation...but only when used with the
-        # "serialization" mode for some reason...
-        json_schema=core_schema.no_info_after_validator_function(
-            cls.parse_iso,
-            core_schema.str_schema(strict=True),
-            serialization=core_schema.to_string_ser_schema(),
-        ),
-        python_schema=core_schema.no_info_plain_validator_function(
-            partial(_pydantic_parse, cls),
-            # NOTE: not setting serializer here somehow breaks the JSON schema
-            # generation when defaults are present...yeah...
-            serialization=core_schema.to_string_ser_schema(),
-        ),
-    )

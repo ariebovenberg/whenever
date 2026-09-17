@@ -11,7 +11,7 @@ from datetime import (  # noqa: F401
     timedelta as _timedelta,
     timezone as _timezone,
 )
-from functools import lru_cache, wraps
+from functools import lru_cache, partial, wraps
 from math import isfinite as _isfinite
 from operator import index as _index
 from typing import TYPE_CHECKING, Any, TypeVar, no_type_check
@@ -388,6 +388,41 @@ def timestamp_from_parts(
 _T = TypeVar("_T")
 
 
+@no_type_check
+def _pydantic_parse(cls: type, v: object) -> object:
+    # exact type comparison is OK: whenever types don't allow subclassing
+    if type(v) is cls:
+        return v
+    elif isinstance(v, str):
+        return cls.parse_iso(v)
+    else:
+        raise ValueError(
+            f"cannot parse {cls.__name__} from type {type(v).__name__}"
+        )
+
+
+@no_type_check
+def pydantic_schema(cls):
+    from pydantic_core import core_schema
+
+    return core_schema.json_or_python_schema(
+        # NOTE: We can't use no_info_plain_validator_function here, because
+        # this breaks JSON schema generation...but only when used with the
+        # "serialization" mode for some reason...
+        json_schema=core_schema.no_info_after_validator_function(
+            cls.parse_iso,
+            core_schema.str_schema(strict=True),
+            serialization=core_schema.to_string_ser_schema(),
+        ),
+        python_schema=core_schema.no_info_plain_validator_function(
+            partial(_pydantic_parse, cls),
+            # NOTE: not setting serializer here somehow breaks the JSON schema
+            # generation when defaults are present...yeah...
+            serialization=core_schema.to_string_ser_schema(),
+        ),
+    )
+
+
 # Basic behavior common to all classes
 class _Base:
     __slots__ = ()
@@ -404,8 +439,6 @@ class _Base:
     @no_type_check
     @classmethod
     def __get_pydantic_core_schema__(cls, *_, **kwargs):
-        from ._utils import pydantic_schema
-
         return pydantic_schema(cls)
 
     @classmethod

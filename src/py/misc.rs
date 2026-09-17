@@ -110,7 +110,9 @@ pub(crate) fn __get_pydantic_core_schema__<T: PyPayload>(
     _: &[PyObj],
     _: &mut IterKwargs,
 ) -> PyReturn {
-    cls.state().get_pydantic_schema.get()?.call1(cls)
+    import(c"whenever._common")?
+        .getattr(c"pydantic_schema")?
+        .call1(cls)
 }
 
 pub(crate) fn not_implemented() -> PyReturn {

@@ -426,9 +426,6 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
         py_api: SwapPtr::new(None),
         time_ns: OncePyObj::new(|| import(c"time")?.getattr(c"time_ns")),
         zoneinfo_type: OncePyObj::new(|| import(c"zoneinfo")?.getattr(c"ZoneInfo")),
-        get_pydantic_schema: OncePyObj::new(|| {
-            import(c"whenever._utils")?.getattr(c"pydantic_schema")
-        }),
         system_tz_sentinel,
 
         strs: intern_strings()?,
@@ -577,7 +574,6 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
     // Imported stuff
     state.time_ns.gc_traverse(visit, arg)?;
     state.zoneinfo_type.gc_traverse(visit, arg)?;
-    state.get_pydantic_schema.gc_traverse(visit, arg)?;
     state.system_tz_sentinel.gc_traverse(visit, arg)?;
     Ok(())
 }
@@ -665,7 +661,6 @@ pub(crate) struct State {
     // imported stuff
     pub(crate) time_ns: OncePyObj,
     pub(crate) zoneinfo_type: OncePyObj,
-    pub(crate) get_pydantic_schema: OncePyObj,
     pub(crate) system_tz_sentinel: Owned<PyObj>,
 
     // strings
