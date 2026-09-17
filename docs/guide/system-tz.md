@@ -76,7 +76,7 @@ or specify a custom time zone file.
 >>> whenever.reset_system_tz()
 ```
 
-These types of time zone definitions can still account for Daylight Saving Time
+These types of time zone definitions can still account for daylight saving time
 (DST) and other time zone changes:
 
 ```python

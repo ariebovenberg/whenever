@@ -203,7 +203,7 @@ other contexts, or other contexts may interfere with yours. This is a
 addressed by the ``PYTHON_CONTEXT_AWARE_WARNINGS`` flag introduced in
 Python 3.14.
 
-The per-method keyword arguments described above don't have this limitation —
+The call-local escapes described above don't have this limitation —
 they suppress the warning for exactly one call, regardless of concurrency.
 ```
 
@@ -229,7 +229,7 @@ underlying issue or suppress it explicitly with the appropriate keyword argument
 |---|---|
 | Application code | `filterwarnings("error", ...)` at startup |
 | CI / test suite | `filterwarnings = error::whenever.WheneverWarning` in `pytest.ini` |
-| One intentional imprecision | Per-method kwarg (e.g. `naive_arithmetic_ok=True`) + a comment |
+| One intentional imprecision | Call-local escape (e.g. `naive_arithmetic_ok=True`) + a comment |
 | Suppress operator warnings | `warnings.catch_warnings()` block (Python ≥ 3.14 for concurrency safety) |
 | Entire module intentionally imprecise | `filterwarnings("ignore", ..., module=r"mymodule\.*")` |
 | Exploratory scripts | `filterwarnings("ignore", ...)` globally |

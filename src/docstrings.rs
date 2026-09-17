@@ -2229,7 +2229,8 @@ ZonedDateTime(\"2020-08-15 23:30:00+02:00[Europe/Paris]\")
 Notes
 -----
 * A rounded time that is repeated keeps the current offset if that
-  offset is still valid, and takes the earlier one otherwise.
+  offset is still valid, and takes the earlier one otherwise; in a
+  fall-back shorter than the increment, it is the first occurrence.
   A rounded time that is skipped becomes the first instant after
   the gap.
 * Rounding to a day compares the time elapsed since the start of the
@@ -2265,7 +2266,8 @@ A boundary skipped by a transition snaps to the edge of the gap, so
 that successive intervals stay contiguous.
 
 For ``\"hour\"``, ``\"minute\"``, and ``\"second\"``, a repeated boundary
-keeps the current offset if that offset is still valid. For
+keeps the current offset if that offset is still valid; in a
+fall-back shorter than the unit, it is the first occurrence. For
 ``\"day\"``, ``\"week_mon\"``, ``\"week_sun\"``, ``\"month\"``, and
 ``\"year\"``, a repeated boundary always takes the earlier occurrence,
 so that every value on the same date shares one boundary.
@@ -2398,6 +2400,7 @@ Compare two values, including what ``==`` ignores.
 ``Instant.__eq__`` ignores nothing but the argument's type, while
 ``OffsetDateTime.__eq__`` also ignores the local datetime and the
 offset. An argument of a different type raises :exc:`TypeError`.
+The example uses ``OffsetDateTime``, where ``==`` ignores the offset.
 
 >>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=hours(1))
 >>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=hours(2))

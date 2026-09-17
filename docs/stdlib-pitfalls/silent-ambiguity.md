@@ -32,8 +32,8 @@ differently than intended.
 
 ## How `whenever` solves this
 
-While `whenever` also defaults to the same convention as Python (as do most libraries),
-it provides explicit tools to handle ambiguity:
+`whenever` applies the same default as Python, but with an
+`ImplicitDisambiguationWarning`; state `disambiguation=` to make the choice explicit:
 
 ```python
 >>> dt = ZonedDateTime(2024, 10, 27, 2, 30, tz="Europe/Amsterdam", disambiguation="raise")

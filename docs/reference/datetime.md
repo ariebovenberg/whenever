@@ -52,7 +52,7 @@ exact points in time:
 | `now()`  | {meth}`🔗 <Instant.now>`  | {meth}`🔗 <ZonedDateTime.now>` | {meth}`🔗 <OffsetDateTime.now>` |
 |    |   |   |   |
 |  `timestamp()` | {meth}`🔗 <Instant.timestamp>`   | {meth}`🔗 <ZonedDateTime.timestamp>` | {meth}`🔗 <OffsetDateTime.timestamp>`  |
-| `from_timestamp()` [^2]  | {meth}`🔗 <Instant.from_timestamp>` | {meth}`🔗 <ZonedDateTime.from_timestamp>` | {meth}`🔗 <OffsetDateTime.from_timestamp>`  |
+| `from_timestamp()` [^2]  | {meth}`🔗 <Instant.from_timestamp>` | deprecated, removed in 1.0 | deprecated, removed in 1.0  |
 |    |   |   |   |
 |  `to_fixed_offset()`  | {meth}`🔗 <Instant.to_fixed_offset>` | {meth}`🔗 <ZonedDateTime.to_fixed_offset>`  | {meth}`🔗 <OffsetDateTime.to_fixed_offset>`   |
 |  `to_tz()`  | {meth}`🔗 <Instant.to_tz>`  | {meth}`🔗 <ZonedDateTime.to_tz>` | {meth}`🔗 <OffsetDateTime.to_tz>`                          |
@@ -158,7 +158,7 @@ See the {ref}`FAQ <faq-instant-no-local>`.
 :::
 
 
-[^2]: Prefer {meth}`Instant.from_timestamp`; then convert it with `to_tz()`
+[^2]: Use {meth}`Instant.from_timestamp`; then convert it with `to_tz()`
     or `to_fixed_offset()` when another exact representation is needed.
 
 [^3]: The other comparison operators `<=`, `<`, and `>=` are also

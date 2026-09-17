@@ -26,7 +26,7 @@ programs---but datetime logic is arithmetic-heavy and often applied in bulk,
 making it a classic case where faster code pays off.
 That's why many core Python components are
 backed by optimized implementations, and why this library offers a Rust
-version for speed alongside a pure-Python version for portability.
+extension for speed alongside a pure-Python backend for portability.
 
 ## Is free-threaded Python supported?
 
@@ -150,7 +150,7 @@ The warning approach gives you four levels of control:
    import warnings
    warnings.filterwarnings("error", category=whenever.PotentialDstBugWarning)
    ```
-3. **Escape hatch** — when the operation is intentional, silence it with
+3. **Call-local escape** — when the operation is intentional, silence it with
    a keyword argument (e.g. ``stale_offset_ok=True``),
    documenting the decision in code.
 4. **Fine-grained** — configure at the module or function level, using
@@ -192,7 +192,7 @@ Each option had its pros and cons.
   niche name is a boon to these languages, Python tends to favor more
   common, non-jargon names: "dict" over "hashmap", "list" over
   "array", etc.
-- Why not `LocalDateTime`? This is the name that ISO8601 gives to the
+- Why not `LocalDateTime`? This is the name that ISO 8601 gives to the
   concept, also making it a "technically correct" name. However, the
   term "local" has become overloaded in the Python world where it
   often refers to the system time zone.
@@ -221,12 +221,12 @@ Common critiques of `PlainDateTime` are:
 Leap seconds are not fully supported. Taking leap seconds into account
 is a complex and niche feature, which is not needed for the vast majority
 of applications. This decision is consistent with other modern libraries
-(e.g. NodaTime, Temporal) and standards (RFC 5545, Unix time) which do
+(e.g. NodaTime, Temporal) and standards (RFC 5545, the UNIX timestamp convention) which do
 not support leap seconds.
 
 However, *whenever* does accept leap seconds during parsing, normalizing
 them to the previous second (59). This applies to ISO 8601, RFC 2822, and
-[custom format strings](pattern-format).
+[patterns](pattern-format).
 
 (faq-why-not-dropin)=
 ## Why no drop-in replacement for `datetime`?
@@ -258,20 +258,21 @@ Yes! Have a look at [`whenever-sqlalchemy`](https://pypi.org/project/whenever-sq
 a separate package that provides SQLAlchemy types and utilities for working with `whenever`.
 
 (faq-pure-python)=
-## How can I use the pure-Python version?
+## How can I use the pure-Python backend?
 
 `whenever` is implemented both in Rust and in pure Python. By default,
 the Rust extension is used, as it's faster and more memory-efficient.
-But you can opt out of it if you prefer the pure-Python version, which
+But you can opt out of it if you prefer the pure-Python backend, which
 has a smaller disk footprint and works on all platforms.
 
 ```{note}
-On PyPy and GraalVM, the Python implementation is automatically used. No
+On PyPy and GraalVM, the pure-Python backend loads automatically. No
 need to configure anything.
 ```
 
-To opt out of the Rust extension and use the pure-Python version,
-install from the source distribution with the
+A pure-Python wheel is published alongside the platform wheels, but pip
+prefers the platform wheel when one matches. To select the pure-Python
+backend, install from the source distribution with `--no-binary` and the
 `WHENEVER_NO_BUILD_RUST_EXT` environment variable set.
 
 Installing this way is different depending on your tool of choice:
@@ -343,7 +344,7 @@ doesn't wrap it:
 
 1.  Jiff didn't exist when `whenever` was created. Wrapping it was
     only an option after most functionality was already implemented.
-2.  Providing a pure-Python version of `whenever` would require
+2.  Providing a pure-Python backend of `whenever` would require
     re-implementing jiff's logic in Python and keeping them in sync.
 3.  Jiff has a slightly different design philosophy, most notably
     de-emphasizing the difference between offset and zoned datetimes.
@@ -381,7 +382,8 @@ example, itemized deltas cannot be multiplied or divided.
 
 The `-` operator between two datetimes always
 returns a {class}`~whenever.TimeDelta`—an exact elapsed duration where
-subtraction is unambiguous.
+subtraction is unambiguous. On {class}`~whenever.PlainDateTime` the
+result is naive arithmetic, and the operator warns.
 If you need a difference in calendar units like years, months, or days,
 use the {meth}`~whenever.ZonedDateTime.since` /
 {meth}`~whenever.ZonedDateTime.until` methods instead:

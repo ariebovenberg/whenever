@@ -377,7 +377,6 @@ class TestEq:
         # NOTE: the mypy ignore comments are actually also "tests" in the sense
         # they ensure that the types properly implement strict comparison!
         assert d != "P5D"  # type: ignore[comparison-overlap]
-        # FUTURE: these comparisons *should* be blocked?
         assert d != {"days": 5}
         assert d != ItemizedDelta(days=5)
 

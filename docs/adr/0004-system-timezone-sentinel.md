@@ -23,7 +23,7 @@ choice of spelling.
   outside a zoneinfo directory) yields a `ZonedDateTime` whose `tz_id` is
   `None`.
 - When the system time zone cannot be resolved (missing or invalid file,
-  unknown key, invalid POSIX string), both backends raise
+  unknown ID, invalid POSIX string), both backends raise
   `TimeZoneNotFoundError`. A failed `reset_system_tz()` leaves the cache as
   it was.
 
@@ -47,7 +47,7 @@ choice of spelling.
 
 ## Consequences
 
-- No signature has a system-timezone default. A dependency on the machine's
+- No signature has a system time zone default. A dependency on the machine's
   configuration is visible at the call site as `SYSTEM_TZ`.
 - The `valid-type` ignores on `str | SYSTEM_TZ` in the stub stay until a mypy
   release accepts a PEP 661 sentinel as a type.

@@ -595,8 +595,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 return 1 if v > 0 else -1
         return 0
 
-    # FUTURE: a float_seconds method that combines seconds and nanoseconds into a single float value?
-
     def __iter__(self) -> Iterator[DeltaUnitStr]:
         """Iterate over the present components, ordered from largest to smallest unit."""
         if self._years is not None:
@@ -628,8 +626,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 """
                 ...
 
-            # FUTURE: an optimized ValuesView class that defers to the internal
-            # components directly instead of going through __getitem__
             def values(self) -> ValuesView[int]:
                 """The values of the present components, in order
                 of largest to smallest unit.
@@ -2065,8 +2061,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 """
                 ...
 
-            # FUTURE: an optimized ValuesView class that defers to the internal
-            # components directly instead of going through __getitem__
             def values(self) -> ValuesView[int]:
                 """The values of the present components, in order
                 of largest to smallest unit.

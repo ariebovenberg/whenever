@@ -357,9 +357,8 @@ def _find_all_tznames(base: str) -> Iterator[str]:
     for name in os.listdir(base):
         entry = os.path.join(base, name)
         if os.path.isdir(entry):
-            # FUTURE: expand test coverage for this
-            if name in ("right", "posix"):  # pragma: no cover
-                # These directories contain special files that shouldn't be included
+            # These directories contain special files that shouldn't be included
+            if name in ("right", "posix"):
                 continue
             else:
                 for path in _find_nested_tzfiles(entry):

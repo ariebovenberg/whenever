@@ -3,7 +3,7 @@ myst:
   html_meta:
     description: >-
       Turning local fields into an instant in a named time zone: the
-      offset_mismatch policy for conflicting offsets, the disambiguation policy
+      offset_mismatch policy for mismatched offsets, the disambiguation policy
       for repeated and skipped times, the order in which they apply, and how
       derived local times keep the offset they already had.
 ---
@@ -57,7 +57,7 @@ INPUT: local fields + named time zone
                    └─► discard offset ───────────────────────────┤
                                                                  │
                                                                  ▼
-                    DISAMBIGUATE THE LOCAL TIME IN THE NAMED TIME ZONE
+                    APPLY disambiguation= IN THE NAMED TIME ZONE
                     ├─ local time is unique ──────────────► DONE
                     ├─ repeated or skipped + explicit policy
                     │                         └───────────► DONE or ERROR
@@ -88,7 +88,7 @@ ZonedDateTime("2023-10-29 02:15:00+02:00[Europe/Amsterdam]")
 ZonedDateTime("2023-10-29 02:15:00+01:00[Europe/Amsterdam]")
 ```
 
-When the offset conflicts, the policy changes the meaning of the input:
+When the offset mismatches, the policy changes the meaning of the input:
 
 ```python
 >>> s = "2023-05-01T12:00+03:00[Europe/Amsterdam]"
@@ -161,7 +161,7 @@ ZonedDateTime("2023-03-26 01:30:00+01:00[Europe/Paris]")
 ZonedDateTime("2023-03-26 03:30:00+02:00[Europe/Paris]")
 ```
 
-```{admonition} Why extrapolate a skipped time instead of truncating it?
+```{admonition} Why extrapolate a skipped time instead of snapping it to the transition?
 :class: tip
 
 A skipped local time cannot keep identical final local fields: those fields

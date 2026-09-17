@@ -33,8 +33,10 @@ This section is up to date as of Pendulum version 3.2.0.
 Pendulum does address some of the standard library's
 {ref}`pitfalls <datetime-pitfalls>`.
 In particular, its named arithmetic methods distinguish calendar units from
-elapsed units across DST transitions, and `Duration.seconds` avoids the
-{ref}`timedelta.seconds footgun <timedelta-seconds>`.
+elapsed units across DST transitions, and `Duration.seconds` keeps its sign
+(`in_seconds()` gives the total). It does not avoid the day remainder of the
+{ref}`timedelta.seconds footgun <timedelta-seconds>`: `duration(hours=25).seconds`
+is `3600` on 3.2.0.
 
 Most of the underlying model remains unchanged, though:
 
@@ -340,9 +342,9 @@ default to the offset before the transition; see
 {ref}`the discussion of ambiguity defaults <ambiguity-default>`.
 
 Pendulum allows callers to choose a `fold`, and
-`raise_on_unknown_times=True` can reject ambiguous or nonexistent local times.
+`raise_on_unknown_times=True` can reject repeated or skipped local times.
 The default is significant: moving code from `datetime` to Pendulum can change
-which instant an ambiguous local time represents unless the fold is chosen
+which instant a repeated local time represents unless the fold is chosen
 explicitly.
 
 ## Parsing is permissive and implementation-dependent
@@ -367,7 +369,7 @@ time-dependent behavior:
 'UTC'
 ```
 
-This makes the result depend on the wall clock rather than only on the input.
+This makes the result depend on the system clock rather than only on the input.
 It can therefore be risky when parsing user-controlled or externally supplied
 strings.
 

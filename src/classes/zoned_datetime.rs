@@ -592,11 +592,14 @@ fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -
             .resolve_derived(&slf.tz, None)
             .ok_or_range_err()?
             .into_zoned_obj_unchecked(slf.tz.clone(), cls),
-        DateTimeBoundaryUnit::Time(_) => slf
+        DateTimeBoundaryUnit::Time(u) => slf
             .to_plain()
             .start_of_unit(unit)
             .ok_or_range_err()?
-            .resolve_derived(&slf.tz, Some(slf.offset))
+            .resolve_derived(
+                &slf.tz,
+                Some((slf.offset, u.in_secs() as u64 * 1_000_000_000)),
+            )
             .ok_or_range_err()?
             .into_zoned_obj_unchecked(slf.tz.clone(), cls),
     }
@@ -1345,7 +1348,8 @@ fn round(
             if next_day == 1 {
                 date = date.tomorrow().ok_or_range_err()?;
             };
-            date.at(time_rounded).resolve_derived(tz, Some(offset))
+            date.at(time_rounded)
+                .resolve_derived(tz, Some((offset, ns.get())))
         }
     }
     .ok_or_range_err()?

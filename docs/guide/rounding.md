@@ -119,7 +119,7 @@ There are some restrictions on the allowed increments:
 
 ## Boundaries
 
-Where `round()` moves a value to the nearest step of a unit,
+Where `round()` moves a value to the nearest increment of a unit,
 `start_of()` and `end_of()` move it to the edges of the unit it lies in.
 They exist on {class}`~whenever.Date`, {class}`~whenever.PlainDateTime`,
 {class}`~whenever.OffsetDateTime`, and {class}`~whenever.ZonedDateTime`:

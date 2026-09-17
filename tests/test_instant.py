@@ -208,7 +208,7 @@ class TestEquality:
         assert hash(d) == hash(zoned_same)
         assert hash(d) != hash(zoned_different)
 
-        # FUTURE: this *should* be flagged by mypy, but it isn't as of 1.20
+        # FUTURE: this *should* be flagged by mypy, but it isn't
         with pytest.raises(
             TypeError, match=r"^strict_eq\(\) argument must be an Instant$"
         ):
@@ -230,7 +230,7 @@ class TestEquality:
         assert hash(d) == hash(offset_same)
         assert hash(d) != hash(offset_different)
 
-        # FUTURE: this *should* be flagged by mypy, but it isn't as of 1.20
+        # FUTURE: this *should* be flagged by mypy, but it isn't
         with pytest.raises(TypeError, match="argument must be an Instant"):
             d.strict_eq(offset_same)
 

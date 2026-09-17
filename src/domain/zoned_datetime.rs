@@ -124,25 +124,30 @@ impl PlainDateTime {
     /// Resolve a local time derived from an existing value--a unit boundary or
     /// a rounded result--rather than one the caller wrote.
     ///
-    /// A repeated local time keeps `current` while it is still valid, and
-    /// takes the earlier occurrence otherwise. Pass `None` for a boundary that
-    /// every value on the date must share, so that the value's own offset
-    /// cannot influence it. A skipped local time snaps to the edge of the gap,
-    /// so that successive intervals stay contiguous.
+    /// `current` is the value's offset paired with the unit's length in
+    /// nanoseconds. A repeated local time keeps that offset while it is still
+    /// valid and the fold is at least as long as the unit, and takes the
+    /// earlier occurrence otherwise: a fold shorter than the unit lies inside
+    /// one unit interval, so both occurrences share a boundary. Pass `None`
+    /// for a boundary that every value on the date must share, so that the
+    /// value's own offset cannot influence it. A skipped local time snaps to
+    /// the edge of the gap, so that successive intervals stay contiguous.
     #[inline]
     pub(crate) fn resolve_derived(
         self,
         tz: &TimeZone,
-        current: Option<Offset>,
+        current: Option<(Offset, u64)>,
     ) -> Option<OffsetDateTime> {
         match tz.mapping_for_local(self.local_seconds()) {
             LocalMapping::Unique { offset } => self.assume_offset(offset),
             LocalMapping::Fold { before, after, .. } => {
-                self.assume_offset(if current == Some(after) {
-                    after
-                } else {
-                    before
-                })
+                let keep_current = match current {
+                    Some((offset, unit_ns)) => {
+                        offset == after && before.sub(after).get() as u64 * 1_000_000_000 >= unit_ns
+                    }
+                    None => false,
+                };
+                self.assume_offset(if keep_current { after } else { before })
             }
             LocalMapping::Gap {
                 transition, after, ..

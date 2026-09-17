@@ -365,7 +365,11 @@ fn load_transitions(
     types: &[TypeInfo],
     indices: &[u8],
 ) -> Option<TransitionData> {
+    // A record whose type repeats the previous record's changes nothing
+    // observable, so it is dropped: a transition is a change of the offset,
+    // the DST saving, or the abbreviation.
     let first_type = types.first()?;
+    let mut prev_type = first_type;
     let mut offsets = Vec::with_capacity(indices.len() + 1);
     let mut meta = Vec::with_capacity(indices.len() + 1);
 
@@ -392,17 +396,22 @@ fn load_transitions(
 
     for (&idx, &epoch) in indices.iter().zip(transition_times) {
         let typ = types.get(usize::from(idx))?;
+        if typ == prev_type {
+            continue;
+        }
+        prev_type = typ;
         offsets.push((epoch, typ.offset));
 
-        let dst_saving = if typ.isdst {
-            typ.offset.get() - last_std_offset.get()
-        } else {
-            0
-        };
-
-        if !typ.isdst {
+        let dst_saving = if !typ.isdst {
             last_std_offset = typ.offset;
-        }
+            0
+        } else if typ.offset == last_std_offset {
+            // Standard time moved and DST began at the same moment, so the
+            // saving cannot be read off the previous standard offset.
+            3600
+        } else {
+            typ.offset.get() - last_std_offset.get()
+        };
 
         meta.push(TransitionMeta {
             dst_saving,
@@ -433,6 +442,7 @@ fn parse_posix_tz(s: &mut Scan) -> Option<TzStr> {
     })
 }
 
+#[derive(PartialEq)]
 struct TypeInfo {
     offset: Offset,
     isdst: bool,

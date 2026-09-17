@@ -101,6 +101,14 @@ time zone ID
   *tz*.
   See {ref}`timezone-database`.
 
+named time zone
+  A time zone identified by a time zone ID, with the rules the database
+  records for it. The system time zone may lack an ID, and a fixed offset
+  names no rules, so neither is one. The ID is the name: say *time zone ID*
+  for the string and *named time zone* for the rules it names.
+  Preferred over *IANA time zone*.
+  See {ref}`timezone-database`.
+
 time zone search path
   The ordered directories in which time zone IDs are looked up. Read with
   `get_tzpath()`, which returns a snapshot; set with `reset_tzpath()`, or

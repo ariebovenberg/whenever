@@ -17,8 +17,8 @@ compares exactly that in addition:
 - `Instant`: the argument's type.
 - `OffsetDateTime`: the type, the local datetime, and the offset.
 - `ZonedDateTime`: the type, the local datetime, the offset, and the time zone,
-  meaning its identifier (or the absence of one, for the system time zone) and
-  its definition.
+  meaning its time zone ID (or the absence of one, for the system time zone)
+  and its definition.
 - `ItemizedDelta` and `ItemizedDateDelta`: the type, and whether each
   component was given explicitly.
 
@@ -33,11 +33,11 @@ Types whose `==` already compares every field (`PlainDateTime`, `Date`,
   such as comparing a `ZonedDateTime` to the `Instant` it was built from, and
   `strict_eq()` exists to surface subtle differences, not to hide the coarsest
   one. It raises `TypeError` instead.
-- **Compare time zones by identifier only.** Rejected: after `clear_tzcache()`
-  or `reset_tzpath()`, two values with the same identifier can carry different
+- **Compare time zones by ID only.** Rejected: after `clear_tzcache()`
+  or `reset_tzpath()`, two values with the same ID can carry different
   rules and behave differently under arithmetic. Values that behave
   differently must not be strictly equal. Jiff makes the same choice. Without
-  cache clears this reduces to comparing identifiers, so the common case pays
+  cache clears this reduces to comparing IDs, so the common case pays
   nothing.
 - **Compare time zones by object identity.** Rejected: equality would depend
   on cache state, which cannot be read off the two values.
@@ -52,7 +52,7 @@ Types whose `==` already compares every field (`PlainDateTime`, `Date`,
   time zone imply an equal offset and therefore an equal local datetime. Only a
   value whose offset is stale relative to its own time zone would separate them,
   and no constructor produces one—the pickle reader warns and corrects. The
-  Python backend keeps the cheaper comparison, and no test pins the difference,
-  because none can.
+  pure-Python backend keeps the cheaper comparison, and no test pins the
+  difference, because none can.
 - `clear_tzcache()` keeps its caveat that `strict_eq()` can become false
-  between values with the same time zone identifier.
+  between values with the same time zone ID.

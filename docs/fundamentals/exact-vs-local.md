@@ -83,9 +83,9 @@ A useful mental model is this:
 
 In `whenever`, the distinction between exact and local time is made explicit through different types:
 
-- {class}`~whenever.Instant` represents an exact moment on the global timeline (UTC).
+- {class}`~whenever.Instant` represents an exact moment on the global timeline.
 - {class}`~whenever.PlainDateTime` represents a local clock reading without time zone context.
-- {class}`~whenever.ZonedDateTime` represents a *both* an exact moment and its local representation in a specific time zone.
+- {class}`~whenever.ZonedDateTime` represents *both* an exact moment and its local representation in a specific time zone.
   More on that in the next section.
 
 ## Summary

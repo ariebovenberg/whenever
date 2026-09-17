@@ -24,7 +24,7 @@ The main types are:
   also known as **"local time"**.
   This type is analogous to a "naive" datetime in the standard library.
 - {class}`~whenever.ZonedDateTime`—A combination of the two concepts above:
-  an exact time paired with a local time at a specific location.
+  an exact time paired with a local time in a named time zone.
   This type is analogous to an "aware" standard library datetime with `tzinfo` set to a `ZoneInfo` instance.
 
 ## {class}`~whenever.Instant`
@@ -47,7 +47,7 @@ True
 The value of this type is in its simplicity. It's straightforward to compare,
 add, and subtract. It's always clear what moment in time
 you're referring to—without having to worry about time zones,
-Daylight Saving Time (DST), or the calendar.
+daylight saving time (DST), or the calendar.
 
 ## {class}`~whenever.PlainDateTime`
 
@@ -58,13 +58,13 @@ it doesn't by itself refer to a moment on the timeline.
 This is because this date and time-of-day occur at different moments
 depending on whether you're in Australia or Mexico, for example.
 
-Another limitation is that you can't account for Daylight Saving Time
+Another limitation is that you can't account for daylight saving time
 if you only have a date and time-of-day without a time zone.
 Therefore, adding exact time units to "plain" datetimes will emit a
 `NaiveArithmeticWarning` to prevent you from accidentally introducing DST bugs.
 This is because—strictly speaking—you don't know what the
 local time will be in 3 hours:
-perhaps the clock will be moved forward or back due to Daylight Saving Time.
+perhaps the clock will be moved forward or back due to daylight saving time.
 
 ```python
 >>> bus_departs = PlainDateTime(2020, 3, 14, hour=15)
@@ -85,8 +85,8 @@ That's what the next type is for.
 
 ## {class}`~whenever.ZonedDateTime`
 
-This is a combination of an exact *and* a local time at a specific location,
-with rules about Daylight Saving Time and other time zone changes.
+This is a combination of an exact *and* a local time in a named time zone,
+with rules about daylight saving time and other time zone changes.
 
 ```python
 >>> bedtime = ZonedDateTime(2024, 3, 9, 22, tz="America/New_York")
@@ -106,7 +106,7 @@ occurring twice or not at all.
 
 ```python
 >>> # Instant->Zoned is always straightforward
->>> livestream_starts.to_tz("America/New_York")
+>>> livestream_start.to_tz("America/New_York")
 ZonedDateTime("2022-10-24 13:00:00-04:00[America/New_York]")
 >>> # Local->Zoned may be ambiguous
 >>> bus_departs.assume_tz("America/New_York")

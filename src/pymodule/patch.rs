@@ -133,7 +133,7 @@ impl State {
         let ns = ts
             .cast_exact::<PyInt>()
             .ok_or_raise(exc_runtime_error(), "time_ns() returned a non-integer")?
-            // FUTURE: this will break in the year 2262. Fix it before then.
+            // FUTURE: i64 nanoseconds overflow in 2262.
             .to_i64()?;
         Instant::from_nanos_i64(ns).ok_or_raise(exc_os_error(), "system time out of range")
     }

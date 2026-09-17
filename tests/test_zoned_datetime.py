@@ -15,6 +15,7 @@ from typing import Any, Literal, Sequence, cast
 from zoneinfo import (
     ZoneInfo,
     available_timezones as zoneinfo_available_timezones,
+    reset_tzpath as zoneinfo_reset_tzpath,
 )
 
 import pytest
@@ -846,6 +847,23 @@ def test_available_timezones():
     # We should be able to load all of them
     for tz in tzs:
         d = d.to_tz(tz)
+
+
+def test_available_timezones_skips_right_and_posix(tmp_path: Path):
+    source = TEST_DIR / "tzif" / "Amsterdam.tzif"
+    for prefix in ("", "right", "posix"):
+        zone = tmp_path / prefix / "Europe" / "Amsterdam"
+        zone.parent.mkdir(parents=True)
+        shutil.copyfile(source, zone)
+
+    previous = get_tzpath()
+    reset_tzpath([tmp_path])
+    try:
+        tzs = available_timezones()
+    finally:
+        reset_tzpath(previous)
+    assert "Europe/Amsterdam" in tzs
+    assert not {z for z in tzs if z.startswith(("right/", "posix/"))}
 
 
 ZDT1 = create_zdt(
@@ -1728,6 +1746,44 @@ class TestNextTransition:
         assert before.dst_offset() == hours(1)
         assert before.tz_abbrev() == "BST"
 
+    def test_standard_time_and_dst_change_together_argentina_1999(self):
+        # Argentina moved standard time from -03:00 to -04:00 and began DST
+        # at the same moment, so the offset stays -03:00 while the DST
+        # offset changes
+        tz = "America/Argentina/Buenos_Aires"
+        t = ZonedDateTime(1999, 9, 1, tz=tz).next_transition()
+        assert t is not None
+        assert t.strict_eq(ZonedDateTime(1999, 10, 3, tz=tz))
+        assert t.offset == hours(-3)
+        assert t.dst_offset() == hours(1)
+        assert t.subtract(nanoseconds=1).dst_offset() == TimeDelta.ZERO
+
+    def test_abbreviation_only_anchorage_1983(self):
+        # Alaska renamed its zones on 1983-11-30: YST became AKST, the
+        # offset and DST offset unchanged
+        tz = "America/Anchorage"
+        t = ZonedDateTime(1983, 11, 1, tz=tz).next_transition()
+        assert t is not None
+        assert t.strict_eq(ZonedDateTime(1983, 11, 30, tz=tz))
+        assert t.tz_abbrev() == "AKST"
+        before = t.subtract(nanoseconds=1)
+        assert before.tz_abbrev() == "YST"
+        assert before.offset == t.offset == hours(-9)
+        assert before.dst_offset() == t.dst_offset() == TimeDelta.ZERO
+
+    def test_record_that_changes_nothing_is_skipped_tbilisi_1997(self):
+        # The database repeats the 1996 type at 1997-03-30, which changes
+        # neither the offset, the DST offset, nor the abbreviation
+        tz = "Asia/Tbilisi"
+        t = ZonedDateTime(1997, 3, 29, tz=tz).next_transition()
+        assert t is not None
+        assert t.strict_eq(
+            ZonedDateTime(1997, 10, 25, 23, tz=tz, disambiguation="later")
+        )
+        p = ZonedDateTime(1997, 4, 1, tz=tz).prev_transition()
+        assert p is not None
+        assert p.strict_eq(ZonedDateTime(1996, 3, 31, 1, tz=tz))
+
     def test_chain_nyc(self):
         d = ZonedDateTime(2024, 1, 1, tz="America/New_York")
         t1 = d.next_transition()
@@ -1907,6 +1963,17 @@ class TestPrevTransition:
         assert t.dst_offset() == TimeDelta.ZERO
         assert t.tz_abbrev() == "BST"
 
+    def test_standard_time_and_dst_change_together_argentina_2000(self):
+        # DST ended and standard time moved back to -03:00 at the same
+        # moment, so the offset stays -03:00 while the DST offset changes
+        tz = "America/Argentina/Buenos_Aires"
+        t = ZonedDateTime(2000, 6, 1, tz=tz).prev_transition()
+        assert t is not None
+        assert t.strict_eq(ZonedDateTime(2000, 3, 3, tz=tz))
+        assert t.offset == hours(-3)
+        assert t.dst_offset() == TimeDelta.ZERO
+        assert t.subtract(nanoseconds=1).dst_offset() == hours(1)
+
     def test_kolkata_historical(self):
         # Asia/Kolkata has no transitions in modern times
         # but has historical transitions
@@ -2072,6 +2139,13 @@ class TestDstOffset:
     def test_no_dst_zone(self):
         d = create_zdt(2020, 8, 15, 12, tz="Asia/Tokyo")
         assert d.dst_offset() == TimeDelta()
+
+    def test_standard_time_and_dst_changed_together(self):
+        # Argentina 1999-2000: standard time -04:00 with a one-hour saving,
+        # so the offset equals the previous standard offset
+        d = ZonedDateTime(1999, 12, 1, tz="America/Argentina/Buenos_Aires")
+        assert d.offset == hours(-3)
+        assert d.dst_offset() == hours(1)
 
     def test_repeated_earlier(self):
         d = create_zdt(
@@ -4010,6 +4084,27 @@ class TestToStdlib:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             assert ZonedDateTime(d.to_stdlib()).strict_eq(d)
+
+    def test_zoneinfo_disagrees_with_the_rules(self, tmp_path: Path):
+        # The stdlib reads Amsterdam's rules from a file in which DST ends a
+        # week later than in the file whenever read. The instant survives;
+        # the local fields follow the stdlib's rules.
+        zone = tmp_path / "Europe" / "Amsterdam"
+        zone.parent.mkdir()
+        shutil.copyfile(AMS_TZ_RAWFILE_DST_LATE, zone)
+        d = ZonedDateTime(2020, 10, 28, 12, tz="Europe/Amsterdam")
+        assert d.offset == hours(1)
+
+        zoneinfo_reset_tzpath([tmp_path])
+        ZoneInfo.clear_cache(only_keys=["Europe/Amsterdam"])
+        try:
+            py_dt = d.to_stdlib()
+        finally:
+            zoneinfo_reset_tzpath()
+            ZoneInfo.clear_cache(only_keys=["Europe/Amsterdam"])
+        assert py_dt.timestamp() == d.timestamp()
+        assert py_dt.hour == 13
+        assert py_dt.utcoffset() == py_timedelta(hours=2)
 
     @pytest.mark.parametrize(
         "tz",
@@ -6462,6 +6557,29 @@ class TestRound:
         )
         assert d.round(TimeDelta(minutes=20)).strict_eq(d.replace(minute=40))
 
+    # Colombo clocks fell back from 00:30 to 00:00 on 2006-04-15, a fold
+    # shorter than an hour: rounding to the hour takes the first occurrence
+    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
+    def test_round_inside_a_fold_shorter_than_the_increment(
+        self, disambiguation
+    ):
+        d = ZonedDateTime(
+            2006,
+            4,
+            15,
+            0,
+            15,
+            tz="Asia/Colombo",
+            disambiguation=disambiguation,
+        )
+        first = ZonedDateTime(
+            2006, 4, 15, tz="Asia/Colombo", disambiguation="earlier"
+        )
+        assert d.round("hour", mode="floor").strict_eq(first)
+        assert d.round(TimeDelta(hours=1), mode="floor").strict_eq(first)
+        # a 15-minute increment fits inside the fold, so the offset is kept
+        assert d.round("minute", increment=15, mode="floor").strict_eq(d)
+
     # On 2023-10-01, Lord Howe clocks jump from 02:00 to 02:30, so a 20-minute
     # grid has a point (02:20) strictly inside the gap.
     LORD_HOWE_BEFORE = ZonedDateTime.parse_iso(
@@ -6847,7 +6965,89 @@ class TestStartOf:
                 zdt.replace(minute=30, second=0, disambiguation="later")
             )
         )
-        # FUTURE: Tests for folds that don't occur on neat hour boundaries.
+
+    # Colombo clocks fell back from 00:30 to 00:00 on 2006-04-15, a fold
+    # shorter than an hour that begins on the hour boundary
+    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
+    def test_fold_shorter_than_the_unit_takes_the_first_occurrence(
+        self, disambiguation
+    ):
+        zdt = ZonedDateTime(
+            2006,
+            4,
+            15,
+            0,
+            15,
+            tz="Asia/Colombo",
+            disambiguation=disambiguation,
+        )
+        assert zdt.start_of("hour").strict_eq(
+            ZonedDateTime(
+                2006, 4, 15, tz="Asia/Colombo", disambiguation="earlier"
+            )
+        )
+        # the fold is longer than a minute, so the offset is kept
+        assert zdt.start_of("minute").strict_eq(zdt)
+
+    def test_fold_shorter_than_the_unit_other_zones(self):
+        # Colombo 1996-10-26: 00:30 back to 00:00
+        assert (
+            ZonedDateTime(
+                1996, 10, 26, 0, 15, tz="Asia/Colombo", disambiguation="later"
+            )
+            .start_of("hour")
+            .strict_eq(
+                ZonedDateTime(
+                    1996, 10, 26, tz="Asia/Colombo", disambiguation="earlier"
+                )
+            )
+        )
+        # Barbados 1944-09-10: 02:30 back to 02:00
+        assert (
+            ZonedDateTime(
+                1944,
+                9,
+                10,
+                2,
+                15,
+                tz="America/Barbados",
+                disambiguation="later",
+            )
+            .start_of("hour")
+            .strict_eq(
+                ZonedDateTime(
+                    1944,
+                    9,
+                    10,
+                    2,
+                    tz="America/Barbados",
+                    disambiguation="earlier",
+                )
+            )
+        )
+
+    # Denver adopted standard time on 1883-11-18: 12:00:04 LMT back to
+    # 12:00:00 MST, a fold of four seconds
+    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
+    def test_fold_of_seconds(self, disambiguation):
+        zdt = ZonedDateTime(
+            1883,
+            11,
+            18,
+            12,
+            0,
+            2,
+            tz="America/Denver",
+            disambiguation=disambiguation,
+        )
+        noon_lmt = ZonedDateTime(
+            1883, 11, 18, 12, tz="America/Denver", disambiguation="earlier"
+        )
+        assert noon_lmt.offset == TimeDelta(hours=-6, minutes=-59, seconds=-56)
+        assert zdt.start_of("hour").strict_eq(noon_lmt)
+        assert zdt.start_of("minute").strict_eq(noon_lmt)
+        # the fold is longer than a second, so the offset is kept
+        assert zdt.start_of("second").strict_eq(zdt)
 
     # Amsterdam clocks fell back from 03:00 to 02:00 on 2023-10-29, so 02:30
     # occurs twice
@@ -7335,6 +7535,87 @@ class TestEndOf:
         )
         assert zdt.end_of("minute").strict_eq(
             zdt.replace(second=59, nanosecond=999_999_999)
+        )
+
+    # Colombo clocks fell back from 00:30 to 00:00 on 2006-04-15, a fold
+    # shorter than an hour that begins on the hour boundary: the hour
+    # intervals still tile the timeline
+    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
+    def test_fold_shorter_than_the_unit_on_the_boundary(self, disambiguation):
+        zdt = ZonedDateTime(
+            2006,
+            4,
+            15,
+            0,
+            15,
+            tz="Asia/Colombo",
+            disambiguation=disambiguation,
+        )
+        end = zdt.end_of("hour")
+        assert end.strict_eq(
+            ZonedDateTime(
+                2006,
+                4,
+                15,
+                0,
+                59,
+                59,
+                nanosecond=999_999_999,
+                tz="Asia/Colombo",
+            )
+        )
+        assert end.add(nanoseconds=1).strict_eq(
+            ZonedDateTime(2006, 4, 15, 1, tz="Asia/Colombo")
+        )
+        # the previous hour ends one nanosecond before the shared start
+        assert (
+            ZonedDateTime(2006, 4, 14, 23, 45, tz="Asia/Colombo")
+            .end_of("hour")
+            .add(nanoseconds=1)
+            .strict_eq(zdt.start_of("hour"))
+        )
+
+    def test_fold_shorter_than_the_unit_other_zones(self):
+        # Barbados 1944-09-10: 02:30 back to 02:00
+        assert (
+            ZonedDateTime(
+                1944,
+                9,
+                10,
+                2,
+                15,
+                tz="America/Barbados",
+                disambiguation="later",
+            )
+            .end_of("hour")
+            .strict_eq(
+                ZonedDateTime(
+                    1944,
+                    9,
+                    10,
+                    2,
+                    59,
+                    59,
+                    nanosecond=999_999_999,
+                    tz="America/Barbados",
+                )
+            )
+        )
+        # Denver 1883-11-18: 12:00:04 LMT back to 12:00:00 MST
+        assert (
+            ZonedDateTime(1883, 11, 18, 11, 59, 30, tz="America/Denver")
+            .end_of("hour")
+            .add(nanoseconds=1)
+            .strict_eq(
+                ZonedDateTime(
+                    1883,
+                    11,
+                    18,
+                    12,
+                    tz="America/Denver",
+                    disambiguation="earlier",
+                )
+            )
         )
 
     def test_range_edges(self):

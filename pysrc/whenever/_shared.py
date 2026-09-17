@@ -897,9 +897,8 @@ def _tzpath_from_env() -> tuple[str, ...]:
 
         env_var = sysconfig.get_config_var("TZPATH")
 
-    # FUTURE: include in test coverage
     if not env_var:
-        return ()  # pragma: no cover
+        return ()
 
     raw_tzpath = env_var.split(os.pathsep)
     # according to spec, we're allowed to silently ignore invalid paths

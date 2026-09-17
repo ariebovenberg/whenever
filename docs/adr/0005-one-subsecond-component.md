@@ -21,9 +21,10 @@ seconds preserves nothing.
 - Presence still round-trips: `seconds=0` formats as `PT0S`, while
   `nanoseconds=0` formats as `PT0.0S`, and `parse_iso()` reads the fraction
   back as a present `nanoseconds`.
-- `total("milliseconds")` and `total("microseconds")` return a `float`;
-  `total("nanoseconds")` returns an `int`. `in_units()` offers no unit below
-  `nanoseconds` and none between it and `seconds`.
+- `total("milliseconds", relative_to=)` and `total("microseconds",
+  relative_to=)` return a `float`; `total("nanoseconds", relative_to=)`
+  returns an `int`. `in_units()` offers no unit below `nanoseconds` and none
+  between it and `seconds`.
 
 ## Considered options
 

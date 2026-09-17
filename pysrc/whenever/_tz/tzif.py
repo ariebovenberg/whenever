@@ -485,8 +485,14 @@ def _load_transitions(
     MutableSequence[tuple[EpochSecs, Offset]],
     MutableSequence[TransitionMeta],
 ]:
-    """Load transitions and metadata from parsed data"""
-    first_utoff, _, first_abbrind = types[0]
+    """Load transitions and metadata from parsed data.
+
+    A record whose type repeats the previous record's changes nothing
+    observable, so it is dropped: a transition is a change of the offset,
+    the DST saving, or the abbreviation.
+    """
+    prev_type = types[0]
+    first_utoff, _, first_abbrind = prev_type
 
     # Pre-seed last_std_offset from the first non-DST type in actual transitions.
     # This ensures correct DST saving computation when the very first transitions
@@ -505,12 +511,20 @@ def _load_transitions(
     ]
 
     for idx, epoch in zip(indices, transition_times):
-        utoff, isdst, abbrind = types[idx]
+        if types[idx] == prev_type:
+            continue
+        prev_type = utoff, isdst, abbrind = types[idx]
         offsets.append((epoch, utoff))
 
-        dst_saving = utoff - last_std_offset if isdst else 0
         if not isdst:
+            dst_saving = 0
             last_std_offset = utoff
+        elif utoff == last_std_offset:
+            # Standard time moved and DST began at the same moment, so the
+            # saving cannot be read off the previous standard offset.
+            dst_saving = 3600
+        else:
+            dst_saving = utoff - last_std_offset
 
         meta.append((dst_saving, abbrind, _abbrev_at(abbrev_data, abbrind)))
 

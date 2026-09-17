@@ -216,6 +216,7 @@ _MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
 _MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
 _MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * 1_000_000_000
 _MAX_SUBSEC_NANOS = 999_999_999
+_TIME_UNIT_SECS = {"hour": 3_600, "minute": 60, "second": 1}
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
 time_ns = _physical_time_ns
@@ -3045,6 +3046,7 @@ class _ExactTime(_BasicConversions):
         ``Instant.__eq__`` ignores nothing but the argument's type, while
         ``OffsetDateTime.__eq__`` also ignores the local datetime and the
         offset. An argument of a different type raises :exc:`TypeError`.
+        The example uses ``OffsetDateTime``, where ``==`` ignores the offset.
 
         >>> a = OffsetDateTime(2020, 8, 15, hour=12, offset=hours(1))
         >>> b = OffsetDateTime(2020, 8, 15, hour=13, offset=hours(2))
@@ -5198,7 +5200,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             )
         return result
 
-    # FUTURE: allow handling offset mismatches
     @classmethod
     def parse_iso(
         cls,
@@ -6011,8 +6012,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         round_increment: int = ...,
     ) -> ItemizedDelta: ...
 
-    # FUTURE: add round_unit to the signature,
-    # in order to allow rounding to millis, micros, and nanos
     def since(
         self,
         other: ZonedDateTime,
@@ -6223,16 +6222,20 @@ class ZonedDateTime(_ExactAndLocalTime):
         return result
 
     def _resolve_derived_local(
-        self, naive: _datetime, current_offset: int | None, /
+        self, naive: _datetime, current: tuple[int, int] | None, /
     ) -> _datetime:
         """Resolve a local time this value derived—a unit boundary or a
         rounded result—rather than one the caller wrote.
 
-        A repeated local time keeps ``current_offset`` while it is still
-        valid, and takes the earlier occurrence otherwise. Pass ``None`` for a
-        boundary that every value on the date must share, so that the value's
-        own offset cannot influence it. A skipped local time snaps to the edge
-        of the gap, so that successive intervals stay contiguous.
+        ``current`` is the value's offset in seconds paired with the unit's
+        length in nanoseconds. A repeated local time keeps that offset while
+        it is still valid and the fold is at least as long as the unit, and
+        takes the earlier occurrence otherwise: a fold shorter than the unit
+        lies inside one unit interval, so both occurrences share a boundary.
+        Pass ``None`` for a boundary that every value on the date must share,
+        so that the value's own offset cannot influence it. A skipped local
+        time snaps to the edge of the gap, so that successive intervals stay
+        contiguous.
         """
         match self._tz.ambiguity_for_local(naive):
             case Unique(offset):
@@ -6240,7 +6243,10 @@ class ZonedDateTime(_ExactAndLocalTime):
             case Fold(_, earlier_offset, later_offset):
                 offset = (
                     later_offset
-                    if current_offset == later_offset
+                    if current is not None
+                    and current[0] == later_offset
+                    and (earlier_offset - later_offset) * 1_000_000_000
+                    >= current[1]
                     else earlier_offset
                 )
             case Gap(end, later_offset, _):  # pragma: no branch
@@ -6259,7 +6265,10 @@ class ZonedDateTime(_ExactAndLocalTime):
             (
                 None
                 if unit in ("year", "month", "week_mon", "week_sun", "day")
-                else self._current_offset_secs()
+                else (
+                    self._current_offset_secs(),
+                    _TIME_UNIT_SECS[unit] * 1_000_000_000,
+                )
             ),
         )
 
@@ -6274,7 +6283,7 @@ class ZonedDateTime(_ExactAndLocalTime):
                 current_offset = int(
                     self._py_dt.utcoffset().total_seconds()  # type: ignore[union-attr]
                 )
-                unit_seconds = {"hour": 3_600, "minute": 60, "second": 1}[unit]
+                unit_seconds = _TIME_UNIT_SECS[unit]
                 # A fold shorter than the unit is part of the same local-clock
                 # unit, so include it when it ends exactly at the boundary.
                 offset = (
@@ -6318,7 +6327,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         that successive intervals stay contiguous.
 
         For ``"hour"``, ``"minute"``, and ``"second"``, a repeated boundary
-        keeps the current offset if that offset is still valid. For
+        keeps the current offset if that offset is still valid; in a
+        fall-back shorter than the unit, it is the first occurrence. For
         ``"day"``, ``"week_mon"``, ``"week_sun"``, ``"month"``, and
         ``"year"``, a repeated boundary always takes the earlier occurrence,
         so that every value on the same date shares one boundary.
@@ -6402,7 +6412,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         Notes
         -----
         * A rounded time that is repeated keeps the current offset if that
-          offset is still valid, and takes the earlier one otherwise.
+          offset is still valid, and takes the earlier one otherwise; in a
+          fall-back shorter than the increment, it is the first occurrence.
           A rounded time that is skipped becomes the first instant after
           the gap.
         * Rounding to a day compares the time elapsed since the start of the
@@ -6418,7 +6429,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
         return self._from_py_unchecked(
             self._resolve_derived_local(
-                rounded_local._py_dt, self._current_offset_secs()
+                rounded_local._py_dt,
+                (self._current_offset_secs(), increment_ns),
             ),
             rounded_local._nanos,
             self._tz,
@@ -6461,7 +6473,6 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         # We go through astimezone because, in theory, ZoneInfo could disagree
         # with our offset. This ensures we keep the same moment in time.
-        # FUTURE: add a test case for this.
         return self._py_dt.astimezone(ZoneInfo(key)).replace(
             microsecond=self._nanos // 1_000,
         )

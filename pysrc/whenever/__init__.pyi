@@ -126,6 +126,7 @@ DeltaTotalUnitStr: TypeAlias = Literal[
     "microseconds",
     "nanoseconds",
 ]
+# Deprecated: use DisambiguationStr.
 DisambiguateStr: TypeAlias = Literal[
     "compatible",
     "later",

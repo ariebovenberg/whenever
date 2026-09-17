@@ -617,6 +617,16 @@ def test_get_tzpath_is_the_public_name():
 
 
 class TestResetTzpath:
+    def test_empty_environment_variable(self, monkeypatch):
+        # an empty PYTHONTZPATH means no directories, as it does for zoneinfo
+        previous = get_tzpath()
+        monkeypatch.setenv("PYTHONTZPATH", "")
+        try:
+            reset_tzpath()
+            assert get_tzpath() == ()
+        finally:
+            reset_tzpath(previous)
+
     def test_iterator_is_read_once(self, tmp_path):
         previous = get_tzpath()
         try:

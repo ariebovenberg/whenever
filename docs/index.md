@@ -4,7 +4,7 @@ myst:
     description: >-
       Overview of whenever, a typesafe Python datetime library with separate
       Instant, ZonedDateTime, OffsetDateTime, and PlainDateTime types, DST-safe
-      arithmetic, and a Rust-backed implementation.
+      arithmetic, and a Rust extension.
 ---
 
 # Whenever
@@ -59,7 +59,7 @@ In short, it's designed to be:
 **{octicon}`zap` Fast**
 : In common operations, whenever is 10-100× faster than Pendulum and
   Arrow---and 2-4× as fast as the standard library.
-  Rather not depend on a Rust extension? A pure Python version is available too.
+  Rather not depend on a Rust extension? A pure-Python backend is available too.
 
 ---
 
@@ -120,7 +120,7 @@ Browse the sidebar to navigate the documentation, or jump directly to a topic be
 
       Find answers to common questions
 
-   .. grid-item-card:: :octicon:`typography` Pattern format codes
+   .. grid-item-card:: :octicon:`typography` Patterns
       :link: pattern-format
       :link-type: ref
       :shadow: md
@@ -163,11 +163,11 @@ Browse the sidebar to navigate the documentation, or jump directly to a topic be
    :caption: API Reference
    :hidden:
 
-   reference/iso8601.rst
+   reference/iso8601.md
    reference/pattern-format
-   reference/datetime.rst
+   reference/datetime.md
    reference/partial-types
-   reference/deltas.rst
+   reference/deltas.md
    reference/misc.rst
 
 .. toctree::

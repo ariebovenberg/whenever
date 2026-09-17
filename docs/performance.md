@@ -135,7 +135,7 @@ However, it keeps the wheel size reasonable through careful design choices:
 
 - Several types (`Weekday`, `YearMonth`, `MonthDay`, `IsoWeekDate`) are
   implemented only in Python even when the Rust extension is active, keeping
-  the extension focused on the performance-critical datetime types.
+  the Rust extension focused on the performance-critical datetime types.
 - Inlining is used judiciously: hot code paths are optimized, while cold paths
   are prevented from inflating the binary size.
 

@@ -2,10 +2,12 @@
 
 `timestamp(unit=)` returns the integer that labels the half-open bucket of
 the requested unit containing the instant, so it floors. `from_timestamp()`
-reads its argument the same way: an integer names a bucket, and a float is
-floored to whole nanoseconds. Both backends compute this with their own epoch
-arithmetic; the Python reference no longer delegates to
-`datetime.fromtimestamp()`.
+reads its argument the same way: an integer names a bucket, and a float
+(seconds only; the other units take integers) is floored to whole
+nanoseconds. Both backends compute this with their own epoch arithmetic; the
+Python reference floors and range-checks the value itself and reaches
+`datetime.fromtimestamp()` only inside the range, with a portable fallback
+where the platform's `time_t` cannot.
 
 ## Semantics
 

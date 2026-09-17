@@ -224,7 +224,6 @@ class TestInit:
 
         assert day == hours(24)
 
-        # FUTURE: a descriptive error message on why not
         # months and years not allowed
         with pytest.raises(TypeError, match="months"):
             TimeDelta(months=1)  # type: ignore[call-overload]
@@ -1525,7 +1524,7 @@ class TestRound:
             (
                 TimeDelta(hours=10, minutes=30),
                 23439118,
-                "millisecond",  # FUTURE: catch non-plural units with special message?
+                "millisecond",
                 TimeDelta(hours=6, minutes=30, seconds=39.118),
                 TimeDelta(hours=13, minutes=1, seconds=18.236),
                 TimeDelta(hours=13, minutes=1, seconds=18.236),

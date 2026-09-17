@@ -74,7 +74,7 @@ UTC instant:
 Instant("2021-07-13 18:45:00Z")
 ```
 
-Both parsers accept the zone names `UT` and `GMT` and the North American
+Both parsers accept the RFC 2822 zone names `UT` and `GMT` and the North American
 abbreviations `EST` through `PDT`; any other name, including a military
 letter, is read as `+0000`, and comments in folding whitespace are rejected.
 

@@ -104,7 +104,7 @@ There are no Python equivalents for the following classes:
 
 - {class}`ItemizedDelta` and {class}`ItemizedDateDelta` cannot be converted to {class}`~datetime.timedelta`
   because they may contain calendar units,
-  and because they store their components in unnormalized form, unlike {class}`~datetime.timedelta`.
+  and because they are itemized: every component is kept as given, unlike {class}`~datetime.timedelta`.
 - {class}`YearMonth` and {class}`MonthDay` cannot be converted because there
   is no direct equivalent in the standard library. {class}`IsoWeekDate` has a
   named tuple, not a type, in the standard library: go through `.date()`.

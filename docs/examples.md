@@ -90,10 +90,10 @@ Instant("2025-04-19 19:02:56.39569Z")
 ZonedDateTime("2025-04-19 15:02:56.39569-04:00[America/New_York]")
 >>> # convert back to the standard library
 >>> zdt.to_stdlib()
-datetime.datetime(2025, 4, 19, 15, 2, 56, 395690, tzinfo=ZoneInfo('America/New_York'))
+datetime.datetime(2025, 4, 19, 15, 2, 56, 395690, tzinfo=zoneinfo.ZoneInfo(key='America/New_York'))
 ```
 
-## Parse an ISO8601 datetime string
+## Parse an ISO 8601 string
 
 ```python
 >>> from whenever import Instant
@@ -131,7 +131,7 @@ ZonedDateTime("2025-04-19 15:46:41-04:00[America/New_York]")
 ZonedDateTime("2025-04-19 23:59:59.999999999-04:00[America/New_York]")
 ```
 
-## Get the current unix timestamp
+## Get the current timestamp
 
 ```python
 >>> from whenever import Instant
@@ -197,7 +197,7 @@ In the example below, the clock was set forward by one hour at 2:00 AM,
 so the time 2:30 AM doesn't exist.
 
 ```python
->>> from whenever import ZonedDateTime
+>>> from whenever import PlainDateTime, ZonedDateTime
 >>> # set up the date and time for the example
 >>> dt = PlainDateTime(2023, 3, 26, hour=2, minute=30)
 ```
@@ -225,14 +225,14 @@ Or, you can even reject ambiguous datetimes altogether:
 
 ## "Same time tomorrow" across DST
 
-Adding a day keeps the wall-clock time, even when a DST transition
+Adding a day keeps the local time, even when a DST transition
 makes the day shorter or longer than 24 hours:
 
 ```python
 >>> from whenever import ZonedDateTime
 >>> # The night before Spring Forward in Amsterdam
 >>> eve = ZonedDateTime(2025, 3, 30, hour=1, tz="Europe/Amsterdam")
->>> eve.add(days=1)     # same wall-clock time
+>>> eve.add(days=1)     # same local time
 ZonedDateTime("2025-03-31 01:00:00+02:00[Europe/Amsterdam]")
 >>> eve.add(hours=24)   # exactly 24 hours — one hour later on the clock
 ZonedDateTime("2025-03-31 02:00:00+02:00[Europe/Amsterdam]")
@@ -262,7 +262,7 @@ ZonedDateTime("2025-03-31 02:00:00+02:00[Europe/Amsterdam]")
 ## Recurring monthly event
 
 When a monthly recurrence lands on a day that doesn't exist in the
-target month, the date is truncated to the last valid day:
+target month, the date is clamped to the last valid day:
 
 ```python
 >>> from whenever import Date
@@ -291,7 +291,7 @@ All *exact types* can be compared and sorted amongst each other:
 "Plain" datetimes cannot be mixed with exact types. 
 This will be flagged by type checking.
 
-## Custom format patterns
+## Format with a pattern
 
 For formats beyond ISO 8601, use pattern strings:
 

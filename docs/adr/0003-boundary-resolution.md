@@ -12,12 +12,12 @@ when the boundary they compute falls in a repeated or skipped local time.
 - A repeated calendar-unit boundary (`year`, `month`, `week_mon`,
   `week_sun`, `day`) resolves to the earlier occurrence. A repeated
   time-unit boundary (`hour`, `minute`, `second`) keeps the value's current
-  offset when that is one of the two, and otherwise takes the earlier
-  occurrence. That rule is stated for `start_of()`; `end_of()` inherits
-  whatever the next `start_of()` resolves to, which in a fall-back shorter
-  than the unit is the later offset, because the whole fold lies inside one
-  unit (Lord Howe, 2024-04-07: `end_of("hour")` of 01:15+11:00 is
-  01:59:59.999999999+10:30).
+  offset when that is one of the two and the fold is at least as long as
+  the unit, and otherwise takes the earlier occurrence. That rule is stated
+  for `start_of()`; `end_of()` inherits whatever the next `start_of()`
+  resolves to, which in a fall-back shorter than the unit is the later
+  offset, because the whole fold lies inside one unit (Lord Howe,
+  2024-04-07: `end_of("hour")` of 01:15+11:00 is 01:59:59.999999999+10:30).
 - `end_of()` is the next `start_of()` minus one nanosecond, and
   `day_length()` is the difference between consecutive `start_of("day")`
   results.
@@ -25,11 +25,13 @@ when the boundary they compute falls in a repeated or skipped local time.
   returns an instant after its input. Rounding to a day compares the time
   elapsed since `start_of("day")` with `day_length()`, as Temporal does.
 - For every unit, every instant lies in exactly one interval: the boundaries
-  partition the timeline. One shape breaks this: a fall-back shorter than
-  the unit that begins exactly on a boundary of that unit gives the two
-  occurrences different `start_of()` results, so their intervals overlap.
-  No zone in the database has that shape; if one appears, the fix is to
-  stop keeping the current offset in a fold shorter than the unit.
+  partition the timeline. A fall-back shorter than the unit that begins on
+  a boundary of that unit (Colombo, 2006-04-15: 00:30+06:00 back to
+  00:00+05:30) would break this if the later occurrence kept its offset,
+  since the two occurrences of 00:15 would then start different hours. So
+  `start_of()`, `end_of()`, and `round()` all resolve a fold shorter than
+  the unit (the increment, for `round()`) to the first occurrence, and
+  both occurrences share the hour that starts at 00:00+06:00.
 
 ## Considered options
 

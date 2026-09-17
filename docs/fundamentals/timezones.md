@@ -2,8 +2,8 @@
 myst:
   html_meta:
     description: >-
-      What 'time zone' actually means: UTC offsets, abbreviations, and IANA
-      time zones, what each can and cannot express, and when to use which.
+      What 'time zone' actually means: UTC offsets, abbreviations, and time
+      zone IDs, what each can and cannot express, and when to use which.
 ---
 
 (timezones-explained)=
@@ -65,25 +65,25 @@ For example, `CST` can refer to:
 Abbreviations are useful for display purposes,
 but they are a poor choice for storing or interpreting time programmatically.
 
-## IANA time zones
+## Time zone IDs
 
 The most complete way to describe the relationship between local and exact time
-is using a time zone from the **[IANA Time Zone Database](https://en.wikipedia.org/wiki/Tz_database)**.
-These time zones are identified by IDs such as `Europe/Amsterdam` or `America/Los_Angeles`.
+is a time zone ID from the **[IANA Time Zone Database](https://en.wikipedia.org/wiki/Tz_database)**,
+such as `Europe/Amsterdam` or `America/Los_Angeles`.
 
-An IANA time zone represents a *set of rules* in a *specific region*:
+A time zone ID names a *set of rules* for a *specific region*:
 
 * how the offset from UTC changes over time
 * when daylight saving transitions occur
 * what those rules were in the past, and what they are expected to be in the future
 
-Given a local time and an IANA time zone,
+Given a local time and a time zone ID,
 software can usually determine the corresponding exact time—and vice versa.
 
 These IDs are the closest thing we have to a "complete" time zone in software.
 They are widely supported, regularly updated, and shared across programming languages and systems.
 
-That said, they are not magical. IANA time zones can only reflect **known rules**.
+That said, an ID is not magical: the rules it names are only the **known** ones.
 If a government changes its timekeeping laws,
 the database must be updated and redistributed before software can reflect the new reality.
 
@@ -106,7 +106,7 @@ Whenever has two classes for dealing with time zones:
 - {class}`~whenever.OffsetDateTime` represents a local date and time with a fixed UTC offset.
   It does not retain daylight saving or historical rules; see
   {ref}`offset-datetime-guidance` for the resulting tradeoffs.
-- {class}`~whenever.ZonedDateTime` represents a local date and time in the context of an IANA time zone.
+- {class}`~whenever.ZonedDateTime` represents a local date and time in the context of a named time zone.
   It uses the full set of rules to convert between local and exact time.
 
 Use {class}`~whenever.ZonedDateTime` when regional rules are known and matter.
@@ -127,5 +127,5 @@ local times occur twice and others not at all. Input containing both a numeric
 offset and a time zone can also contain a conflict.
 
 The next fundamental concept is {ref}`local-time ambiguity <ambiguity2>`.
-For Whenever's complete resolution flow, including offset conflicts, see
+For Whenever's complete resolution flow, including offset mismatches, see
 {ref}`resolving-local-times`.
