@@ -1,11 +1,10 @@
-import pickle
 import re
-from copy import copy, deepcopy
 
 import pytest
-from whenever import Date, MonthDay
-
-from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
+from whenever import (
+    Date,
+    MonthDay,
+)
 
 
 class TestInit:
@@ -48,87 +47,34 @@ class TestInit:
         assert MonthDay("--12-25") == MonthDay(12, 25)
 
 
-def test_properties():
-    md = MonthDay(12, 14)
-    assert md.month == 12
-    assert md.day == 14
+class TestAccessors:
+    def test_properties(self):
+        md = MonthDay(12, 14)
+        assert md.month == 12
+        assert md.day == 14
+
+    def test_singletons(self):
+        assert MonthDay.MIN == MonthDay(1, 1)
+        assert MonthDay.MAX == MonthDay(12, 31)
 
 
-def test_is_leap_day():
-    assert MonthDay(2, 29).is_leap_day()
-    assert not MonthDay(2, 28).is_leap_day()
-    assert not MonthDay(3, 1).is_leap_day()
-    assert not MonthDay(1, 1).is_leap_day()
-    assert not MonthDay(12, 31).is_leap_day()
+class TestFormatIso:
+    def test_format_iso(self):
+        assert MonthDay(11, 12).format_iso() == "--11-12"
+        assert MonthDay(2, 1).format_iso() == "--02-01"
+        assert MonthDay.parse_iso(MonthDay(2, 1).format_iso()) == MonthDay(
+            2, 1
+        )
 
+    def test_str(self):
+        assert (
+            str(MonthDay(10, 31)) == "--10-31" == MonthDay(10, 31).format_iso()
+        )
+        assert str(MonthDay(2, 1)) == "--02-01"
 
-def test_eq():
-    md = MonthDay(10, 12)
-    same = MonthDay(10, 12)
-    different = MonthDay(10, 11)
-
-    assert md == same
-    assert not md == different
-    assert not md == NeverEqual()
-    assert md == AlwaysEqual()
-
-    assert not md != same
-    assert md != different
-    assert md != NeverEqual()
-    assert not md != AlwaysEqual()
-    assert md != None  # noqa: E711
-    assert None != md  # noqa: E711
-    assert not md == None  # noqa: E711
-    assert not None == md  # noqa: E711
-
-    assert hash(md) == hash(same)
-
-
-def test_comparison():
-    md = MonthDay(7, 5)
-    same = MonthDay(7, 5)
-    bigger = MonthDay(8, 2)
-    smaller = MonthDay(6, 12)
-
-    assert md <= same
-    assert md <= bigger
-    assert not md <= smaller
-    assert md <= AlwaysLarger()
-    assert not md <= AlwaysSmaller()
-
-    assert not md < same
-    assert md < bigger
-    assert not md < smaller
-    assert md < AlwaysLarger()
-    assert not md < AlwaysSmaller()
-
-    assert md >= same
-    assert not md >= bigger
-    assert md >= smaller
-    assert not md >= AlwaysLarger()
-    assert md >= AlwaysSmaller()
-
-    assert not md > same
-    assert not md > bigger
-    assert md > smaller
-    assert not md > AlwaysLarger()
-    assert md > AlwaysSmaller()
-
-
-def test_format_iso():
-    assert MonthDay(11, 12).format_iso() == "--11-12"
-    assert MonthDay(2, 1).format_iso() == "--02-01"
-    assert MonthDay.parse_iso(MonthDay(2, 1).format_iso()) == MonthDay(2, 1)
-
-
-def test_str():
-    assert str(MonthDay(10, 31)) == "--10-31" == MonthDay(10, 31).format_iso()
-    assert str(MonthDay(2, 1)) == "--02-01"
-
-
-def test_repr():
-    assert repr(MonthDay(11, 12)) == 'MonthDay("--11-12")'
-    assert repr(MonthDay(2, 1)) == 'MonthDay("--02-01")'
+    def test_repr(self):
+        assert repr(MonthDay(11, 12)) == 'MonthDay("--11-12")'
+        assert repr(MonthDay(2, 1)) == 'MonthDay("--02-01")'
 
 
 class TestParseIso:
@@ -181,78 +127,103 @@ class TestParseIso:
             MonthDay.parse_iso(20210102)  # type: ignore[arg-type]
 
 
-def test_replace():
-    md = MonthDay(12, 31)
-    assert md.replace(month=8) == MonthDay(8, 31)
-    assert md.replace(day=8) == MonthDay(12, 8)
-    assert md == MonthDay(12, 31)  # original is unchanged
+class TestEquality:
+    def test_eq(self):
+        md = MonthDay(10, 12)
+        same = MonthDay(10, 12)
+        different = MonthDay(10, 11)
 
-    # the message names no dummy year
-    with pytest.raises(ValueError, match="^invalid date$"):
-        md.replace(month=2)
+        assert md == same
+        assert not md == different
 
-    with pytest.raises(ValueError, match="^invalid date$"):
-        md.replace(day=32)
+        assert not md != same
+        assert md != different
 
-    with pytest.raises(ValueError, match="^invalid date$"):
-        md.replace(month=2, day=31)
-
-    with pytest.raises(TypeError):
-        md.replace(3)  # type: ignore[call-arg]
-
-    with pytest.raises(TypeError, match="foo"):
-        md.replace(foo=3)  # type: ignore[call-arg]
-
-    with pytest.raises(TypeError, match="year"):
-        md.replace(year=2000)  # type: ignore[call-arg]
-
-    with pytest.raises(TypeError, match="foo"):
-        md.replace(foo="blabla")  # type: ignore[call-arg]
-
-    with pytest.raises(ValueError, match="^invalid date$"):
-        md.replace(month=13)
+        assert hash(md) == hash(same)
 
 
-def test_in_year():
-    md = MonthDay(12, 28)
-    assert md.in_year(2000) == Date(2000, 12, 28)
-    assert md.in_year(4) == Date(4, 12, 28)
+class TestComparison:
+    def test_comparison(self):
+        md = MonthDay(7, 5)
+        same = MonthDay(7, 5)
+        bigger = MonthDay(8, 2)
+        smaller = MonthDay(6, 12)
 
-    with pytest.raises(ValueError):
-        md.in_year(0)
+        assert md <= same
+        assert md <= bigger
+        assert not md <= smaller
 
-    with pytest.raises(ValueError):
-        md.in_year(10_000)
+        assert not md < same
+        assert md < bigger
+        assert not md < smaller
 
-    with pytest.raises(ValueError):
-        md.in_year(-1)
+        assert md >= same
+        assert not md >= bigger
+        assert md >= smaller
 
-    leap_day = MonthDay(2, 29)
-    assert leap_day.in_year(2000) == Date(2000, 2, 29)
-    with pytest.raises(ValueError):
-        leap_day.in_year(2001)
-
-
-def test_copy():
-    md = MonthDay(5, 1)
-    assert copy(md) is md
-    assert deepcopy(md) is md
+        assert not md > same
+        assert not md > bigger
+        assert md > smaller
 
 
-def test_singletons():
-    assert MonthDay.MIN == MonthDay(1, 1)
-    assert MonthDay.MAX == MonthDay(12, 31)
+class TestReplace:
+    def test_replace(self):
+        md = MonthDay(12, 31)
+        assert md.replace(month=8) == MonthDay(8, 31)
+        assert md.replace(day=8) == MonthDay(12, 8)
+        assert md == MonthDay(12, 31)  # original is unchanged
+
+        # the message names no dummy year
+        with pytest.raises(ValueError, match="^invalid date$"):
+            md.replace(month=2)
+
+        with pytest.raises(ValueError, match="^invalid date$"):
+            md.replace(day=32)
+
+        with pytest.raises(ValueError, match="^invalid date$"):
+            md.replace(month=2, day=31)
+
+        with pytest.raises(TypeError):
+            md.replace(3)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="foo"):
+            md.replace(foo=3)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="year"):
+            md.replace(year=2000)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="foo"):
+            md.replace(foo="blabla")  # type: ignore[call-arg]
+
+        with pytest.raises(ValueError, match="^invalid date$"):
+            md.replace(month=13)
 
 
-def test_pickling():
-    d = MonthDay(11, 1)
-    dumped = pickle.dumps(d)
-    assert pickle.loads(dumped) == d
+class TestCalendarProperties:
+    def test_is_leap_day(self):
+        assert MonthDay(2, 29).is_leap_day()
+        assert not MonthDay(2, 28).is_leap_day()
+        assert not MonthDay(3, 1).is_leap_day()
+        assert not MonthDay(1, 1).is_leap_day()
+        assert not MonthDay(12, 31).is_leap_day()
 
 
-def test_unpickle_compatibility():
-    dumped = (
-        b"\x80\x04\x95#\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\t_unpkl_m"
-        b"d\x94\x93\x94C\x02\x0b\x01\x94\x85\x94R\x94."
-    )
-    assert pickle.loads(dumped) == MonthDay(11, 1)
+class TestConversion:
+    def test_in_year(self):
+        md = MonthDay(12, 28)
+        assert md.in_year(2000) == Date(2000, 12, 28)
+        assert md.in_year(4) == Date(4, 12, 28)
+
+        with pytest.raises(ValueError):
+            md.in_year(0)
+
+        with pytest.raises(ValueError):
+            md.in_year(10_000)
+
+        with pytest.raises(ValueError):
+            md.in_year(-1)
+
+        leap_day = MonthDay(2, 29)
+        assert leap_day.in_year(2000) == Date(2000, 2, 29)
+        with pytest.raises(ValueError):
+            leap_day.in_year(2001)

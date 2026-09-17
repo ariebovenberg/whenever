@@ -1,4 +1,3 @@
-import pickle
 import re
 import warnings
 from collections import Counter
@@ -10,7 +9,6 @@ import pytest
 from whenever import (
     CalendarUnitCompositionWarning,
     Date,
-    ImplicitDisambiguationWarning,
     Instant,
     ItemizedDateDelta,
     ItemizedDelta,
@@ -22,25 +20,52 @@ from whenever import (
     hours,
 )
 
-from .common import (
-    INVALID_DDELTAS,
-    AlwaysEqual,
-    NeverEqual,
-    warns_here,
-)
-
-
-class _Idx:
-    """An integer-like object: what CPython's own parser accepts for a field."""
-
-    def __index__(self):
-        return 5
-
+from .common import INVALID_DDELTAS, Idx, warns_here
 
 UNITS = cast(
     Sequence[Literal["years", "months", "weeks", "days"]],
     "years months weeks days".split(),
 )
+
+
+INVALID_DELTAS = [
+    "P",
+    "",
+    "3D",
+    "-PT",
+    "PT",
+    "+PT",
+    "P1YX3M",  # invalid separator
+    "P𝟙D",  # non-ascii
+    "P0.0D",  # fractional date not allowed
+    # incomplete
+    "P3",
+    "P3D4",
+    "P3D4T",
+    "P3M4DT",
+    # too many digits
+    "P9999999999999999999D",
+    # out of range
+    "P14000Y",
+    "P180000M",
+    "PT180000000H",
+    # unit mixups
+    "P3DT4HM",
+    "P3DT4H8X",
+    "P3DT4M3H",
+    # trailing stuff
+    "P3M0Dxyz",
+    "P3M0DD",
+    "P3M0D0",
+    *INVALID_DDELTAS,
+]
+
+
+_D: Any = ItemizedDateDelta(days=1)
+
+RANGE_MSG = "value or calculation out of range"
+
+_DATE = Date(2024, 1, 1)
 
 
 class TestInit:
@@ -109,7 +134,7 @@ class TestInit:
             ItemizedDateDelta(weeks=1).subtract(**kwargs)
 
     def test_index_protocol(self):
-        five = cast(int, _Idx())
+        five = cast(int, Idx())
         assert ItemizedDateDelta(days=five)["days"] == 5
         assert type(ItemizedDateDelta(days=True)["days"]) is int
         assert ItemizedDateDelta(days=True)["days"] == 1
@@ -154,100 +179,123 @@ class TestInit:
         with pytest.raises(ValueError, match="range"):
             ItemizedDateDelta(**kwargs)
 
+    def test_from_str(self):
+        assert ItemizedDateDelta("P2W3D").strict_eq(
+            ItemizedDateDelta(weeks=2, days=3)
+        )
+        assert ItemizedDateDelta("P1Y6M").strict_eq(
+            ItemizedDateDelta(years=1, months=6)
+        )
+        with pytest.raises(ValueError):
+            ItemizedDateDelta("not valid")
 
-@pytest.mark.parametrize(
-    "d, expected",
-    [
-        (ItemizedDateDelta(days=5), {"days": 5}),
-        (
-            ItemizedDateDelta(weeks=1, years=2, months=8),
-            {"years": 2, "months": 8, "weeks": 1},
-        ),
-        (
-            ItemizedDateDelta(weeks=-1, years=-80),
-            {"years": -80, "weeks": -1},
-        ),
-        (
-            ItemizedDateDelta(years=1, months=0, weeks=9_000, days=1_000),
-            {"years": 1, "months": 0, "weeks": 9_000, "days": 1_000},
-        ),
-        # an explicit zero is present
-        (ItemizedDateDelta(days=0), {"days": 0}),
-    ],
-)
-def test_mapping_like_interface(
-    d: ItemizedDateDelta,
-    expected: dict[Literal["years", "months", "weeks", "days"], int],
-):
-    # Components
-    assert list(d.keys()) == list(expected.keys())
-    assert list(d.values()) == list(expected.values())
-    assert list(d.items()) == list(expected.items())
 
-    # passing as arguments
-    assert dict(d) == expected
-    assert Counter(d) == Counter(expected)
-    # mypy ignore awaiting release of https://github.com/python/mypy/pull/20416
-    assert ItemizedDateDelta(**d) == d  # type: ignore[arg-type]
+class TestAccessors:
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (ItemizedDateDelta(days=5), {"days": 5}),
+            (
+                ItemizedDateDelta(weeks=1, years=2, months=8),
+                {"years": 2, "months": 8, "weeks": 1},
+            ),
+            (
+                ItemizedDateDelta(weeks=-1, years=-80),
+                {"years": -80, "weeks": -1},
+            ),
+            (
+                ItemizedDateDelta(years=1, months=0, weeks=9_000, days=1_000),
+                {"years": 1, "months": 0, "weeks": 9_000, "days": 1_000},
+            ),
+            # an explicit zero is present
+            (ItemizedDateDelta(days=0), {"days": 0}),
+        ],
+    )
+    def test_mapping_like_interface(
+        self,
+        d: ItemizedDateDelta,
+        expected: dict[Literal["years", "months", "weeks", "days"], int],
+    ):
+        # Components
+        assert list(d.keys()) == list(expected.keys())
+        assert list(d.values()) == list(expected.values())
+        assert list(d.items()) == list(expected.items())
 
-    for key in expected:
-        assert key in d
-        assert d[key] == expected[key]
-        assert d.get(key) is not None
+        # passing as arguments
+        assert dict(d) == expected
+        assert Counter(d) == Counter(expected)
+        # mypy ignore awaiting release of https://github.com/python/mypy/pull/20416
+        assert ItemizedDateDelta(**d) == d  # type: ignore[arg-type]
 
-    # a random missing key
-    assert "foo" not in d
-    with pytest.raises(KeyError):
-        d["foo"]  # type: ignore[index]
+        for key in expected:
+            assert key in d
+            assert d[key] == expected[key]
+            assert d.get(key) is not None
 
-    assert d.get("foo") is None  # type: ignore[call-overload]
-
-    for missing_key in UNITS - expected.keys():
-        assert missing_key not in d
-        assert d.get(missing_key) is None
+        # a random missing key
+        assert "foo" not in d
         with pytest.raises(KeyError):
-            d[missing_key]
+            d["foo"]  # type: ignore[index]
 
-    assert len(d) == len(expected)
+        assert d.get("foo") is None  # type: ignore[call-overload]
 
-    # get() with a default, and keys of another type
-    for key in expected:
-        assert d.get(key, 42) == expected[key]
-    assert d.get("foo", 42) == 42  # type: ignore[call-overload]
-    assert 0 not in d  # type: ignore[comparison-overlap]
-    assert 42 not in d  # type: ignore[comparison-overlap]
-    with pytest.raises(KeyError):
-        d[0]  # type: ignore[index]
+        for missing_key in UNITS - expected.keys():
+            assert missing_key not in d
+            assert d.get(missing_key) is None
+            with pytest.raises(KeyError):
+                d[missing_key]
 
+        assert len(d) == len(expected)
 
-def test_mapping_views():
-    d = ItemizedDateDelta(years=2, months=3, weeks=4)
+        # get() with a default, and keys of another type
+        for key in expected:
+            assert d.get(key, 42) == expected[key]
+        assert d.get("foo", 42) == 42  # type: ignore[call-overload]
+        assert 0 not in d  # type: ignore[comparison-overlap]
+        assert 42 not in d  # type: ignore[comparison-overlap]
+        with pytest.raises(KeyError):
+            d[0]  # type: ignore[index]
 
-    assert isinstance(d, Mapping)
+    def test_mapping_views(self):
+        d = ItemizedDateDelta(years=2, months=3, weeks=4)
 
-    # KeysView
-    keys = d.keys()
-    assert isinstance(keys, KeysView)
-    assert set(keys) == {"years", "months", "weeks"}
-    assert keys | {"extra"} == {"years", "months", "weeks", "extra"}
-    assert keys & {"years", "days"} == {"years"}
-    assert keys - {"months"} == {"years", "weeks"}
+        assert isinstance(d, Mapping)
 
-    # ValuesView
-    values = d.values()
-    assert isinstance(values, ValuesView)
-    assert set(values) == {2, 3, 4}
+        # KeysView
+        keys = d.keys()
+        assert isinstance(keys, KeysView)
+        assert set(keys) == {"years", "months", "weeks"}
+        assert keys | {"extra"} == {"years", "months", "weeks", "extra"}
+        assert keys & {"years", "days"} == {"years"}
+        assert keys - {"months"} == {"years", "weeks"}
 
-    # ItemsView
-    items = d.items()
-    assert isinstance(items, ItemsView)
-    assert set(items) == {("years", 2), ("months", 3), ("weeks", 4)}
-    assert items | {("days", 5)} == {
-        ("years", 2),
-        ("months", 3),
-        ("weeks", 4),
-        ("days", 5),
-    }
+        # ValuesView
+        values = d.values()
+        assert isinstance(values, ValuesView)
+        assert set(values) == {2, 3, 4}
+
+        # ItemsView
+        items = d.items()
+        assert isinstance(items, ItemsView)
+        assert set(items) == {("years", 2), ("months", 3), ("weeks", 4)}
+        assert items | {("days", 5)} == {
+            ("years", 2),
+            ("months", 3),
+            ("weeks", 4),
+            ("days", 5),
+        }
+
+    def test_bool(self):
+        d_zero = ItemizedDateDelta(days=0)
+        assert not d_zero
+        assert d_zero.sign() == 0
+
+        assert not ItemizedDateDelta(years=0)
+        assert ItemizedDateDelta(weeks=0).sign() == 0
+
+        d_nonzero = ItemizedDateDelta(weeks=1, days=0)
+        assert d_nonzero
+        assert d_nonzero.sign() == 1
 
 
 class TestKeysView:
@@ -274,156 +322,6 @@ class TestKeysView:
         k1 = ItemizedDateDelta(years=1).keys()
         k2 = ItemizedDateDelta(days=2).keys()
         assert k1.isdisjoint(k2)
-
-
-def test_replace():
-    d = ItemizedDateDelta(years=2, months=3, weeks=4)
-
-    # changing an existing value
-    assert d.replace(months=10).strict_eq(
-        ItemizedDateDelta(years=2, months=10, weeks=4)
-    )
-
-    # adding a value
-    assert d.replace(days=5).strict_eq(
-        ItemizedDateDelta(years=2, months=3, weeks=4, days=5)
-    )
-
-    # setting to zero
-    assert d.replace(weeks=0).strict_eq(
-        ItemizedDateDelta(years=2, months=3, weeks=0)
-    )
-
-    # setting to missing (zero)
-    assert d.replace(years=None).strict_eq(
-        ItemizedDateDelta(months=3, weeks=4)
-    )
-
-    # invalid sign
-    with pytest.raises(ValueError, match="sign"):
-        assert d.replace(days=-1)
-
-    with pytest.raises(ValueError, match="sign"):
-        assert (-d).replace(days=1)
-
-    # sign becomes zero
-    assert d.replace(years=0, months=0, weeks=0).strict_eq(
-        ItemizedDateDelta(years=0, months=0, weeks=0)
-    )
-
-    # sign becomes negative
-    assert d.replace(years=-3, months=-1, weeks=0, days=-4).strict_eq(
-        ItemizedDateDelta(years=-3, months=-1, weeks=0, days=-4)
-    )
-
-    # negative becomes positive
-    assert (
-        (-d)
-        .replace(years=3, months=1, weeks=0, days=4)
-        .strict_eq(ItemizedDateDelta(years=3, months=1, weeks=0, days=4))
-    )
-
-    # last component removed
-    with pytest.raises(
-        ValueError, match="^at least one component must remain present$"
-    ):
-        d.replace(years=None, months=None, weeks=None)
-
-    # no arguments
-    assert d.replace().strict_eq(d)
-    assert (-d).replace().strict_eq(-d)
-
-    # invalid component
-    with pytest.raises(
-        TypeError,
-        match=r"^replace\(\) got an unexpected keyword argument 'foo'$",
-    ):
-        d.replace(foo=5)  # type: ignore[call-arg]
-
-
-class TestEq:
-    def test_notimplemented(self):
-        d = ItemizedDateDelta(days=5)
-        assert d != NeverEqual()
-        assert NeverEqual() != d
-        assert not d == NeverEqual()
-        assert not NeverEqual() == d
-
-        assert d == AlwaysEqual()
-        assert AlwaysEqual() == d
-        assert not d != AlwaysEqual()
-        assert not AlwaysEqual() != d
-
-        assert d != 5  # type: ignore[comparison-overlap]
-        assert 5 != d  # type: ignore[comparison-overlap]
-
-    def test_equal(self):
-        d1 = ItemizedDateDelta(days=5, years=2)
-        d2 = ItemizedDateDelta(days=5, years=2)
-        d3 = ItemizedDateDelta(days=5, years=3)
-        assert d1 == d2
-        assert not d1 != d2
-        assert d1 != d3
-        assert not d1 == d3
-
-    def test_zero_is_same_as_missing(self):
-        d1 = ItemizedDateDelta(weeks=1)
-        d2 = ItemizedDateDelta(weeks=1, days=0)
-        assert d1 == d2
-        assert not d1 != d2
-
-    def test_no_allow_mixing_delta_types(self):
-        d = ItemizedDateDelta(days=5)
-        # NOTE: the mypy ignore comments are actually also "tests" in the sense
-        # they ensure that the types properly implement strict comparison!
-        assert d != "P5D"  # type: ignore[comparison-overlap]
-        assert d != {"days": 5}
-        assert d != ItemizedDelta(days=5)
-
-
-def test_strict_eq():
-    d1 = ItemizedDateDelta(years=2, months=0, weeks=5, days=0)
-    d2 = ItemizedDateDelta(years=2, weeks=5)
-    d3 = ItemizedDateDelta(years=2, months=1, weeks=5)
-    assert d1.strict_eq(d1)
-    assert not d1.strict_eq(d2)
-    assert not d1.strict_eq(d3)
-    with pytest.raises(
-        TypeError,
-        match=r"^strict_eq\(\) argument must be an ItemizedDateDelta$",
-    ):
-        d1.strict_eq(ItemizedDelta(years=2))  # type: ignore[arg-type]
-    assert not ItemizedDateDelta(days=1).strict_eq(ItemizedDateDelta(days=-1))
-    assert ItemizedDateDelta(days=1) != ItemizedDateDelta(days=-1)
-
-
-class TestHash:
-    """``hash()`` agrees with ``==``, which ignores explicit zeros."""
-
-    @pytest.mark.parametrize(
-        "a, b",
-        [
-            (
-                ItemizedDateDelta(weeks=1, days=2),
-                ItemizedDateDelta(weeks=1, days=2),
-            ),
-            (ItemizedDateDelta(weeks=1, days=0), ItemizedDateDelta(weeks=1)),
-            (ItemizedDateDelta(weeks=0, days=1), ItemizedDateDelta(days=1)),
-        ],
-    )
-    def test_equal_values_hash_alike(self, a, b):
-        assert a == b
-        assert hash(a) == hash(b)
-
-    def test_unequal_values(self):
-        assert hash(ItemizedDateDelta(weeks=1, days=2)) != hash(
-            ItemizedDateDelta(weeks=2, days=1)
-        )
-
-    def test_set_member(self):
-        s = {ItemizedDateDelta(weeks=1, days=0), ItemizedDateDelta(weeks=1)}
-        assert s == {ItemizedDateDelta(weeks=1)}
-        assert ItemizedDateDelta(weeks=1, days=0) in s
 
 
 class TestFormatIso:
@@ -461,75 +359,29 @@ class TestFormatIso:
             d.format_iso(lowercase_units=lowercase_units)
         ).strict_eq(d)
 
+    def test_repr(self):
+        d = ItemizedDateDelta(
+            years=3,
+            months=6,
+            weeks=9,
+            days=4,
+        )
+        assert repr(d) == 'ItemizedDateDelta("P3y6m9w4d")'
+        assert repr(ItemizedDateDelta(days=0)) == 'ItemizedDateDelta("P0d")'
+        assert (
+            repr(ItemizedDateDelta(months=-1, days=0))
+            == 'ItemizedDateDelta("-P1m0d")'
+        )
 
-def test_repr():
-    d = ItemizedDateDelta(
-        years=3,
-        months=6,
-        weeks=9,
-        days=4,
-    )
-    assert repr(d) == 'ItemizedDateDelta("P3y6m9w4d")'
-    assert repr(ItemizedDateDelta(days=0)) == 'ItemizedDateDelta("P0d")'
-    assert (
-        repr(ItemizedDateDelta(months=-1, days=0))
-        == 'ItemizedDateDelta("-P1m0d")'
-    )
-
-
-def test_str():
-    d = ItemizedDateDelta(
-        years=3,
-        months=6,
-        weeks=9,
-        days=4,
-    )
-    assert str(d) == "P3Y6M9W4D" == d.format_iso()
-    assert str(ItemizedDateDelta(days=0)) == "P0D"
-
-
-def test_init_from_str():
-    assert ItemizedDateDelta("P2W3D").strict_eq(
-        ItemizedDateDelta(weeks=2, days=3)
-    )
-    assert ItemizedDateDelta("P1Y6M").strict_eq(
-        ItemizedDateDelta(years=1, months=6)
-    )
-    with pytest.raises(ValueError):
-        ItemizedDateDelta("not valid")
-
-
-INVALID_DELTAS = [
-    "P",
-    "",
-    "3D",
-    "-PT",
-    "PT",
-    "+PT",
-    "P1YX3M",  # invalid separator
-    "P𝟙D",  # non-ascii
-    "P0.0D",  # fractional date not allowed
-    # incomplete
-    "P3",
-    "P3D4",
-    "P3D4T",
-    "P3M4DT",
-    # too many digits
-    "P9999999999999999999D",
-    # out of range
-    "P14000Y",
-    "P180000M",
-    "PT180000000H",
-    # unit mixups
-    "P3DT4HM",
-    "P3DT4H8X",
-    "P3DT4M3H",
-    # trailing stuff
-    "P3M0Dxyz",
-    "P3M0DD",
-    "P3M0D0",
-    *INVALID_DDELTAS,
-]
+    def test_str(self):
+        d = ItemizedDateDelta(
+            years=3,
+            months=6,
+            weeks=9,
+            days=4,
+        )
+        assert str(d) == "P3Y6M9W4D" == d.format_iso()
+        assert str(ItemizedDateDelta(days=0)) == "P0D"
 
 
 class TestParseIso:
@@ -569,63 +421,141 @@ class TestParseIso:
             ItemizedDateDelta.parse_iso(s)
 
 
-# These tests are relatively simple because since() does most of the heavy lifting,
-# and is tested more thoroughly elsewhere.
-@pytest.mark.parametrize(
-    "d, relative_to, units, kwargs, expect",
-    [
-        (
-            ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
-            Date("2021-12-31"),
-            ["years", "days"],
-            {},
-            ItemizedDateDelta(years=2, days=124),
-        ),
-        (
-            ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
-            Date("2021-12-31"),
-            ["years", "days"],
-            {"round_increment": 5, "round_mode": "ceil"},
-            ItemizedDateDelta(years=2, days=125),
-        ),
-        (
-            ItemizedDateDelta(days=0),
-            Date("0023-02-28"),
-            ["years", "months", "weeks"],
-            {},
-            ItemizedDateDelta(years=0, months=0, weeks=0),
-        ),
-        (
-            ItemizedDateDelta(days=45),
-            Date("2021-01-01"),
-            ["months"],
-            {"round_mode": "half_even"},
-            ItemizedDateDelta(months=2),
-        ),
-        (
-            ItemizedDateDelta(days=45),
-            Date("2021-01-01"),
-            ["months"],
-            {"round_mode": "half_floor"},
-            ItemizedDateDelta(months=1),
-        ),
-    ],
-)
-def test_in_units(
-    d: ItemizedDateDelta,
-    relative_to: Date,
-    units: Sequence[Literal["years", "months", "weeks", "days"]],
-    kwargs: Any,
-    expect: ItemizedDateDelta,
-):
-    assert d.in_units(units, relative_to=relative_to, **kwargs).strict_eq(
-        expect
+class TestEquality:
+    def test_equal(self):
+        d1 = ItemizedDateDelta(days=5, years=2)
+        d2 = ItemizedDateDelta(days=5, years=2)
+        d3 = ItemizedDateDelta(days=5, years=3)
+        assert d1 == d2
+        assert not d1 != d2
+        assert d1 != d3
+        assert not d1 == d3
+
+    def test_zero_is_same_as_missing(self):
+        d1 = ItemizedDateDelta(weeks=1)
+        d2 = ItemizedDateDelta(weeks=1, days=0)
+        assert d1 == d2
+        assert not d1 != d2
+
+    def test_no_allow_mixing_delta_types(self):
+        d = ItemizedDateDelta(days=5)
+        # NOTE: the mypy ignore comments are actually also "tests" in the sense
+        # they ensure that the types properly implement strict comparison!
+        assert d != "P5D"  # type: ignore[comparison-overlap]
+        assert d != {"days": 5}
+        assert d != ItemizedDelta(days=5)
+
+    def test_strict_eq(self):
+        d1 = ItemizedDateDelta(years=2, months=0, weeks=5, days=0)
+        d2 = ItemizedDateDelta(years=2, weeks=5)
+        d3 = ItemizedDateDelta(years=2, months=1, weeks=5)
+        assert d1.strict_eq(d1)
+        assert not d1.strict_eq(d2)
+        assert not d1.strict_eq(d3)
+        with pytest.raises(
+            TypeError,
+            match=r"^strict_eq\(\) argument must be an ItemizedDateDelta$",
+        ):
+            d1.strict_eq(ItemizedDelta(years=2))  # type: ignore[arg-type]
+        assert not ItemizedDateDelta(days=1).strict_eq(
+            ItemizedDateDelta(days=-1)
+        )
+        assert ItemizedDateDelta(days=1) != ItemizedDateDelta(days=-1)
+
+    # ``hash()`` agrees with ``==``, which ignores explicit zeros.
+    @pytest.mark.parametrize(
+        "a, b",
+        [
+            (
+                ItemizedDateDelta(weeks=1, days=2),
+                ItemizedDateDelta(weeks=1, days=2),
+            ),
+            (ItemizedDateDelta(weeks=1, days=0), ItemizedDateDelta(weeks=1)),
+            (ItemizedDateDelta(weeks=0, days=1), ItemizedDateDelta(days=1)),
+        ],
     )
-    if kwargs.get("round_increment", 1) == 1 and units[-1] == "days":
-        assert relative_to.add(expect) == relative_to.add(d)
+    def test_equal_values_hash_alike(self, a, b):
+        assert a == b
+        assert hash(a) == hash(b)
+
+    def test_unequal_values(self):
+        assert hash(ItemizedDateDelta(weeks=1, days=2)) != hash(
+            ItemizedDateDelta(weeks=2, days=1)
+        )
+
+    def test_set_member(self):
+        s = {ItemizedDateDelta(weeks=1, days=0), ItemizedDateDelta(weeks=1)}
+        assert s == {ItemizedDateDelta(weeks=1)}
+        assert ItemizedDateDelta(weeks=1, days=0) in s
 
 
-class TestAddSub:
+class TestReplace:
+    def test_valid(self):
+        d = ItemizedDateDelta(years=2, months=3, weeks=4)
+
+        # changing an existing value
+        assert d.replace(months=10).strict_eq(
+            ItemizedDateDelta(years=2, months=10, weeks=4)
+        )
+
+        # adding a value
+        assert d.replace(days=5).strict_eq(
+            ItemizedDateDelta(years=2, months=3, weeks=4, days=5)
+        )
+
+        # setting to zero
+        assert d.replace(weeks=0).strict_eq(
+            ItemizedDateDelta(years=2, months=3, weeks=0)
+        )
+
+        # setting to missing (zero)
+        assert d.replace(years=None).strict_eq(
+            ItemizedDateDelta(months=3, weeks=4)
+        )
+
+        # invalid sign
+        with pytest.raises(ValueError, match="sign"):
+            assert d.replace(days=-1)
+
+        with pytest.raises(ValueError, match="sign"):
+            assert (-d).replace(days=1)
+
+        # sign becomes zero
+        assert d.replace(years=0, months=0, weeks=0).strict_eq(
+            ItemizedDateDelta(years=0, months=0, weeks=0)
+        )
+
+        # sign becomes negative
+        assert d.replace(years=-3, months=-1, weeks=0, days=-4).strict_eq(
+            ItemizedDateDelta(years=-3, months=-1, weeks=0, days=-4)
+        )
+
+        # negative becomes positive
+        assert (
+            (-d)
+            .replace(years=3, months=1, weeks=0, days=4)
+            .strict_eq(ItemizedDateDelta(years=3, months=1, weeks=0, days=4))
+        )
+
+        # last component removed
+        with pytest.raises(
+            ValueError, match="^at least one component must remain present$"
+        ):
+            d.replace(years=None, months=None, weeks=None)
+
+        # no arguments
+        assert d.replace().strict_eq(d)
+        assert (-d).replace().strict_eq(-d)
+
+        # invalid component
+        with pytest.raises(
+            TypeError,
+            match=r"^replace\(\) got an unexpected keyword argument 'foo'$",
+        ):
+            d.replace(foo=5)  # type: ignore[call-arg]
+
+
+class TestShift:
     # We have a limited number of test cases here since this operation is
     # mostly a combination of logic tested elsewhere: Date.add() and Date.since()
     @pytest.mark.parametrize(
@@ -965,6 +895,91 @@ class TestAddSub:
         with pytest.raises(TypeError):
             assert ItemizedDateDelta(days=1) - 1  # type: ignore[operator]
 
+    def test_plain_datetime_reference(self):
+        reference = PlainDateTime(2024, 3, 30, 12)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            result = ItemizedDateDelta(months=1).add(
+                days=1, relative_to=reference, in_units=["months", "days"]
+            )
+        assert result.strict_eq(ItemizedDateDelta(months=1, days=1))
+
+    def test_abs(self):
+        d = ItemizedDateDelta(days=-5, weeks=-3)
+        assert abs(d).strict_eq(ItemizedDateDelta(days=5, weeks=3))
+
+        d_pos = ItemizedDateDelta(days=2, years=30)
+        assert abs(d_pos) is d_pos
+
+        d_zero = ItemizedDateDelta(months=0)
+        assert abs(d_zero) is d_zero
+
+    def test_neg(self):
+        d = ItemizedDateDelta(days=5, weeks=3, years=200)
+        assert (-d).strict_eq(ItemizedDateDelta(days=-5, weeks=-3, years=-200))
+        assert (--d).strict_eq(d)
+
+        d_zero = ItemizedDateDelta(weeks=0)
+        assert -d_zero is d_zero
+
+
+class TestInUnits:
+    # These tests are relatively simple because since() does most of the heavy lifting,
+    # and is tested more thoroughly elsewhere.
+    @pytest.mark.parametrize(
+        "d, relative_to, units, kwargs, expect",
+        [
+            (
+                ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
+                Date("2021-12-31"),
+                ["years", "days"],
+                {},
+                ItemizedDateDelta(years=2, days=124),
+            ),
+            (
+                ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
+                Date("2021-12-31"),
+                ["years", "days"],
+                {"round_increment": 5, "round_mode": "ceil"},
+                ItemizedDateDelta(years=2, days=125),
+            ),
+            (
+                ItemizedDateDelta(days=0),
+                Date("0023-02-28"),
+                ["years", "months", "weeks"],
+                {},
+                ItemizedDateDelta(years=0, months=0, weeks=0),
+            ),
+            (
+                ItemizedDateDelta(days=45),
+                Date("2021-01-01"),
+                ["months"],
+                {"round_mode": "half_even"},
+                ItemizedDateDelta(months=2),
+            ),
+            (
+                ItemizedDateDelta(days=45),
+                Date("2021-01-01"),
+                ["months"],
+                {"round_mode": "half_floor"},
+                ItemizedDateDelta(months=1),
+            ),
+        ],
+    )
+    def test_valid(
+        self,
+        d: ItemizedDateDelta,
+        relative_to: Date,
+        units: Sequence[Literal["years", "months", "weeks", "days"]],
+        kwargs: Any,
+        expect: ItemizedDateDelta,
+    ):
+        assert d.in_units(units, relative_to=relative_to, **kwargs).strict_eq(
+            expect
+        )
+        if kwargs.get("round_increment", 1) == 1 and units[-1] == "days":
+            assert relative_to.add(expect) == relative_to.add(d)
+
 
 class TestTotal:
     @pytest.mark.parametrize(
@@ -1028,11 +1043,6 @@ class TestTotal:
             ItemizedDateDelta(years=-2).total(
                 "months", relative_to=Date("0001-12-31")
             )
-
-
-RANGE_MSG = "value or calculation out of range"
-_DATE = Date(2024, 1, 1)
-_D: Any = ItemizedDateDelta(days=1)
 
 
 class TestMessages:
@@ -1332,82 +1342,3 @@ class TestReferenceRule:
             "or OffsetDateTime$",
         ):
             call(Instant.from_utc(2023, 1, 1))
-
-    @pytest.mark.parametrize("method", ["add", "subtract"])
-    def test_internal_shift_warning_lands_on_the_caller(self, method):
-        # One day later is 02:30 on the morning the clock skips 02:00-03:00.
-        reference = ZonedDateTime(2023, 3, 25, 2, 30, tz="Europe/Amsterdam")
-        with warns_here(ImplicitDisambiguationWarning):
-            getattr(ItemizedDateDelta(days=1), method)(
-                ItemizedDelta(hours=0),
-                relative_to=reference,
-                in_units=["hours"],
-            )
-
-
-def test_abs():
-    d = ItemizedDateDelta(days=-5, weeks=-3)
-    assert abs(d).strict_eq(ItemizedDateDelta(days=5, weeks=3))
-
-    d_pos = ItemizedDateDelta(days=2, years=30)
-    assert abs(d_pos) is d_pos
-
-    d_zero = ItemizedDateDelta(months=0)
-    assert abs(d_zero) is d_zero
-
-
-def test_neg():
-    d = ItemizedDateDelta(days=5, weeks=3, years=200)
-    assert (-d).strict_eq(ItemizedDateDelta(days=-5, weeks=-3, years=-200))
-    assert (--d).strict_eq(d)
-
-    d_zero = ItemizedDateDelta(weeks=0)
-    assert -d_zero is d_zero
-
-
-def test_bool():
-    d_zero = ItemizedDateDelta(days=0)
-    assert not d_zero
-    assert d_zero.sign() == 0
-
-    assert not ItemizedDateDelta(years=0)
-    assert ItemizedDateDelta(weeks=0).sign() == 0
-
-    d_nonzero = ItemizedDateDelta(weeks=1, days=0)
-    assert d_nonzero
-    assert d_nonzero.sign() == 1
-
-
-@pytest.mark.parametrize(
-    "d",
-    [
-        ItemizedDateDelta(
-            years=1,
-            months=2,
-            weeks=3,
-            days=4,
-        ),
-        ItemizedDateDelta(days=5),
-        ItemizedDateDelta(days=-5, months=-3),
-        ItemizedDateDelta(days=-5, weeks=0),
-    ],
-)
-def test_pickle(d: ItemizedDateDelta):
-    dumped = pickle.dumps(d)
-    assert len(dumped) < 100
-    assert d.__reduce__()[0].__module__ == "whenever"
-    assert b"whenever._ideltas" not in dumped
-    assert pickle.loads(dumped).strict_eq(d)
-
-
-def test_compatible_unpickle():
-    # This is a pickle of ItemizedDateDelta created with the current format.
-    # Signed values, no separate sign slot.
-    dumped = (
-        b"\x80\x04\x95,\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0e_unp"
-        b"kl_iddelta\x94\x93\x94(K\x01K\x02K\x03K\x04t\x94R\x94."
-    )
-    result = pickle.loads(dumped)
-    assert result.strict_eq(
-        ItemizedDateDelta(years=1, months=2, weeks=3, days=4)
-    )

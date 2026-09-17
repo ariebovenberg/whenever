@@ -13,24 +13,10 @@ from whenever._tz.posix import (
     TzStr,
 )
 
+from .common import hhmm, ymdhms
+
 UTC = timezone.utc
 dt_utc = partial(datetime.fromtimestamp, tz=UTC)
-
-
-def ymdhms(
-    year: int,
-    month: int,
-    day: int,
-    hour: int = 0,
-    minute: int = 0,
-    second: int = 0,
-) -> int:
-    dt = datetime(year, month, day, hour, minute, second, tzinfo=UTC)
-    return int(dt.timestamp())
-
-
-def hhmm(hours: int, minutes: int = 0) -> int:
-    return hours * 3600 + minutes * 60
 
 
 class TestParse:

@@ -1,7 +1,5 @@
-import pickle
 import re
 import warnings
-from copy import copy, deepcopy
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
 from fractions import Fraction
 from typing import Literal, cast
@@ -16,7 +14,6 @@ from whenever import (
     Instant,
     OffsetDateTime,
     PlainDateTime,
-    StaleOffsetWarning,
     TimeDelta,
     TimeZoneNotFoundError,
     ZonedDateTime,
@@ -27,47 +24,170 @@ from whenever import (
 )
 
 from .common import (
-    AlwaysEqual,
-    AlwaysLarger,
-    AlwaysSmaller,
-    NeverEqual,
-    suppress,
-    system_tz_ams,
-    system_tz_nyc,
+    INVALID_ISO_STRINGS,
+    VALID_ISO_STRINGS,
+    DatetimeSubclass,
+    Idx,
+    system_tz,
     warns_here,
 )
-from .test_offset_datetime import (
-    INVALID_ISO_STRINGS,
-    INVALID_RFC2822,
-    VALID_ISO_STRINGS,
-    VALID_RFC2822,
-)
-from .test_time_delta import _Idx
 
 BIG_INT = 1 << 64 + 1  # a big int that may cause an overflow error
 
 
-def test_init_parses_iso():
-    assert Instant("2020-08-15T12:30:45Z") == Instant.from_utc(
-        2020, 8, 15, 12, 30, 45
+class TestInit:
+    def test_parses_iso(self):
+        assert Instant("2020-08-15T12:30:45Z") == Instant.from_utc(
+            2020, 8, 15, 12, 30, 45
+        )
+
+        # __init__ takes no UTC time (use from_utc for that)
+        with pytest.raises(TypeError):
+            Instant(2020, 3, 4)  # type: ignore[call-overload]
+
+        # the alternate constructors are positional-only
+        with pytest.raises(TypeError):
+            Instant(iso_string="2020-08-15T12:08:30Z")  # type: ignore[call-overload]
+        with pytest.raises(TypeError):
+            Instant(py_datetime=py_datetime(2020, 8, 15, tzinfo=timezone.utc))  # type: ignore[call-overload]
+
+        # __init__ takes no invalid types
+        with pytest.raises(
+            TypeError,
+            match=r"^Instant\(\) requires an ISO 8601 string or datetime.datetime$",
+        ):
+            Instant(None)  # type: ignore[call-overload]
+
+    def test_min_max(self):
+        assert Instant.MIN == Instant.from_utc(1, 1, 1)
+        assert Instant.MAX == Instant.from_utc(
+            9999, 12, 31, 23, 59, 59, nanosecond=999_999_999
+        )
+
+
+class TestInitFromPy:
+    @pytest.mark.parametrize(
+        "dt, expected",
+        [
+            # UTC time zone
+            (
+                py_datetime(
+                    2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc
+                ),
+                Instant.from_utc(
+                    2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
+                ),
+            ),
+            # fixed offset
+            (
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=timezone(-timedelta(hours=4)),
+                ),
+                Instant.from_utc(
+                    2020, 8, 16, 3, 12, 9, nanosecond=987_654_000
+                ),
+            ),
+            # subsecond offset
+            (
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=timezone(timedelta(hours=4, microseconds=30)),
+                ),
+                Instant.from_utc(
+                    2020, 8, 15, 19, 12, 9, nanosecond=987_624_000
+                ),
+            ),
+            # zoneinfo
+            (
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=ZoneInfo("America/New_York"),
+                ),
+                Instant.from_utc(
+                    2020, 8, 16, 3, 12, 9, nanosecond=987_654_000
+                ),
+            ),
+            # subclass of datetime
+            (
+                DatetimeSubclass(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=timezone(-timedelta(hours=4)),
+                ),
+                Instant.from_utc(
+                    2020, 8, 16, 3, 12, 9, nanosecond=987_654_000
+                ),
+            ),
+        ],
     )
+    def test_valid(self, dt: py_datetime, expected: Instant):
+        assert Instant(dt).strict_eq(expected)
 
-    # __init__ takes no UTC time (use from_utc for that)
-    with pytest.raises(TypeError):
-        Instant(2020, 3, 4)  # type: ignore[call-overload]
+    @pytest.mark.parametrize("offset_hours", [5, 1])
+    def test_out_of_range(self, offset_hours):
+        d = py_datetime(
+            1, 1, 1, tzinfo=timezone(timedelta(hours=offset_hours))
+        )
+        with pytest.raises(
+            ValueError, match=r"^value or calculation out of range$"
+        ):
+            Instant(d)
 
-    # the alternate constructors are positional-only
-    with pytest.raises(TypeError):
-        Instant(iso_string="2020-08-15T12:08:30Z")  # type: ignore[call-overload]
-    with pytest.raises(TypeError):
-        Instant(py_datetime=py_datetime(2020, 8, 15, tzinfo=timezone.utc))  # type: ignore[call-overload]
+    @pytest.mark.parametrize("fold, hour", [(0, 0), (1, 1)])
+    def test_fold(self, fold, hour):
+        # within a repeated local time, `fold` selects the occurrence through
+        # the offset
+        d = py_datetime(
+            2023, 10, 29, 2, 30, fold=fold, tzinfo=ZoneInfo("Europe/Amsterdam")
+        )
+        assert Instant(d) == Instant.from_utc(2023, 10, 29, hour, 30)
 
-    # __init__ takes no invalid types
-    with pytest.raises(
-        TypeError,
-        match=r"^Instant\(\) requires an ISO 8601 string or datetime.datetime$",
-    ):
-        Instant(None)  # type: ignore[call-overload]
+    def test_naive(self):
+        with pytest.raises(
+            ValueError,
+            match=r"^datetime is naive; use PlainDateTime\(\) instead$",
+        ):
+            Instant(py_datetime(2020, 8, 15, 12))
+
+    def test_utcoffset_none(self):
+
+        class MyTz(tzinfo):
+            def utcoffset(self, _):
+                return None
+
+        with pytest.raises(ValueError, match="naive"):
+            Instant(py_datetime(2020, 8, 15, tzinfo=MyTz()))  # type: ignore[abstract]
+
+
+class TestNow:
+    def test_typical(self):
+        now = Instant.now()
+        py_now = py_datetime.now(timezone.utc)
+        assert py_now - now.to_stdlib() < timedelta(seconds=1)
 
 
 class TestFromUTC:
@@ -153,139 +273,6 @@ class TestFromUTC:
             )
         except (ValueError, OverflowError):
             pass
-
-
-def test_immutable():
-    d = Instant.from_utc(2020, 8, 15)
-    with pytest.raises(AttributeError):
-        d.foo = 2021  # type: ignore[attr-defined]
-
-
-class TestEquality:
-    def test_same(self):
-        d = Instant.from_utc(2020, 8, 15)
-        same = Instant.from_utc(2020, 8, 15)
-        assert d == same
-        assert not d != same
-        assert hash(d) == hash(same)
-        assert d.strict_eq(same)
-        assert d.strict_eq(same)
-
-    def test_different(self):
-        d = Instant.from_utc(2020, 8, 15)
-        different = Instant.from_utc(2020, 8, 15, nanosecond=1)
-        assert d != different
-        assert not d == different
-        assert hash(d) != hash(different)
-
-    def test_not_implemented(self):
-        d = Instant.from_utc(2020, 8, 15)
-        assert d == AlwaysEqual()
-        assert d != NeverEqual()
-        assert not d == NeverEqual()
-        assert not d != AlwaysEqual()
-
-        assert not d == 3  # type: ignore[comparison-overlap]
-        assert d != 3  # type: ignore[comparison-overlap]
-        assert not 3 == d  # type: ignore[comparison-overlap]
-        assert 3 != d  # type: ignore[comparison-overlap]
-        assert not None == d  # noqa: E711
-        assert None != d  # noqa: E711
-
-    def test_zoned(self):
-        d: Instant | ZonedDateTime = Instant.from_utc(2023, 10, 29, 1, 15)
-        zoned_same = ZonedDateTime(
-            2023, 10, 29, 2, 15, tz="Europe/Paris", disambiguation="later"
-        )
-        zoned_different = ZonedDateTime(
-            2023, 10, 29, 2, 15, tz="Europe/Paris", disambiguation="earlier"
-        )
-        assert d == zoned_same
-        assert not d != zoned_same
-        assert not d == zoned_different
-        assert d != zoned_different
-
-        assert hash(d) == hash(zoned_same)
-        assert hash(d) != hash(zoned_different)
-
-        # FUTURE: this *should* be flagged by mypy, but it isn't
-        with pytest.raises(
-            TypeError, match=r"^strict_eq\(\) argument must be an Instant$"
-        ):
-            d.strict_eq(zoned_same)
-
-        # important: check typing errors in case of strict-comparison mode
-        d2 = Instant.from_utc(2020, 8, 15)
-        assert d2 == d2.to_fixed_offset(hours(4))  # type: ignore[comparison-overlap]
-
-    def test_offset(self):
-        d: Instant | OffsetDateTime = Instant.from_utc(2023, 4, 5, 4)
-        offset_same = OffsetDateTime(2023, 4, 5, 6, offset=hours(2))
-        offset_different = OffsetDateTime(2023, 4, 5, 4, offset=hours(-3))
-        assert d == offset_same
-        assert not d != offset_same
-        assert not d == offset_different
-        assert d != offset_different
-
-        assert hash(d) == hash(offset_same)
-        assert hash(d) != hash(offset_different)
-
-        # FUTURE: this *should* be flagged by mypy, but it isn't
-        with pytest.raises(TypeError, match="argument must be an Instant"):
-            d.strict_eq(offset_same)
-
-
-class TestTimestamp:
-    def test_default_seconds(self):
-        assert Instant.from_utc(1970, 1, 1).timestamp() == 0
-        assert (
-            Instant.from_utc(
-                2020, 8, 15, 12, 8, 30, nanosecond=45_123
-            ).timestamp()
-            == 1_597_493_310
-        )
-        assert Instant.MAX.timestamp() == 253_402_300_799
-        assert Instant.MIN.timestamp() == -62_135_596_800
-
-    @pytest.mark.parametrize(
-        ("unit", "expected"),
-        [
-            ("second", 1_597_493_310),
-            ("millisecond", 1_597_493_310_045),
-            ("microsecond", 1_597_493_310_045_123),
-            ("nanosecond", 1_597_493_310_045_123_987),
-        ],
-    )
-    def test_unit(self, unit, expected):
-        value = Instant.from_utc(2020, 8, 15, 12, 8, 30, nanosecond=45_123_987)
-
-        assert value.timestamp(unit=unit) == expected
-
-    @pytest.mark.parametrize(
-        # One nanosecond after the epoch floors to 0 in every unit that
-        # cannot resolve it; in nanoseconds it is the exact value 1.
-        ("unit", "after_epoch"),
-        [
-            ("second", 0),
-            ("millisecond", 0),
-            ("microsecond", 0),
-            ("nanosecond", 1),
-        ],
-    )
-    def test_unit_floors_around_epoch(self, unit, after_epoch):
-        before = Instant.from_utc(
-            1969, 12, 31, 23, 59, 59, nanosecond=999_999_999
-        )
-        after = Instant.from_utc(1970, 1, 1, nanosecond=1)
-
-        assert before.timestamp(unit=unit) == -1
-        assert after.timestamp(unit=unit) == after_epoch
-
-    def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="invalid unit"):
-            Instant.from_utc(1970, 1, 1).timestamp(
-                unit="seconds"  # type: ignore[arg-type]
-            )
 
 
 class TestFromTimestamp:
@@ -503,642 +490,6 @@ class TestFromTimestamp:
         )
 
 
-def test_repr():
-    d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert repr(d) == 'Instant("2020-08-15 23:12:09.000987654Z")'
-    assert (
-        repr(Instant.from_utc(2020, 8, 15, 23, 12))
-        == 'Instant("2020-08-15 23:12:00Z")'
-    )
-
-
-class TestComparison:
-    def test_instant(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9)
-        same = Instant.from_utc(2020, 8, 15, 23, 12, 9)
-        later = Instant.from_utc(2020, 8, 16)
-
-        assert not d > same
-        assert d >= same
-        assert not d < same
-        assert d <= same
-
-        assert d < later
-        assert d <= later
-        assert not d > later
-        assert not d >= later
-
-        assert later > d
-        assert later >= d
-        assert not later < d
-        assert not later <= d
-
-        assert d < AlwaysLarger()
-        assert d <= AlwaysLarger()
-        assert not d > AlwaysLarger()
-        assert not d >= AlwaysLarger()
-        assert not d < AlwaysSmaller()
-        assert not d <= AlwaysSmaller()
-        assert d > AlwaysSmaller()
-        assert d >= AlwaysSmaller()
-
-    def test_offset(self):
-        d = Instant.from_utc(2020, 8, 15, 12, 30)
-
-        offset_eq = d.to_fixed_offset(hours(4))
-        with suppress(StaleOffsetWarning):
-            offset_gt = offset_eq.replace(minute=31)
-            offset_lt = offset_eq.replace(minute=29)
-        assert d >= offset_eq
-        assert d <= offset_eq
-        assert not d > offset_eq
-        assert not d < offset_eq
-
-        assert d > offset_lt
-        assert d >= offset_lt
-        assert not d < offset_lt
-        assert not d <= offset_lt
-
-        assert d < offset_gt
-        assert d <= offset_gt
-        assert not d > offset_gt
-        assert not d >= offset_gt
-
-    def test_zoned(self):
-        d = Instant.from_utc(2023, 10, 29, 1, 15)
-        zoned_eq = ZonedDateTime(
-            2023, 10, 29, 2, 15, tz="Europe/Paris", disambiguation="later"
-        )
-
-        zoned_gt = zoned_eq.replace(minute=16, disambiguation="later")
-        zoned_lt = zoned_eq.replace(minute=14, disambiguation="later")
-        assert d >= zoned_eq
-        assert d <= zoned_eq
-        assert not d > zoned_eq
-        assert not d < zoned_eq
-
-        assert d > zoned_lt
-        assert d >= zoned_lt
-        assert not d < zoned_lt
-        assert not d <= zoned_lt
-
-        assert d < zoned_gt
-        assert d <= zoned_gt
-        assert not d > zoned_gt
-        assert not d >= zoned_gt
-
-
-def test_to_stdlib():
-    d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert d.to_stdlib() == py_datetime(
-        2020, 8, 15, 23, 12, 9, 987, tzinfo=timezone.utc
-    )
-
-
-class _MyDateTime(py_datetime):
-    pass
-
-
-class TestInitFromPy:
-    @pytest.mark.parametrize(
-        "dt, expected",
-        [
-            # UTC time zone
-            (
-                py_datetime(
-                    2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc
-                ),
-                Instant.from_utc(
-                    2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
-                ),
-            ),
-            # fixed offset
-            (
-                py_datetime(
-                    2020,
-                    8,
-                    15,
-                    23,
-                    12,
-                    9,
-                    987_654,
-                    tzinfo=timezone(-timedelta(hours=4)),
-                ),
-                Instant.from_utc(
-                    2020, 8, 16, 3, 12, 9, nanosecond=987_654_000
-                ),
-            ),
-            # subsecond offset
-            (
-                py_datetime(
-                    2020,
-                    8,
-                    15,
-                    23,
-                    12,
-                    9,
-                    987_654,
-                    tzinfo=timezone(timedelta(hours=4, microseconds=30)),
-                ),
-                Instant.from_utc(
-                    2020, 8, 15, 19, 12, 9, nanosecond=987_624_000
-                ),
-            ),
-            # zoneinfo
-            (
-                py_datetime(
-                    2020,
-                    8,
-                    15,
-                    23,
-                    12,
-                    9,
-                    987_654,
-                    tzinfo=ZoneInfo("America/New_York"),
-                ),
-                Instant.from_utc(
-                    2020, 8, 16, 3, 12, 9, nanosecond=987_654_000
-                ),
-            ),
-            # subclass of datetime
-            (
-                _MyDateTime(
-                    2020,
-                    8,
-                    15,
-                    23,
-                    12,
-                    9,
-                    987_654,
-                    tzinfo=timezone(-timedelta(hours=4)),
-                ),
-                Instant.from_utc(
-                    2020, 8, 16, 3, 12, 9, nanosecond=987_654_000
-                ),
-            ),
-        ],
-    )
-    def test_valid(self, dt: py_datetime, expected: Instant):
-        assert Instant(dt).strict_eq(expected)
-
-    @pytest.mark.parametrize("offset_hours", [5, 1])
-    def test_out_of_range(self, offset_hours):
-        d = py_datetime(
-            1, 1, 1, tzinfo=timezone(timedelta(hours=offset_hours))
-        )
-        with pytest.raises(
-            ValueError, match=r"^value or calculation out of range$"
-        ):
-            Instant(d)
-
-    @pytest.mark.parametrize("fold, hour", [(0, 0), (1, 1)])
-    def test_fold(self, fold, hour):
-        # within a repeated local time, `fold` selects the occurrence through
-        # the offset
-        d = py_datetime(
-            2023, 10, 29, 2, 30, fold=fold, tzinfo=ZoneInfo("Europe/Amsterdam")
-        )
-        assert Instant(d) == Instant.from_utc(2023, 10, 29, hour, 30)
-
-    def test_naive(self):
-        with pytest.raises(
-            ValueError,
-            match=r"^datetime is naive; use PlainDateTime\(\) instead$",
-        ):
-            Instant(py_datetime(2020, 8, 15, 12))
-
-    def test_utcoffset_none(self):
-
-        class MyTz(tzinfo):
-            def utcoffset(self, _):
-                return None
-
-        with pytest.raises(ValueError, match="naive"):
-            Instant(py_datetime(2020, 8, 15, tzinfo=MyTz()))  # type: ignore[abstract]
-
-
-def test_now():
-    now = Instant.now()
-    py_now = py_datetime.now(timezone.utc)
-    assert py_now - now.to_stdlib() < timedelta(seconds=1)
-
-
-def test_min_max():
-    assert Instant.MIN == Instant.from_utc(1, 1, 1)
-    assert Instant.MAX == Instant.from_utc(
-        9999, 12, 31, 23, 59, 59, nanosecond=999_999_999
-    )
-
-
-class TestAddMethod:
-    def test_valid(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d.add(hours=24, seconds=5) == d + hours(24) + seconds(5)
-        assert d + nanoseconds(20_000_000) == d.add(nanoseconds=20_000_000)
-        assert d.add() == d
-
-    def test_positional_timedelta(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d.add(hours(24) + seconds(5)) == d + hours(24) + seconds(5)
-        assert d.add(nanoseconds(20_000_000)) == d.add(nanoseconds=20_000_000)
-        assert d.add(TimeDelta.ZERO) == d
-
-    def test_invalid(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d.add(hours=24 * 365 * 8000)
-
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d.add(hours=-24 * 365 * 3000)
-
-        with pytest.raises(TypeError, match="TimeDelta"):
-            d.add(4)  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError, match="mix"):
-            d.add(hours(1), hours=1)  # type: ignore[call-overload]
-
-    def test_days_weeks(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        with warns_here(DaysAssumed24HoursWarning):
-            assert d.add(days=1) == d + hours(24)
-        with warns_here(DaysAssumed24HoursWarning):
-            assert d.add(weeks=1) == d + hours(24 * 7)
-        with warns_here(DaysAssumed24HoursWarning):
-            assert d.subtract(weeks=1) == d - hours(24 * 7)
-        # suppressed
-        assert d.add(days=1, days_assumed_24h_ok=True) == d + hours(24)
-        assert d.subtract(weeks=1, days_assumed_24h_ok=True) == d - hours(
-            24 * 7
-        )
-        # the delta already acknowledged its days
-        assert d.add(TimeDelta(days=1, days_assumed_24h_ok=True)) == d + hours(
-            24
-        )
-
-    def test_days_assumed_24h_ok_read_by_truthiness(self):
-        d = Instant.from_utc(2020, 8, 15)
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            d.add(days=1, days_assumed_24h_ok=1)  # type: ignore[call-overload]
-        with warns_here(DaysAssumed24HoursWarning):
-            d.add(days=1, days_assumed_24h_ok="")  # type: ignore[call-overload]
-
-    @pytest.mark.parametrize(
-        ("call", "exc", "message"),
-        [
-            (
-                lambda d: d.add(days=1, nanoseconds=1.5),
-                TypeError,
-                "nanoseconds must be an integer",
-            ),
-            (
-                lambda d: d.add(days=1, hours="x"),
-                TypeError,
-                "hours must be an integer or float",
-            ),
-            (
-                lambda d: d.subtract(days=float("nan")),
-                ValueError,
-                "value or calculation out of range",
-            ),
-            (
-                lambda d: d.add(weeks=1, bogus=1),
-                TypeError,
-                "add() got an unexpected keyword argument 'bogus'",
-            ),
-            (
-                lambda d: d.add(hours(1), days=1),
-                TypeError,
-                "add() cannot mix positional and keyword arguments",
-            ),
-            (
-                lambda d: d.add(hours(1), hours(1)),
-                TypeError,
-                "add() takes at most one positional argument (2 given)",
-            ),
-        ],
-    )
-    def test_rejected_argument_does_not_warn(self, call, exc, message):
-        d = Instant.from_utc(2020, 8, 15)
-        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
-            call(d)
-
-    @given(
-        hours=floats(),
-        minutes=floats(),
-        seconds=floats(),
-        milliseconds=floats(),
-        microseconds=floats(),
-        nanoseconds=integers(),
-    )
-    def test_fuzzing(self, **kwargs):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        try:
-            d.add(**kwargs)
-        except (ValueError, OverflowError):
-            pass
-
-
-class TestSubtractMethod:
-    def test_valid(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        assert d.subtract(hours=24, seconds=5) == d - hours(24) - seconds(5)
-        assert d.subtract() == d
-
-    def test_positional_timedelta(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        assert d.subtract(hours(24) + seconds(5)) == d - hours(24) - seconds(5)
-        assert d.subtract(hours(4)) == d.subtract(hours=4)
-        assert d.subtract(TimeDelta.ZERO) == d
-
-    def test_invalid(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d.subtract(hours=24 * 365 * 3000)
-
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d.subtract(hours=-24 * 365 * 8000)
-
-        with pytest.raises(TypeError, match="TimeDelta"):
-            d.subtract(4)  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError, match="mix"):
-            d.subtract(hours(1), hours=1)  # type: ignore[call-overload]
-
-    def test_days_weeks(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with warns_here(DaysAssumed24HoursWarning):
-            assert d.subtract(days=1) == d - hours(24)
-        # suppressed
-        assert d.subtract(days=1, days_assumed_24h_ok=True) == d - hours(24)
-
-    @given(
-        hours=floats(),
-        minutes=floats(),
-        seconds=floats(),
-        milliseconds=floats(),
-        microseconds=floats(),
-        nanoseconds=integers(),
-    )
-    def test_fuzzing(self, **kwargs):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        try:
-            d.subtract(**kwargs)
-        except (ValueError, OverflowError):
-            pass
-
-
-class TestShiftOperators:
-    def test_time_units(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
-        assert d + hours(24) + seconds(5) == Instant.from_utc(
-            2020, 8, 16, 23, 12, 14, nanosecond=987_654_321
-        )
-        assert d + nanoseconds(20_000_000) == Instant.from_utc(
-            2020, 8, 15, 23, 12, 10, nanosecond=7_654_321
-        )
-
-        # same with subtract
-        assert d - hours(-24) - seconds(-5) == d + hours(24) + seconds(5)
-
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d + hours(9_000 * 366 * 24)
-
-    def test_invalid(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            d + 42  # type: ignore[operator]
-
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            42 + d  # type: ignore[operator]
-
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            None + d  # type: ignore[operator]
-
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            PlainDateTime(2020, 1, 1) + d  # type: ignore[operator]
-
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            d + PlainDateTime(2020, 1, 1)  # type: ignore[operator]
-
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            d - PlainDateTime(2020, 1, 1)  # type: ignore[operator]
-
-
-class TestDifference:
-    def test_rejects_a_delta(self):
-        d = Instant.from_utc(2020, 8, 15)
-        with pytest.raises(
-            TypeError,
-            match="^difference\\(\\) argument must be an Instant, "
-            "OffsetDateTime, or ZonedDateTime$",
-        ):
-            d.difference(hours(1))  # type: ignore[arg-type]
-
-    def test_other_instant(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
-        other = Instant.from_utc(
-            2020, 8, 14, 23, 12, 4, nanosecond=987_654_321
-        )
-        assert d - other == hours(24) + seconds(5) - nanoseconds(321)
-
-        # same with method
-        assert d.difference(other) == d - other
-
-    def test_offset(self):
-        d = Instant.from_utc(2020, 8, 15, 23)
-        other = OffsetDateTime(2020, 8, 15, 20, offset=hours(2))
-        assert d - other == hours(5)
-
-        # same with method
-        assert d.difference(other) == d - other
-
-    def test_zoned(self):
-        d = Instant.from_utc(2023, 10, 29, 6)
-        other = ZonedDateTime(
-            2023, 10, 29, 3, tz="Europe/Paris", disambiguation="later"
-        )
-        assert d - other == hours(4)
-        assert d - ZonedDateTime(
-            2023, 10, 29, 2, tz="Europe/Paris", disambiguation="later"
-        ) == hours(5)
-        assert d - ZonedDateTime(
-            2023, 10, 29, 2, tz="Europe/Paris", disambiguation="earlier"
-        ) == hours(6)
-        assert d - ZonedDateTime(2023, 10, 29, 1, tz="Europe/Paris") == hours(
-            7
-        )
-
-        # same with method
-        assert d.difference(other) == d - other
-
-    def test_invalid(self):
-        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            d - 42  # type: ignore[operator]
-
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            42 - d  # type: ignore[operator]
-
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            None - d  # type: ignore[operator]
-
-
-def test_pickle():
-    d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_200)
-    dumped = pickle.dumps(d)
-    assert len(dumped) <= len(pickle.dumps(d.to_stdlib()))
-    assert pickle.loads(pickle.dumps(d)) == d
-
-
-def test_existing_pickle_data_remains_unpicklable():
-    # Don't update this value: the whole idea is that it's
-    # a pickle at a specific version of the library.
-    dumped = (
-        b"\x80\x04\x95/\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
-        b"kl_inst\x94\x93\x94C\x0c\xc9k8_\x00\x00\x00\x008h\xde:\x94\x85\x94R\x94."
-    )
-    assert pickle.loads(dumped) == Instant.from_utc(
-        2020, 8, 15, 23, 12, 9, nanosecond=987_654_200
-    )
-
-
-def test_unpickle_pre_v08_data():
-    # Don't update this value: the whole idea is that it's
-    # a pickle at <0.8.0 version of the library.
-    dumped = (
-        b"\x80\x04\x95.\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\n_unpkl_u"
-        b"tc\x94\x93\x94C\x0cI\xb4\xcb\xd6\x0e\x00\x00\x008h\xde:\x94\x85\x94R\x94."
-    )
-    assert pickle.loads(dumped) == Instant.from_utc(
-        2020, 8, 15, 23, 12, 9, nanosecond=987_654_200
-    )
-
-
-def test_copy():
-    d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert copy(d) is d
-    assert deepcopy(d) is d
-
-
-def test_to_fixed_offset():
-    d = Instant.from_utc(2020, 8, 15, 20)
-    assert d.to_fixed_offset().strict_eq(
-        OffsetDateTime(2020, 8, 15, 20, offset=hours(0))
-    )
-    assert d.to_fixed_offset(hours(3)).strict_eq(
-        OffsetDateTime(2020, 8, 15, 23, offset=hours(3))
-    )
-    assert d.to_fixed_offset(hours(-3)).strict_eq(
-        OffsetDateTime(2020, 8, 15, 17, offset=hours(-3))
-    )
-
-    with pytest.raises(ValueError):
-        Instant.MIN.to_fixed_offset(hours(-4))
-
-    with pytest.raises(ValueError):
-        Instant.MAX.to_fixed_offset(hours(4))
-
-
-def test_to_tz():
-    d = Instant.from_utc(2020, 8, 15, 20)
-    assert d.to_tz("America/New_York").strict_eq(
-        ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
-    )
-
-    with pytest.raises(ValueError, match="out of range"):
-        Instant.MIN.to_tz("America/New_York")
-
-    with pytest.raises(ValueError, match="out of range"):
-        Instant.MAX.to_tz("Asia/Tokyo")
-
-    with pytest.raises(TypeError, match="^tz must be a string or SYSTEM_TZ$"):
-        d.to_tz(3)
-
-    with pytest.raises(TimeZoneNotFoundError):
-        d.to_tz("America/Nowhere")
-
-
-@system_tz_nyc()
-def test_to_system_tz():
-    d = Instant.from_utc(2020, 8, 15, 20)
-    assert d.to_tz(SYSTEM_TZ).strict_eq(
-        ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
-    )
-    # ensure disembiguation is correct
-    d = Instant.from_utc(2022, 11, 6, 5)
-    assert d.to_tz(SYSTEM_TZ).strict_eq(
-        ZonedDateTime(
-            2022, 11, 6, 1, disambiguation="earlier", tz="America/New_York"
-        )
-    )
-    assert (
-        Instant.from_utc(2022, 11, 6, 6)
-        .to_tz(SYSTEM_TZ)
-        .strict_eq(
-            ZonedDateTime(
-                2022, 11, 6, 1, disambiguation="later", tz="America/New_York"
-            )
-        )
-    )
-
-    with pytest.raises(ValueError):
-        Instant.MIN.to_tz(SYSTEM_TZ)
-
-    with system_tz_ams():
-        with pytest.raises(ValueError):
-            Instant.MAX.to_tz(SYSTEM_TZ)
-
-
-@pytest.mark.parametrize(
-    "i, expect",
-    [
-        (
-            Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=450),
-            "Sat, 15 Aug 2020 23:12:09 GMT",
-        ),
-        (
-            Instant.from_utc(1, 1, 1, 9, 9),
-            "Mon, 01 Jan 0001 09:09:00 GMT",
-        ),
-        (Instant.MIN, "Mon, 01 Jan 0001 00:00:00 GMT"),
-        (Instant.MAX, "Fri, 31 Dec 9999 23:59:59 GMT"),
-    ],
-)
-def test_rfc2822(i, expect):
-    assert i.format_rfc2822() == expect
-
-
-class TestParseRFC2822:
-    @pytest.mark.parametrize("s, expected", VALID_RFC2822)
-    def test_valid(self, s, expected: OffsetDateTime):
-        assert Instant.parse_rfc2822(s) == expected.to_instant()
-
-    def test_military_letter_is_utc(self):
-        assert Instant.parse_rfc2822(
-            "Sat, 15 Aug 2020 23:12:00 Z"
-        ) == Instant.from_utc(2020, 8, 15, 23, 12)
-
-    @pytest.mark.parametrize(
-        "s",
-        [
-            "Fri, 31 Dec 9999 23:59:59 -0100",  # out of range once in UTC
-            "Sat, 15 Aug 2020 23:12:00 +0000 (UTC)",  # comment
-        ],
-    )
-    def test_rejected(self, s):
-        with pytest.raises(ValueError):
-            Instant.parse_rfc2822(s)
-
-    @pytest.mark.parametrize("s", INVALID_RFC2822)
-    def test_invalid(self, s):
-        with pytest.raises(
-            ValueError,
-            match=r"^invalid RFC 2822 string: " + re.escape(repr(s)) + "$",
-        ):
-            Instant.parse_rfc2822(s)
-
-
 class TestFormatIso:
     @pytest.mark.parametrize(
         "d, expect",
@@ -1236,6 +587,14 @@ class TestFormatIso:
         with pytest.raises(TypeError, match="tz"):
             dt.format_iso(tz="always")  # type: ignore[call-arg]
 
+    def test_repr(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        assert repr(d) == 'Instant("2020-08-15 23:12:09.000987654Z")'
+        assert (
+            repr(Instant.from_utc(2020, 8, 15, 23, 12))
+            == 'Instant("2020-08-15 23:12:00Z")'
+        )
+
 
 class TestParseIso:
     @pytest.mark.parametrize("s, expect", VALID_ISO_STRINGS)
@@ -1257,6 +616,301 @@ class TestParseIso:
             match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             Instant.parse_iso(s)
+
+
+class TestEquality:
+    def test_same(self):
+        d = Instant.from_utc(2020, 8, 15)
+        same = Instant.from_utc(2020, 8, 15)
+        assert d == same
+        assert not d != same
+        assert hash(d) == hash(same)
+        assert d.strict_eq(same)
+
+    def test_different(self):
+        d = Instant.from_utc(2020, 8, 15)
+        different = Instant.from_utc(2020, 8, 15, nanosecond=1)
+        assert d != different
+        assert not d == different
+        assert hash(d) != hash(different)
+
+
+class TestComparison:
+    def test_instant(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9)
+        same = Instant.from_utc(2020, 8, 15, 23, 12, 9)
+        later = Instant.from_utc(2020, 8, 16)
+
+        assert not d > same
+        assert d >= same
+        assert not d < same
+        assert d <= same
+
+        assert d < later
+        assert d <= later
+        assert not d > later
+        assert not d >= later
+
+        assert later > d
+        assert later >= d
+        assert not later < d
+        assert not later <= d
+
+
+class TestShift:
+    def test_add(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        assert d.add(hours=24, seconds=5) == d + hours(24) + seconds(5)
+        assert d + nanoseconds(20_000_000) == d.add(nanoseconds=20_000_000)
+        assert d.add() == d
+
+    def test_add_positional_timedelta(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        assert d.add(hours(24) + seconds(5)) == d + hours(24) + seconds(5)
+        assert d.add(nanoseconds(20_000_000)) == d.add(nanoseconds=20_000_000)
+        assert d.add(TimeDelta.ZERO) == d
+
+    def test_add_invalid(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d.add(hours=24 * 365 * 8000)
+
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d.add(hours=-24 * 365 * 3000)
+
+        with pytest.raises(TypeError, match="TimeDelta"):
+            d.add(4)  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="mix"):
+            d.add(hours(1), hours=1)  # type: ignore[call-overload]
+
+    def test_add_days_weeks(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        with warns_here(DaysAssumed24HoursWarning):
+            assert d.add(days=1) == d + hours(24)
+        with warns_here(DaysAssumed24HoursWarning):
+            assert d.add(weeks=1) == d + hours(24 * 7)
+        with warns_here(DaysAssumed24HoursWarning):
+            assert d.subtract(weeks=1) == d - hours(24 * 7)
+        # suppressed
+        assert d.add(days=1, days_assumed_24h_ok=True) == d + hours(24)
+        assert d.subtract(weeks=1, days_assumed_24h_ok=True) == d - hours(
+            24 * 7
+        )
+        # the delta already acknowledged its days
+        assert d.add(TimeDelta(days=1, days_assumed_24h_ok=True)) == d + hours(
+            24
+        )
+
+    def test_days_assumed_24h_ok_read_by_truthiness(self):
+        d = Instant.from_utc(2020, 8, 15)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.add(days=1, days_assumed_24h_ok=1)  # type: ignore[call-overload]
+        with warns_here(DaysAssumed24HoursWarning):
+            d.add(days=1, days_assumed_24h_ok="")  # type: ignore[call-overload]
+
+    @pytest.mark.parametrize(
+        ("call", "exc", "message"),
+        [
+            (
+                lambda d: d.add(days=1, nanoseconds=1.5),
+                TypeError,
+                "nanoseconds must be an integer",
+            ),
+            (
+                lambda d: d.add(days=1, hours="x"),
+                TypeError,
+                "hours must be an integer or float",
+            ),
+            (
+                lambda d: d.subtract(days=float("nan")),
+                ValueError,
+                "value or calculation out of range",
+            ),
+            (
+                lambda d: d.add(weeks=1, bogus=1),
+                TypeError,
+                "add() got an unexpected keyword argument 'bogus'",
+            ),
+            (
+                lambda d: d.add(hours(1), days=1),
+                TypeError,
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda d: d.add(hours(1), hours(1)),
+                TypeError,
+                "add() takes at most one positional argument (2 given)",
+            ),
+        ],
+    )
+    def test_rejected_argument_does_not_warn(self, call, exc, message):
+        d = Instant.from_utc(2020, 8, 15)
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
+            call(d)
+
+    @given(
+        hours=floats(),
+        minutes=floats(),
+        seconds=floats(),
+        milliseconds=floats(),
+        microseconds=floats(),
+        nanoseconds=integers(),
+    )
+    def test_add_fuzzing(self, **kwargs):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        try:
+            d.add(**kwargs)
+        except (ValueError, OverflowError):
+            pass
+
+    def test_subtract(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        assert d.subtract(hours=24, seconds=5) == d - hours(24) - seconds(5)
+        assert d.subtract() == d
+
+    def test_subtract_positional_timedelta(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        assert d.subtract(hours(24) + seconds(5)) == d - hours(24) - seconds(5)
+        assert d.subtract(hours(4)) == d.subtract(hours=4)
+        assert d.subtract(TimeDelta.ZERO) == d
+
+    def test_subtract_invalid(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d.subtract(hours=24 * 365 * 3000)
+
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d.subtract(hours=-24 * 365 * 8000)
+
+        with pytest.raises(TypeError, match="TimeDelta"):
+            d.subtract(4)  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="mix"):
+            d.subtract(hours(1), hours=1)  # type: ignore[call-overload]
+
+    def test_subtract_days_weeks(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with warns_here(DaysAssumed24HoursWarning):
+            assert d.subtract(days=1) == d - hours(24)
+        # suppressed
+        assert d.subtract(days=1, days_assumed_24h_ok=True) == d - hours(24)
+
+    @given(
+        hours=floats(),
+        minutes=floats(),
+        seconds=floats(),
+        milliseconds=floats(),
+        microseconds=floats(),
+        nanoseconds=integers(),
+    )
+    def test_subtract_fuzzing(self, **kwargs):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        try:
+            d.subtract(**kwargs)
+        except (ValueError, OverflowError):
+            pass
+
+    def test_operators_time_units(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321)
+        assert d + hours(24) + seconds(5) == Instant.from_utc(
+            2020, 8, 16, 23, 12, 14, nanosecond=987_654_321
+        )
+        assert d + nanoseconds(20_000_000) == Instant.from_utc(
+            2020, 8, 15, 23, 12, 10, nanosecond=7_654_321
+        )
+
+        # same with subtract
+        assert d - hours(-24) - seconds(-5) == d + hours(24) + seconds(5)
+
+        with pytest.raises((ValueError, OverflowError), match="range"):
+            d + hours(9_000 * 366 * 24)
+
+    def test_operators_invalid(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d + 42  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            42 + d  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            None + d  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            PlainDateTime(2020, 1, 1) + d  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d + PlainDateTime(2020, 1, 1)  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d - PlainDateTime(2020, 1, 1)  # type: ignore[operator]
+
+
+class TestDifference:
+    def test_rejects_a_delta(self):
+        d = Instant.from_utc(2020, 8, 15)
+        with pytest.raises(
+            TypeError,
+            match="^difference\\(\\) argument must be an Instant, "
+            "OffsetDateTime, or ZonedDateTime$",
+        ):
+            d.difference(hours(1))  # type: ignore[arg-type]
+
+    def test_other_instant(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
+        other = Instant.from_utc(
+            2020, 8, 14, 23, 12, 4, nanosecond=987_654_321
+        )
+        assert d - other == hours(24) + seconds(5) - nanoseconds(321)
+
+        # same with method
+        assert d.difference(other) == d - other
+
+    def test_offset(self):
+        d = Instant.from_utc(2020, 8, 15, 23)
+        other = OffsetDateTime(2020, 8, 15, 20, offset=hours(2))
+        assert d - other == hours(5)
+
+        # same with method
+        assert d.difference(other) == d - other
+
+    def test_zoned(self):
+        d = Instant.from_utc(2023, 10, 29, 6)
+        other = ZonedDateTime(
+            2023, 10, 29, 3, tz="Europe/Paris", disambiguation="later"
+        )
+        assert d - other == hours(4)
+        assert d - ZonedDateTime(
+            2023, 10, 29, 2, tz="Europe/Paris", disambiguation="later"
+        ) == hours(5)
+        assert d - ZonedDateTime(
+            2023, 10, 29, 2, tz="Europe/Paris", disambiguation="earlier"
+        ) == hours(6)
+        assert d - ZonedDateTime(2023, 10, 29, 1, tz="Europe/Paris") == hours(
+            7
+        )
+
+        # same with method
+        assert d.difference(other) == d - other
+
+    def test_invalid(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d - 42  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            42 - d  # type: ignore[operator]
+
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            None - d  # type: ignore[operator]
+
+
+# receivers for the rounding rejections: on and off a whole second
+_ON_INCREMENT = Instant.from_utc(2023, 7, 14, 1, 2, 3)
+_OFF_INCREMENT = _ON_INCREMENT.add(nanoseconds=4_000)
+_NOON = Instant.from_utc(2020, 1, 1, 12)
 
 
 class TestRound:
@@ -1403,73 +1057,111 @@ class TestRound:
             2023, 7, 14, 1, 2, 8
         )
 
-    # a value already on the increment validates the mode too
     @pytest.mark.parametrize(
-        "d",
+        "d, args, kwargs, exc, message",
         [
-            Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000),
-            Instant.from_utc(2023, 7, 14, 1, 2, 3),
+            # a value already on the increment validates the mode too
+            *(
+                (
+                    d,
+                    ("second",),
+                    {"mode": m},
+                    ValueError,
+                    f"invalid mode: {m!r}",
+                )
+                for d in (_OFF_INCREMENT, _ON_INCREMENT)
+                for m in ("foo", "TRUNC", None, 3)
+            ),
+            *(
+                (
+                    _OFF_INCREMENT,
+                    (u,),
+                    {"increment": i},
+                    ValueError,
+                    "increment must divide a 24-hour day evenly",
+                )
+                for u, i in [
+                    ("minute", 21),
+                    ("second", 14),
+                    ("millisecond", 643),
+                    ("hour", 48),
+                    ("second", 1 << 62),
+                ]
+            ),
+            *(
+                (
+                    _ON_INCREMENT,
+                    ("second",),
+                    {"increment": i},
+                    ValueError,
+                    "increment must be a positive integer",
+                )
+                for i in (0, -1)
+            ),
+            *(
+                (
+                    _ON_INCREMENT,
+                    ("second",),
+                    {"increment": i},
+                    TypeError,
+                    "increment must be an integer",
+                )
+                for i in (1.5, float("nan"), "5", Fraction(3, 2))
+            ),
+            *(
+                (_OFF_INCREMENT, (u,), {}, ValueError, f"invalid unit: {u!r}")
+                for u in ("foo", "week", "minutes", None, 5)
+            ),
+            (
+                _OFF_INCREMENT,
+                ("day",),
+                {},
+                ValueError,
+                "cannot round an Instant to a day: an Instant has no calendar; "
+                "use 'hour' with increment=24 for exactly 24 hours",
+            ),
+            *(
+                (
+                    _NOON,
+                    (u,),
+                    {},
+                    ValueError,
+                    "unit must divide a 24-hour day evenly",
+                )
+                for u in (hours(7), hours(25))
+            ),
+            *(
+                (
+                    _NOON,
+                    (u,),
+                    {},
+                    ValueError,
+                    "unit must be a positive TimeDelta",
+                )
+                for u in (hours(-1), TimeDelta.ZERO)
+            ),
+            *(
+                (
+                    _NOON,
+                    (hours(1),),
+                    {"increment": i},
+                    TypeError,
+                    "cannot specify an increment with a TimeDelta argument",
+                )
+                for i in (1, 2)
+            ),
         ],
     )
-    @pytest.mark.parametrize("mode", ["foo", "TRUNC", None, 3])
-    def test_invalid_mode(self, d, mode):
-        with pytest.raises(ValueError, match=f"^invalid mode: {mode!r}$"):
-            d.round("second", mode=mode)
-
-    @pytest.mark.parametrize(
-        "unit, increment",
-        [
-            ("minute", 21),
-            ("second", 14),
-            ("millisecond", 643),
-            ("hour", 48),
-            ("second", 1 << 62),
-        ],
-    )
-    def test_increment_does_not_divide_day(self, unit, increment):
-        d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(
-            ValueError, match="^increment must divide a 24-hour day evenly$"
-        ):
-            d.round(unit, increment=increment)
-
-    @pytest.mark.parametrize("increment", [0, -1])
-    def test_increment_not_positive(self, increment):
-        d = Instant.from_utc(2023, 7, 14, 1, 2, 3)
-        with pytest.raises(
-            ValueError, match="^increment must be a positive integer$"
-        ):
-            d.round("second", increment=increment)
-
-    @pytest.mark.parametrize(
-        "increment", [1.5, float("nan"), "5", Fraction(3, 2)]
-    )
-    def test_increment_not_an_integer(self, increment):
-        d = Instant.from_utc(2023, 7, 14, 1, 2, 3)
-        with pytest.raises(TypeError, match="^increment must be an integer$"):
-            d.round("second", increment=increment)
+    def test_rejected(self, d, args, kwargs, exc, message):
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
+            d.round(*args, **kwargs)
 
     def test_increment_read_through_index(self):
         d = Instant.from_utc(2023, 7, 14, 12, 39, 59)
         assert d.round("minute", increment=True) == d.round("minute")
-        assert d.round("minute", increment=cast(int, _Idx())) == d.round(
+        assert d.round("minute", increment=cast(int, Idx())) == d.round(
             "minute", increment=5
         )
-
-    @pytest.mark.parametrize("unit", ["foo", "week", "minutes", None, 5])
-    def test_invalid_unit(self, unit):
-        d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
-            d.round(unit)
-
-    def test_day_not_supported(self):
-        d = Instant.from_utc(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(
-            ValueError,
-            match="^cannot round an Instant to a day: an Instant has no "
-            "calendar; use 'hour' with increment=24 for exactly 24 hours$",
-        ):
-            d.round("day")  # type: ignore[call-overload]
 
     def test_range_edges(self):
         assert Instant.MAX.round("hour", mode="floor") == Instant.from_utc(
@@ -1500,27 +1192,136 @@ class TestRound:
             TimeDelta(minutes=15), mode="floor"
         ) == Instant.from_utc(2020, 1, 1, 12, 30)
 
-    @pytest.mark.parametrize("unit", [hours(7), hours(25)])
-    def test_round_by_timedelta_not_dividing_day(self, unit):
-        d = Instant.from_utc(2020, 1, 1, 12)
-        with pytest.raises(
-            ValueError, match="^unit must divide a 24-hour day evenly$"
-        ):
-            d.round(unit)
 
-    @pytest.mark.parametrize("unit", [hours(-1), TimeDelta.ZERO])
-    def test_round_by_timedelta_not_positive(self, unit):
-        d = Instant.from_utc(2020, 1, 1, 12)
-        with pytest.raises(
-            ValueError, match="^unit must be a positive TimeDelta$"
-        ):
-            d.round(unit)
+class TestTimestamp:
+    def test_default_seconds(self):
+        assert Instant.from_utc(1970, 1, 1).timestamp() == 0
+        assert (
+            Instant.from_utc(
+                2020, 8, 15, 12, 8, 30, nanosecond=45_123
+            ).timestamp()
+            == 1_597_493_310
+        )
+        assert Instant.MAX.timestamp() == 253_402_300_799
+        assert Instant.MIN.timestamp() == -62_135_596_800
 
-    @pytest.mark.parametrize("increment", [1, 2])
-    def test_round_by_timedelta_with_increment(self, increment):
-        d = Instant.from_utc(2020, 1, 1, 12)
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("second", 1_597_493_310),
+            ("millisecond", 1_597_493_310_045),
+            ("microsecond", 1_597_493_310_045_123),
+            ("nanosecond", 1_597_493_310_045_123_987),
+        ],
+    )
+    def test_unit(self, unit, expected):
+        value = Instant.from_utc(2020, 8, 15, 12, 8, 30, nanosecond=45_123_987)
+
+        assert value.timestamp(unit=unit) == expected
+
+    @pytest.mark.parametrize(
+        # One nanosecond after the epoch floors to 0 in every unit that
+        # cannot resolve it; in nanoseconds it is the exact value 1.
+        ("unit", "after_epoch"),
+        [
+            ("second", 0),
+            ("millisecond", 0),
+            ("microsecond", 0),
+            ("nanosecond", 1),
+        ],
+    )
+    def test_unit_floors_around_epoch(self, unit, after_epoch):
+        before = Instant.from_utc(
+            1969, 12, 31, 23, 59, 59, nanosecond=999_999_999
+        )
+        after = Instant.from_utc(1970, 1, 1, nanosecond=1)
+
+        assert before.timestamp(unit=unit) == -1
+        assert after.timestamp(unit=unit) == after_epoch
+
+    def test_invalid_unit(self):
+        with pytest.raises(ValueError, match="invalid unit"):
+            Instant.from_utc(1970, 1, 1).timestamp(
+                unit="seconds"  # type: ignore[arg-type]
+            )
+
+
+class TestConversion:
+    def test_to_fixed_offset(self):
+        d = Instant.from_utc(2020, 8, 15, 20)
+        assert d.to_fixed_offset().strict_eq(
+            OffsetDateTime(2020, 8, 15, 20, offset=hours(0))
+        )
+        assert d.to_fixed_offset(hours(3)).strict_eq(
+            OffsetDateTime(2020, 8, 15, 23, offset=hours(3))
+        )
+        assert d.to_fixed_offset(hours(-3)).strict_eq(
+            OffsetDateTime(2020, 8, 15, 17, offset=hours(-3))
+        )
+
+        with pytest.raises(ValueError):
+            Instant.MIN.to_fixed_offset(hours(-4))
+
+        with pytest.raises(ValueError):
+            Instant.MAX.to_fixed_offset(hours(4))
+
+    def test_to_tz(self):
+        d = Instant.from_utc(2020, 8, 15, 20)
+        assert d.to_tz("America/New_York").strict_eq(
+            ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
+        )
+
+        with pytest.raises(ValueError, match="out of range"):
+            Instant.MIN.to_tz("America/New_York")
+
+        with pytest.raises(ValueError, match="out of range"):
+            Instant.MAX.to_tz("Asia/Tokyo")
+
         with pytest.raises(
-            TypeError,
-            match="^cannot specify an increment with a TimeDelta argument$",
+            TypeError, match="^tz must be a string or SYSTEM_TZ$"
         ):
-            d.round(hours(1), increment=increment)  # type: ignore[call-overload]
+            d.to_tz(3)
+
+        with pytest.raises(TimeZoneNotFoundError):
+            d.to_tz("America/Nowhere")
+
+    @system_tz("America/New_York")
+    def test_to_system_tz(self):
+        d = Instant.from_utc(2020, 8, 15, 20)
+        assert d.to_tz(SYSTEM_TZ).strict_eq(
+            ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
+        )
+        # ensure disembiguation is correct
+        d = Instant.from_utc(2022, 11, 6, 5)
+        assert d.to_tz(SYSTEM_TZ).strict_eq(
+            ZonedDateTime(
+                2022, 11, 6, 1, disambiguation="earlier", tz="America/New_York"
+            )
+        )
+        assert (
+            Instant.from_utc(2022, 11, 6, 6)
+            .to_tz(SYSTEM_TZ)
+            .strict_eq(
+                ZonedDateTime(
+                    2022,
+                    11,
+                    6,
+                    1,
+                    disambiguation="later",
+                    tz="America/New_York",
+                )
+            )
+        )
+
+        with pytest.raises(ValueError):
+            Instant.MIN.to_tz(SYSTEM_TZ)
+
+        with system_tz("Europe/Amsterdam"):
+            with pytest.raises(ValueError):
+                Instant.MAX.to_tz(SYSTEM_TZ)
+
+    def test_to_stdlib(self):
+        d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        assert d.to_stdlib() == py_datetime(
+            2020, 8, 15, 23, 12, 9, 987, tzinfo=timezone.utc
+        )

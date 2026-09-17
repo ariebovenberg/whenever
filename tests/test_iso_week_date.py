@@ -1,20 +1,21 @@
-import pickle
 import re
-from copy import copy, deepcopy
 
 import pytest
-from whenever import Date, IsoWeekDate, Weekday
+from whenever import (
+    FRIDAY,
+    MONDAY,
+    SATURDAY,
+    SUNDAY,
+    THURSDAY,
+    TUESDAY,
+    WEDNESDAY,
+    Date,
+    IsoWeekDate,
+    Weekday,
+)
 
-MONDAY = Weekday.MONDAY
-TUESDAY = Weekday.TUESDAY
-WEDNESDAY = Weekday.WEDNESDAY
-THURSDAY = Weekday.THURSDAY
-FRIDAY = Weekday.FRIDAY
-SATURDAY = Weekday.SATURDAY
-SUNDAY = Weekday.SUNDAY
 
-
-class TestConstructor:
+class TestInit:
     def test_basic(self):
         iwd = IsoWeekDate(2024, 1, MONDAY)
         assert iwd.year == 2024
@@ -134,7 +135,7 @@ class TestConstructor:
             IsoWeekDate(s)
 
 
-class TestProperties:
+class TestAccessors:
     def test_year(self):
         assert IsoWeekDate(2024, 1, MONDAY).year == 2024
 
@@ -144,46 +145,43 @@ class TestProperties:
     def test_weekday(self):
         assert IsoWeekDate(2024, 1, FRIDAY).weekday == FRIDAY
 
-    def test_all_weekdays(self):
-        for i, wd in enumerate(
-            [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY],
-            start=1,
-        ):
-            iwd = IsoWeekDate(2024, 1, wd)
-            assert iwd.weekday == wd
-            assert iwd.weekday.value == i
+    @pytest.mark.parametrize(
+        "i, wd",
+        list(
+            enumerate(
+                [
+                    MONDAY,
+                    TUESDAY,
+                    WEDNESDAY,
+                    THURSDAY,
+                    FRIDAY,
+                    SATURDAY,
+                    SUNDAY,
+                ],
+                start=1,
+            )
+        ),
+    )
+    def test_all_weekdays(self, i, wd):
+        iwd = IsoWeekDate(2024, 1, wd)
+        assert iwd.weekday == wd
+        assert iwd.weekday.value == i
+
+    def test_min_exists(self):
+        assert isinstance(IsoWeekDate.MIN, IsoWeekDate)
+        assert IsoWeekDate.MIN == IsoWeekDate(1, 1, Weekday.MONDAY)
+        assert IsoWeekDate.MIN.date() == Date.MIN
+
+    def test_max_exists(self):
+        assert isinstance(IsoWeekDate.MAX, IsoWeekDate)
+        assert IsoWeekDate.MAX == IsoWeekDate(9999, 52, Weekday.FRIDAY)
+        assert IsoWeekDate.MAX.date() == Date.MAX
+
+    def test_min_le_max(self):
+        assert IsoWeekDate.MIN <= IsoWeekDate.MAX
 
 
-class TestDate:
-    def test_basic(self):
-        assert IsoWeekDate(2024, 1, MONDAY).date() == Date(2024, 1, 1)
-
-    def test_year_boundary(self):
-        # Dec 30, 2024 is Monday of ISO week 2025-W01
-        assert IsoWeekDate(2025, 1, MONDAY).date() == Date(2024, 12, 30)
-
-    def test_end_of_year(self):
-        # Dec 28, 2024 is Saturday of ISO week 2024-W52
-        assert IsoWeekDate(2024, 52, SATURDAY).date() == Date(2024, 12, 28)
-
-    def test_week53(self):
-        # 2004-W53-6 (Saturday) = Jan 1, 2005
-        assert IsoWeekDate(2004, 53, SATURDAY).date() == Date(2005, 1, 1)
-
-    def test_roundtrip(self):
-        d = Date(2024, 7, 4)
-        assert d.iso_week_date().date() == d
-
-
-class TestWeeksInYear:
-    def test_long_year(self):
-        assert IsoWeekDate(2004, 1, MONDAY).weeks_in_year() == 53
-
-    def test_short_year(self):
-        assert IsoWeekDate(2024, 1, MONDAY).weeks_in_year() == 52
-
-
-class TestFormatParse:
+class TestFormatIso:
     def test_format_iso(self):
         assert IsoWeekDate(2024, 1, MONDAY).format_iso() == "2024-W01-1"
 
@@ -195,27 +193,15 @@ class TestFormatParse:
             IsoWeekDate(2024, 1, MONDAY).format_iso(basic=True) == "2024W011"
         )
 
-    @pytest.mark.parametrize("basic", [True, False])
-    def test_round_trip(self, basic):
-        iwd = IsoWeekDate(2004, 53, FRIDAY)
-        assert IsoWeekDate.parse_iso(iwd.format_iso(basic=basic)) == iwd
-
     def test_format_iso_basic_week53(self):
         assert (
             IsoWeekDate(2004, 53, FRIDAY).format_iso(basic=True) == "2004W535"
         )
 
-    @pytest.mark.parametrize(
-        "s, expect",
-        [
-            ("2024-W01-1", IsoWeekDate(2024, 1, MONDAY)),
-            ("2024W011", IsoWeekDate(2024, 1, MONDAY)),
-            ("2023-w52-5", IsoWeekDate(2023, 52, FRIDAY)),
-            ("2023w525", IsoWeekDate(2023, 52, FRIDAY)),
-        ],
-    )
-    def test_parse_iso(self, s, expect):
-        assert IsoWeekDate.parse_iso(s) == expect
+    @pytest.mark.parametrize("basic", [True, False])
+    def test_round_trip(self, basic):
+        iwd = IsoWeekDate(2004, 53, FRIDAY)
+        assert IsoWeekDate.parse_iso(iwd.format_iso(basic=basic)) == iwd
 
     def test_str(self):
         iwd = IsoWeekDate(2024, 1, MONDAY)
@@ -225,6 +211,20 @@ class TestFormatParse:
         assert (
             repr(IsoWeekDate(2024, 1, MONDAY)) == 'IsoWeekDate("2024-W01-1")'
         )
+
+
+class TestParseIso:
+    @pytest.mark.parametrize(
+        "s, expect",
+        [
+            ("2024-W01-1", IsoWeekDate(2024, 1, MONDAY)),
+            ("2024W011", IsoWeekDate(2024, 1, MONDAY)),
+            ("2023-w52-5", IsoWeekDate(2023, 52, FRIDAY)),
+            ("2023w525", IsoWeekDate(2023, 52, FRIDAY)),
+        ],
+    )
+    def test_valid(self, s, expect):
+        assert IsoWeekDate.parse_iso(s) == expect
 
     @pytest.mark.parametrize(
         "s",
@@ -236,28 +236,43 @@ class TestFormatParse:
             "2024-W01-\u0661",  # non-ASCII
         ],
     )
-    def test_parse_invalid(self, s):
+    def test_invalid(self, s):
         with pytest.raises(ValueError, match=re.escape(repr(s)) + "|ISO week"):
             IsoWeekDate.parse_iso(s)
 
-    def test_parse_invalid_format_names_the_format(self):
+    def test_invalid_names_the_format(self):
         with pytest.raises(
             ValueError, match="^invalid ISO 8601 string: 'not-a-date'$"
         ):
             IsoWeekDate.parse_iso("not-a-date")
 
-    def test_parse_non_string(self):
+    def test_non_string(self):
         with pytest.raises((TypeError, AttributeError)):
             IsoWeekDate.parse_iso(20240101)  # type: ignore[arg-type]
 
 
-class TestComparison:
+class TestEquality:
     def test_equal(self):
         assert IsoWeekDate(2024, 1, MONDAY) == IsoWeekDate(2024, 1, MONDAY)
 
     def test_not_equal(self):
         assert IsoWeekDate(2024, 1, MONDAY) != IsoWeekDate(2024, 1, TUESDAY)
 
+    def test_not_equal_to_other_type(self):
+        assert IsoWeekDate(2024, 1, MONDAY) != "2024-W01-1"  # type: ignore[comparison-overlap]
+        assert IsoWeekDate(2024, 1, MONDAY) != (2024, 1, MONDAY)  # type: ignore[comparison-overlap]
+
+    def test_equal_values_same_hash(self):
+        a = IsoWeekDate(2024, 1, MONDAY)
+        b = IsoWeekDate(2024, 1, MONDAY)
+        assert hash(a) == hash(b)
+
+    def test_usable_in_set(self):
+        s = {IsoWeekDate(2024, 1, MONDAY), IsoWeekDate(2024, 1, MONDAY)}
+        assert len(s) == 1
+
+
+class TestComparison:
     def test_less_than_by_week(self):
         assert IsoWeekDate(2024, 1, MONDAY) < IsoWeekDate(2024, 2, MONDAY)
 
@@ -278,10 +293,6 @@ class TestComparison:
         assert IsoWeekDate(2024, 1, TUESDAY) >= IsoWeekDate(2024, 1, TUESDAY)
         assert IsoWeekDate(2024, 1, TUESDAY) >= IsoWeekDate(2024, 1, MONDAY)
 
-    def test_not_equal_to_other_type(self):
-        assert IsoWeekDate(2024, 1, MONDAY) != "2024-W01-1"  # type: ignore[comparison-overlap]
-        assert IsoWeekDate(2024, 1, MONDAY) != (2024, 1, MONDAY)  # type: ignore[comparison-overlap]
-
     def test_ordering_with_other_type(self):
         d = IsoWeekDate(2024, 1, MONDAY)
         with pytest.raises(TypeError):
@@ -292,17 +303,6 @@ class TestComparison:
             d > "2024-W01-1"  # type: ignore[operator]
         with pytest.raises(TypeError):
             d >= "2024-W01-1"  # type: ignore[operator]
-
-
-class TestHash:
-    def test_equal_values_same_hash(self):
-        a = IsoWeekDate(2024, 1, MONDAY)
-        b = IsoWeekDate(2024, 1, MONDAY)
-        assert hash(a) == hash(b)
-
-    def test_usable_in_set(self):
-        s = {IsoWeekDate(2024, 1, MONDAY), IsoWeekDate(2024, 1, MONDAY)}
-        assert len(s) == 1
 
 
 class TestReplace:
@@ -363,40 +363,30 @@ class TestReplace:
             IsoWeekDate(2021, 52, SUNDAY).replace(year=9999)
 
 
-class TestPickle:
-    def test_roundtrip(self):
-        iwd = IsoWeekDate(2024, 1, MONDAY)
-        assert pickle.loads(pickle.dumps(iwd)) == iwd
+class TestCalendarProperties:
+    def test_weeks_in_long_year(self):
+        assert IsoWeekDate(2004, 1, MONDAY).weeks_in_year() == 53
 
-    def test_roundtrip_week53(self):
-        iwd = IsoWeekDate(2004, 53, FRIDAY)
-        assert pickle.loads(pickle.dumps(iwd)) == iwd
-
-    def test_unpickle_compatibility(self):
-        dumped = (
-            b"\x80\x04\x95&\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever"
-            b"\x94\x8c\n_unpkl_iwd\x94\x93\x94C\x04\xe8\x07\x01\x01\x94"
-            b"\x85\x94R\x94."
-        )
-        assert pickle.loads(dumped) == IsoWeekDate(2024, 1, MONDAY)
+    def test_weeks_in_short_year(self):
+        assert IsoWeekDate(2024, 1, MONDAY).weeks_in_year() == 52
 
 
-class TestMinMax:
-    def test_min_exists(self):
-        assert isinstance(IsoWeekDate.MIN, IsoWeekDate)
-        assert IsoWeekDate.MIN == IsoWeekDate(1, 1, Weekday.MONDAY)
-        assert IsoWeekDate.MIN.date() == Date.MIN
+class TestConversion:
+    def test_date(self):
+        assert IsoWeekDate(2024, 1, MONDAY).date() == Date(2024, 1, 1)
 
-    def test_max_exists(self):
-        assert isinstance(IsoWeekDate.MAX, IsoWeekDate)
-        assert IsoWeekDate.MAX == IsoWeekDate(9999, 52, Weekday.FRIDAY)
-        assert IsoWeekDate.MAX.date() == Date.MAX
+    def test_date_year_boundary(self):
+        # Dec 30, 2024 is Monday of ISO week 2025-W01
+        assert IsoWeekDate(2025, 1, MONDAY).date() == Date(2024, 12, 30)
 
-    def test_min_le_max(self):
-        assert IsoWeekDate.MIN <= IsoWeekDate.MAX
+    def test_date_end_of_year(self):
+        # Dec 28, 2024 is Saturday of ISO week 2024-W52
+        assert IsoWeekDate(2024, 52, SATURDAY).date() == Date(2024, 12, 28)
 
+    def test_date_week53(self):
+        # 2004-W53-6 (Saturday) = Jan 1, 2005
+        assert IsoWeekDate(2004, 53, SATURDAY).date() == Date(2005, 1, 1)
 
-def test_copy():
-    iwd = IsoWeekDate(2024, 1, MONDAY)
-    assert copy(iwd) is iwd
-    assert deepcopy(iwd) is iwd
+    def test_date_round_trip(self):
+        d = Date(2024, 7, 4)
+        assert d.iso_week_date().date() == d

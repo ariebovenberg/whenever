@@ -11,27 +11,10 @@ from whenever._tz.common import Fold, Gap, Unique
 from whenever._tz.posix import TzStr
 from whenever._tz.tzif import TimeZone, bisect
 
+from .common import hhmm, ymdhms
+
 TZIF_DIR = Path(__file__).parent / "tzif"
 UTC_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
-
-
-def ymdhms(
-    year: int,
-    month: int,
-    day: int,
-    hour: int = 0,
-    minute: int = 0,
-    second: int = 0,
-) -> int:
-    value = datetime(
-        year, month, day, hour, minute, second, tzinfo=timezone.utc
-    )
-    return int((value - UTC_EPOCH).total_seconds())
-
-
-def hhmm(hours: int, minutes: int = 0) -> int:
-    assert 0 <= minutes < 60
-    return hms(hours, minutes, 0)
 
 
 def hms(hours: int, minutes: int, seconds: int) -> int:

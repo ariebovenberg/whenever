@@ -1,9 +1,7 @@
-import os
 import pickle
 import re
 import shutil
 import warnings
-from copy import copy, deepcopy
 from datetime import (
     datetime as py_datetime,
     timedelta as py_timedelta,
@@ -22,7 +20,6 @@ import pytest
 from hypothesis import given
 from hypothesis.strategies import text
 from whenever import (
-    _EXTENSION_LOADED,
     MONDAY,
     SATURDAY,
     SYSTEM_TZ,
@@ -36,37 +33,28 @@ from whenever import (
     PlainDateTime,
     RepeatedTime,
     SkippedTime,
-    StaleOffsetWarning,
     Time,
     TimeDelta,
     TimeZoneNotFoundError,
     ZonedDateTime,
-    available_timezones,
-    clear_tzcache,
-    get_tzpath,
     hours,
     milliseconds,
     minutes,
     patch_current_time,
     reset_system_tz,
-    reset_tzpath,
 )
 
 from .common import (
     AMS_TZ_POSIX,
     AMS_TZ_RAWFILE,
     AMS_TZ_RAWFILE_DST_LATE,
-    AlwaysEqual,
-    NeverEqual,
+    DatetimeSubclass,
+    Idx,
     create_zdt,
-    suppress,
     system_tz,
-    system_tz_ams,
-    system_tz_nyc,
     tz_rules_from_file,
     warns_here,
 )
-from .test_time_delta import _Idx
 
 try:
     import tzdata  # noqa
@@ -77,139 +65,46 @@ else:
 
 TEST_DIR = Path(__file__).parent
 
+_NEEDS_TZDATA = pytest.mark.skipif(
+    not HAS_TZDATA, reason="tzdata not installed"
+)
+_NEEDS_CASABLANCA = pytest.mark.skipif(
+    not HAS_TZDATA
+    or "Africa/Casablanca" not in zoneinfo_available_timezones(),
+    reason="tzdata or Africa/Casablanca not available",
+)
 
-INVALID_TZ_IDS = [
-    "America/Nowhere",  # unknown
-    "/America/New_York",  # slash at the beginning
-    "America/New_York/",  # slash at the end
-    "America/New\0York",  # null byte
-    "America\\New_York",  # backslash
-    "../America/New_York/",  # relative path
-    "America/New_York/..",  # other dots
-    "America//New_York",  # double slash
-    "./America/New_York",  # start with dot
-    "America/../America/New_York",  # not normalized
-    "America/./America/New_York",  # not normalized
-    "+VERSION",  # in tz path, but not a tzif file
-    "leapseconds",  # in tz path, but not a tzif file
-    "Europe",  # a directory
-    "__init__.py",  # file in tzdata package
-    "",
-    ".",
-    "/",
-    " ",
-    "Foo" * 100,  # too long
-    # invalid file path characters
-    "foo:bar",
-    "bla*",
-    "*",
-    "**",
-    ":",
-    "&",
-    # non-ascii
-    "🇨🇦",
-    "America/Bogotá",
-    # invalid start characters
-    "+B",
-    "+",
-    "-",
-    "-foo",
-]
-
-# Every entry point that takes a time zone ID resolves it through one
-# function, so the same string gets the same rejection everywhere.
-TZ_ENTRY_POINTS = [
-    pytest.param(
-        lambda tz: ZonedDateTime(2020, 8, 15, 5, 12, tz=tz), id="constructor"
-    ),
-    pytest.param(lambda tz: ZonedDateTime.now(tz), id="now"),
-    pytest.param(
-        lambda tz: ZonedDateTime(2020, 8, 15, tz="UTC").replace(tz=tz),
-        id="replace",
-    ),
-    pytest.param(
-        lambda tz: ZonedDateTime(2020, 8, 15, tz="UTC").to_tz(tz), id="to_tz"
-    ),
-    pytest.param(
-        lambda tz: Instant.from_utc(2020, 8, 15).to_tz(tz), id="Instant.to_tz"
-    ),
-    pytest.param(
-        lambda tz: OffsetDateTime(2020, 8, 15, offset=hours(2)).to_tz(tz),
-        id="OffsetDateTime.to_tz",
-    ),
-    pytest.param(
-        lambda tz: PlainDateTime(2020, 8, 15).assume_tz(tz),
-        id="PlainDateTime.assume_tz",
-    ),
-    pytest.param(
-        lambda tz: OffsetDateTime(2020, 8, 15, offset=hours(2)).assume_tz(tz),
-        id="OffsetDateTime.assume_tz",
-    ),
-]
-
-# The ISO parser reads the ID out of a string, so a non-ASCII one never
-# reaches the lookup: the string fails as text first. The pattern parser
-# scans `VV` with its own character class; test_format_parse.py covers it.
-TZ_PARSE_ENTRY_POINTS = [
-    pytest.param(
-        lambda tz: ZonedDateTime.parse_iso(f"2020-08-15T05:12:00+00:00[{tz}]"),
-        id="parse_iso",
-    ),
-    pytest.param(
-        lambda tz: ZonedDateTime(f"2020-08-15T05:12:00+00:00[{tz}]"),
-        id="constructor_iso",
-    ),
-]
-
-
-class TestTzIdRejection:
-    @pytest.mark.parametrize("call", TZ_ENTRY_POINTS)
-    @pytest.mark.parametrize("key", INVALID_TZ_IDS)
-    def test_not_found(self, call, key: str):
-        with pytest.raises(
-            TimeZoneNotFoundError,
-            match="^" + re.escape(f"time zone ID {key!r} not found") + "$",
-        ):
-            call(key)
-
-    @pytest.mark.parametrize("call", TZ_PARSE_ENTRY_POINTS)
-    @pytest.mark.parametrize("key", [k for k in INVALID_TZ_IDS if k.isascii()])
-    def test_not_found_in_parsed_string(self, call, key: str):
-        with pytest.raises(
-            TimeZoneNotFoundError,
-            match="^" + re.escape(f"time zone ID {key!r} not found") + "$",
-        ):
-            call(key)
-
-    @pytest.mark.parametrize("call", TZ_PARSE_ENTRY_POINTS)
-    @pytest.mark.parametrize(
-        "key", [k for k in INVALID_TZ_IDS if not k.isascii()]
-    )
-    def test_non_ascii_in_parsed_string_is_not_a_string_to_parse(
-        self, call, key: str
-    ):
-        with pytest.raises(
-            ValueError, match="ASCII|invalid ISO 8601 string"
-        ) as exc:
-            call(key)
-        assert not isinstance(exc.value, TimeZoneNotFoundError)
-
-    @pytest.mark.parametrize("call", TZ_ENTRY_POINTS)
-    @pytest.mark.parametrize(
-        "bad",
-        [3, None, b"UTC", 3.5, ["UTC"], hours(34), type(SYSTEM_TZ)()],  # type: ignore[call-arg]
-    )
-    def test_non_string(self, call, bad):
-        with pytest.raises(
-            TypeError, match="^tz must be a string or SYSTEM_TZ$"
-        ):
-            call(bad)
-
-    def test_str_subclass_is_an_id(self):
-        class MyStr(str):
-            pass
-
-        assert ZonedDateTime.now(MyStr("Iceland")).tz_id == "Iceland"
+ZDT1 = create_zdt(
+    2020,
+    8,
+    15,
+    23,
+    12,
+    9,
+    nanosecond=987_654_321,
+    tz="Europe/Amsterdam",
+)
+ZDT2 = create_zdt(
+    1900,
+    1,
+    1,
+    tz="Europe/Dublin",
+)
+ZDT3 = create_zdt(
+    1995,
+    12,
+    4,
+    23,
+    12,
+    30,
+    tz="America/New_York",
+)
+ZDT_POSIX = create_zdt(
+    2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, tz=AMS_TZ_POSIX
+)
+ZDT_RAWFILE = create_zdt(
+    2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, tz=AMS_TZ_RAWFILE
+)
 
 
 class TestInit:
@@ -312,366 +207,6 @@ class TestInit:
                 12,
                 tz=hours(34),
             )
-
-    @pytest.mark.order(-3)
-    def test_timezone_id_casing(self, tmp_path: Path):
-        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
-        first_path = tmp_path / "first"
-        first_zone = first_path / "Europe" / "Amsterdam"
-        first_zone.parent.mkdir(parents=True)
-        shutil.copyfile(source, first_zone)
-        three_component_zone = (
-            first_path / "America" / "Argentina" / "Buenos_Aires"
-        )
-        three_component_zone.parent.mkdir(parents=True)
-        shutil.copyfile(source, three_component_zone)
-        for name in ("UTC", "CET", "Iceland"):
-            shutil.copyfile(source, first_path / name)
-        alias = first_path / "US" / "Eastern"
-        alias.parent.mkdir()
-        alias.symlink_to(first_zone)
-
-        second_path = tmp_path / "second"
-        second_zone = second_path / "Europe" / "AMSTERDAM"
-        second_zone.parent.mkdir(parents=True)
-        shutil.copyfile(source, second_zone)
-
-        previous = get_tzpath()
-        reset_tzpath([first_path])
-        clear_tzcache()
-        try:
-            values = [
-                ZonedDateTime(2020, 8, 15, 5, 12, tz=key)
-                for key in (
-                    "europe/amsterdam",
-                    "EURope/AMSTERdam",
-                    "Europe/Amsterdam",
-                )
-            ]
-            assert [value.tz_id for value in values] == [
-                "Europe/Amsterdam"
-            ] * 3
-            assert values[0].strict_eq(values[1])
-            assert "Europe/Amsterdam" in repr(values[0])
-            assert values[0].format_iso().endswith("[Europe/Amsterdam]")
-            assert values[1].to_tz("Europe/Amsterdam") is values[1]
-            assert (
-                ZonedDateTime(
-                    2020,
-                    8,
-                    15,
-                    5,
-                    12,
-                    tz="aMeRiCa/aRgEnTiNa/bUeNoS_aIrEs",
-                ).tz_id
-                == "America/Argentina/Buenos_Aires"
-            )
-            for key, expected in (
-                ("utc", "UTC"),
-                ("cet", "CET"),
-                ("ICELAND", "Iceland"),
-            ):
-                assert (
-                    ZonedDateTime(2020, 8, 15, 5, 12, tz=key).tz_id == expected
-                )
-            assert (
-                ZonedDateTime.parse_iso(
-                    "2020-08-15T05:12:00+02:00[eurOPE/amSTerdam]"
-                ).tz_id
-                == "Europe/Amsterdam"
-            )
-            assert (
-                ZonedDateTime.parse(
-                    "2020-08-15 05:12+02:00[EUROPE/AMSTERDAM]",
-                    pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
-                ).tz_id
-                == "Europe/Amsterdam"
-            )
-            assert values[0].to_tz("EURope/AMSTERdam") is values[0]
-            assert (
-                ZonedDateTime(2020, 8, 15, 5, 12, tz="us/eastern").tz_id
-                == "US/Eastern"
-            )
-
-            clear_tzcache(only_keys=["europe/amsterdam"])
-            assert (
-                ZonedDateTime(2020, 8, 15, 5, 12, tz="europe/amsterdam").tz_id
-                == "Europe/Amsterdam"
-            )
-
-            reset_tzpath([second_path])
-            assert (
-                ZonedDateTime(2020, 8, 15, 5, 12, tz="europe/amsterdam").tz_id
-                == "Europe/Amsterdam"
-            )
-            clear_tzcache(only_keys=["EUROPE/AMSTERDAM"])
-            assert (
-                ZonedDateTime(2020, 8, 15, 5, 12, tz="europe/amsterdam").tz_id
-                == "Europe/AMSTERDAM"
-            )
-        finally:
-            clear_tzcache()
-            reset_tzpath(previous)
-
-    def test_timezone_id_case_collision_does_not_crash(self, tmp_path: Path):
-        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
-        for name in ("Europe", "europe"):
-            zone = tmp_path / name / "Amsterdam"
-            try:
-                zone.parent.mkdir()
-            except FileExistsError:
-                pytest.skip("filesystem does not permit case-colliding paths")
-            shutil.copyfile(source, zone)
-
-        previous = get_tzpath()
-        reset_tzpath([tmp_path])
-        clear_tzcache()
-        try:
-            assert ZonedDateTime(
-                2020, 8, 15, 5, 12, tz="Europe/Amsterdam"
-            ).tz_id in {"Europe/Amsterdam", "europe/Amsterdam"}
-        finally:
-            clear_tzcache()
-            reset_tzpath(previous)
-
-    @pytest.mark.skipif(_EXTENSION_LOADED, reason="tests the Python loader")
-    def test_timezone_id_unreadable_file_is_not_found(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ):
-        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
-        zone = tmp_path / "Europe" / "Amsterdam"
-        zone.parent.mkdir()
-        shutil.copyfile(source, zone)
-
-        original_open = open
-
-        def blocked_open(path, *args, **kwargs):
-            if path == str(zone):
-                raise OSError()
-            return original_open(path, *args, **kwargs)
-
-        previous = get_tzpath()
-        reset_tzpath([tmp_path])
-        clear_tzcache()
-        monkeypatch.setattr("builtins.open", blocked_open)
-        try:
-            with pytest.raises(TimeZoneNotFoundError):
-                ZonedDateTime(2020, 8, 15, 5, 12, tz="Europe/Amsterdam")
-        finally:
-            clear_tzcache()
-            reset_tzpath(previous)
-
-    @pytest.mark.skipif(_EXTENSION_LOADED, reason="tests the Python cache")
-    def test_timezone_directory_cache(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ):
-        from whenever._tz import store
-
-        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
-        europe = tmp_path / "Europe"
-        europe.mkdir()
-        for n in ("Amsterdam", "Paris"):
-            shutil.copyfile(source, europe / n)
-        (europe / "Bogotá").touch()
-
-        scanned: list[str] = []
-        original_scandir = os.scandir
-
-        def counting_scandir(path: str):
-            scanned.append(path)
-            return original_scandir(path)
-
-        previous = get_tzpath()
-        reset_tzpath([tmp_path])
-        clear_tzcache()
-        monkeypatch.setattr("whenever._tz.store.os.scandir", counting_scandir)
-        try:
-            assert store.get_tz("europe/amsterdam").key == "Europe/Amsterdam"
-            assert scanned == [str(tmp_path), str(europe)]
-
-            assert store.get_tz("EUROPE/PARIS").key == "Europe/Paris"
-            assert scanned == [str(tmp_path), str(europe)]
-
-            shutil.copyfile(source, europe / "Brussels")
-            assert store.get_tz("europe/brussels").key == "Europe/Brussels"
-            assert scanned == [str(tmp_path), str(europe), str(europe)]
-
-            clear_tzcache(only_keys=["Europe/Amsterdam"])
-            assert store._tzdir_cache == {}
-
-            for _ in range(2):
-                with pytest.raises(TimeZoneNotFoundError):
-                    store.get_tz("Europe/Missing")
-            assert store._tzdir_cache == {}
-            local_scans = [p for p in scanned if p.startswith(str(tmp_path))]
-            assert local_scans[-4:] == [
-                str(tmp_path),
-                str(europe),
-                str(tmp_path),
-                str(europe),
-            ]
-
-            (tmp_path / "Broken").write_bytes(b"not a TZif")
-            with pytest.raises(TimeZoneNotFoundError):
-                store.get_tz("Broken")
-            assert store._tzdir_cache == {}
-        finally:
-            clear_tzcache()
-            reset_tzpath(previous)
-
-    @pytest.mark.skipif(_EXTENSION_LOADED, reason="tests the Python cache")
-    def test_timezone_directory_cache_discards_stale_positive(
-        self, tmp_path: Path
-    ):
-        from whenever._tz import store
-
-        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
-        europe = tmp_path / "Europe"
-        europe.mkdir()
-        shutil.copyfile(source, europe / "Amsterdam")
-
-        previous = get_tzpath()
-        reset_tzpath([tmp_path])
-        clear_tzcache()
-        try:
-            store.get_tz("Europe/Amsterdam")
-            assert len(store._tzdir_cache) == 2
-
-            shutil.rmtree(europe)
-            assert (
-                store._resolve_path(
-                    str(tmp_path),
-                    store.NormalizedTzId("europe/amsterdam"),
-                )
-                is None
-            )
-            assert store._tzdir_cache == {}
-        finally:
-            clear_tzcache()
-            reset_tzpath(previous)
-
-    @pytest.mark.skipif(_EXTENSION_LOADED, reason="tests the Python cache")
-    def test_timezone_id_strong_cache_capacity(self, tmp_path: Path):
-        from whenever._tz import store
-
-        source = TEST_DIR / "tzif" / "Amsterdam.tzif"
-        for i in range(33):
-            shutil.copyfile(source, tmp_path / f"Zone{i}")
-
-        previous = get_tzpath()
-        reset_tzpath([tmp_path])
-        clear_tzcache()
-        try:
-            for i in range(33):
-                store.get_tz(f"Zone{i}")
-
-            assert list(store._tzcache_lru) == [
-                f"zone{i}" for i in range(1, 33)
-            ]
-            assert store.get_tz("zOnE0").key == "Zone0"
-        finally:
-            clear_tzcache()
-            reset_tzpath(previous)
-
-    # This test is run last, because it modifies the tz cache
-    # which can affect other tests (namely those using exact_eq)
-    @pytest.mark.order(-1)
-    def test_tz_cache_adjustments(self):
-        nyc = "America/New_York"
-        ams = "Europe/Amsterdam"
-        # creating a ZDT puts it in the tz cache
-        d = ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc)
-        ZonedDateTime(2020, 8, 15, 5, 12, tz=ams)
-
-        assert (
-            available_timezones()
-            == zoneinfo_available_timezones().difference(["localtime"])
-        )
-
-        prev_tzpath = get_tzpath()
-        # We now set the TZ path to our test directory
-        # (which contains some tzif files)
-        reset_tzpath([TEST_DIR / "tzif"])
-        assert get_tzpath() == (str(TEST_DIR / "tzif"),)
-        try:
-            # Available time zones should now be different
-            assert (
-                available_timezones()
-                != zoneinfo_available_timezones().difference(["localtime"])
-            )
-            # Cached zones remain available after changing TZPATH.
-            assert ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
-            assert ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
-            clear_tzcache(only_keys=[nyc])
-            if not HAS_TZDATA:
-                with pytest.raises(TimeZoneNotFoundError):
-                    ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
-
-            assert ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
-            clear_tzcache()
-            if not HAS_TZDATA:
-                with pytest.raises(TimeZoneNotFoundError):
-                    ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
-
-            # We can still use the old instance without problems
-            d.add(hours=24)
-
-            # Ok, let's see if we can find our custom time zones
-            d2 = ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
-            d3 = ZonedDateTime(1982, 8, 15, 5, 12, tz="Asia/Amman")
-        finally:
-            # We need to reset the tzpath to the original one
-            reset_tzpath()
-
-        assert get_tzpath() == prev_tzpath
-
-        # Available time zones should now be the same again
-        assert (
-            available_timezones()
-            == zoneinfo_available_timezones().difference(["localtime"])
-        )
-
-        # The custom time zone remains cached until it is explicitly cleared.
-        assert ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
-        clear_tzcache()
-        with pytest.raises(TimeZoneNotFoundError):
-            ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
-
-        # strict equality is impacted
-        assert not d2.to_plain().assume_tz("Europe/Amsterdam").strict_eq(d2)
-        # Note the "Asia/Amman" file in our tzif directory is purposefully
-        # an older version, so they shouldn't compare equal
-        assert not d3.to_plain().assume_tz("Asia/Amman").strict_eq(d3)
-        # the NYC instance is still the same value (but a different instance/pointer)
-        assert d.to_plain().assume_tz(nyc).strict_eq(d)
-
-        # but we can still use an old instance
-        d2.add(hours=24)
-
-        # We can request proper time zones now again
-        assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc) == d
-        # exact_eq() works again
-        assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc).strict_eq(d)
-
-        repeated = ZonedDateTime(
-            2023,
-            11,
-            5,
-            1,
-            30,
-            tz=nyc,
-            disambiguation="later",
-        )
-        clear_tzcache(only_keys=[nyc])
-        assert repeated.replace(tz=nyc).strict_eq(repeated)
-
-        # check exception handling invalid arguments
-        with pytest.raises(TypeError, match="iterable"):
-            reset_tzpath("/usr/share/zoneinfo")  # must be a list!
-        with pytest.raises(TypeError, match="iterable"):
-            clear_tzcache(only_keys=nyc)  # must be a list!
-        with pytest.raises(ValueError, match="absolute"):
-            reset_tzpath(["../../share/zoneinfo"])
 
     def test_optionality(self):
         tz = "America/New_York"
@@ -830,146 +365,435 @@ class TestInit:
             ZonedDateTime(2020, 8, 15, 5, 12, 60, tz="America/New_York")
 
 
-# NOTE: there's a separate test for changing the search path and
-# its effect on available_timezones()
-# We run this test relatively late to allow the cache to be used more
-# organically throughout other tests instead of immediately loading everything
-# here beforehand
-@pytest.mark.order(-2)
-def test_available_timezones():
-    tzs = available_timezones()
+class TestInitFromPy:
+    @pytest.mark.parametrize(
+        "pydt, expect",
+        [
+            (
+                py_datetime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=ZoneInfo("Europe/Paris"),
+                ),
+                ZonedDateTime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    nanosecond=987_654_000,
+                    tz="Europe/Paris",
+                ),
+            ),
+            # subclass of datetime
+            (
+                DatetimeSubclass(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    987_654,
+                    tzinfo=ZoneInfo("Europe/Paris"),
+                ),
+                ZonedDateTime(
+                    2020,
+                    8,
+                    15,
+                    23,
+                    12,
+                    9,
+                    nanosecond=987_654_000,
+                    tz="Europe/Paris",
+                ),
+            ),
+            # skipped time
+            (
+                py_datetime(
+                    2023,
+                    3,
+                    26,
+                    2,
+                    15,
+                    30,
+                    tzinfo=ZoneInfo("Europe/Amsterdam"),
+                ),
+                ZonedDateTime(
+                    2023,
+                    3,
+                    26,
+                    3,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                ),
+            ),
+            (
+                py_datetime(
+                    2023,
+                    3,
+                    26,
+                    2,
+                    15,
+                    30,
+                    fold=1,
+                    tzinfo=ZoneInfo("Europe/Amsterdam"),
+                ),
+                ZonedDateTime(
+                    2023,
+                    3,
+                    26,
+                    1,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                ),
+            ),
+            # repeated time
+            (
+                py_datetime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tzinfo=ZoneInfo("Europe/Amsterdam"),
+                ),
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguation="earlier",
+                ),
+            ),
+            (
+                py_datetime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    fold=1,
+                    tzinfo=ZoneInfo("Europe/Amsterdam"),
+                ),
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguation="later",
+                ),
+            ),
+        ],
+    )
+    def test_valid(self, pydt: py_datetime, expect: ZonedDateTime):
+        assert ZonedDateTime(pydt).strict_eq(expect)
 
-    # So long as we don't mess with the configuration, these should be identical
-    assert tzs == zoneinfo_available_timezones().difference(["localtime"])
+    def test_wrong_tzinfo(self):
+        d = py_datetime(
+            2020, 8, 15, 23, 12, 9, 987_654, tzinfo=py_timezone.utc
+        )
+        with pytest.raises(
+            ValueError,
+            match=r"^tzinfo must be a ZoneInfo, got datetime\.timezone\.utc$",
+        ):
+            ZonedDateTime(d)
 
-    d = ZonedDateTime(2025, 3, 26, 1, 15, 30, tz="UTC")
+    def test_zoneinfo_subclass(self):
+        # A subclass carries a time zone ID like its base; the offset it
+        # computes is checked like any other.
+        class MyZoneInfo(ZoneInfo):
+            pass
 
-    # We should be able to load all of them
-    for tz in tzs:
-        d = d.to_tz(tz)
+        dt = py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert ZonedDateTime(
+            dt.replace(tzinfo=MyZoneInfo("Europe/Paris"))
+        ).strict_eq(ZonedDateTime(dt.replace(tzinfo=ZoneInfo("Europe/Paris"))))
+
+    def test_naive(self):
+
+        with pytest.raises(
+            ValueError,
+            match=r"^datetime is naive; use PlainDateTime\(\) instead$",
+        ):
+            ZonedDateTime(py_datetime(2020, 3, 4))
+
+    def test_out_of_range(self):
+        min_pydt = py_datetime(1, 1, 1, tzinfo=ZoneInfo("Asia/Kolkata"))
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            ZonedDateTime(min_pydt)
+
+        max_pydt = py_datetime(
+            9999, 12, 31, 22, tzinfo=ZoneInfo("America/New_York")
+        )
+
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            ZonedDateTime(max_pydt)
+
+    def test_zoneinfo_key_is_none(self):
+        with TEST_DIR.joinpath("tzif/Amsterdam.tzif").open("rb") as f:
+            tz = ZoneInfo.from_file(f)
+
+        py_dt = py_datetime(2020, 8, 15, 12, 8, 30, tzinfo=tz)
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"^tzinfo has no time zone ID \(ZoneInfo\.key is None\); "
+                r"pass key= to ZoneInfo\.from_file\(\), or use "
+                r"OffsetDateTime\(\) to keep only the offset$"
+            ),
+        ):
+            ZonedDateTime(py_dt)
+
+    def test_zoneinfo_key_not_a_string(self):
+        with TEST_DIR.joinpath("tzif/Amsterdam.tzif").open("rb") as f:
+            tz = ZoneInfo.from_file(f, key=1)  # type: ignore[arg-type]
+
+        py_dt = py_datetime(2020, 8, 15, 12, 8, 30, tzinfo=tz)
+
+        with pytest.raises(TypeError, match="^ZoneInfo key must be a string$"):
+            ZonedDateTime(py_dt)
+
+    # The standard-library overload follows the same resolution flow as the
+    # ISO one: the offset its ``tzinfo`` computes identifies the occurrence,
+    # and ``offset_mismatch=`` decides what happens when it identifies none.
+    @pytest.fixture()
+    def disagreeing_tz(self, tmp_path: Path):
+        """A ``ZoneInfo`` that calls itself ``Europe/Amsterdam`` but reads its
+        rules from a file whenever never sees, so the two disagree."""
+        with tz_rules_from_file("Europe/Amsterdam", AMS_TZ_RAWFILE, tmp_path):
+            yield self._keyed_zoneinfo
+
+    @staticmethod
+    def _keyed_zoneinfo(path: str) -> ZoneInfo:
+        with open(path, "rb") as f:
+            return ZoneInfo.from_file(f, key="Europe/Amsterdam")
+
+    @pytest.mark.parametrize(
+        "fold, offset",
+        [(0, hours(2)), (1, hours(1))],
+    )
+    def test_repeated_time_identified_by_its_offset(self, fold, offset):
+        pydt = py_datetime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            fold=fold,
+            tzinfo=ZoneInfo("Europe/Amsterdam"),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ImplicitDisambiguationWarning)
+            # No policy is consulted: the offset already picks an occurrence.
+            result = ZonedDateTime(pydt, disambiguation="raise")
+        assert result.offset == offset
+        assert result.to_plain() == PlainDateTime(2023, 10, 29, 2, 15, 30)
+
+    @pytest.mark.parametrize(
+        "fold, expect_hour",
+        [(0, 3), (1, 1)],
+    )
+    def test_skipped_time_extrapolates(self, fold, expect_hour):
+        pydt = py_datetime(
+            2023,
+            3,
+            26,
+            2,
+            15,
+            30,
+            fold=fold,
+            tzinfo=ZoneInfo("Europe/Amsterdam"),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ImplicitDisambiguationWarning)
+            result = ZonedDateTime(pydt, disambiguation="raise")
+        assert result.strict_eq(
+            ZonedDateTime(
+                2023, 3, 26, expect_hour, 15, 30, tz="Europe/Amsterdam"
+            )
+        )
+
+    def test_offset_with_seconds(self):
+        # Dublin ran on an offset of -00:25:21 before 1916. It matches
+        # exactly, because the stdlib offset is written with seconds.
+        pydt = py_datetime(1900, 1, 1, 12, tzinfo=ZoneInfo("Europe/Dublin"))
+        result = ZonedDateTime(pydt)
+        assert result.offset == TimeDelta(seconds=-1521)
+        assert result.to_plain() == PlainDateTime(1900, 1, 1, 12)
+
+    def test_mismatch_raises_by_default(self, disagreeing_tz):
+        pydt = py_datetime(
+            2020, 10, 28, 12, tzinfo=disagreeing_tz(AMS_TZ_RAWFILE_DST_LATE)
+        )
+        with pytest.raises(InvalidOffsetError, match="Europe/Amsterdam"):
+            ZonedDateTime(pydt)
+
+    def test_mismatch_keep_instant(self, disagreeing_tz):
+        pydt = py_datetime(
+            2020, 10, 28, 12, tzinfo=disagreeing_tz(AMS_TZ_RAWFILE_DST_LATE)
+        )
+        assert ZonedDateTime(pydt, offset_mismatch="keep_instant").strict_eq(
+            ZonedDateTime(2020, 10, 28, 11, tz="Europe/Amsterdam")
+        )
+
+    def test_mismatch_keep_local(self, disagreeing_tz):
+        pydt = py_datetime(
+            2020, 10, 28, 12, tzinfo=disagreeing_tz(AMS_TZ_RAWFILE_DST_LATE)
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ImplicitDisambiguationWarning)
+            result = ZonedDateTime(pydt, offset_mismatch="keep_local")
+        assert result.strict_eq(
+            ZonedDateTime(2020, 10, 28, 12, tz="Europe/Amsterdam")
+        )
+
+    def test_mismatch_keep_local_consults_disambiguation(self, disagreeing_tz):
+        # Honolulu's rules under Amsterdam's name: the offset matches neither
+        # side of the fold, so keeping the local time needs a policy.
+        pydt = py_datetime(
+            2020,
+            10,
+            25,
+            2,
+            30,
+            tzinfo=disagreeing_tz(str(TEST_DIR / "tzif" / "Honolulu.tzif")),
+        )
+        with warns_here(ImplicitDisambiguationWarning):
+            implicit = ZonedDateTime(pydt, offset_mismatch="keep_local")
+        assert implicit.strict_eq(
+            ZonedDateTime(
+                2020,
+                10,
+                25,
+                2,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguation="earlier",
+            )
+        )
+        assert ZonedDateTime(
+            pydt, offset_mismatch="keep_local", disambiguation="later"
+        ).strict_eq(
+            ZonedDateTime(
+                2020,
+                10,
+                25,
+                2,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguation="later",
+            )
+        )
+        with pytest.raises(RepeatedTime):
+            ZonedDateTime(
+                pydt, offset_mismatch="keep_local", disambiguation="raise"
+            )
+
+    def test_invalid_keywords(self):
+        pydt = py_datetime(
+            2020, 8, 15, 23, 12, tzinfo=ZoneInfo("Europe/Paris")
+        )
+        with pytest.raises(TypeError, match="disambiguate"):
+            ZonedDateTime(pydt, disambiguate="earlier")  # type: ignore[call-overload]
+        with pytest.raises(ValueError, match="offset_mismatch: 'foo'"):
+            ZonedDateTime(pydt, offset_mismatch="foo")  # type: ignore[call-overload]
+        with pytest.raises(TypeError, match="foo"):
+            ZonedDateTime(pydt, foo=1)  # type: ignore[call-overload]
 
 
-def test_available_timezones_skips_right_and_posix(tmp_path: Path):
-    source = TEST_DIR / "tzif" / "Amsterdam.tzif"
-    for prefix in ("", "right", "posix"):
-        zone = tmp_path / prefix / "Europe" / "Amsterdam"
-        zone.parent.mkdir(parents=True)
-        shutil.copyfile(source, zone)
+class TestNow:
+    def test_typical(self):
+        now = ZonedDateTime.now("Iceland")
+        assert now.tz_id == "Iceland"
+        py_now = py_datetime.now(ZoneInfo("Iceland"))
+        assert py_now - now.to_stdlib() < py_timedelta(seconds=1)
 
-    previous = get_tzpath()
-    reset_tzpath([tmp_path])
-    try:
-        tzs = available_timezones()
-    finally:
-        reset_tzpath(previous)
-    assert "Europe/Amsterdam" in tzs
-    assert not {z for z in tzs if z.startswith(("right/", "posix/"))}
+    def test_patched(self):
+        instant = Instant.from_utc(2020, 8, 15, 12, 30, 45, nanosecond=5)
+        with patch_current_time(instant, keep_ticking=False):
+            assert ZonedDateTime.now("Europe/Amsterdam").strict_eq(
+                instant.to_tz("Europe/Amsterdam")
+            )
 
-
-ZDT1 = create_zdt(
-    2020,
-    8,
-    15,
-    23,
-    12,
-    9,
-    nanosecond=987_654_321,
-    tz="Europe/Amsterdam",
-)
-ZDT2 = create_zdt(
-    1900,
-    1,
-    1,
-    tz="Europe/Dublin",
-)
-ZDT3 = create_zdt(
-    1995,
-    12,
-    4,
-    23,
-    12,
-    30,
-    tz="America/New_York",
-)
-ZDT_POSIX = create_zdt(
-    2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, tz=AMS_TZ_POSIX
-)
-ZDT_RAWFILE = create_zdt(
-    2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, tz=AMS_TZ_RAWFILE
-)
+    @system_tz("Europe/Amsterdam")
+    def test_system_tz(self):
+        now = ZonedDateTime.now(SYSTEM_TZ)
+        py_now = py_datetime.now().astimezone()
+        assert now.tz_id == "Europe/Amsterdam"
+        assert py_now - now.to_stdlib() < py_timedelta(seconds=1)
 
 
-@pytest.mark.parametrize(
-    "d, expected",
-    [
-        (ZDT1, hours(2)),
-        (ZDT2, -TimeDelta(minutes=25, seconds=21)),
-        (ZDT3, hours(-5)),
-        (ZDT_POSIX, hours(2)),
-        (ZDT_RAWFILE, hours(2)),
-    ],
-)
-def test_offset(d: ZonedDateTime, expected: TimeDelta):
-    assert d.offset == expected
+class TestAccessors:
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (ZDT1, hours(2)),
+            (ZDT2, -TimeDelta(minutes=25, seconds=21)),
+            (ZDT3, hours(-5)),
+            (ZDT_POSIX, hours(2)),
+            (ZDT_RAWFILE, hours(2)),
+        ],
+    )
+    def test_offset(self, d: ZonedDateTime, expected: TimeDelta):
+        assert d.offset == expected
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (ZDT1, Date(2020, 8, 15)),
+            (ZDT2, Date(1900, 1, 1)),
+            (ZDT3, Date(1995, 12, 4)),
+            (ZDT_POSIX, Date(2020, 8, 15)),
+            (ZDT_RAWFILE, Date(2020, 8, 15)),
+        ],
+    )
+    def test_date(self, d: ZonedDateTime, expected: Date):
+        assert d.date() == expected
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (ZDT1, Time(23, 12, 9, nanosecond=987_654_321)),
+            (ZDT2, Time(0, 0, 0)),
+            (ZDT3, Time(23, 12, 30)),
+            (ZDT_POSIX, Time(23, 12, 9, nanosecond=987_654_321)),
+            (ZDT_RAWFILE, Time(23, 12, 9, nanosecond=987_654_321)),
+        ],
+    )
+    def test_time(self, d: ZonedDateTime, expected: Time):
+        assert d.time() == expected
+
+    def test_day_of_week(self):
+        assert (
+            ZonedDateTime(2024, 3, 9, 22, tz="America/New_York").day_of_week()
+            is SATURDAY
+        )
+        assert (
+            ZonedDateTime(2024, 12, 30, tz="America/New_York").day_of_week()
+            is MONDAY
+        )
 
 
-@pytest.mark.parametrize(
-    "d, expected",
-    [
-        (ZDT1, Date(2020, 8, 15)),
-        (ZDT2, Date(1900, 1, 1)),
-        (ZDT3, Date(1995, 12, 4)),
-        (ZDT_POSIX, Date(2020, 8, 15)),
-        (ZDT_RAWFILE, Date(2020, 8, 15)),
-    ],
-)
-def test_date(d: ZonedDateTime, expected: Date):
-    assert d.date() == expected
-
-
-@pytest.mark.parametrize(
-    "d, expected",
-    [
-        (ZDT1, Time(23, 12, 9, nanosecond=987_654_321)),
-        (ZDT2, Time(0, 0, 0)),
-        (ZDT3, Time(23, 12, 30)),
-        (ZDT_POSIX, Time(23, 12, 9, nanosecond=987_654_321)),
-        (ZDT_RAWFILE, Time(23, 12, 9, nanosecond=987_654_321)),
-    ],
-)
-def test_time(d: ZonedDateTime, expected: Time):
-    assert d.time() == expected
-
-
-@pytest.mark.parametrize(
-    "d",
-    [
-        ZDT1,
-        ZDT2,
-        ZDT3,
-        ZDT_POSIX,
-        ZDT_RAWFILE,
-    ],
-)
-def test_to_plain(d: ZonedDateTime):
-    plain = d.to_plain()
-    assert isinstance(plain, PlainDateTime)
-    assert plain.year == d.year
-    assert plain.month == d.month
-    assert plain.day == d.day
-    assert plain.hour == d.hour
-    assert plain.minute == d.minute
-    assert plain.second == d.second
-    assert plain.nanosecond == d.nanosecond
-
-
-def test_immutable():
-    d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
-    with pytest.raises(AttributeError):
-        d.year = 2021  # type: ignore[misc]
-
-
-class TestReplaceDate:
+class TestConversion:
     @pytest.mark.parametrize(
         "d",
         [
@@ -980,252 +804,403 @@ class TestReplaceDate:
             ZDT_RAWFILE,
         ],
     )
-    def test_unambiguous(self, d: ZonedDateTime):
-        assert d.replace_date(Date(2021, 1, 2)).strict_eq(
-            d.replace(year=2021, month=1, day=2)
-        )
+    def test_to_plain(self, d: ZonedDateTime):
+        plain = d.to_plain()
+        assert isinstance(plain, PlainDateTime)
+        assert plain.year == d.year
+        assert plain.month == d.month
+        assert plain.day == d.day
+        assert plain.hour == d.hour
+        assert plain.minute == d.minute
+        assert plain.second == d.second
+        assert plain.nanosecond == d.nanosecond
 
     @pytest.mark.parametrize(
-        "d",
-        [
-            # before a repeated local time (a fold, in PEP 495's words)
-            create_zdt(2020, 6, 1, 2, 15, 30, tz="Europe/Amsterdam"),
-            create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_POSIX),
-            create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_RAWFILE),
-            # after a repeated local time
-            create_zdt(2020, 11, 8, 2, 15, 30, tz="Europe/Amsterdam"),
-            create_zdt(2020, 11, 8, 2, 15, 30, tz=AMS_TZ_POSIX),
-            create_zdt(2020, 11, 8, 2, 15, 30, tz=AMS_TZ_RAWFILE),
-            # in a repeated local time
-            create_zdt(2022, 10, 30, 2, 30, 30, tz="Europe/Amsterdam"),
-            create_zdt(2022, 10, 30, 2, 30, 30, tz=AMS_TZ_POSIX),
-            create_zdt(2022, 10, 30, 2, 30, 30, tz=AMS_TZ_RAWFILE),
-        ],
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
     )
-    def test_repeated_time(self, d: ZonedDateTime):
-        date = Date(2023, 10, 29)
-
-        with pytest.raises(RepeatedTime):
-            assert d.replace_date(date, disambiguation="raise")
-
-        assert d.replace_date(date).strict_eq(
-            d.replace(year=2023, month=10, day=29)
+    def test_to_instant(self, tz: str):
+        assert (
+            create_zdt(2020, 8, 15, 12, 8, 30, tz=tz)
+            .to_instant()
+            .strict_eq(Instant.from_utc(2020, 8, 15, 10, 8, 30))
         )
-        assert d.replace_date(date, disambiguation="earlier").strict_eq(
-            d.replace(year=2023, month=10, day=29, disambiguation="earlier")
+        d = create_zdt(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz=tz,
+            disambiguation="earlier",
         )
-        assert d.replace_date(date, disambiguation="later").strict_eq(
-            d.replace(year=2023, month=10, day=29, disambiguation="later")
+        assert d.to_instant().strict_eq(
+            Instant.from_utc(2023, 10, 29, 0, 15, 30)
         )
-        assert d.replace_date(date, disambiguation="compatible").strict_eq(
-            d.replace(year=2023, month=10, day=29, disambiguation="compatible")
-        )
-
-    @pytest.mark.parametrize(
-        "d",
-        [
-            # before the skipped local time (a gap, in PEP 495's words)
-            create_zdt(2020, 1, 1, 2, 15, 30, tz="Europe/Amsterdam"),
-            create_zdt(2020, 1, 1, 2, 15, 30, tz=AMS_TZ_POSIX),
-            create_zdt(2020, 1, 1, 2, 15, 30, tz=AMS_TZ_RAWFILE),
-            # after the skipped local time
-            create_zdt(2020, 6, 1, 2, 15, 30, tz="Europe/Amsterdam"),
-            create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_POSIX),
-            create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_RAWFILE),
-        ],
-    )
-    def test_skipped_time(self, d: ZonedDateTime):
-        date = Date(2023, 3, 26)
-
-        with pytest.raises(SkippedTime):
-            assert d.replace_date(date, disambiguation="raise")
-
-        # A skipped local time can't be resolved by preserving the offset,
-        # so an omitted disambiguation is implicit here.
-        with warns_here(ImplicitDisambiguationWarning):
-            assert d.replace_date(date).strict_eq(
-                d.replace(year=2023, month=3, day=26)
+        assert (
+            create_zdt(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                30,
+                tz=tz,
+                disambiguation="later",
             )
-        assert d.replace_date(date, disambiguation="earlier").strict_eq(
-            d.replace(year=2023, month=3, day=26, disambiguation="earlier")
-        )
-        assert d.replace_date(date, disambiguation="later").strict_eq(
-            d.replace(year=2023, month=3, day=26, disambiguation="later")
-        )
-        assert d.replace_date(date, disambiguation="compatible").strict_eq(
-            d.replace(year=2023, month=3, day=26, disambiguation="compatible")
-        )
-
-    def test_invalid(self):
-        d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
-        with pytest.raises((TypeError, AttributeError)):
-            d.replace_date(object(), disambiguation="compatible")  # type: ignore[call-overload]
-
-        with pytest.raises(ValueError, match="disambig"):
-            d.replace_date(Date(2020, 8, 15), disambiguation="foo")  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError, match="got 2|foo"):
-            d.replace_date(Date(2020, 8, 15), disambiguation="raise", foo=4)  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError, match="foo"):
-            d.replace_date(Date(2020, 8, 15), foo="raise")  # type: ignore[call-overload]
-
-    def test_out_of_range_due_to_offset(self):
-        d = ZonedDateTime(2020, 1, 1, tz="Asia/Tokyo")
-        with pytest.raises(
-            ValueError, match="value or calculation out of range"
-        ):
-            d.replace_date(Date(1, 1, 1), disambiguation="compatible")
-
-        d2 = ZonedDateTime(2020, 1, 1, hour=23, tz="America/New_York")
-        with pytest.raises(
-            ValueError, match="value or calculation out of range"
-        ):
-            d2.replace_date(Date(9999, 12, 31), disambiguation="compatible")
-
-    @pytest.mark.parametrize(
-        "d, date",
-        [
-            (ZonedDateTime(9999, 12, 30, 23, tz="Etc/GMT+12"), Date.MAX),
-            (ZonedDateTime(1, 1, 2, tz="Etc/GMT-14"), Date.MIN),
-        ],
-    )
-    def test_out_of_range_with_offset_preserved(self, d, date):
-        # The local result is a valid datetime, but its instant is not
-        with pytest.raises(
-            ValueError, match="value or calculation out of range"
-        ):
-            d.replace_date(date)
-
-
-class TestReplaceTime:
-    @pytest.mark.parametrize(
-        "d",
-        [
-            ZDT1,
-            ZDT2,
-            ZDT3,
-            ZDT_POSIX,
-            ZDT_RAWFILE,
-        ],
-    )
-    def test_unambiguous(self, d):
-        assert d.replace_time(Time(1, 2, 3, nanosecond=4_000)).strict_eq(
-            d.replace(hour=1, minute=2, second=3, nanosecond=4_000)
+            .to_instant()
+            .strict_eq(Instant.from_utc(2023, 10, 29, 1, 15, 30))
         )
 
     @pytest.mark.parametrize(
-        "d",
-        [
-            # before a repeated local time (a fold, in PEP 495's words)
-            create_zdt(2023, 10, 29, 0, 15, 30, tz="Europe/Amsterdam"),
-            create_zdt(2023, 10, 29, 0, 15, 30, tz=AMS_TZ_POSIX),
-            create_zdt(2023, 10, 29, 0, 15, 30, tz=AMS_TZ_RAWFILE),
-            # after a repeated local time
-            create_zdt(2023, 10, 29, 4, 15, 30, tz="Europe/Amsterdam"),
-            create_zdt(2023, 10, 29, 4, 15, 30, tz=AMS_TZ_POSIX),
-            create_zdt(2023, 10, 29, 4, 15, 30, tz=AMS_TZ_RAWFILE),
-            # in a repeated local time
-            create_zdt(2023, 10, 29, 2, 30, 30, tz="Europe/Amsterdam"),
-            create_zdt(2023, 10, 29, 2, 30, 30, tz=AMS_TZ_POSIX),
-            create_zdt(2023, 10, 29, 2, 30, 30, tz=AMS_TZ_RAWFILE),
-        ],
+        "ams_tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
     )
-    def test_repeated_time(self, d: ZonedDateTime):
-        time = Time(2, 15, 30)
+    def test_to_tz(self, ams_tz: str):
+        # unambiguous time
+        assert (
+            create_zdt(2020, 8, 15, 12, 8, 30, tz=ams_tz)
+            .to_tz("America/New_York")
+            .strict_eq(
+                ZonedDateTime(2020, 8, 15, 6, 8, 30, tz="America/New_York")
+            )
+        )
+        ams = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz="Europe/Paris",
+            disambiguation="earlier",
+        )
+        nyc = ZonedDateTime(2023, 10, 28, 20, 15, 30, tz="America/New_York")
+        assert ams.to_tz("America/New_York").strict_eq(nyc)
+        assert (
+            ams.replace(disambiguation="later")
+            .to_tz("America/New_York")
+            .strict_eq(nyc.replace(hour=21, disambiguation="raise"))
+        )
+        assert nyc.to_tz("Europe/Paris").strict_eq(ams)
+        assert (
+            nyc.replace(hour=21, disambiguation="raise")
+            .to_tz("Europe/Paris")
+            .strict_eq(ams.replace(disambiguation="later"))
+        )
+        # disambiguation doesn't affect NYC time because there's no ambiguity
+        assert (
+            nyc.replace(disambiguation="later")
+            .to_tz("Europe/Paris")
+            .strict_eq(ams)
+        )
 
-        with pytest.raises(RepeatedTime):
-            assert d.replace_time(time, disambiguation="raise")
+        # catch local time sliding out of range
+        small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
+        with pytest.raises(ValueError, match="out of range"):
+            small_zdt.to_tz("America/New_York")
 
-        assert d.replace_time(time).strict_eq(
-            d.replace(hour=2, minute=15, second=30)
+        big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
+        with pytest.raises(ValueError, match="out of range"):
+            big_zdt.to_tz("Asia/Tokyo")
+
+        with pytest.raises(
+            TypeError, match="^tz must be a string or SYSTEM_TZ$"
+        ):
+            nyc.to_tz(3)
+
+        with pytest.raises(TimeZoneNotFoundError):
+            nyc.to_tz("America/Nowhere")
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_to_fixed_offset(self, tz: str):
+        d = create_zdt(2020, 8, 15, 12, 8, 30, tz=tz)
+
+        assert d.to_fixed_offset().strict_eq(
+            OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=hours(2))
         )
-        assert d.replace_time(time, disambiguation="earlier").strict_eq(
-            d.replace(hour=2, minute=15, second=30, disambiguation="earlier")
+        assert (
+            d.replace(month=1, disambiguation="raise")
+            .to_fixed_offset()
+            .strict_eq(OffsetDateTime(2020, 1, 15, 12, 8, 30, offset=hours(1)))
         )
-        assert d.replace_time(time, disambiguation="later").strict_eq(
-            d.replace(hour=2, minute=15, second=30, disambiguation="later")
+        assert (
+            d.replace(month=1, disambiguation="raise")
+            .to_fixed_offset(hours(4))
+            .strict_eq(OffsetDateTime(2020, 1, 15, 15, 8, 30, offset=hours(4)))
         )
-        assert d.replace_time(time, disambiguation="compatible").strict_eq(
-            d.replace(
-                hour=2, minute=15, second=30, disambiguation="compatible"
+        assert d.to_fixed_offset(hours(0)).strict_eq(
+            OffsetDateTime(2020, 8, 15, 10, 8, 30, offset=hours(0))
+        )
+        assert d.to_fixed_offset(hours(-4)).strict_eq(
+            OffsetDateTime(2020, 8, 15, 6, 8, 30, offset=hours(-4))
+        )
+
+        # catch local time sliding out of range
+        small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            small_zdt.to_fixed_offset(hours(-3))
+
+        big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            big_zdt.to_fixed_offset(hours(4))
+
+    @system_tz("Europe/Amsterdam")
+    def test_to_system_tz(self):
+        d = ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
+        assert d.to_tz(SYSTEM_TZ).strict_eq(
+            ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
+        )
+        assert (
+            d.replace(day=29, disambiguation="later")
+            .to_tz(SYSTEM_TZ)
+            .strict_eq(
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    15,
+                    disambiguation="later",
+                    tz="Europe/Amsterdam",
+                )
             )
         )
 
+        # posix tz
+        with system_tz(AMS_TZ_POSIX):
+            assert d.to_tz(SYSTEM_TZ).strict_eq(
+                create_zdt(2023, 10, 28, 2, 15, tz=AMS_TZ_POSIX)
+            )
+
+        # filepath
+        with system_tz(AMS_TZ_RAWFILE):
+            assert d.to_tz(SYSTEM_TZ).strict_eq(
+                create_zdt(2023, 10, 28, 2, 15, tz=AMS_TZ_RAWFILE)
+            )
+
+        # colon prefix
+        with system_tz(":America/New_York"):
+            assert d.to_tz(SYSTEM_TZ).strict_eq(
+                ZonedDateTime(2023, 10, 27, 20, 15, tz="America/New_York")
+            )
+
+        # catch local time sliding out of range
+        small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
+        with system_tz("America/New_York"):
+            with pytest.raises(
+                (ValueError, OverflowError), match="range|year"
+            ):
+                small_zdt.to_tz(SYSTEM_TZ)
+
+        big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            big_zdt.to_tz(SYSTEM_TZ)
+
+
+class TestToStdlib:
+    def test_tz_id(self):
+        d = ZonedDateTime(
+            2020,
+            8,
+            15,
+            23,
+            12,
+            9,
+            nanosecond=987_654_999,
+            tz="Europe/Amsterdam",
+        )
+        py_dt = d.to_stdlib()
+        assert py_dt == py_datetime(
+            2020,
+            8,
+            15,
+            23,
+            12,
+            9,
+            987_654,
+            tzinfo=ZoneInfo("Europe/Amsterdam"),
+        )
+        # This isn't checked by the comparison above!
+        assert py_dt.tzinfo is ZoneInfo("Europe/Amsterdam")
+
+        # a repeated local time
+        d2 = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            tz="Europe/Amsterdam",
+            disambiguation="earlier",
+        )
+        assert d2.to_stdlib().fold == 0
+        assert d2.replace(disambiguation="later").to_stdlib().fold == 1
+
+        # ensure the ZoneInfo isn't file-based, and can thus be pickled
+        pickle.dumps(d2.to_stdlib())
+
+        # negative offset
+        d3 = ZonedDateTime(
+            2020,
+            8,
+            15,
+            12,
+            8,
+            30,
+            tz="America/New_York",
+        )
+        assert d3.to_stdlib().timestamp() == d3.timestamp()
+
     @pytest.mark.parametrize(
         "d",
         [
-            # before a skipped local time (a gap, in PEP 495's words)
-            create_zdt(2023, 3, 26, 0, 15, tz="Europe/Amsterdam"),
-            create_zdt(2023, 3, 26, 0, 15, tz=AMS_TZ_POSIX),
-            create_zdt(2023, 3, 26, 0, 15, tz=AMS_TZ_RAWFILE),
-            # after a skipped local time
-            create_zdt(2023, 3, 26, 4, 15, tz="Europe/Amsterdam"),
-            create_zdt(2023, 3, 26, 4, 15, tz=AMS_TZ_POSIX),
-            create_zdt(2023, 3, 26, 4, 15, tz=AMS_TZ_RAWFILE),
+            # both occurrences of a repeated time
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                tz="Europe/Amsterdam",
+                disambiguation="earlier",
+            ),
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                15,
+                tz="Europe/Amsterdam",
+                disambiguation="later",
+            ),
+            # just past a skipped time
+            ZonedDateTime(2023, 3, 26, 1, 30, tz="Europe/Amsterdam").add(
+                hours=1
+            ),
         ],
     )
-    def test_skipped_time(self, d: ZonedDateTime):
-        time = Time(2, 15)
-        with pytest.raises(SkippedTime):
-            assert d.replace_time(time, disambiguation="raise")
+    def test_round_trip(self, d):
+        # fold is set on the way out and read on the way in
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert ZonedDateTime(d.to_stdlib()).strict_eq(d)
 
-        # A skipped local time can't be resolved by preserving the offset,
-        # so an omitted disambiguation is implicit here.
-        with warns_here(ImplicitDisambiguationWarning):
-            assert d.replace_time(time).strict_eq(
-                d.replace(hour=2, minute=15, second=0)
-            )
-        assert d.replace_time(time, disambiguation="earlier").strict_eq(
-            d.replace(hour=2, minute=15, disambiguation="earlier")
-        )
-        assert d.replace_time(time, disambiguation="later").strict_eq(
-            d.replace(hour=2, minute=15, disambiguation="later")
-        )
-        assert d.replace_time(time, disambiguation="compatible").strict_eq(
-            d.replace(hour=2, minute=15, disambiguation="compatible")
-        )
+    def test_zoneinfo_disagrees_with_the_rules(self, tmp_path: Path):
+        # The stdlib reads Amsterdam's rules from a file in which DST ends a
+        # week later than in the file whenever read. The instant survives;
+        # the local fields follow the stdlib's rules.
+        zone = tmp_path / "Europe" / "Amsterdam"
+        zone.parent.mkdir()
+        shutil.copyfile(AMS_TZ_RAWFILE_DST_LATE, zone)
+        d = ZonedDateTime(2020, 10, 28, 12, tz="Europe/Amsterdam")
+        assert d.offset == hours(1)
 
-    def test_invalid(self):
-        d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
-        with pytest.raises((TypeError, AttributeError)):
-            d.replace_time(object(), disambiguation="later")  # type: ignore[call-overload]
-
-        with pytest.raises(ValueError, match="disambig"):
-            d.replace_time(Time(1, 2, 3), disambiguation="foo")  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError, match="got 2|foo"):
-            d.replace_time(Time(1, 2, 3), disambiguation="raise", foo=4)  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError, match="foo"):
-            d.replace_time(Time(1, 2, 3), foo="raise")  # type: ignore[call-overload]
-
-    def test_out_of_range_due_to_offset(self):
-        d = ZonedDateTime(1, 1, 1, hour=23, tz="Asia/Tokyo")
-        with pytest.raises(
-            ValueError, match="value or calculation out of range"
-        ):
-            d.replace_time(Time(1), disambiguation="compatible")
-
-        d2 = ZonedDateTime(9999, 12, 31, hour=2, tz="America/New_York")
-        with pytest.raises(
-            ValueError, match="value or calculation out of range"
-        ):
-            d2.replace_time(Time(23), disambiguation="compatible")
+        zoneinfo_reset_tzpath([tmp_path])
+        ZoneInfo.clear_cache(only_keys=["Europe/Amsterdam"])
+        try:
+            py_dt = d.to_stdlib()
+        finally:
+            zoneinfo_reset_tzpath()
+            ZoneInfo.clear_cache(only_keys=["Europe/Amsterdam"])
+        assert py_dt.timestamp() == d.timestamp()
+        assert py_dt.hour == 13
+        assert py_dt.utcoffset() == py_timedelta(hours=2)
 
     @pytest.mark.parametrize(
-        "d, time",
+        "tz",
+        [AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_system_tz(self, tz: str):
+        d = create_zdt(
+            2020,
+            8,
+            15,
+            12,
+            8,
+            30,
+            nanosecond=123_456_789,
+            tz=tz,
+        )
+        py_dt = d.to_stdlib()
+        assert py_dt == py_datetime(
+            2020, 8, 15, 10, 8, 30, 123_456, tzinfo=py_timezone.utc
+        )
+        # Ensure the offset is correct (the check above only checks UTC equality)
+        assert py_dt.utcoffset() == py_timedelta(hours=2)
+
+
+class TestTimestamp:
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
         [
-            (ZonedDateTime(9999, 12, 31, tz="Etc/GMT+12"), Time.MAX),
-            (ZonedDateTime(1, 1, 1, 23, tz="Etc/GMT-14"), Time.MIN),
+            ("second", 1_597_493_310),
+            ("millisecond", 1_597_493_310_045),
+            ("microsecond", 1_597_493_310_045_123),
+            ("nanosecond", 1_597_493_310_045_123_987),
         ],
     )
-    def test_out_of_range_with_offset_preserved(self, d, time):
-        # The local result is a valid datetime, but its instant is not
-        with pytest.raises(
-            ValueError, match="value or calculation out of range"
-        ):
-            d.replace_time(time)
+    def test_unit(self, unit, expected):
+        value = ZonedDateTime(
+            2020,
+            8,
+            15,
+            8,
+            8,
+            30,
+            nanosecond=45_123_987,
+            tz="America/New_York",
+        )
+
+        assert value.timestamp(unit=unit) == expected
+
+    @pytest.mark.parametrize(
+        # One nanosecond after the epoch floors to 0 in every unit that
+        # cannot resolve it; in nanoseconds it is the exact value 1.
+        ("unit", "after_epoch"),
+        [
+            ("second", 0),
+            ("millisecond", 0),
+            ("microsecond", 0),
+            ("nanosecond", 1),
+        ],
+    )
+    def test_unit_floors_around_epoch(self, unit, after_epoch):
+        before = Instant.from_utc(
+            1969, 12, 31, 23, 59, 59, nanosecond=999_999_999
+        )
+        after = Instant.from_utc(1970, 1, 1, nanosecond=1)
+
+        assert before.to_tz("America/New_York").timestamp(unit=unit) == -1
+        assert after.to_tz("Asia/Tokyo").timestamp(unit=unit) == after_epoch
+
+    def test_default_seconds(self):
+        assert ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp() == 0
+        assert (
+            ZonedDateTime(
+                2020, 8, 15, 8, 8, 30, nanosecond=45_123, tz="America/New_York"
+            ).timestamp()
+            == 1_597_493_310
+        )
+
+        repeated = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz="Europe/Amsterdam",
+            disambiguation="earlier",
+        )
+        assert (
+            repeated.timestamp()
+            != repeated.replace(disambiguation="later").timestamp()
+        )
 
 
 class TestFormatIso:
@@ -1431,1725 +1406,61 @@ class TestFormatIso:
         with pytest.raises(ValueError, match="tz_id_display"):
             ZDT1.format_iso(tz_id_display="sometimes")  # type: ignore[call-overload]
 
+    def test_str_without_tz_id(self):
+        """str() never raises: without an ID it gives the offset form."""
+        with system_tz(AMS_TZ_POSIX):
+            d = ZonedDateTime.now(SYSTEM_TZ)
+        assert str(d).endswith(("+02:00", "+01:00"))
+        assert str(d) == d.format_iso(tz_id_display="if_available")
+        assert "<system time zone without ID>" in repr(d)
 
-class TestEquality:
-    @pytest.mark.parametrize(
-        "d",
-        [
-            ZDT1,
-            ZDT2,
-            ZDT3,
-            ZDT_POSIX,
-            ZDT_RAWFILE,
-        ],
-    )
-    def test_same_exact(self, d: ZonedDateTime):
-        d2 = d.replace(year=d.year)  # create a new instance with same value
-        assert d == d2
-        assert not d != d2
-        assert hash(d) == hash(d2)
-        assert d.strict_eq(d2)
 
-    @pytest.mark.parametrize(
-        "d",
-        [
-            ZDT1,
-            ZDT2,
-            ZDT3,
-            ZDT_POSIX,
-            ZDT_RAWFILE,
-        ],
-    )
-    def test_different_timezone(self, d: ZonedDateTime):
-        # same **wall clock** time, different time zone
-        d2 = d.replace(tz="America/Los_Angeles")
-        assert d != d2
-        assert not d == d2
-        assert hash(d) != hash(d2)
-
-        # same moment, different time zone
-        d3 = d.to_tz("America/New_York")
-        assert d == d3
-        assert hash(d) == hash(d3)
-        assert d.strict_eq(d3) is (d3 is d)
-
+class TestFormat:
+    def test_tz_id_without_id(self):
+        d = create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_POSIX)
         with pytest.raises(
-            TypeError,
-            match=r"^strict_eq\(\) argument must be a ZonedDateTime$",
+            ValueError, match="^the time zone has no ID; VV cannot be written$"
         ):
-            d.strict_eq(d.to_instant())  # type: ignore[arg-type]
+            d.format("VV")
 
-    @pytest.mark.parametrize(
-        "d",
-        [
-            ZDT1,
-            ZDT2,
-            ZDT3,
-            ZDT_POSIX,
-            ZDT_RAWFILE,
-        ],
-    )
-    def test_different_local_time(self, d: ZonedDateTime):
-        d2 = d.replace(nanosecond=492_231)
-        assert d != d2
-        assert not d == d2
-        assert hash(d) != hash(d2)
 
-    @pytest.mark.parametrize(
-        "d",
-        [
-            ZDT1,
-            ZDT2,
-            ZDT3,
-            ZDT_POSIX,
-            ZDT_RAWFILE,
-        ],
-    )
-    def test_different_disambiguation(self, d: ZonedDateTime):
-        d2 = d.replace(disambiguation="later")
-        assert d == d2
-        assert not d != d2
-        assert hash(d) == hash(d2)
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_repeated_time_differs_by_offset(self, tz: str):
-        d = create_zdt(2023, 10, 29, 2, 15, 30, tz=tz)
-        d2 = d.replace(disambiguation="later")
-        assert d != d2
-        assert not d == d2
-        assert hash(d) != hash(d2)
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_ambiguity_between_different_timezones(self, tz: str):
-        a = create_zdt(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            30,
-            tz=tz,
-            disambiguation="later",
-        )
-        b = a.to_tz("America/New_York")
-        assert a.to_instant() == b.to_instant()  # sanity check
-        assert hash(a) == hash(b)
-        assert a == b
-
-    @system_tz_nyc()
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_other_exact(self, tz: str):
-        d: ZonedDateTime | OffsetDateTime = create_zdt(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            tz=tz,
-            disambiguation="earlier",
-        )
-        assert d == d.to_instant()  # type: ignore[comparison-overlap]
-        assert hash(d) == hash(d.to_instant())
-        assert d != d.to_instant() + hours(2)  # type: ignore[comparison-overlap]
-
-        assert d == d.to_fixed_offset()
-        assert hash(d) == hash(d.to_fixed_offset())
-        with suppress(StaleOffsetWarning):
-            assert d != d.to_fixed_offset().replace(hour=10)
-
-        # important: check typing errors in case of strict-comparison mode
-        d2 = create_zdt(2020, 8, 15, 12, tz=tz)
-        assert d2 == d2.to_instant()  # type: ignore[comparison-overlap]
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_not_implemented(self, tz: str):
-        d = create_zdt(2020, 8, 15, 12, 8, 30, tz=tz)
-        assert d == AlwaysEqual()
-        assert d != NeverEqual()
-        assert not d == NeverEqual()
-        assert not d != AlwaysEqual()
-
-        assert d != 42  # type: ignore[comparison-overlap]
-        assert not d == 42  # type: ignore[comparison-overlap]
-        assert 42 != d  # type: ignore[comparison-overlap]
-        assert not 42 == d  # type: ignore[comparison-overlap]
-        assert not hours(2) == d  # type: ignore[comparison-overlap]
-
-
-class TestStrictEq:
-    @staticmethod
-    def _under_both_amsterdams(
-        *local: int,
-    ) -> tuple[ZonedDateTime, ZonedDateTime]:
-        """Build the same local datetime under both Amsterdam definitions.
-
-        Both time zones are loaded straight from a tzif file, so neither has an
-        identifier and the two values differ only in the rules they carry.
-        """
-        with system_tz(AMS_TZ_RAWFILE):
-            a = ZonedDateTime(*local, tz=SYSTEM_TZ)
-        with system_tz(AMS_TZ_RAWFILE_DST_LATE):
-            b = ZonedDateTime(*local, tz=SYSTEM_TZ)
-        return a, b
-
-    # Note: there is no test for a stale offset, i.e. a value whose offset
-    # disagrees with its own time zone. Every constructor resolves the offset
-    # from the time zone (the pickle reader warns and corrects), so such a value
-    # is unreachable. It is also the only thing that would tell the two
-    # backends apart: the extension compares the local datetime and the offset,
-    # the Python version the instant they are derived from.
-
-    def test_different_definition_same_offset(self):
-        """Same moment, same offset, no identifier either side—but other rules."""
-        a, b = self._under_both_amsterdams(2020, 8, 15, 12)
-        assert a.tz_id is b.tz_id is None
-        assert a.to_plain() == b.to_plain()
-        assert a.offset == b.offset == hours(2)
-        assert a == b  # the same moment in time
-        assert not a.strict_eq(b)
-        assert not b.strict_eq(a)
-
-    def test_different_definition_different_offset(self):
-        """The moved transition puts the same local datetime at a different offset."""
-        a, b = self._under_both_amsterdams(2020, 10, 28, 12)
-        assert a.tz_id is b.tz_id is None
-        assert a.to_plain() == b.to_plain()
-        assert a.offset == hours(1)
-        assert b.offset == hours(2)
-        assert not a.strict_eq(b)
-        assert not b.strict_eq(a)
-
-    def test_system_tz_compares_by_definition(self):
-        """The system time zone has no identifier, so only its rules count."""
-        with system_tz_ams():
-            a = ZonedDateTime(2020, 8, 15, 12, tz=SYSTEM_TZ)
-            # force a reload, so the two values hold distinct time zone objects
-            reset_system_tz()
-            b = ZonedDateTime(2020, 8, 15, 12, tz=SYSTEM_TZ)
-            assert a.strict_eq(b)
-            assert b.strict_eq(a)
-
-
-class TestIsRepeated:
-    def test_fixed_offset_zone(self):
-        d = ZonedDateTime(2020, 8, 15, tz="Etc/GMT+3")
-        assert d.is_repeated() is False
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_unambiguous(self, tz: str):
-        d = create_zdt(2020, 8, 15, 12, 8, 30, tz=tz)
-        assert not d.is_repeated()
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_repeated_time(self, tz: str):
-        d = create_zdt(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            30,
-            tz=tz,
-            disambiguation="earlier",
-        )
-        assert d.is_repeated()
-
-        d2 = d.replace(disambiguation="later")
-        assert d2.is_repeated()
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_skipped_time(self, tz: str):
-        d = create_zdt(2023, 3, 26, 2, 15, 30, tz=tz)
-        # skipped local times are shifted into unambiguous ones
-        assert not d.is_repeated()
-
-        # same for different disambiguation
-        d2 = create_zdt(
-            2023, 3, 26, 2, 15, 30, tz=tz, disambiguation="earlier"
-        )
-        assert not d2.is_repeated()
-
-
-class TestNextTransition:
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_ams_summer(self, tz: str):
-        d = create_zdt(2023, 8, 15, 12, tz=tz)
-        t = d.next_transition()
-        assert t is not None
-        # Next transition is fall-back in October 2023.
-        # The returned instant is when the new offset takes effect,
-        # so disambiguation="later" matches the CET offset.
-        assert t.strict_eq(
-            create_zdt(2023, 10, 29, 2, tz=tz, disambiguation="later")
-        )
-        # the same time zone: None for the POSIX and raw-file ones
-        assert t.tz_id == d.tz_id
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_ams_winter(self, tz: str):
-        d = create_zdt(2024, 1, 15, 12, tz=tz)
-        t = d.next_transition()
-        assert t is not None
-        # Next transition is spring-forward in March 2024
-        assert t.strict_eq(create_zdt(2024, 3, 31, 3, tz=tz))
-
-    def test_utc_returns_none(self):
-        d = create_zdt(2024, 6, 15, 12, tz="Etc/UTC")
-        assert d.next_transition() is None
-
-    def test_fixed_offset_returns_none(self):
-        d = create_zdt(2024, 6, 15, 12, tz="Etc/GMT+2")
-        assert d.next_transition() is None
-
-    def test_no_dst_returns_none(self):
-        d = create_zdt(2024, 6, 15, 12, tz="Asia/Kolkata")
-        assert d.next_transition() is None
-
-    def test_same_offset_london_1968(self):
-        # British Standard Time: the offset stays +01:00, but the rules
-        # change from summer time to standard time, so it is a transition
-        d = ZonedDateTime(1968, 6, 1, tz="Europe/London")
-        t = d.next_transition()
-        assert t is not None
-        assert t.strict_eq(ZonedDateTime(1968, 10, 27, tz="Europe/London"))
-        assert t.offset == d.offset == hours(1)
-        assert t.dst_offset() == TimeDelta.ZERO
-        assert t.tz_abbrev() == "BST"
-        before = t.subtract(nanoseconds=1)
-        assert before.dst_offset() == hours(1)
-        assert before.tz_abbrev() == "BST"
-
-    def test_standard_time_and_dst_change_together_argentina_1999(self):
-        # Argentina moved standard time from -03:00 to -04:00 and began DST
-        # at the same moment, so the offset stays -03:00 while the DST
-        # offset changes
-        tz = "America/Argentina/Buenos_Aires"
-        t = ZonedDateTime(1999, 9, 1, tz=tz).next_transition()
-        assert t is not None
-        assert t.strict_eq(ZonedDateTime(1999, 10, 3, tz=tz))
-        assert t.offset == hours(-3)
-        assert t.dst_offset() == hours(1)
-        assert t.subtract(nanoseconds=1).dst_offset() == TimeDelta.ZERO
-
-    def test_abbreviation_only_anchorage_1983(self):
-        # Alaska renamed its zones on 1983-11-30: YST became AKST, the
-        # offset and DST offset unchanged
-        tz = "America/Anchorage"
-        t = ZonedDateTime(1983, 11, 1, tz=tz).next_transition()
-        assert t is not None
-        assert t.strict_eq(ZonedDateTime(1983, 11, 30, tz=tz))
-        assert t.tz_abbrev() == "AKST"
-        before = t.subtract(nanoseconds=1)
-        assert before.tz_abbrev() == "YST"
-        assert before.offset == t.offset == hours(-9)
-        assert before.dst_offset() == t.dst_offset() == TimeDelta.ZERO
-
-    def test_record_that_changes_nothing_is_skipped_tbilisi_1997(self):
-        # The database repeats the 1996 type at 1997-03-30, which changes
-        # neither the offset, the DST offset, nor the abbreviation
-        tz = "Asia/Tbilisi"
-        t = ZonedDateTime(1997, 3, 29, tz=tz).next_transition()
-        assert t is not None
-        assert t.strict_eq(
-            ZonedDateTime(1997, 10, 25, 23, tz=tz, disambiguation="later")
-        )
-        p = ZonedDateTime(1997, 4, 1, tz=tz).prev_transition()
-        assert p is not None
-        assert p.strict_eq(ZonedDateTime(1996, 3, 31, 1, tz=tz))
-
-    def test_chain_nyc(self):
-        d = ZonedDateTime(2024, 1, 1, tz="America/New_York")
-        t1 = d.next_transition()
-        assert t1 is not None
-        t2 = t1.next_transition()
-        assert t2 is not None
-        assert t1.strict_eq(
-            ZonedDateTime(2024, 3, 10, 3, tz="America/New_York")
-        )
-        assert t2.strict_eq(
-            ZonedDateTime(
-                2024, 11, 3, 1, tz="America/New_York", disambiguation="later"
-            )
-        )
-
-    def test_southern_hemisphere_sydney(self):
-        d = ZonedDateTime(2024, 1, 15, tz="Australia/Sydney")
-        t = d.next_transition()
-        assert t is not None
-        # Sydney: DST ends in April (fall-back)
-        assert t.strict_eq(
-            ZonedDateTime(
-                2024, 4, 7, 2, tz="Australia/Sydney", disambiguation="later"
-            )
-        )
-
-    def test_at_exact_transition_nyc(self):
-        # At the exact moment of spring-forward in NYC
-        d = ZonedDateTime(2024, 3, 10, 3, tz="America/New_York")
-        t = d.next_transition()
-        assert t is not None
-        # Should skip the current transition and find the next one
-        assert t.strict_eq(
-            ZonedDateTime(
-                2024, 11, 3, 1, tz="America/New_York", disambiguation="later"
-            )
-        )
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_far_future_posix(self, tz: str):
-        d = create_zdt(2050, 6, 15, 12, tz=tz)
-        t = d.next_transition()
-        assert t is not None
-        # Verify we get a transition in 2050
-        assert t.year == 2050
-        assert t.month == 10  # fall-back
-
-    def test_return_type_and_tz(self):
-        d = ZonedDateTime(2024, 1, 1, tz="America/New_York")
-        t = d.next_transition()
-        assert isinstance(t, ZonedDateTime)
-        assert t.tz_id == "America/New_York"
-
-    def test_nanosecond_is_zero(self):
-        # Transitions are always on second boundaries
-        d = ZonedDateTime(
-            2024, 1, 1, nanosecond=123_456, tz="America/New_York"
-        )
-        t = d.next_transition()
-        assert t is not None
-        assert t.nanosecond == 0
-
-    def test_near_max_boundary(self):
-        d = ZonedDateTime(9999, 12, 1, tz="America/New_York")
-        # Should not crash; result depends on POSIX rule year limits
-        t = d.next_transition()
-        # Year 9999 may or may not have a transition depending on implementation
-        if t is not None:
-            assert isinstance(t, ZonedDateTime)
-
-    def test_near_min_boundary(self):
-        d = ZonedDateTime(1, 1, 1, tz="America/New_York")
-        t = d.next_transition()
-        assert t is not None
-        assert isinstance(t, ZonedDateTime)
-
-    # -- First transition is into DST (America/Iqaluit, Antarctica/Palmer) --
-    # These zones have no recorded transitions before their first one, and that
-    # first transition is directly INTO a DST period (not a standard time).
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_iqaluit_before_first_transition(self):
-        """America/Iqaluit: first transition at 1942-08-01 is directly into DST."""
-        d = ZonedDateTime(1940, 1, 1, tz="America/Iqaluit")
-        t = d.next_transition()
-        assert t is not None
-        # First transition: 1942-08-01 00:00:00 UTC → -04:00 (EWT, DST)
-        assert t.strict_eq(
-            ZonedDateTime(
-                1942, 7, 31, 20, tz="America/Iqaluit", disambiguation="later"
-            )
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_palmer_before_first_transition(self):
-        """Antarctica/Palmer: first transition at 1965-01-01 is directly into DST."""
-        d = ZonedDateTime(1963, 1, 1, tz="Antarctica/Palmer")
-        t = d.next_transition()
-        assert t is not None
-        # First transition: 1965-01-01 00:00:00 UTC → -03:00 (DST)
-        # This is a fall-back; local time 21:00 is repeated, use "later"
-        assert t.strict_eq(
-            ZonedDateTime(
-                1964,
-                12,
-                31,
-                21,
-                tz="Antarctica/Palmer",
-                disambiguation="later",
-            )
-        )
-
-    # -- Array-to-POSIX TZ string handoff --
-    # After the last explicitly recorded transition, the POSIX TZ string takes over.
-    # These tests verify that next/prev_transition seamlessly crosses this boundary.
-
-    @pytest.mark.parametrize(
-        "tz",
-        [AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_next_transition_after_posix_boundary(self, tz: str):
-        """next_transition in POSIX territory returns correct spring-forward."""
-        d = create_zdt(2050, 12, 1, tz=tz)
-        t = d.next_transition()
-        assert t is not None
-        # Last Sunday of March 2051: spring-forward to +02:00
-        # 2051-03-26 01:00:00 UTC → 2051-03-26T03:00:00+02:00
-        assert t.strict_eq(create_zdt(2051, 3, 26, 3, tz=tz))
-
-
-class TestPrevTransition:
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_ams_summer(self, tz: str):
-        d = create_zdt(2023, 8, 15, 12, tz=tz)
-        t = d.prev_transition()
-        assert t is not None
-        # Previous transition is spring-forward in March 2023
-        assert t.strict_eq(create_zdt(2023, 3, 26, 3, tz=tz))
-        # the same time zone: None for the POSIX and raw-file ones
-        assert t.tz_id == d.tz_id
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_ams_winter(self, tz: str):
-        d = create_zdt(2024, 1, 15, 12, tz=tz)
-        t = d.prev_transition()
-        assert t is not None
-        # Previous transition is fall-back in October 2023.
-        # disambiguation="later" to get the CET offset.
-        assert t.strict_eq(
-            create_zdt(2023, 10, 29, 2, tz=tz, disambiguation="later")
-        )
-
-    def test_utc_returns_none(self):
-        d = create_zdt(2024, 6, 15, 12, tz="Etc/UTC")
-        assert d.prev_transition() is None
-
-    def test_fixed_offset_returns_none(self):
-        d = create_zdt(2024, 6, 15, 12, tz="Etc/GMT+2")
-        assert d.prev_transition() is None
-
-    def test_same_offset_london_1968(self):
-        # the same-offset transition next_transition() finds from June 1968
-        d = ZonedDateTime(1969, 6, 1, tz="Europe/London")
-        t = d.prev_transition()
-        assert t is not None
-        assert t.strict_eq(ZonedDateTime(1968, 10, 27, tz="Europe/London"))
-        assert t.offset == hours(1)
-        assert t.dst_offset() == TimeDelta.ZERO
-        assert t.tz_abbrev() == "BST"
-
-    def test_standard_time_and_dst_change_together_argentina_2000(self):
-        # DST ended and standard time moved back to -03:00 at the same
-        # moment, so the offset stays -03:00 while the DST offset changes
-        tz = "America/Argentina/Buenos_Aires"
-        t = ZonedDateTime(2000, 6, 1, tz=tz).prev_transition()
-        assert t is not None
-        assert t.strict_eq(ZonedDateTime(2000, 3, 3, tz=tz))
-        assert t.offset == hours(-3)
-        assert t.dst_offset() == TimeDelta.ZERO
-        assert t.subtract(nanoseconds=1).dst_offset() == hours(1)
-
-    def test_kolkata_historical(self):
-        # Asia/Kolkata has no transitions in modern times
-        # but has historical transitions
-        d = create_zdt(2024, 6, 15, 12, tz="Asia/Kolkata")
-        t = d.prev_transition()
-        # There are historical transitions, so it should return something
-        assert t is not None
-        assert t.year < 2024  # historical
-
-    def test_chain_nyc(self):
-        d = ZonedDateTime(2024, 12, 1, tz="America/New_York")
-        t1 = d.prev_transition()
-        assert t1 is not None
-        t2 = t1.prev_transition()
-        assert t2 is not None
-        assert t1.strict_eq(
-            ZonedDateTime(
-                2024, 11, 3, 1, tz="America/New_York", disambiguation="later"
-            )
-        )
-        assert t2.strict_eq(
-            ZonedDateTime(2024, 3, 10, 3, tz="America/New_York")
-        )
-
-    def test_southern_hemisphere_sydney(self):
-        d = ZonedDateTime(2024, 1, 15, tz="Australia/Sydney")
-        t = d.prev_transition()
-        assert t is not None
-        # Sydney: DST started in October 2023 (spring-forward)
-        assert t.strict_eq(
-            ZonedDateTime(2023, 10, 1, 3, tz="Australia/Sydney")
-        )
-
-    def test_at_exact_transition_nyc(self):
-        # At the exact moment of spring-forward in NYC
-        d = ZonedDateTime(2024, 3, 10, 3, tz="America/New_York")
-        t = d.prev_transition()
-        assert t is not None
-        # Should skip the current transition and find the previous one
-        assert t.strict_eq(
-            ZonedDateTime(
-                2023, 11, 5, 1, tz="America/New_York", disambiguation="later"
-            )
-        )
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_far_future_posix(self, tz: str):
-        d = create_zdt(2050, 6, 15, 12, tz=tz)
-        t = d.prev_transition()
-        assert t is not None
-        # Verify we get a transition in 2050
-        assert t.year == 2050
-        assert t.month == 3  # spring-forward
-
-    def test_return_type_and_tz(self):
-        d = ZonedDateTime(2024, 12, 1, tz="America/New_York")
-        t = d.prev_transition()
-        assert isinstance(t, ZonedDateTime)
-        assert t.tz_id == "America/New_York"
-
-    def test_nanosecond_is_zero(self):
-        d = ZonedDateTime(
-            2024, 12, 1, nanosecond=999_999, tz="America/New_York"
-        )
-        t = d.prev_transition()
-        assert t is not None
-        assert t.nanosecond == 0
-
-    def test_near_max_boundary(self):
-        d = ZonedDateTime(9999, 12, 1, tz="America/New_York")
-        t = d.prev_transition()
-        assert t is not None
-        assert isinstance(t, ZonedDateTime)
-
-    def test_near_min_boundary(self):
-        d = ZonedDateTime(1, 1, 1, tz="America/New_York")
-        # At the very beginning, there may be no previous transition
-        t = d.prev_transition()
-        # The result depends on whether there are transitions before year 1
-        if t is not None:
-            assert isinstance(t, ZonedDateTime)
-
-    # -- First transition is into DST --
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_iqaluit_none_before_first_transition(self):
-        """No transition before the very first one."""
-        d = ZonedDateTime(1940, 1, 1, tz="America/Iqaluit")
-        t = d.prev_transition()
-        assert t is None
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_iqaluit_from_first_dst_period(self):
-        """During the first DST period, prev_transition returns the entry into it."""
-        d = ZonedDateTime(1943, 1, 1, tz="America/Iqaluit")
-        t = d.prev_transition()
-        assert t is not None
-        assert t.strict_eq(
-            ZonedDateTime(
-                1942, 7, 31, 20, tz="America/Iqaluit", disambiguation="later"
-            )
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_palmer_from_first_dst_period(self):
-        """During the first DST period, prev_transition returns the entry into it."""
-        d = ZonedDateTime(1965, 2, 1, tz="Antarctica/Palmer")
-        t = d.prev_transition()
-        assert t is not None
-        assert t.strict_eq(
-            ZonedDateTime(
-                1964,
-                12,
-                31,
-                21,
-                tz="Antarctica/Palmer",
-                disambiguation="later",
-            )
-        )
-
-    # -- Array-to-POSIX TZ string handoff --
-
-    @pytest.mark.parametrize(
-        "tz",
-        [AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_prev_transition_after_posix_boundary(self, tz: str):
-        """prev_transition from just past the POSIX boundary."""
-        d = create_zdt(2051, 4, 1, tz=tz)
-        t = d.prev_transition()
-        assert t is not None
-        assert t.strict_eq(create_zdt(2051, 3, 26, 3, tz=tz))
-
-
-class TestDstOffset:
-    def test_fixed_offset_zone(self):
-        d = ZonedDateTime(2020, 8, 15, tz="Etc/GMT+3")
-        assert d.dst_offset() == TimeDelta.ZERO
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_summer(self, tz: str):
-        d = create_zdt(2020, 8, 15, 12, tz=tz)
-        assert d.dst_offset() == TimeDelta(hours=1)
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_winter(self, tz: str):
-        d = create_zdt(2020, 1, 15, 12, tz=tz)
-        assert d.dst_offset() == TimeDelta()
-
-    def test_utc(self):
-        d = create_zdt(2020, 8, 15, 12, tz="UTC")
-        assert d.dst_offset() == TimeDelta()
-
-    def test_no_dst_zone(self):
-        d = create_zdt(2020, 8, 15, 12, tz="Asia/Tokyo")
-        assert d.dst_offset() == TimeDelta()
-
-    def test_standard_time_and_dst_changed_together(self):
-        # Argentina 1999-2000: standard time -04:00 with a one-hour saving,
-        # so the offset equals the previous standard offset
-        d = ZonedDateTime(1999, 12, 1, tz="America/Argentina/Buenos_Aires")
-        assert d.offset == hours(-3)
-        assert d.dst_offset() == hours(1)
-
-    def test_repeated_earlier(self):
-        d = create_zdt(
-            2023,
-            10,
-            29,
-            2,
-            30,
-            tz="Europe/Amsterdam",
-            disambiguation="earlier",
-        )
-        assert d.dst_offset() == TimeDelta(hours=1)
-
-    def test_repeated_later(self):
-        d = create_zdt(
-            2023, 10, 29, 2, 30, tz="Europe/Amsterdam", disambiguation="later"
-        )
-        assert d.dst_offset() == TimeDelta()
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_far_future(self, tz: str):
-        """POSIX TZ string fallback for dates beyond transition data"""
-        d = create_zdt(2100, 7, 15, 12, tz=tz)
-        assert d.dst_offset() == TimeDelta(hours=1)
-
-        d2 = create_zdt(2100, 1, 15, 12, tz=tz)
-        assert d2.dst_offset() == TimeDelta()
-
-    # -- Dublin: "negative DST" (standard=IST UTC+1, winter=GMT UTC+0 isdst=1) --
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_dublin_summer(self):
-        d = create_zdt(2020, 7, 15, 12, tz="Europe/Dublin")
-        zi = ZoneInfo("Europe/Dublin")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_dublin_winter(self):
-        d = create_zdt(2020, 1, 15, 12, tz="Europe/Dublin")
-        zi = ZoneInfo("Europe/Dublin")
-        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_dublin_transition_spring(self):
-        """Just before and after spring-forward in Dublin (last Sun of March)"""
-        zi = ZoneInfo("Europe/Dublin")
-        # Before transition: 2020-03-29 00:30 UTC+0 (winter)
-        d_before = create_zdt(2020, 3, 29, 0, 30, tz="Europe/Dublin")
-        py_before = py_datetime(2020, 3, 29, 0, 30, tzinfo=zi)
-        assert d_before.dst_offset() == TimeDelta(
-            py_before.dst()  # type: ignore[arg-type]
-        )
-        # After transition: 2020-03-29 2:30 (summer, IST)
-        d_after = create_zdt(2020, 3, 29, 2, 30, tz="Europe/Dublin")
-        py_after = py_datetime(2020, 3, 29, 2, 30, tzinfo=zi)
-        assert d_after.dst_offset() == TimeDelta(
-            py_after.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_dublin_transition_autumn(self):
-        """Around fall-back in Dublin (last Sun of October)"""
-        zi = ZoneInfo("Europe/Dublin")
-        # Before transition (earlier occurrence): 2020-10-25 1:30 IST
-        d_earlier = create_zdt(
-            2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguation="earlier"
-        )
-        py_earlier = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=0)
-        assert d_earlier.dst_offset() == TimeDelta(
-            py_earlier.dst()  # type: ignore[arg-type]
-        )
-        # After transition (later occurrence): 2020-10-25 1:30 GMT
-        d_later = create_zdt(
-            2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguation="later"
-        )
-        py_later = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=1)
-        assert d_later.dst_offset() == TimeDelta(
-            py_later.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_dublin_far_future(self):
-        d = create_zdt(2100, 7, 15, 12, tz="Europe/Dublin")
-        zi = ZoneInfo("Europe/Dublin")
-        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-        d2 = create_zdt(2100, 1, 15, 12, tz="Europe/Dublin")
-        py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
-        assert d2.dst_offset() == TimeDelta(
-            py_dt2.dst()  # type: ignore[arg-type]
-        )
-
-    # -- Australia/Sydney: southern hemisphere DST (summer in Jan) --
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_sydney_summer(self):
-        """January is summer (DST active) in Sydney"""
-        d = create_zdt(2020, 1, 15, 12, tz="Australia/Sydney")
-        zi = ZoneInfo("Australia/Sydney")
-        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_sydney_winter(self):
-        """July is winter (no DST) in Sydney"""
-        d = create_zdt(2020, 7, 15, 12, tz="Australia/Sydney")
-        zi = ZoneInfo("Australia/Sydney")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_sydney_transition_start(self):
-        """DST starts first Sun of October in Sydney"""
-        zi = ZoneInfo("Australia/Sydney")
-        # Before: 2020-10-04 1:30 AEST (no DST)
-        d_before = create_zdt(2020, 10, 4, 1, 30, tz="Australia/Sydney")
-        py_before = py_datetime(2020, 10, 4, 1, 30, tzinfo=zi)
-        assert d_before.dst_offset() == TimeDelta(
-            py_before.dst()  # type: ignore[arg-type]
-        )
-        # After: 2020-10-04 3:30 AEDT (DST active)
-        d_after = create_zdt(2020, 10, 4, 3, 30, tz="Australia/Sydney")
-        py_after = py_datetime(2020, 10, 4, 3, 30, tzinfo=zi)
-        assert d_after.dst_offset() == TimeDelta(
-            py_after.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_sydney_transition_end(self):
-        """DST ends first Sun of April in Sydney"""
-        zi = ZoneInfo("Australia/Sydney")
-        # Earlier occurrence: 2020-04-05 2:30 AEDT
-        d_earlier = create_zdt(
-            2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguation="earlier"
-        )
-        py_earlier = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=0)
-        assert d_earlier.dst_offset() == TimeDelta(
-            py_earlier.dst()  # type: ignore[arg-type]
-        )
-        # Later occurrence: 2020-04-05 2:30 AEST
-        d_later = create_zdt(
-            2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguation="later"
-        )
-        py_later = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=1)
-        assert d_later.dst_offset() == TimeDelta(
-            py_later.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_sydney_far_future(self):
-        d = create_zdt(2100, 1, 15, 12, tz="Australia/Sydney")
-        zi = ZoneInfo("Australia/Sydney")
-        py_dt = py_datetime(2100, 1, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    # -- Pacific/Honolulu: no DST ever --
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_honolulu_summer(self):
-        d = create_zdt(2020, 7, 15, 12, tz="Pacific/Honolulu")
-        assert d.dst_offset() == TimeDelta()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_honolulu_winter(self):
-        d = create_zdt(2020, 1, 15, 12, tz="Pacific/Honolulu")
-        assert d.dst_offset() == TimeDelta()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_honolulu_far_future(self):
-        d = create_zdt(2100, 6, 15, 12, tz="Pacific/Honolulu")
-        assert d.dst_offset() == TimeDelta()
-
-    # -- Africa/Casablanca: complex DST schedule --
-
-    @pytest.mark.skipif(
-        not HAS_TZDATA
-        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
-        reason="tzdata or Africa/Casablanca not available",
-    )
-    def test_casablanca_summer(self):
-        d = create_zdt(2019, 7, 15, 12, tz="Africa/Casablanca")
-        zi = ZoneInfo("Africa/Casablanca")
-        py_dt = py_datetime(2019, 7, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(
-        not HAS_TZDATA
-        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
-        reason="tzdata or Africa/Casablanca not available",
-    )
-    def test_casablanca_winter(self):
-        d = create_zdt(2019, 1, 15, 12, tz="Africa/Casablanca")
-        zi = ZoneInfo("Africa/Casablanca")
-        py_dt = py_datetime(2019, 1, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(
-        not HAS_TZDATA
-        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
-        reason="tzdata or Africa/Casablanca not available",
-    )
-    def test_casablanca_far_future(self):
-        d = create_zdt(2100, 7, 15, 12, tz="Africa/Casablanca")
-        zi = ZoneInfo("Africa/Casablanca")
-        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    # -- America/New_York: standard US DST --
-
-    def test_new_york_summer(self):
-        d = create_zdt(2020, 7, 15, 12, tz="America/New_York")
-        zi = ZoneInfo("America/New_York")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    def test_new_york_winter(self):
-        d = create_zdt(2020, 1, 15, 12, tz="America/New_York")
-        zi = ZoneInfo("America/New_York")
-        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    def test_new_york_spring_forward(self):
-        """Second Sunday of March: 2:00 AM springs to 3:00 AM"""
-        zi = ZoneInfo("America/New_York")
-        # Before: 2020-03-08 1:30 EST
-        d_before = create_zdt(2020, 3, 8, 1, 30, tz="America/New_York")
-        py_before = py_datetime(2020, 3, 8, 1, 30, tzinfo=zi)
-        assert d_before.dst_offset() == TimeDelta(
-            py_before.dst()  # type: ignore[arg-type]
-        )
-        # After: 2020-03-08 3:30 EDT
-        d_after = create_zdt(2020, 3, 8, 3, 30, tz="America/New_York")
-        py_after = py_datetime(2020, 3, 8, 3, 30, tzinfo=zi)
-        assert d_after.dst_offset() == TimeDelta(
-            py_after.dst()  # type: ignore[arg-type]
-        )
-
-    def test_new_york_fall_back(self):
-        """First Sunday of November: 2:00 AM falls back to 1:00 AM"""
-        zi = ZoneInfo("America/New_York")
-        # Earlier occurrence: 2020-11-01 1:30 EDT
-        d_earlier = create_zdt(
-            2020, 11, 1, 1, 30, tz="America/New_York", disambiguation="earlier"
-        )
-        py_earlier = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=0)
-        assert d_earlier.dst_offset() == TimeDelta(
-            py_earlier.dst()  # type: ignore[arg-type]
-        )
-        # Later occurrence: 2020-11-01 1:30 EST
-        d_later = create_zdt(
-            2020, 11, 1, 1, 30, tz="America/New_York", disambiguation="later"
-        )
-        py_later = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=1)
-        assert d_later.dst_offset() == TimeDelta(
-            py_later.dst()  # type: ignore[arg-type]
-        )
-
-    def test_new_york_far_future(self):
-        d = create_zdt(2100, 7, 15, 12, tz="America/New_York")
-        zi = ZoneInfo("America/New_York")
-        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-        d2 = create_zdt(2100, 1, 15, 12, tz="America/New_York")
-        py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
-        assert d2.dst_offset() == TimeDelta(
-            py_dt2.dst()  # type: ignore[arg-type]
-        )
-
-    # -- UTC: no DST --
-
-    def test_utc_summer_cross_validate(self):
-        d = create_zdt(2020, 7, 15, 12, tz="UTC")
-        zi = ZoneInfo("UTC")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    def test_utc_far_future(self):
-        d = create_zdt(2100, 7, 15, 12, tz="UTC")
-        assert d.dst_offset() == TimeDelta()
-
-    # -- Asia/Tokyo: no DST --
-
-    def test_tokyo_summer(self):
-        d = create_zdt(2020, 7, 15, 12, tz="Asia/Tokyo")
-        zi = ZoneInfo("Asia/Tokyo")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    def test_tokyo_winter(self):
-        d = create_zdt(2020, 1, 15, 12, tz="Asia/Tokyo")
-        assert d.dst_offset() == TimeDelta()
-
-    def test_tokyo_far_future(self):
-        d = create_zdt(2100, 7, 15, 12, tz="Asia/Tokyo")
-        assert d.dst_offset() == TimeDelta()
-
-    # -- First transition is into DST --
-    # Zones where the very first recorded transition is INTO a DST state.
-    # The initial period (before first transition) has no DST.
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_iqaluit_initial_period(self):
-        """Before the first transition, Iqaluit has no DST (it was UTC+0)."""
-        d = ZonedDateTime(1940, 1, 1, 12, tz="America/Iqaluit")
-        zi = ZoneInfo("America/Iqaluit")
-        py_dt = py_datetime(1940, 1, 1, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_iqaluit_first_dst_period(self):
-        """After the first transition, Iqaluit is in EWT (DST = +1h vs EST)."""
-        d = ZonedDateTime(1942, 9, 1, 12, tz="America/Iqaluit")
-        zi = ZoneInfo("America/Iqaluit")
-        py_dt = py_datetime(1942, 9, 1, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_iqaluit_after_first_dst_period(self):
-        """After returning to standard time, Iqaluit has no DST."""
-        d = ZonedDateTime(1946, 1, 1, 12, tz="America/Iqaluit")
-        zi = ZoneInfo("America/Iqaluit")
-        py_dt = py_datetime(1946, 1, 1, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_palmer_initial_period(self):
-        """Before the first transition, Palmer has no DST (it was UTC+0)."""
-        d = ZonedDateTime(1963, 6, 15, 12, tz="Antarctica/Palmer")
-        zi = ZoneInfo("Antarctica/Palmer")
-        py_dt = py_datetime(1963, 6, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_palmer_first_dst_period(self):
-        """After the first transition (1965-01-01), Palmer is in DST (+1h vs -04)."""
-        d = ZonedDateTime(1965, 2, 15, 12, tz="Antarctica/Palmer")
-        zi = ZoneInfo("Antarctica/Palmer")
-        py_dt = py_datetime(1965, 2, 15, 12, tzinfo=zi)
-        assert d.dst_offset() == TimeDelta(
-            py_dt.dst()  # type: ignore[arg-type]
-        )
-
-
-class TestTzAbbrev:
-    def test_fixed_offset_zone(self):
-        d = ZonedDateTime(2020, 8, 15, tz="Etc/GMT+3")
-        assert d.tz_abbrev() == "-03"
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_summer(self, tz: str):
-        d = create_zdt(2020, 8, 15, 12, tz=tz)
-        assert d.tz_abbrev() == "CEST"
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_winter(self, tz: str):
-        d = create_zdt(2020, 1, 15, 12, tz=tz)
-        assert d.tz_abbrev() == "CET"
-
-    def test_utc(self):
-        d = create_zdt(2020, 8, 15, 12, tz="UTC")
-        assert d.tz_abbrev() == "UTC"
-
-    def test_us_eastern(self):
-        d = create_zdt(2020, 8, 15, 12, tz="America/New_York")
-        assert d.tz_abbrev() == "EDT"
-
-        d2 = create_zdt(2020, 1, 15, 12, tz="America/New_York")
-        assert d2.tz_abbrev() == "EST"
-
-    def test_japan(self):
-        d = create_zdt(2020, 8, 15, 12, tz="Asia/Tokyo")
-        assert d.tz_abbrev() == "JST"
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_far_future(self, tz: str):
-        d = create_zdt(2100, 7, 15, 12, tz=tz)
-        assert d.tz_abbrev() == "CEST"
-
-        d2 = create_zdt(2100, 1, 15, 12, tz=tz)
-        assert d2.tz_abbrev() == "CET"
-
-    def test_returns_str(self):
-        d = create_zdt(2020, 8, 15, 12, tz="Europe/Amsterdam")
-        assert type(d.tz_abbrev()) is str
-
-    # -- Dublin: "negative DST" (IST in summer, GMT in winter) --
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_dublin_summer(self):
-        d = create_zdt(2020, 7, 15, 12, tz="Europe/Dublin")
-        zi = ZoneInfo("Europe/Dublin")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_dublin_winter(self):
-        d = create_zdt(2020, 1, 15, 12, tz="Europe/Dublin")
-        zi = ZoneInfo("Europe/Dublin")
-        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_dublin_transition_spring(self):
-        zi = ZoneInfo("Europe/Dublin")
-        # Before spring-forward: 2020-03-29 0:30 (winter, GMT)
-        d_before = create_zdt(2020, 3, 29, 0, 30, tz="Europe/Dublin")
-        py_before = py_datetime(2020, 3, 29, 0, 30, tzinfo=zi)
-        assert d_before.tz_abbrev() == py_before.tzname()
-        # After spring-forward: 2020-03-29 2:30 (summer, IST)
-        d_after = create_zdt(2020, 3, 29, 2, 30, tz="Europe/Dublin")
-        py_after = py_datetime(2020, 3, 29, 2, 30, tzinfo=zi)
-        assert d_after.tz_abbrev() == py_after.tzname()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_dublin_transition_autumn(self):
-        zi = ZoneInfo("Europe/Dublin")
-        # Earlier occurrence: 2020-10-25 1:30 IST
-        d_earlier = create_zdt(
-            2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguation="earlier"
-        )
-        py_earlier = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=0)
-        assert d_earlier.tz_abbrev() == py_earlier.tzname()
-        # Later occurrence: 2020-10-25 1:30 GMT
-        d_later = create_zdt(
-            2020, 10, 25, 1, 30, tz="Europe/Dublin", disambiguation="later"
-        )
-        py_later = py_datetime(2020, 10, 25, 1, 30, tzinfo=zi, fold=1)
-        assert d_later.tz_abbrev() == py_later.tzname()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_dublin_far_future(self):
-        d = create_zdt(2100, 7, 15, 12, tz="Europe/Dublin")
-        zi = ZoneInfo("Europe/Dublin")
-        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-        d2 = create_zdt(2100, 1, 15, 12, tz="Europe/Dublin")
-        py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
-        assert d2.tz_abbrev() == py_dt2.tzname()
-
-    # -- Australia/Sydney: southern hemisphere DST --
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_sydney_summer(self):
-        d = create_zdt(2020, 1, 15, 12, tz="Australia/Sydney")
-        zi = ZoneInfo("Australia/Sydney")
-        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_sydney_winter(self):
-        d = create_zdt(2020, 7, 15, 12, tz="Australia/Sydney")
-        zi = ZoneInfo("Australia/Sydney")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_sydney_transition_start(self):
-        zi = ZoneInfo("Australia/Sydney")
-        # Before DST starts: 2020-10-04 1:30 AEST
-        d_before = create_zdt(2020, 10, 4, 1, 30, tz="Australia/Sydney")
-        py_before = py_datetime(2020, 10, 4, 1, 30, tzinfo=zi)
-        assert d_before.tz_abbrev() == py_before.tzname()
-        # After DST starts: 2020-10-04 3:30 AEDT
-        d_after = create_zdt(2020, 10, 4, 3, 30, tz="Australia/Sydney")
-        py_after = py_datetime(2020, 10, 4, 3, 30, tzinfo=zi)
-        assert d_after.tz_abbrev() == py_after.tzname()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_sydney_transition_end(self):
-        zi = ZoneInfo("Australia/Sydney")
-        # Earlier occurrence: 2020-04-05 2:30 AEDT
-        d_earlier = create_zdt(
-            2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguation="earlier"
-        )
-        py_earlier = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=0)
-        assert d_earlier.tz_abbrev() == py_earlier.tzname()
-        # Later occurrence: 2020-04-05 2:30 AEST
-        d_later = create_zdt(
-            2020, 4, 5, 2, 30, tz="Australia/Sydney", disambiguation="later"
-        )
-        py_later = py_datetime(2020, 4, 5, 2, 30, tzinfo=zi, fold=1)
-        assert d_later.tz_abbrev() == py_later.tzname()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_sydney_far_future(self):
-        d = create_zdt(2100, 1, 15, 12, tz="Australia/Sydney")
-        zi = ZoneInfo("Australia/Sydney")
-        py_dt = py_datetime(2100, 1, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    # -- Pacific/Honolulu: no DST --
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_honolulu_summer(self):
-        d = create_zdt(2020, 7, 15, 12, tz="Pacific/Honolulu")
-        zi = ZoneInfo("Pacific/Honolulu")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_honolulu_winter(self):
-        d = create_zdt(2020, 1, 15, 12, tz="Pacific/Honolulu")
-        zi = ZoneInfo("Pacific/Honolulu")
-        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    @pytest.mark.skipif(not HAS_TZDATA, reason="tzdata not installed")
-    def test_honolulu_far_future(self):
-        d = create_zdt(2100, 6, 15, 12, tz="Pacific/Honolulu")
-        zi = ZoneInfo("Pacific/Honolulu")
-        py_dt = py_datetime(2100, 6, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    # -- Africa/Casablanca: complex DST --
-
-    @pytest.mark.skipif(
-        not HAS_TZDATA
-        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
-        reason="tzdata or Africa/Casablanca not available",
-    )
-    def test_casablanca_summer(self):
-        d = create_zdt(2019, 7, 15, 12, tz="Africa/Casablanca")
-        zi = ZoneInfo("Africa/Casablanca")
-        py_dt = py_datetime(2019, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    @pytest.mark.skipif(
-        not HAS_TZDATA
-        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
-        reason="tzdata or Africa/Casablanca not available",
-    )
-    def test_casablanca_winter(self):
-        d = create_zdt(2019, 1, 15, 12, tz="Africa/Casablanca")
-        zi = ZoneInfo("Africa/Casablanca")
-        py_dt = py_datetime(2019, 1, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    @pytest.mark.skipif(
-        not HAS_TZDATA
-        or "Africa/Casablanca" not in zoneinfo_available_timezones(),
-        reason="tzdata or Africa/Casablanca not available",
-    )
-    def test_casablanca_far_future(self):
-        d = create_zdt(2100, 7, 15, 12, tz="Africa/Casablanca")
-        zi = ZoneInfo("Africa/Casablanca")
-        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    # -- America/New_York: standard US DST --
-
-    def test_new_york_summer(self):
-        d = create_zdt(2020, 7, 15, 12, tz="America/New_York")
-        zi = ZoneInfo("America/New_York")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    def test_new_york_winter(self):
-        d = create_zdt(2020, 1, 15, 12, tz="America/New_York")
-        zi = ZoneInfo("America/New_York")
-        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    def test_new_york_spring_forward(self):
-        zi = ZoneInfo("America/New_York")
-        # Before: 2020-03-08 1:30 EST
-        d_before = create_zdt(2020, 3, 8, 1, 30, tz="America/New_York")
-        py_before = py_datetime(2020, 3, 8, 1, 30, tzinfo=zi)
-        assert d_before.tz_abbrev() == py_before.tzname()
-        # After: 2020-03-08 3:30 EDT
-        d_after = create_zdt(2020, 3, 8, 3, 30, tz="America/New_York")
-        py_after = py_datetime(2020, 3, 8, 3, 30, tzinfo=zi)
-        assert d_after.tz_abbrev() == py_after.tzname()
-
-    def test_new_york_fall_back(self):
-        zi = ZoneInfo("America/New_York")
-        # Earlier occurrence: 2020-11-01 1:30 EDT
-        d_earlier = create_zdt(
-            2020, 11, 1, 1, 30, tz="America/New_York", disambiguation="earlier"
-        )
-        py_earlier = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=0)
-        assert d_earlier.tz_abbrev() == py_earlier.tzname()
-        # Later occurrence: 2020-11-01 1:30 EST
-        d_later = create_zdt(
-            2020, 11, 1, 1, 30, tz="America/New_York", disambiguation="later"
-        )
-        py_later = py_datetime(2020, 11, 1, 1, 30, tzinfo=zi, fold=1)
-        assert d_later.tz_abbrev() == py_later.tzname()
-
-    def test_new_york_far_future(self):
-        d = create_zdt(2100, 7, 15, 12, tz="America/New_York")
-        zi = ZoneInfo("America/New_York")
-        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-        d2 = create_zdt(2100, 1, 15, 12, tz="America/New_York")
-        py_dt2 = py_datetime(2100, 1, 15, 12, tzinfo=zi)
-        assert d2.tz_abbrev() == py_dt2.tzname()
-
-    # -- UTC: always UTC --
-
-    def test_utc_cross_validate(self):
-        d = create_zdt(2020, 7, 15, 12, tz="UTC")
-        zi = ZoneInfo("UTC")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    def test_utc_far_future(self):
-        d = create_zdt(2100, 7, 15, 12, tz="UTC")
-        assert d.tz_abbrev() == "UTC"
-
-    # -- Asia/Tokyo: no DST, always JST --
-
-    def test_tokyo_summer(self):
-        d = create_zdt(2020, 7, 15, 12, tz="Asia/Tokyo")
-        zi = ZoneInfo("Asia/Tokyo")
-        py_dt = py_datetime(2020, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    def test_tokyo_winter(self):
-        d = create_zdt(2020, 1, 15, 12, tz="Asia/Tokyo")
-        zi = ZoneInfo("Asia/Tokyo")
-        py_dt = py_datetime(2020, 1, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-    def test_tokyo_far_future(self):
-        d = create_zdt(2100, 7, 15, 12, tz="Asia/Tokyo")
-        zi = ZoneInfo("Asia/Tokyo")
-        py_dt = py_datetime(2100, 7, 15, 12, tzinfo=zi)
-        assert d.tz_abbrev() == py_dt.tzname()
-
-
-class TestDayLength:
+class TestRepr:
     @pytest.mark.parametrize(
         "d, expect",
         [
-            # no special day
-            (
-                ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
-                hours(24),
-            ),
-            (ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"), hours(24)),
-            # Longer day
-            (
-                ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
-                hours(25),
-            ),
-            (
-                create_zdt(2023, 10, 29, 12, 8, 30, tz=AMS_TZ_POSIX),
-                hours(25),
-            ),
-            (ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"), hours(25)),
-            (
-                ZonedDateTime(2023, 10, 30, tz="Europe/Amsterdam").subtract(
-                    nanoseconds=1
-                ),
-                hours(25),
-            ),
-            # Shorter day
-            (
-                ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
-                hours(23),
-            ),
-            (ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"), hours(23)),
-            (
-                ZonedDateTime(2023, 3, 27, tz="Europe/Amsterdam").subtract(
-                    nanoseconds=1
-                ),
-                hours(23),
-            ),
-            # non-hour DST change
-            (
-                ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"),
-                hours(23.5),
-            ),
-            (
-                ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
-                hours(24.5),
-            ),
-            # Non-regular transition
-            (
-                ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
-                TimeDelta(hours=24, minutes=-30, seconds=-14),
-            ),
-            # DST starts at midnight
-            (ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"), hours(25)),
-            (ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"), hours(24)),
             (
                 ZonedDateTime(
-                    2016,
-                    10,
-                    16,
-                    tz="America/Sao_Paulo",
-                    disambiguation="compatible",
-                ),
-                hours(23),
-            ),
-            (ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"), hours(24)),
-            # Samoa skipped a day
-            (ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"), hours(24)),
-            (ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"), hours(24)),
-            # A day that starts twice
-            (
-                ZonedDateTime(
-                    2016,
-                    2,
-                    20,
+                    2020,
+                    8,
+                    15,
                     23,
-                    45,
-                    disambiguation="later",
-                    tz="America/Sao_Paulo",
+                    12,
+                    9,
+                    nanosecond=9_876_543,
+                    tz="Australia/Darwin",
                 ),
-                hours(25),
+                'ZonedDateTime("2020-08-15 23:12:09.009876543+09:30[Australia/Darwin]")',
             ),
             (
-                ZonedDateTime(
-                    2016,
-                    2,
-                    20,
-                    23,
-                    45,
-                    disambiguation="earlier",
-                    tz="America/Sao_Paulo",
-                ),
-                hours(25),
+                ZonedDateTime(2020, 8, 15, 23, 12, tz="Iceland"),
+                'ZonedDateTime("2020-08-15 23:12:00+00:00[Iceland]")',
+            ),
+            (
+                ZonedDateTime(2020, 8, 15, 23, 12, tz="UTC"),
+                'ZonedDateTime("2020-08-15 23:12:00+00:00[UTC]")',
+            ),
+            (
+                create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_POSIX),
+                'ZonedDateTime("2020-08-15 12:08:30+02:00[<system time zone without ID>]")',
+            ),
+            (
+                create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_RAWFILE),
+                'ZonedDateTime("2020-08-15 12:08:30+02:00[<system time zone without ID>]")',
             ),
         ],
     )
-    def test_typical(self, d: ZonedDateTime, expect: TimeDelta):
-        assert d.day_length() == expect
-
-    def test_extreme_bounds(self):
-        # Negative UTC offsets at lower bound are fine
-        d_min_neg = ZonedDateTime(1, 1, 1, 2, tz="America/New_York")
-        assert d_min_neg.day_length() == hours(24)
-
-        # Positive UTC offsets at lower bound are NOT fine
-        d_min_pos = ZonedDateTime(1, 1, 1, 12, tz="Asia/Tokyo")
-        with pytest.raises(
-            ValueError, match="^value or calculation out of range$"
-        ):
-            d_min_pos.day_length()
-
-        # upper bound is NOT fine
-        d_max_pos = ZonedDateTime(9999, 12, 31, 4, tz="Asia/Tokyo")
-        with pytest.raises(
-            ValueError, match="^value or calculation out of range$"
-        ):
-            d_max_pos.day_length()
-
-        d_max_neg = ZonedDateTime(9999, 12, 31, 12, tz="America/New_York")
-        with pytest.raises(
-            ValueError, match="^value or calculation out of range$"
-        ):
-            d_max_neg.day_length()
-
-    @pytest.mark.parametrize(
-        "d",
-        [
-            ZonedDateTime(2010, 11, 6, 12, tz="America/Goose_Bay"),
-            ZonedDateTime(2010, 11, 7, 12, tz="America/Goose_Bay"),
-            ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
-            ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"),
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                30,
-                tz="Europe/Amsterdam",
-                disambiguation="later",
-            ),
-        ],
-    )
-    def test_is_the_difference_of_consecutive_day_starts(self, d):
-        next_start = d.add(hours=30).start_of("day")
-        assert d.day_length() == next_start - d.start_of("day")
-
-
-@pytest.mark.parametrize(
-    "tz",
-    ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-)
-def test_instant(tz: str):
-    assert (
-        create_zdt(2020, 8, 15, 12, 8, 30, tz=tz)
-        .to_instant()
-        .strict_eq(Instant.from_utc(2020, 8, 15, 10, 8, 30))
-    )
-    d = create_zdt(
-        2023,
-        10,
-        29,
-        2,
-        15,
-        30,
-        tz=tz,
-        disambiguation="earlier",
-    )
-    assert d.to_instant().strict_eq(Instant.from_utc(2023, 10, 29, 0, 15, 30))
-    assert (
-        create_zdt(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            30,
-            tz=tz,
-            disambiguation="later",
-        )
-        .to_instant()
-        .strict_eq(Instant.from_utc(2023, 10, 29, 1, 15, 30))
-    )
-
-
-@pytest.mark.parametrize(
-    "ams_tz",
-    ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-)
-def test_to_tz(ams_tz: str):
-    # unambiguous time
-    assert (
-        create_zdt(2020, 8, 15, 12, 8, 30, tz=ams_tz)
-        .to_tz("America/New_York")
-        .strict_eq(ZonedDateTime(2020, 8, 15, 6, 8, 30, tz="America/New_York"))
-    )
-    ams = ZonedDateTime(
-        2023, 10, 29, 2, 15, 30, tz="Europe/Paris", disambiguation="earlier"
-    )
-    nyc = ZonedDateTime(2023, 10, 28, 20, 15, 30, tz="America/New_York")
-    assert ams.to_tz("America/New_York").strict_eq(nyc)
-    assert (
-        ams.replace(disambiguation="later")
-        .to_tz("America/New_York")
-        .strict_eq(nyc.replace(hour=21, disambiguation="raise"))
-    )
-    assert nyc.to_tz("Europe/Paris").strict_eq(ams)
-    assert (
-        nyc.replace(hour=21, disambiguation="raise")
-        .to_tz("Europe/Paris")
-        .strict_eq(ams.replace(disambiguation="later"))
-    )
-    # disambiguation doesn't affect NYC time because there's no ambiguity
-    assert (
-        nyc.replace(disambiguation="later")
-        .to_tz("Europe/Paris")
-        .strict_eq(ams)
-    )
-
-    # catch local time sliding out of range
-    small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
-    with pytest.raises(ValueError, match="out of range"):
-        small_zdt.to_tz("America/New_York")
-
-    big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
-    with pytest.raises(ValueError, match="out of range"):
-        big_zdt.to_tz("Asia/Tokyo")
-
-    with pytest.raises(TypeError, match="^tz must be a string or SYSTEM_TZ$"):
-        nyc.to_tz(3)
-
-    with pytest.raises(TimeZoneNotFoundError):
-        nyc.to_tz("America/Nowhere")
-
-
-@pytest.mark.parametrize(
-    "tz",
-    ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-)
-def test_to_fixed_offset(tz: str):
-    d = create_zdt(2020, 8, 15, 12, 8, 30, tz=tz)
-
-    assert d.to_fixed_offset().strict_eq(
-        OffsetDateTime(2020, 8, 15, 12, 8, 30, offset=hours(2))
-    )
-    assert (
-        d.replace(month=1, disambiguation="raise")
-        .to_fixed_offset()
-        .strict_eq(OffsetDateTime(2020, 1, 15, 12, 8, 30, offset=hours(1)))
-    )
-    assert (
-        d.replace(month=1, disambiguation="raise")
-        .to_fixed_offset(hours(4))
-        .strict_eq(OffsetDateTime(2020, 1, 15, 15, 8, 30, offset=hours(4)))
-    )
-    assert d.to_fixed_offset(hours(0)).strict_eq(
-        OffsetDateTime(2020, 8, 15, 10, 8, 30, offset=hours(0))
-    )
-    assert d.to_fixed_offset(hours(-4)).strict_eq(
-        OffsetDateTime(2020, 8, 15, 6, 8, 30, offset=hours(-4))
-    )
-
-    # catch local time sliding out of range
-    small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
-    with pytest.raises((ValueError, OverflowError), match="range|year"):
-        small_zdt.to_fixed_offset(hours(-3))
-
-    big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
-    with pytest.raises((ValueError, OverflowError), match="range|year"):
-        big_zdt.to_fixed_offset(hours(4))
-
-
-@system_tz_ams()
-def test_to_system_tz():
-    d = ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
-    assert d.to_tz(SYSTEM_TZ).strict_eq(
-        ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
-    )
-    assert (
-        d.replace(day=29, disambiguation="later")
-        .to_tz(SYSTEM_TZ)
-        .strict_eq(
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                disambiguation="later",
-                tz="Europe/Amsterdam",
-            )
-        )
-    )
-
-    # posix tz
-    with system_tz(AMS_TZ_POSIX):
-        assert d.to_tz(SYSTEM_TZ).strict_eq(
-            create_zdt(2023, 10, 28, 2, 15, tz=AMS_TZ_POSIX)
-        )
-
-    # filepath
-    with system_tz(AMS_TZ_RAWFILE):
-        assert d.to_tz(SYSTEM_TZ).strict_eq(
-            create_zdt(2023, 10, 28, 2, 15, tz=AMS_TZ_RAWFILE)
-        )
-
-    # colon prefix
-    with system_tz(":America/New_York"):
-        assert d.to_tz(SYSTEM_TZ).strict_eq(
-            ZonedDateTime(2023, 10, 27, 20, 15, tz="America/New_York")
-        )
-
-    # catch local time sliding out of range
-    small_zdt = ZonedDateTime(1, 1, 1, tz="Etc/UTC")
-    with system_tz_nyc():
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            small_zdt.to_tz(SYSTEM_TZ)
-
-    big_zdt = ZonedDateTime(9999, 12, 31, 23, tz="Etc/UTC")
-    with pytest.raises((ValueError, OverflowError), match="range|year"):
-        big_zdt.to_tz(SYSTEM_TZ)
+    def test_typical(self, d: ZonedDateTime, expect: str):
+        assert repr(d) == expect
 
 
 class TestParseIso:
@@ -3716,128 +2027,239 @@ class TestParseIso:
             ZonedDateTime.parse_iso(s)
 
 
-class TestTimestamp:
+class TestEquality:
     @pytest.mark.parametrize(
-        ("unit", "expected"),
+        "d",
         [
-            ("second", 1_597_493_310),
-            ("millisecond", 1_597_493_310_045),
-            ("microsecond", 1_597_493_310_045_123),
-            ("nanosecond", 1_597_493_310_045_123_987),
+            ZDT1,
+            ZDT2,
+            ZDT3,
+            ZDT_POSIX,
+            ZDT_RAWFILE,
         ],
     )
-    def test_unit(self, unit, expected):
-        value = ZonedDateTime(
-            2020,
-            8,
-            15,
-            8,
-            8,
-            30,
-            nanosecond=45_123_987,
-            tz="America/New_York",
-        )
-
-        assert value.timestamp(unit=unit) == expected
+    def test_same_exact(self, d: ZonedDateTime):
+        d2 = d.replace(year=d.year)  # create a new instance with same value
+        assert d == d2
+        assert not d != d2
+        assert hash(d) == hash(d2)
+        assert d.strict_eq(d2)
 
     @pytest.mark.parametrize(
-        # One nanosecond after the epoch floors to 0 in every unit that
-        # cannot resolve it; in nanoseconds it is the exact value 1.
-        ("unit", "after_epoch"),
+        "d",
         [
-            ("second", 0),
-            ("millisecond", 0),
-            ("microsecond", 0),
-            ("nanosecond", 1),
+            ZDT1,
+            ZDT2,
+            ZDT3,
+            ZDT_POSIX,
+            ZDT_RAWFILE,
         ],
     )
-    def test_unit_floors_around_epoch(self, unit, after_epoch):
-        before = Instant.from_utc(
-            1969, 12, 31, 23, 59, 59, nanosecond=999_999_999
-        )
-        after = Instant.from_utc(1970, 1, 1, nanosecond=1)
+    def test_different_timezone(self, d: ZonedDateTime):
+        # same **wall clock** time, different time zone
+        d2 = d.replace(tz="America/Los_Angeles")
+        assert d != d2
+        assert not d == d2
+        assert hash(d) != hash(d2)
 
-        assert before.to_tz("America/New_York").timestamp(unit=unit) == -1
-        assert after.to_tz("Asia/Tokyo").timestamp(unit=unit) == after_epoch
+        # same moment, different time zone
+        d3 = d.to_tz("America/New_York")
+        assert d == d3
+        assert hash(d) == hash(d3)
+        assert d.strict_eq(d3) is (d3 is d)
 
-    def test_default_seconds(self):
-        assert ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp() == 0
-        assert (
-            ZonedDateTime(
-                2020, 8, 15, 8, 8, 30, nanosecond=45_123, tz="America/New_York"
-            ).timestamp()
-            == 1_597_493_310
-        )
+        with pytest.raises(
+            TypeError,
+            match=r"^strict_eq\(\) argument must be a ZonedDateTime$",
+        ):
+            d.strict_eq(d.to_instant())  # type: ignore[arg-type]
 
-        repeated = ZonedDateTime(
+    @pytest.mark.parametrize(
+        "d",
+        [
+            ZDT1,
+            ZDT2,
+            ZDT3,
+            ZDT_POSIX,
+            ZDT_RAWFILE,
+        ],
+    )
+    def test_different_local_time(self, d: ZonedDateTime):
+        d2 = d.replace(nanosecond=492_231)
+        assert d != d2
+        assert not d == d2
+        assert hash(d) != hash(d2)
+
+    @pytest.mark.parametrize(
+        "d",
+        [
+            ZDT1,
+            ZDT2,
+            ZDT3,
+            ZDT_POSIX,
+            ZDT_RAWFILE,
+        ],
+    )
+    def test_different_disambiguation(self, d: ZonedDateTime):
+        d2 = d.replace(disambiguation="later")
+        assert d == d2
+        assert not d != d2
+        assert hash(d) == hash(d2)
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_repeated_time_differs_by_offset(self, tz: str):
+        d = create_zdt(2023, 10, 29, 2, 15, 30, tz=tz)
+        d2 = d.replace(disambiguation="later")
+        assert d != d2
+        assert not d == d2
+        assert hash(d) != hash(d2)
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_ambiguity_between_different_timezones(self, tz: str):
+        a = create_zdt(
             2023,
             10,
             29,
             2,
             15,
             30,
+            tz=tz,
+            disambiguation="later",
+        )
+        b = a.to_tz("America/New_York")
+        assert a.to_instant() == b.to_instant()  # sanity check
+        assert hash(a) == hash(b)
+        assert a == b
+
+    def test_strict_eq_same_exact(self):
+        a = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
+        b = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
+        assert a.strict_eq(b)
+
+    def test_strict_eq_same_but_without_key(self):
+        a = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
+        b = create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_RAWFILE)
+        assert not a.strict_eq(b)
+
+    def test_strict_eq_different_zones(self):
+        a = ZonedDateTime(
+            2020, 8, 15, 12, 43, nanosecond=1, tz="Europe/Amsterdam"
+        )
+        b = a.to_tz("America/New_York")
+        assert a == b
+        assert not a.strict_eq(b)
+
+        # Different zone but same offset
+        c = a.to_tz("Europe/Paris")
+        assert a == c
+        assert not a.strict_eq(c)
+
+    def test_strict_eq_same_timezone_repeated_time(self):
+        a = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            nanosecond=1,
             tz="Europe/Amsterdam",
             disambiguation="earlier",
         )
-        assert (
-            repeated.timestamp()
-            != repeated.replace(disambiguation="later").timestamp()
+        b = a.replace(disambiguation="later")
+        assert a != b
+        assert not a.strict_eq(b)
+
+    def test_strict_eq_same_repeated_time(self):
+        a = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            nanosecond=1,
+            tz="Europe/Amsterdam",
+            disambiguation="earlier",
         )
+        b = a.replace(disambiguation="earlier")
+        assert a.strict_eq(b)
 
+    def test_strict_eq_same_unambiguous(self):
+        a = ZonedDateTime(
+            2020, 8, 15, 12, 43, nanosecond=1, tz="Europe/Amsterdam"
+        )
+        b = a.replace(disambiguation="later")
+        assert a.strict_eq(b)
+        assert a.strict_eq(b.replace(disambiguation="later"))
 
-@pytest.mark.parametrize(
-    "d, expect",
-    [
-        (
-            ZonedDateTime(
-                2020,
-                8,
-                15,
-                23,
-                12,
-                9,
-                nanosecond=9_876_543,
-                tz="Australia/Darwin",
-            ),
-            'ZonedDateTime("2020-08-15 23:12:09.009876543+09:30[Australia/Darwin]")',
-        ),
-        (
-            ZonedDateTime(2020, 8, 15, 23, 12, tz="Iceland"),
-            'ZonedDateTime("2020-08-15 23:12:00+00:00[Iceland]")',
-        ),
-        (
-            ZonedDateTime(2020, 8, 15, 23, 12, tz="UTC"),
-            'ZonedDateTime("2020-08-15 23:12:00+00:00[UTC]")',
-        ),
-        (
-            create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_POSIX),
-            'ZonedDateTime("2020-08-15 12:08:30+02:00[<system time zone without ID>]")',
-        ),
-        (
-            create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_RAWFILE),
-            'ZonedDateTime("2020-08-15 12:08:30+02:00[<system time zone without ID>]")',
-        ),
-    ],
-)
-def test_repr(d: ZonedDateTime, expect: str):
-    assert repr(d) == expect
+    def test_strict_eq_invalid(self):
+        a = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
+        with pytest.raises(
+            TypeError, match="argument must be a ZonedDateTime"
+        ):
+            a.strict_eq(42)  # type: ignore[arg-type]
 
+        with pytest.raises(
+            TypeError, match="argument must be a ZonedDateTime"
+        ):
+            a.strict_eq(a.to_instant())  # type: ignore[arg-type]
 
-def test_format_tz_id_without_id():
-    d = create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_POSIX)
-    with pytest.raises(
-        ValueError, match="^the time zone has no ID; VV cannot be written$"
-    ):
-        d.format("VV")
+    @staticmethod
+    def _under_both_amsterdams(
+        *local: int,
+    ) -> tuple[ZonedDateTime, ZonedDateTime]:
+        """Build the same local datetime under both Amsterdam definitions.
 
+        Both time zones are loaded straight from a tzif file, so neither has an
+        identifier and the two values differ only in the rules they carry.
+        """
+        with system_tz(AMS_TZ_RAWFILE):
+            a = ZonedDateTime(*local, tz=SYSTEM_TZ)
+        with system_tz(AMS_TZ_RAWFILE_DST_LATE):
+            b = ZonedDateTime(*local, tz=SYSTEM_TZ)
+        return a, b
 
-def test_str_without_tz_id():
-    """str() never raises: without an ID it gives the offset form."""
-    with system_tz(AMS_TZ_POSIX):
-        d = ZonedDateTime.now(SYSTEM_TZ)
-    assert str(d).endswith(("+02:00", "+01:00"))
-    assert str(d) == d.format_iso(tz_id_display="if_available")
-    assert "<system time zone without ID>" in repr(d)
+    # Note: there is no test for a stale offset, i.e. a value whose offset
+    # disagrees with its own time zone. Every constructor resolves the offset
+    # from the time zone (the pickle reader warns and corrects), so such a value
+    # is unreachable. It is also the only thing that would tell the two
+    # backends apart: the extension compares the local datetime and the offset,
+    # the Python version the instant they are derived from.
+
+    def test_strict_eq_different_definition_same_offset(self):
+        """Same moment, same offset, no identifier either side—but other rules."""
+        a, b = self._under_both_amsterdams(2020, 8, 15, 12)
+        assert a.tz_id is b.tz_id is None
+        assert a.to_plain() == b.to_plain()
+        assert a.offset == b.offset == hours(2)
+        assert a == b  # the same moment in time
+        assert not a.strict_eq(b)
+        assert not b.strict_eq(a)
+
+    def test_strict_eq_different_definition_different_offset(self):
+        """The moved transition puts the same local datetime at a different offset."""
+        a, b = self._under_both_amsterdams(2020, 10, 28, 12)
+        assert a.tz_id is b.tz_id is None
+        assert a.to_plain() == b.to_plain()
+        assert a.offset == hours(1)
+        assert b.offset == hours(2)
+        assert not a.strict_eq(b)
+        assert not b.strict_eq(a)
+
+    def test_strict_eq_system_tz_compares_by_definition(self):
+        """The system time zone has no identifier, so only its rules count."""
+        with system_tz("Europe/Amsterdam"):
+            a = ZonedDateTime(2020, 8, 15, 12, tz=SYSTEM_TZ)
+            # force a reload, so the two values hold distinct time zone objects
+            reset_system_tz()
+            b = ZonedDateTime(2020, 8, 15, 12, tz=SYSTEM_TZ)
+            assert a.strict_eq(b)
+            assert b.strict_eq(a)
 
 
 class TestComparison:
@@ -3921,59 +2343,6 @@ class TestComparison:
         "tz",
         ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
     )
-    def test_instant(self, tz: str):
-        d = create_zdt(2023, 10, 29, 2, 30, tz=tz, disambiguation="later")
-
-        inst_eq = d.to_instant()
-        inst_lt = inst_eq - minutes(1)
-        inst_gt = inst_eq + minutes(1)
-
-        assert d >= inst_eq
-        assert d <= inst_eq
-        assert not d > inst_eq
-        assert not d < inst_eq
-
-        assert d > inst_lt
-        assert d >= inst_lt
-        assert not d < inst_lt
-        assert not d <= inst_lt
-
-        assert d < inst_gt
-        assert d <= inst_gt
-        assert not d > inst_gt
-        assert not d >= inst_gt
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_offset(self, tz: str):
-        d = create_zdt(2023, 10, 29, 2, 30, tz=tz, disambiguation="later")
-
-        offset_eq = d.to_fixed_offset()
-        with suppress(StaleOffsetWarning):
-            offset_lt = offset_eq.replace(minute=29)
-            offset_gt = offset_eq.replace(minute=31)
-
-        assert d >= offset_eq
-        assert d <= offset_eq
-        assert not d > offset_eq
-        assert not d < offset_eq
-
-        assert d > offset_lt
-        assert d >= offset_lt
-        assert not d < offset_lt
-        assert not d <= offset_lt
-
-        assert d < offset_gt
-        assert d <= offset_gt
-        assert not d > offset_gt
-        assert not d >= offset_gt
-
-    @pytest.mark.parametrize(
-        "tz",
-        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
     def test_system_tz(self, tz: str):
         d = create_zdt(2023, 10, 29, 2, 30, tz=tz, disambiguation="earlier")
 
@@ -3995,597 +2364,6 @@ class TestComparison:
         assert d <= sys_gt
         assert not d > sys_gt
         assert not d >= sys_gt
-
-
-class TestToStdlib:
-    def test_tz_id(self):
-        d = ZonedDateTime(
-            2020,
-            8,
-            15,
-            23,
-            12,
-            9,
-            nanosecond=987_654_999,
-            tz="Europe/Amsterdam",
-        )
-        py_dt = d.to_stdlib()
-        assert py_dt == py_datetime(
-            2020,
-            8,
-            15,
-            23,
-            12,
-            9,
-            987_654,
-            tzinfo=ZoneInfo("Europe/Amsterdam"),
-        )
-        # This isn't checked by the comparison above!
-        assert py_dt.tzinfo is ZoneInfo("Europe/Amsterdam")
-
-        # a repeated local time
-        d2 = ZonedDateTime(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            tz="Europe/Amsterdam",
-            disambiguation="earlier",
-        )
-        assert d2.to_stdlib().fold == 0
-        assert d2.replace(disambiguation="later").to_stdlib().fold == 1
-
-        # ensure the ZoneInfo isn't file-based, and can thus be pickled
-        pickle.dumps(d2.to_stdlib())
-
-        # negative offset
-        d3 = ZonedDateTime(
-            2020,
-            8,
-            15,
-            12,
-            8,
-            30,
-            tz="America/New_York",
-        )
-        assert d3.to_stdlib().timestamp() == d3.timestamp()
-
-    @pytest.mark.parametrize(
-        "d",
-        [
-            # both occurrences of a repeated time
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                tz="Europe/Amsterdam",
-                disambiguation="earlier",
-            ),
-            ZonedDateTime(
-                2023,
-                10,
-                29,
-                2,
-                15,
-                tz="Europe/Amsterdam",
-                disambiguation="later",
-            ),
-            # just past a skipped time
-            ZonedDateTime(2023, 3, 26, 1, 30, tz="Europe/Amsterdam").add(
-                hours=1
-            ),
-        ],
-    )
-    def test_round_trip(self, d):
-        # fold is set on the way out and read on the way in
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            assert ZonedDateTime(d.to_stdlib()).strict_eq(d)
-
-    def test_zoneinfo_disagrees_with_the_rules(self, tmp_path: Path):
-        # The stdlib reads Amsterdam's rules from a file in which DST ends a
-        # week later than in the file whenever read. The instant survives;
-        # the local fields follow the stdlib's rules.
-        zone = tmp_path / "Europe" / "Amsterdam"
-        zone.parent.mkdir()
-        shutil.copyfile(AMS_TZ_RAWFILE_DST_LATE, zone)
-        d = ZonedDateTime(2020, 10, 28, 12, tz="Europe/Amsterdam")
-        assert d.offset == hours(1)
-
-        zoneinfo_reset_tzpath([tmp_path])
-        ZoneInfo.clear_cache(only_keys=["Europe/Amsterdam"])
-        try:
-            py_dt = d.to_stdlib()
-        finally:
-            zoneinfo_reset_tzpath()
-            ZoneInfo.clear_cache(only_keys=["Europe/Amsterdam"])
-        assert py_dt.timestamp() == d.timestamp()
-        assert py_dt.hour == 13
-        assert py_dt.utcoffset() == py_timedelta(hours=2)
-
-    @pytest.mark.parametrize(
-        "tz",
-        [AMS_TZ_POSIX, AMS_TZ_RAWFILE],
-    )
-    def test_system_tz(self, tz: str):
-        d = create_zdt(
-            2020,
-            8,
-            15,
-            12,
-            8,
-            30,
-            nanosecond=123_456_789,
-            tz=tz,
-        )
-        py_dt = d.to_stdlib()
-        assert py_dt == py_datetime(
-            2020, 8, 15, 10, 8, 30, 123_456, tzinfo=py_timezone.utc
-        )
-        # Ensure the offset is correct (the check above only checks UTC equality)
-        assert py_dt.utcoffset() == py_timedelta(hours=2)
-
-
-class _MyDatetime(py_datetime):
-    pass
-
-
-class TestInitFromPy:
-    @pytest.mark.parametrize(
-        "pydt, expect",
-        [
-            (
-                py_datetime(
-                    2020,
-                    8,
-                    15,
-                    23,
-                    12,
-                    9,
-                    987_654,
-                    tzinfo=ZoneInfo("Europe/Paris"),
-                ),
-                ZonedDateTime(
-                    2020,
-                    8,
-                    15,
-                    23,
-                    12,
-                    9,
-                    nanosecond=987_654_000,
-                    tz="Europe/Paris",
-                ),
-            ),
-            # subclass of datetime
-            (
-                _MyDatetime(
-                    2020,
-                    8,
-                    15,
-                    23,
-                    12,
-                    9,
-                    987_654,
-                    tzinfo=ZoneInfo("Europe/Paris"),
-                ),
-                ZonedDateTime(
-                    2020,
-                    8,
-                    15,
-                    23,
-                    12,
-                    9,
-                    nanosecond=987_654_000,
-                    tz="Europe/Paris",
-                ),
-            ),
-            # skipped time
-            (
-                py_datetime(
-                    2023,
-                    3,
-                    26,
-                    2,
-                    15,
-                    30,
-                    tzinfo=ZoneInfo("Europe/Amsterdam"),
-                ),
-                ZonedDateTime(
-                    2023,
-                    3,
-                    26,
-                    3,
-                    15,
-                    30,
-                    tz="Europe/Amsterdam",
-                ),
-            ),
-            (
-                py_datetime(
-                    2023,
-                    3,
-                    26,
-                    2,
-                    15,
-                    30,
-                    fold=1,
-                    tzinfo=ZoneInfo("Europe/Amsterdam"),
-                ),
-                ZonedDateTime(
-                    2023,
-                    3,
-                    26,
-                    1,
-                    15,
-                    30,
-                    tz="Europe/Amsterdam",
-                ),
-            ),
-            # repeated time
-            (
-                py_datetime(
-                    2023,
-                    10,
-                    29,
-                    2,
-                    15,
-                    30,
-                    tzinfo=ZoneInfo("Europe/Amsterdam"),
-                ),
-                ZonedDateTime(
-                    2023,
-                    10,
-                    29,
-                    2,
-                    15,
-                    30,
-                    tz="Europe/Amsterdam",
-                    disambiguation="earlier",
-                ),
-            ),
-            (
-                py_datetime(
-                    2023,
-                    10,
-                    29,
-                    2,
-                    15,
-                    30,
-                    fold=1,
-                    tzinfo=ZoneInfo("Europe/Amsterdam"),
-                ),
-                ZonedDateTime(
-                    2023,
-                    10,
-                    29,
-                    2,
-                    15,
-                    30,
-                    tz="Europe/Amsterdam",
-                    disambiguation="later",
-                ),
-            ),
-        ],
-    )
-    def test_valid(self, pydt: py_datetime, expect: ZonedDateTime):
-        assert ZonedDateTime(pydt).strict_eq(expect)
-
-    def test_wrong_tzinfo(self):
-        d = py_datetime(
-            2020, 8, 15, 23, 12, 9, 987_654, tzinfo=py_timezone.utc
-        )
-        with pytest.raises(
-            ValueError,
-            match=r"^tzinfo must be a ZoneInfo, got datetime\.timezone\.utc$",
-        ):
-            ZonedDateTime(d)
-
-    def test_zoneinfo_subclass(self):
-        # A subclass carries a time zone ID like its base; the offset it
-        # computes is checked like any other.
-        class MyZoneInfo(ZoneInfo):
-            pass
-
-        dt = py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
-        assert ZonedDateTime(
-            dt.replace(tzinfo=MyZoneInfo("Europe/Paris"))
-        ).strict_eq(ZonedDateTime(dt.replace(tzinfo=ZoneInfo("Europe/Paris"))))
-
-    def test_naive(self):
-
-        with pytest.raises(
-            ValueError,
-            match=r"^datetime is naive; use PlainDateTime\(\) instead$",
-        ):
-            ZonedDateTime(py_datetime(2020, 3, 4))
-
-    def test_out_of_range(self):
-        min_pydt = py_datetime(1, 1, 1, tzinfo=ZoneInfo("Asia/Kolkata"))
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            ZonedDateTime(min_pydt)
-
-        max_pydt = py_datetime(
-            9999, 12, 31, 22, tzinfo=ZoneInfo("America/New_York")
-        )
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            ZonedDateTime(max_pydt)
-
-    def test_zoneinfo_key_is_none(self):
-        with TEST_DIR.joinpath("tzif/Amsterdam.tzif").open("rb") as f:
-            tz = ZoneInfo.from_file(f)
-
-        py_dt = py_datetime(2020, 8, 15, 12, 8, 30, tzinfo=tz)
-
-        with pytest.raises(
-            ValueError,
-            match=(
-                r"^tzinfo has no time zone ID \(ZoneInfo\.key is None\); "
-                r"pass key= to ZoneInfo\.from_file\(\), or use "
-                r"OffsetDateTime\(\) to keep only the offset$"
-            ),
-        ):
-            ZonedDateTime(py_dt)
-
-    def test_zoneinfo_key_not_a_string(self):
-        with TEST_DIR.joinpath("tzif/Amsterdam.tzif").open("rb") as f:
-            tz = ZoneInfo.from_file(f, key=1)  # type: ignore[arg-type]
-
-        py_dt = py_datetime(2020, 8, 15, 12, 8, 30, tzinfo=tz)
-
-        with pytest.raises(TypeError, match="^ZoneInfo key must be a string$"):
-            ZonedDateTime(py_dt)
-
-
-class TestInitFromPyResolution:
-    """The standard-library overload follows the same resolution flow as the
-    ISO one: the offset its ``tzinfo`` computes identifies the occurrence, and
-    ``offset_mismatch=`` decides what happens when it identifies none."""
-
-    @pytest.fixture()
-    def disagreeing_tz(self, tmp_path: Path):
-        """A ``ZoneInfo`` that calls itself ``Europe/Amsterdam`` but reads its
-        rules from a file whenever never sees, so the two disagree."""
-        with tz_rules_from_file("Europe/Amsterdam", AMS_TZ_RAWFILE, tmp_path):
-            yield self._keyed_zoneinfo
-
-    @staticmethod
-    def _keyed_zoneinfo(path: str) -> ZoneInfo:
-        with open(path, "rb") as f:
-            return ZoneInfo.from_file(f, key="Europe/Amsterdam")
-
-    @pytest.mark.parametrize(
-        "fold, offset",
-        [(0, hours(2)), (1, hours(1))],
-    )
-    def test_repeated_time_identified_by_its_offset(self, fold, offset):
-        pydt = py_datetime(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            30,
-            fold=fold,
-            tzinfo=ZoneInfo("Europe/Amsterdam"),
-        )
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", ImplicitDisambiguationWarning)
-            # No policy is consulted: the offset already picks an occurrence.
-            result = ZonedDateTime(pydt, disambiguation="raise")
-        assert result.offset == offset
-        assert result.to_plain() == PlainDateTime(2023, 10, 29, 2, 15, 30)
-
-    @pytest.mark.parametrize(
-        "fold, expect_hour",
-        [(0, 3), (1, 1)],
-    )
-    def test_skipped_time_extrapolates(self, fold, expect_hour):
-        pydt = py_datetime(
-            2023,
-            3,
-            26,
-            2,
-            15,
-            30,
-            fold=fold,
-            tzinfo=ZoneInfo("Europe/Amsterdam"),
-        )
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", ImplicitDisambiguationWarning)
-            result = ZonedDateTime(pydt, disambiguation="raise")
-        assert result.strict_eq(
-            ZonedDateTime(
-                2023, 3, 26, expect_hour, 15, 30, tz="Europe/Amsterdam"
-            )
-        )
-
-    def test_offset_with_seconds(self):
-        # Dublin ran on an offset of -00:25:21 before 1916. It matches
-        # exactly, because the stdlib offset is written with seconds.
-        pydt = py_datetime(1900, 1, 1, 12, tzinfo=ZoneInfo("Europe/Dublin"))
-        result = ZonedDateTime(pydt)
-        assert result.offset == TimeDelta(seconds=-1521)
-        assert result.to_plain() == PlainDateTime(1900, 1, 1, 12)
-
-    def test_mismatch_raises_by_default(self, disagreeing_tz):
-        pydt = py_datetime(
-            2020, 10, 28, 12, tzinfo=disagreeing_tz(AMS_TZ_RAWFILE_DST_LATE)
-        )
-        with pytest.raises(InvalidOffsetError, match="Europe/Amsterdam"):
-            ZonedDateTime(pydt)
-
-    def test_mismatch_keep_instant(self, disagreeing_tz):
-        pydt = py_datetime(
-            2020, 10, 28, 12, tzinfo=disagreeing_tz(AMS_TZ_RAWFILE_DST_LATE)
-        )
-        assert ZonedDateTime(pydt, offset_mismatch="keep_instant").strict_eq(
-            ZonedDateTime(2020, 10, 28, 11, tz="Europe/Amsterdam")
-        )
-
-    def test_mismatch_keep_local(self, disagreeing_tz):
-        pydt = py_datetime(
-            2020, 10, 28, 12, tzinfo=disagreeing_tz(AMS_TZ_RAWFILE_DST_LATE)
-        )
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", ImplicitDisambiguationWarning)
-            result = ZonedDateTime(pydt, offset_mismatch="keep_local")
-        assert result.strict_eq(
-            ZonedDateTime(2020, 10, 28, 12, tz="Europe/Amsterdam")
-        )
-
-    def test_mismatch_keep_local_consults_disambiguation(self, disagreeing_tz):
-        # Honolulu's rules under Amsterdam's name: the offset matches neither
-        # side of the fold, so keeping the local time needs a policy.
-        pydt = py_datetime(
-            2020,
-            10,
-            25,
-            2,
-            30,
-            tzinfo=disagreeing_tz(str(TEST_DIR / "tzif" / "Honolulu.tzif")),
-        )
-        with warns_here(ImplicitDisambiguationWarning):
-            implicit = ZonedDateTime(pydt, offset_mismatch="keep_local")
-        assert implicit.strict_eq(
-            ZonedDateTime(
-                2020,
-                10,
-                25,
-                2,
-                30,
-                tz="Europe/Amsterdam",
-                disambiguation="earlier",
-            )
-        )
-        assert ZonedDateTime(
-            pydt, offset_mismatch="keep_local", disambiguation="later"
-        ).strict_eq(
-            ZonedDateTime(
-                2020,
-                10,
-                25,
-                2,
-                30,
-                tz="Europe/Amsterdam",
-                disambiguation="later",
-            )
-        )
-        with pytest.raises(RepeatedTime):
-            ZonedDateTime(
-                pydt, offset_mismatch="keep_local", disambiguation="raise"
-            )
-
-    def test_invalid_keywords(self):
-        pydt = py_datetime(
-            2020, 8, 15, 23, 12, tzinfo=ZoneInfo("Europe/Paris")
-        )
-        with pytest.raises(TypeError, match="disambiguate"):
-            ZonedDateTime(pydt, disambiguate="earlier")  # type: ignore[call-overload]
-        with pytest.raises(ValueError, match="offset_mismatch: 'foo'"):
-            ZonedDateTime(pydt, offset_mismatch="foo")  # type: ignore[call-overload]
-        with pytest.raises(TypeError, match="foo"):
-            ZonedDateTime(pydt, foo=1)  # type: ignore[call-overload]
-
-
-def test_now():
-    now = ZonedDateTime.now("Iceland")
-    assert now.tz_id == "Iceland"
-    py_now = py_datetime.now(ZoneInfo("Iceland"))
-    assert py_now - now.to_stdlib() < py_timedelta(seconds=1)
-
-
-def test_now_patched():
-    instant = Instant.from_utc(2020, 8, 15, 12, 30, 45, nanosecond=5)
-    with patch_current_time(instant, keep_ticking=False):
-        assert ZonedDateTime.now("Europe/Amsterdam").strict_eq(
-            instant.to_tz("Europe/Amsterdam")
-        )
-
-
-@system_tz_ams()
-def test_now_in_system_tz():
-    now = ZonedDateTime.now(SYSTEM_TZ)
-    py_now = py_datetime.now().astimezone()
-    assert now.tz_id == "Europe/Amsterdam"
-    assert py_now - now.to_stdlib() < py_timedelta(seconds=1)
-
-
-class TestExactEquality:
-    def test_same_exact(self):
-        a = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
-        b = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
-        assert a.strict_eq(b)
-
-    def test_same_but_without_key(self):
-        a = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
-        b = create_zdt(2020, 8, 15, 12, 8, 30, tz=AMS_TZ_RAWFILE)
-        assert not a.strict_eq(b)
-
-    def test_different_zones(self):
-        a = ZonedDateTime(
-            2020, 8, 15, 12, 43, nanosecond=1, tz="Europe/Amsterdam"
-        )
-        b = a.to_tz("America/New_York")
-        assert a == b
-        assert not a.strict_eq(b)
-
-        # Different zone but same offset
-        c = a.to_tz("Europe/Paris")
-        assert a == c
-        assert not a.strict_eq(c)
-
-    def test_same_timezone_repeated_time(self):
-        a = ZonedDateTime(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            nanosecond=1,
-            tz="Europe/Amsterdam",
-            disambiguation="earlier",
-        )
-        b = a.replace(disambiguation="later")
-        assert a != b
-        assert not a.strict_eq(b)
-
-    def test_same_repeated_time(self):
-        a = ZonedDateTime(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            nanosecond=1,
-            tz="Europe/Amsterdam",
-            disambiguation="earlier",
-        )
-        b = a.replace(disambiguation="earlier")
-        assert a.strict_eq(b)
-
-    def test_same_unambiguous(self):
-        a = ZonedDateTime(
-            2020, 8, 15, 12, 43, nanosecond=1, tz="Europe/Amsterdam"
-        )
-        b = a.replace(disambiguation="later")
-        assert a.strict_eq(b)
-        assert a.strict_eq(b.replace(disambiguation="later"))
-
-    def test_invalid(self):
-        a = ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam")
-        with pytest.raises(
-            TypeError, match="argument must be a ZonedDateTime"
-        ):
-            a.strict_eq(42)  # type: ignore[arg-type]
-
-        with pytest.raises(
-            TypeError, match="argument must be a ZonedDateTime"
-        ):
-            a.strict_eq(a.to_instant())  # type: ignore[arg-type]
 
 
 class TestReplace:
@@ -4676,26 +2454,36 @@ class TestReplace:
             )
         )
 
-    def test_invalid(self):
+    def test_out_of_range(self):
+        d = ZonedDateTime(1, 1, 1, tz="America/New_York")
+
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            d.replace(tz="Europe/Amsterdam", disambiguation="compatible")
+
+        with pytest.raises((ValueError, OverflowError), match="range|year"):
+            d.replace(
+                year=9999,
+                month=12,
+                day=31,
+                hour=23,
+                disambiguation="compatible",
+            )
+
+    def test_system_tz(self):
+        d = ZonedDateTime(2020, 8, 15, 12, 30, tz="Europe/Amsterdam")
+        with system_tz("America/New_York"):
+            result = d.replace(tz=SYSTEM_TZ, disambiguation="raise")
+        # the local fields are kept; the time zone is the system's
+        assert result.strict_eq(
+            ZonedDateTime(2020, 8, 15, 12, 30, tz="America/New_York")
+        )
+
+    def test_invalid_disambiguation(self):
         d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
-
-        with pytest.raises(TypeError, match="tzinfo"):
-            d.replace(tzinfo=py_timezone.utc, disambiguation="compatible")  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError, match="fold"):
-            d.replace(fold=1, disambiguation="compatible")  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError, match="foo"):
-            d.replace(foo="bar", disambiguation="compatible")  # type: ignore[call-overload]
-
-        with pytest.raises(TimeZoneNotFoundError, match="Nowhere"):
-            d.replace(tz="Nowhere", disambiguation="compatible")
-
-        with pytest.raises(ValueError, match="date|day"):
-            d.replace(year=2023, month=2, day=29, disambiguation="compatible")
-
-        with pytest.raises(ValueError, match="nano|time"):
-            d.replace(nanosecond=1_000_000_000, disambiguation="compatible")
+        with pytest.raises(
+            ValueError, match=r"^invalid disambiguation: 'bogus'$"
+        ):
+            d.replace(hour=2, disambiguation="bogus")  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
         "tz",
@@ -4753,29 +2541,41 @@ class TestReplace:
             paris = d_later.replace(minute=30, tz="Europe/Paris")
         assert not paris.strict_eq(d_later.replace(minute=30))
 
-        # don't reuse offset per se when changing time zone. The target local
-        # time is repeated in the new time zone too, so each of these resolves
+    @pytest.mark.parametrize(
+        "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]
+    )
+    @pytest.mark.parametrize(
+        "disambiguation, hour, new_tz",
+        [
+            ("earlier", 3, "Europe/Athens"),
+            ("later", 1, "Europe/London"),
+            ("earlier", 1, "Europe/London"),
+            ("later", 3, "Europe/Athens"),
+        ],
+    )
+    def test_repeated_time_with_tz_change(
+        self, tz, disambiguation, hour, new_tz
+    ):
+        # The offset is not reused when changing time zone. The target local
+        # time is repeated in the new time zone too, so this resolves
         # implicitly and warns.
-        for original, hour, new_tz in [
-            (d, 3, "Europe/Athens"),
-            (d_later, 1, "Europe/London"),
-            (d, 1, "Europe/London"),
-            (d_later, 3, "Europe/Athens"),
-        ]:
-            with warns_here(ImplicitDisambiguationWarning):
-                result = original.replace(hour=hour, tz=new_tz)
-            assert result.strict_eq(
-                ZonedDateTime(
-                    2023,
-                    10,
-                    29,
-                    hour,
-                    15,
-                    30,
-                    tz=new_tz,
-                    disambiguation="compatible",
-                )
+        d = create_zdt(
+            2023, 10, 29, 2, 15, 30, tz=tz, disambiguation=disambiguation
+        )
+        with warns_here(ImplicitDisambiguationWarning):
+            result = d.replace(hour=hour, tz=new_tz)
+        assert result.strict_eq(
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                hour,
+                15,
+                30,
+                tz=new_tz,
+                disambiguation="compatible",
             )
+        )
 
     @pytest.mark.parametrize(
         "tz",
@@ -4846,60 +2646,315 @@ class TestReplace:
                 disambiguation="compatible",
             )
         )
-        # Don't per se reuse the offset when changing time zone. The target
-        # local time is skipped in the new time zone too, so each of these
-        # resolves implicitly and warns.
-        for original, hour, expect_hour, new_tz in [
-            (d, 1, 2, "Europe/London"),
-            (d_later, 3, 4, "Europe/Athens"),
-            (d, 3, 4, "Europe/Athens"),
-            (d_later, 1, 2, "Europe/London"),
-        ]:
-            with warns_here(ImplicitDisambiguationWarning):
-                result = original.replace(hour=hour, tz=new_tz)
-            assert result.strict_eq(
-                ZonedDateTime(2023, 3, 26, expect_hour, 15, 30, tz=new_tz)
-            )
-        # ...also when only the tz is replaced
+
+    @pytest.mark.parametrize(
+        "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]
+    )
+    @pytest.mark.parametrize(
+        "start_hour, hour, expect_hour, new_tz",
+        [
+            (1, 1, 2, "Europe/London"),
+            (3, 3, 4, "Europe/Athens"),
+            (1, 3, 4, "Europe/Athens"),
+            (3, 1, 2, "Europe/London"),
+            # ...also when only the tz is replaced
+            (1, None, 2, "Europe/London"),
+        ],
+    )
+    def test_skipped_time_with_tz_change(
+        self, tz, start_hour, hour, expect_hour, new_tz
+    ):
+        # The offset is not reused when changing time zone. The target local
+        # time is skipped in the new time zone too, so this resolves
+        # implicitly and warns.
+        d = create_zdt(2023, 3, 26, start_hour, 15, 30, tz=tz)
+        kwargs = {} if hour is None else {"hour": hour}
         with warns_here(ImplicitDisambiguationWarning):
-            result = d.replace(tz="Europe/London")
+            result = d.replace(tz=new_tz, **kwargs)
         assert result.strict_eq(
-            ZonedDateTime(2023, 3, 26, 2, 15, 30, tz="Europe/London")
+            ZonedDateTime(2023, 3, 26, expect_hour, 15, 30, tz=new_tz)
         )
 
-    def test_out_of_range(self):
-        d = ZonedDateTime(1, 1, 1, tz="America/New_York")
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.replace(tz="Europe/Amsterdam", disambiguation="compatible")
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.replace(
-                year=9999,
-                month=12,
-                day=31,
-                hour=23,
-                disambiguation="compatible",
-            )
-
-    def test_system_tz(self):
-        d = ZonedDateTime(2020, 8, 15, 12, 30, tz="Europe/Amsterdam")
-        with system_tz("America/New_York"):
-            result = d.replace(tz=SYSTEM_TZ, disambiguation="raise")
-        # the local fields are kept; the time zone is the system's
-        assert result.strict_eq(
-            ZonedDateTime(2020, 8, 15, 12, 30, tz="America/New_York")
-        )
-
-    def test_invalid_disambiguation(self):
+    def test_invalid(self):
         d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
+
+        with pytest.raises(TypeError, match="tzinfo"):
+            d.replace(tzinfo=py_timezone.utc, disambiguation="compatible")  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="fold"):
+            d.replace(fold=1, disambiguation="compatible")  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="foo"):
+            d.replace(foo="bar", disambiguation="compatible")  # type: ignore[call-overload]
+
+        with pytest.raises(TimeZoneNotFoundError, match="Nowhere"):
+            d.replace(tz="Nowhere", disambiguation="compatible")
+
+        with pytest.raises(ValueError, match="date|day"):
+            d.replace(year=2023, month=2, day=29, disambiguation="compatible")
+
+        with pytest.raises(ValueError, match="nano|time"):
+            d.replace(nanosecond=1_000_000_000, disambiguation="compatible")
+
+    # replace_date()
+    @pytest.mark.parametrize(
+        "d",
+        [
+            ZDT1,
+            ZDT2,
+            ZDT3,
+            ZDT_POSIX,
+            ZDT_RAWFILE,
+        ],
+    )
+    def test_date_unambiguous(self, d: ZonedDateTime):
+        assert d.replace_date(Date(2021, 1, 2)).strict_eq(
+            d.replace(year=2021, month=1, day=2)
+        )
+
+    @pytest.mark.parametrize(
+        "d",
+        [
+            # before a repeated local time (a fold, in PEP 495's words)
+            create_zdt(2020, 6, 1, 2, 15, 30, tz="Europe/Amsterdam"),
+            create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_POSIX),
+            create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_RAWFILE),
+            # after a repeated local time
+            create_zdt(2020, 11, 8, 2, 15, 30, tz="Europe/Amsterdam"),
+            create_zdt(2020, 11, 8, 2, 15, 30, tz=AMS_TZ_POSIX),
+            create_zdt(2020, 11, 8, 2, 15, 30, tz=AMS_TZ_RAWFILE),
+            # in a repeated local time
+            create_zdt(2022, 10, 30, 2, 30, 30, tz="Europe/Amsterdam"),
+            create_zdt(2022, 10, 30, 2, 30, 30, tz=AMS_TZ_POSIX),
+            create_zdt(2022, 10, 30, 2, 30, 30, tz=AMS_TZ_RAWFILE),
+        ],
+    )
+    def test_date_repeated_time(self, d: ZonedDateTime):
+        date = Date(2023, 10, 29)
+
+        with pytest.raises(RepeatedTime):
+            assert d.replace_date(date, disambiguation="raise")
+
+        assert d.replace_date(date).strict_eq(
+            d.replace(year=2023, month=10, day=29)
+        )
+        assert d.replace_date(date, disambiguation="earlier").strict_eq(
+            d.replace(year=2023, month=10, day=29, disambiguation="earlier")
+        )
+        assert d.replace_date(date, disambiguation="later").strict_eq(
+            d.replace(year=2023, month=10, day=29, disambiguation="later")
+        )
+        assert d.replace_date(date, disambiguation="compatible").strict_eq(
+            d.replace(year=2023, month=10, day=29, disambiguation="compatible")
+        )
+
+    @pytest.mark.parametrize(
+        "d",
+        [
+            # before the skipped local time (a gap, in PEP 495's words)
+            create_zdt(2020, 1, 1, 2, 15, 30, tz="Europe/Amsterdam"),
+            create_zdt(2020, 1, 1, 2, 15, 30, tz=AMS_TZ_POSIX),
+            create_zdt(2020, 1, 1, 2, 15, 30, tz=AMS_TZ_RAWFILE),
+            # after the skipped local time
+            create_zdt(2020, 6, 1, 2, 15, 30, tz="Europe/Amsterdam"),
+            create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_POSIX),
+            create_zdt(2020, 6, 1, 2, 15, 30, tz=AMS_TZ_RAWFILE),
+        ],
+    )
+    def test_date_skipped_time(self, d: ZonedDateTime):
+        date = Date(2023, 3, 26)
+
+        with pytest.raises(SkippedTime):
+            assert d.replace_date(date, disambiguation="raise")
+
+        # A skipped local time can't be resolved by preserving the offset,
+        # so an omitted disambiguation is implicit here.
+        with warns_here(ImplicitDisambiguationWarning):
+            assert d.replace_date(date).strict_eq(
+                d.replace(year=2023, month=3, day=26)
+            )
+        assert d.replace_date(date, disambiguation="earlier").strict_eq(
+            d.replace(year=2023, month=3, day=26, disambiguation="earlier")
+        )
+        assert d.replace_date(date, disambiguation="later").strict_eq(
+            d.replace(year=2023, month=3, day=26, disambiguation="later")
+        )
+        assert d.replace_date(date, disambiguation="compatible").strict_eq(
+            d.replace(year=2023, month=3, day=26, disambiguation="compatible")
+        )
+
+    def test_date_invalid(self):
+        d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
+        with pytest.raises((TypeError, AttributeError)):
+            d.replace_date(object(), disambiguation="compatible")  # type: ignore[call-overload]
+
+        with pytest.raises(ValueError, match="disambig"):
+            d.replace_date(Date(2020, 8, 15), disambiguation="foo")  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="got 2|foo"):
+            d.replace_date(Date(2020, 8, 15), disambiguation="raise", foo=4)  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="foo"):
+            d.replace_date(Date(2020, 8, 15), foo="raise")  # type: ignore[call-overload]
+
+    def test_date_out_of_range_due_to_offset(self):
+        d = ZonedDateTime(2020, 1, 1, tz="Asia/Tokyo")
         with pytest.raises(
-            ValueError, match=r"^invalid disambiguation: 'bogus'$"
+            ValueError, match="value or calculation out of range"
         ):
-            d.replace(hour=2, disambiguation="bogus")  # type: ignore[call-overload]
+            d.replace_date(Date(1, 1, 1), disambiguation="compatible")
+
+        d2 = ZonedDateTime(2020, 1, 1, hour=23, tz="America/New_York")
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d2.replace_date(Date(9999, 12, 31), disambiguation="compatible")
+
+    @pytest.mark.parametrize(
+        "d, date",
+        [
+            (ZonedDateTime(9999, 12, 30, 23, tz="Etc/GMT+12"), Date.MAX),
+            (ZonedDateTime(1, 1, 2, tz="Etc/GMT-14"), Date.MIN),
+        ],
+    )
+    def test_date_out_of_range_with_offset_preserved(self, d, date):
+        # The local result is a valid datetime, but its instant is not
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d.replace_date(date)
+
+    # replace_time()
+    @pytest.mark.parametrize(
+        "d",
+        [
+            ZDT1,
+            ZDT2,
+            ZDT3,
+            ZDT_POSIX,
+            ZDT_RAWFILE,
+        ],
+    )
+    def test_time_unambiguous(self, d):
+        assert d.replace_time(Time(1, 2, 3, nanosecond=4_000)).strict_eq(
+            d.replace(hour=1, minute=2, second=3, nanosecond=4_000)
+        )
+
+    @pytest.mark.parametrize(
+        "d",
+        [
+            # before a repeated local time (a fold, in PEP 495's words)
+            create_zdt(2023, 10, 29, 0, 15, 30, tz="Europe/Amsterdam"),
+            create_zdt(2023, 10, 29, 0, 15, 30, tz=AMS_TZ_POSIX),
+            create_zdt(2023, 10, 29, 0, 15, 30, tz=AMS_TZ_RAWFILE),
+            # after a repeated local time
+            create_zdt(2023, 10, 29, 4, 15, 30, tz="Europe/Amsterdam"),
+            create_zdt(2023, 10, 29, 4, 15, 30, tz=AMS_TZ_POSIX),
+            create_zdt(2023, 10, 29, 4, 15, 30, tz=AMS_TZ_RAWFILE),
+            # in a repeated local time
+            create_zdt(2023, 10, 29, 2, 30, 30, tz="Europe/Amsterdam"),
+            create_zdt(2023, 10, 29, 2, 30, 30, tz=AMS_TZ_POSIX),
+            create_zdt(2023, 10, 29, 2, 30, 30, tz=AMS_TZ_RAWFILE),
+        ],
+    )
+    def test_time_repeated_time(self, d: ZonedDateTime):
+        time = Time(2, 15, 30)
+
+        with pytest.raises(RepeatedTime):
+            assert d.replace_time(time, disambiguation="raise")
+
+        assert d.replace_time(time).strict_eq(
+            d.replace(hour=2, minute=15, second=30)
+        )
+        assert d.replace_time(time, disambiguation="earlier").strict_eq(
+            d.replace(hour=2, minute=15, second=30, disambiguation="earlier")
+        )
+        assert d.replace_time(time, disambiguation="later").strict_eq(
+            d.replace(hour=2, minute=15, second=30, disambiguation="later")
+        )
+        assert d.replace_time(time, disambiguation="compatible").strict_eq(
+            d.replace(
+                hour=2, minute=15, second=30, disambiguation="compatible"
+            )
+        )
+
+    @pytest.mark.parametrize(
+        "d",
+        [
+            # before a skipped local time (a gap, in PEP 495's words)
+            create_zdt(2023, 3, 26, 0, 15, tz="Europe/Amsterdam"),
+            create_zdt(2023, 3, 26, 0, 15, tz=AMS_TZ_POSIX),
+            create_zdt(2023, 3, 26, 0, 15, tz=AMS_TZ_RAWFILE),
+            # after a skipped local time
+            create_zdt(2023, 3, 26, 4, 15, tz="Europe/Amsterdam"),
+            create_zdt(2023, 3, 26, 4, 15, tz=AMS_TZ_POSIX),
+            create_zdt(2023, 3, 26, 4, 15, tz=AMS_TZ_RAWFILE),
+        ],
+    )
+    def test_time_skipped_time(self, d: ZonedDateTime):
+        time = Time(2, 15)
+        with pytest.raises(SkippedTime):
+            assert d.replace_time(time, disambiguation="raise")
+
+        # A skipped local time can't be resolved by preserving the offset,
+        # so an omitted disambiguation is implicit here.
+        with warns_here(ImplicitDisambiguationWarning):
+            assert d.replace_time(time).strict_eq(
+                d.replace(hour=2, minute=15, second=0)
+            )
+        assert d.replace_time(time, disambiguation="earlier").strict_eq(
+            d.replace(hour=2, minute=15, disambiguation="earlier")
+        )
+        assert d.replace_time(time, disambiguation="later").strict_eq(
+            d.replace(hour=2, minute=15, disambiguation="later")
+        )
+        assert d.replace_time(time, disambiguation="compatible").strict_eq(
+            d.replace(hour=2, minute=15, disambiguation="compatible")
+        )
+
+    def test_time_invalid(self):
+        d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
+        with pytest.raises((TypeError, AttributeError)):
+            d.replace_time(object(), disambiguation="later")  # type: ignore[call-overload]
+
+        with pytest.raises(ValueError, match="disambig"):
+            d.replace_time(Time(1, 2, 3), disambiguation="foo")  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="got 2|foo"):
+            d.replace_time(Time(1, 2, 3), disambiguation="raise", foo=4)  # type: ignore[call-overload]
+
+        with pytest.raises(TypeError, match="foo"):
+            d.replace_time(Time(1, 2, 3), foo="raise")  # type: ignore[call-overload]
+
+    def test_time_out_of_range_due_to_offset(self):
+        d = ZonedDateTime(1, 1, 1, hour=23, tz="Asia/Tokyo")
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d.replace_time(Time(1), disambiguation="compatible")
+
+        d2 = ZonedDateTime(9999, 12, 31, hour=2, tz="America/New_York")
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d2.replace_time(Time(23), disambiguation="compatible")
+
+    @pytest.mark.parametrize(
+        "d, time",
+        [
+            (ZonedDateTime(9999, 12, 31, tz="Etc/GMT+12"), Time.MAX),
+            (ZonedDateTime(1, 1, 1, 23, tz="Etc/GMT-14"), Time.MIN),
+        ],
+    )
+    def test_time_out_of_range_with_offset_preserved(self, d, time):
+        # The local result is a valid datetime, but its instant is not
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            d.replace_time(time)
 
 
-class TestAddSubtractTimeUnits:
+class TestShift:
     def test_subtract_overloads(self):
         d = ZonedDateTime(2020, 8, 15, tz="UTC")
         assert d.subtract(hours(1)) == d - hours(1)
@@ -5131,8 +3186,7 @@ class TestAddSubtractTimeUnits:
         with pytest.raises((ValueError, OverflowError), match="range|year"):
             d.add(hours=24 * 366 * 8_000)
 
-
-class TestAddSubtractCalendarUnits:
+    # calendar units
     def test_out_of_bounds_min(self):
         d = ZonedDateTime(2000, 1, 1, tz="Europe/Amsterdam")
         with pytest.raises((ValueError, OverflowError), match="range|year"):
@@ -6063,19 +4117,6 @@ class TestSince:
         assert isinstance(result, int)
         assert result == 86_400_000_000_000
 
-    def test_invalid_units(self):
-        with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
-            ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo").since(
-                ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo"),
-                in_units=["foos"],  # type: ignore[list-item]
-            )
-
-        with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
-            ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo").since(
-                ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo"),
-                total="foos",  # type: ignore[call-overload]
-            )
-
     def test_very_large_increment(self):
         a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
         b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")
@@ -6111,26 +4152,6 @@ class TestSince:
         b = ZonedDateTime(23, 3, 15, tz="UTC")
         assert a.since(b, total="nanoseconds") == 283280457600000000000
 
-    def test_total_and_in_units_both_raises(self):
-        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
-        b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")
-        with pytest.raises(TypeError, match="total.*in_units|in_units.*total"):
-            a.since(
-                b,
-                total="hours",  # type: ignore[call-overload]
-                in_units=["hours"],
-            )
-
-    def test_total_with_round_mode_raises(self):
-        a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
-        b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")
-        with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
-            a.since(
-                b,
-                total="hours",
-                round_mode="floor",  # type: ignore[call-overload]
-            )
-
     def test_total_calendar_unit_same_tz(self):
         a = ZonedDateTime(2025, 3, 15, tz="Asia/Tokyo")
         b = ZonedDateTime(2023, 3, 15, tz="Asia/Tokyo")
@@ -6138,11 +4159,25 @@ class TestSince:
         assert isinstance(result, float)
         assert result == 2.0
 
-    def test_no_units_raises(self):
+    @pytest.mark.parametrize(
+        "kwargs, message",
+        [
+            ({}, "total.*in_units|in_units.*total"),
+            (
+                {"total": "hours", "in_units": ["hours"]},
+                "total.*in_units|in_units.*total",
+            ),
+            (
+                {"total": "hours", "round_mode": "floor"},
+                "round_mode.*total|total.*round",
+            ),
+        ],
+    )
+    def test_conflicting_keywords(self, kwargs, message):
         a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
         b = ZonedDateTime(2021, 7, 3, tz="Asia/Tokyo")
-        with pytest.raises(TypeError, match="total.*in_units|in_units.*total"):
-            a.since(b)  # type: ignore[call-overload]
+        with pytest.raises(TypeError, match=message):
+            a.since(b, **kwargs)
 
 
 class TestRound:
@@ -6462,7 +4497,7 @@ class TestRound:
     def test_increment_read_through_index(self):
         d = ZonedDateTime(2023, 7, 14, 12, 39, 59, tz="Europe/Paris")
         assert d.round("minute", increment=True) == d.round("minute")
-        assert d.round("minute", increment=cast(int, _Idx())) == d.round(
+        assert d.round("minute", increment=cast(int, Idx())) == d.round(
             "minute", increment=5
         )
 
@@ -6665,206 +4700,33 @@ class TestRound:
         assert d.round("day").strict_eq(expect)
 
 
-class TestPickle:
-    def test_simple(self):
-        d = ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
-        )
-        dumped = pickle.dumps(d)
-        assert len(dumped) <= len(pickle.dumps(d.to_stdlib()))
-        assert pickle.loads(pickle.dumps(d)).strict_eq(d)
-
-    def test_repeated_time(self):
-        d1 = ZonedDateTime(
-            2023,
-            10,
-            29,
-            2,
-            15,
-            30,
-            tz="Europe/Amsterdam",
-            disambiguation="earlier",
-        )
-        d2 = d1.replace(disambiguation="later")
-        assert pickle.loads(pickle.dumps(d1)).strict_eq(d1)
-        assert pickle.loads(pickle.dumps(d2)).strict_eq(d2)
-
-    @pytest.mark.parametrize("tz", [AMS_TZ_POSIX, AMS_TZ_RAWFILE])
-    def test_no_tzid(self, tz: str):
-        d = create_zdt(2023, 12, 3, 9, 15, tz=tz)
-        with pytest.raises(
-            ValueError,
-            match="cannot pickle ZonedDateTime without a time zone ID",
-        ):
-            pickle.dumps(d)
-
-
-def test_old_pickle_data_remains_unpicklable():
-    # Don't update this value after 1.x release: the whole idea is that
-    # it's a pickle at a specific version of the library,
-    # and it should remain unpicklable even in later versions.
-    dumped = (
-        b"\x80\x04\x95F\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0c_unp"
-        b"kl_zoned\x94\x93\x94C\x0f\xe4\x07\x08\x0f\x17\x0c\t\x06\x12\x0f\x00"
-        b" \x1c\x00\x00\x94\x8c\x10Europe/Amsterdam\x94\x86\x94R\x94."
-    )
-    assert pickle.loads(dumped).strict_eq(
-        ZonedDateTime(
-            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
-        )
-    )
-
-
-@pytest.mark.parametrize(
-    "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]
-)
-def test_copy(tz: str):
-    d = create_zdt(2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz=tz)
-    assert copy(d) is d
-    assert deepcopy(d) is d
-
-
-def test_day_of_week():
-    assert (
-        ZonedDateTime(2024, 3, 9, 22, tz="America/New_York").day_of_week()
-        is SATURDAY
-    )
-    assert (
-        ZonedDateTime(2024, 12, 30, tz="America/New_York").day_of_week()
-        is MONDAY
-    )
-
-
-class TestDayOfYear:
-    def test_basic(self):
-        zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
-        assert zdt.day_of_year() == 60
-
-    def test_jan1(self):
-        zdt = ZonedDateTime(2023, 1, 1, 0, tz="America/New_York")
-        assert zdt.day_of_year() == 1
-
-    def test_dec31_nonleap(self):
-        zdt = ZonedDateTime(2023, 12, 31, 12, tz="America/New_York")
-        assert zdt.day_of_year() == 365
-
-    def test_dec31_leap(self):
-        zdt = ZonedDateTime(2024, 12, 31, 12, tz="America/New_York")
-        assert zdt.day_of_year() == 366
-
-
-class TestDaysInMonth:
-    def test_feb_leap(self):
-        zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
-        assert zdt.days_in_month() == 29
-
-    def test_feb_nonleap(self):
-        zdt = ZonedDateTime(2023, 2, 15, 12, tz="America/New_York")
-        assert zdt.days_in_month() == 28
-
-    def test_jan(self):
-        zdt = ZonedDateTime(2023, 1, 15, 12, tz="America/New_York")
-        assert zdt.days_in_month() == 31
-
-    def test_feb_century_nonleap(self):
-        zdt = ZonedDateTime(1900, 2, 15, 12, tz="UTC")
-        assert zdt.days_in_month() == 28
-
-    def test_feb_century_leap(self):
-        zdt = ZonedDateTime(2000, 2, 15, 12, tz="UTC")
-        assert zdt.days_in_month() == 29
-
-
-class TestDaysInYear:
-    def test_leap(self):
-        zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
-        assert zdt.days_in_year() == 366
-
-    def test_nonleap(self):
-        zdt = ZonedDateTime(2023, 6, 15, 12, tz="America/New_York")
-        assert zdt.days_in_year() == 365
-
-    def test_century_nonleap(self):
-        zdt = ZonedDateTime(1900, 6, 15, 12, tz="UTC")
-        assert zdt.days_in_year() == 365
-
-    def test_century_leap(self):
-        zdt = ZonedDateTime(2000, 6, 15, 12, tz="UTC")
-        assert zdt.days_in_year() == 366
-
-
-class TestInLeapYear:
-    def test_leap(self):
-        zdt = ZonedDateTime(2024, 2, 29, 12, tz="America/New_York")
-        assert zdt.in_leap_year() is True
-
-    def test_nonleap(self):
-        zdt = ZonedDateTime(2023, 6, 15, 12, tz="America/New_York")
-        assert zdt.in_leap_year() is False
-
-    def test_century_nonleap(self):
-        zdt = ZonedDateTime(1900, 6, 15, 12, tz="UTC")
-        assert zdt.in_leap_year() is False
-
-    def test_century_leap(self):
-        zdt = ZonedDateTime(2000, 6, 15, 12, tz="UTC")
-        assert zdt.in_leap_year() is True
-
-
 class TestStartOf:
-    def test_year(self):
+    @pytest.mark.parametrize(
+        "unit, expect",
+        [
+            ("year", ZonedDateTime(2024, 1, 1, tz="America/New_York")),
+            ("month", ZonedDateTime(2024, 8, 1, tz="America/New_York")),
+            # Thursday Aug 15 -> Monday Aug 12 at midnight
+            ("week_mon", ZonedDateTime(2024, 8, 12, tz="America/New_York")),
+            # Thursday Aug 15 -> Sunday Aug 11 at midnight
+            ("week_sun", ZonedDateTime(2024, 8, 11, tz="America/New_York")),
+            ("day", ZonedDateTime(2024, 8, 15, tz="America/New_York")),
+            ("hour", ZonedDateTime(2024, 8, 15, 14, tz="America/New_York")),
+            (
+                "minute",
+                ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York"),
+            ),
+            (
+                "second",
+                ZonedDateTime(2024, 8, 15, 14, 30, 45, tz="America/New_York"),
+            ),
+        ],
+    )
+    def test_per_unit(self, unit, expect):
         zdt = ZonedDateTime(
             2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
         )
-        result = zdt.start_of("year")
-        assert result.strict_eq(
-            ZonedDateTime(2024, 1, 1, tz="America/New_York")
-        )
-
-    def test_month(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.start_of("month")
-        assert result.strict_eq(
-            ZonedDateTime(2024, 8, 1, tz="America/New_York")
-        )
-
-    def test_day(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.start_of("day")
-        assert result.strict_eq(
-            ZonedDateTime(2024, 8, 15, tz="America/New_York")
-        )
-
-    def test_hour(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.start_of("hour")
-        assert result.strict_eq(
-            ZonedDateTime(2024, 8, 15, 14, tz="America/New_York")
-        )
-
-    def test_minute(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.start_of("minute")
-        assert result.strict_eq(
-            ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York")
-        )
-
-    def test_second(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.start_of("second")
-        assert result.strict_eq(
-            ZonedDateTime(2024, 8, 15, 14, 30, 45, tz="America/New_York")
-        )
+        assert zdt.start_of(unit).strict_eq(expect)
 
     def test_invalid_unit(self):
         with pytest.raises(ValueError, match="^invalid unit: 'invalid'$"):
@@ -6880,26 +4742,6 @@ class TestStartOf:
             ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of(
                 "week"  # type: ignore[arg-type]
             )
-
-    def test_week_mon(self):
-        # Thursday Aug 15 -> Monday Aug 12 at midnight
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.start_of("week_mon")
-        assert result.strict_eq(
-            ZonedDateTime(2024, 8, 12, tz="America/New_York")
-        )
-
-    def test_week_sun(self):
-        # Thursday Aug 15 -> Sunday Aug 11 at midnight
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.start_of("week_sun")
-        assert result.strict_eq(
-            ZonedDateTime(2024, 8, 11, tz="America/New_York")
-        )
 
     def test_non_hour_gap(self):
         # Lord Howe starts DST: 2:00-2:29 does not exist
@@ -7096,6 +4938,31 @@ class TestStartOf:
 
 class TestEndOf:
     @pytest.mark.parametrize(
+        "unit, expect",
+        [
+            ("year", (2024, 12, 31, 23, 59, 59)),
+            ("month", (2024, 8, 31, 23, 59, 59)),
+            # Thursday Aug 15 -> Sunday Aug 18 end of day
+            ("week_mon", (2024, 8, 18, 23, 59, 59)),
+            # Thursday Aug 15 -> Saturday Aug 17 end of day
+            ("week_sun", (2024, 8, 17, 23, 59, 59)),
+            ("day", (2024, 8, 15, 23, 59, 59)),
+            ("hour", (2024, 8, 15, 14, 59, 59)),
+            ("minute", (2024, 8, 15, 14, 30, 59)),
+            ("second", (2024, 8, 15, 14, 30, 45)),
+        ],
+    )
+    def test_per_unit(self, unit, expect):
+        zdt = ZonedDateTime(
+            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
+        )
+        assert zdt.end_of(unit).strict_eq(
+            ZonedDateTime(
+                *expect, nanosecond=999_999_999, tz="America/New_York"
+            )
+        )
+
+    @pytest.mark.parametrize(
         ("unit", "next_start"),
         [
             ("year", ZonedDateTime(2025, 1, 1, tz="America/New_York")),
@@ -7127,40 +4994,6 @@ class TestEndOf:
         )
         assert zdt.end_of(unit).add(nanoseconds=1).strict_eq(next_start)
 
-    def test_year(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.end_of("year")
-        assert result.strict_eq(
-            ZonedDateTime(
-                2024,
-                12,
-                31,
-                23,
-                59,
-                59,
-                nanosecond=999_999_999,
-                tz="America/New_York",
-            )
-        )
-
-    def test_month_31_days(self):
-        zdt = ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York")
-        result = zdt.end_of("month")
-        assert result.strict_eq(
-            ZonedDateTime(
-                2024,
-                8,
-                31,
-                23,
-                59,
-                59,
-                nanosecond=999_999_999,
-                tz="America/New_York",
-            )
-        )
-
     def test_month_feb_leap(self):
         zdt = ZonedDateTime(2024, 2, 10, 12, tz="America/New_York")
         result = zdt.end_of("month")
@@ -7170,42 +5003,6 @@ class TestEndOf:
                 2,
                 29,
                 23,
-                59,
-                59,
-                nanosecond=999_999_999,
-                tz="America/New_York",
-            )
-        )
-
-    def test_day(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.end_of("day")
-        assert result.strict_eq(
-            ZonedDateTime(
-                2024,
-                8,
-                15,
-                23,
-                59,
-                59,
-                nanosecond=999_999_999,
-                tz="America/New_York",
-            )
-        )
-
-    def test_hour(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.end_of("hour")
-        assert result.strict_eq(
-            ZonedDateTime(
-                2024,
-                8,
-                15,
-                14,
                 59,
                 59,
                 nanosecond=999_999_999,
@@ -7232,42 +5029,6 @@ class TestEndOf:
                 59,
                 nanosecond=999_999_999,
                 tz=tz,
-            )
-        )
-
-    def test_minute(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.end_of("minute")
-        assert result.strict_eq(
-            ZonedDateTime(
-                2024,
-                8,
-                15,
-                14,
-                30,
-                59,
-                nanosecond=999_999_999,
-                tz="America/New_York",
-            )
-        )
-
-    def test_second(self):
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.end_of("second")
-        assert result.strict_eq(
-            ZonedDateTime(
-                2024,
-                8,
-                15,
-                14,
-                30,
-                45,
-                nanosecond=999_999_999,
-                tz="America/New_York",
             )
         )
 
@@ -7298,44 +5059,6 @@ class TestEndOf:
                 59,
                 nanosecond=999_999_999,
                 tz="Europe/Amsterdam",
-            )
-        )
-
-    def test_week_mon(self):
-        # Thursday Aug 15 -> Sunday Aug 18 end of day
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.end_of("week_mon")
-        assert result.strict_eq(
-            ZonedDateTime(
-                2024,
-                8,
-                18,
-                23,
-                59,
-                59,
-                nanosecond=999_999_999,
-                tz="America/New_York",
-            )
-        )
-
-    def test_week_sun(self):
-        # Thursday Aug 15 -> Saturday Aug 17 end of day
-        zdt = ZonedDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=123, tz="America/New_York"
-        )
-        result = zdt.end_of("week_sun")
-        assert result.strict_eq(
-            ZonedDateTime(
-                2024,
-                8,
-                17,
-                23,
-                59,
-                59,
-                nanosecond=999_999_999,
-                tz="America/New_York",
             )
         )
 
@@ -7632,19 +5355,815 @@ class TestEndOf:
             )
         )
 
-        # the end of a calendar unit is computed from the next start, which
-        # lies past the range for every unit that ends on 9999-12-31
         last = ZonedDateTime(9999, 12, 31, tz="UTC")
         assert last.end_of("hour").strict_eq(
             ZonedDateTime(
                 9999, 12, 31, 0, 59, 59, nanosecond=999_999_999, tz="UTC"
             )
         )
-        for unit in ("day", "week_mon", "week_sun", "month", "year"):
-            with pytest.raises(
-                ValueError, match="^value or calculation out of range$"
-            ):
-                last.end_of(unit)
+
+    @pytest.mark.parametrize(
+        "unit", ["day", "week_mon", "week_sun", "month", "year"]
+    )
+    def test_past_the_range(self, unit):
+        # the end of a calendar unit is computed from the next start, which
+        # lies past the range for every unit that ends on 9999-12-31
+        last = ZonedDateTime(9999, 12, 31, tz="UTC")
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            last.end_of(unit)
+
+
+class TestCalendarProperties:
+    @pytest.mark.parametrize(
+        "d, expect",
+        [
+            (ZonedDateTime(2024, 2, 29, 12, tz="America/New_York"), 60),
+            (ZonedDateTime(2023, 1, 1, 0, tz="America/New_York"), 1),
+            (ZonedDateTime(2023, 12, 31, 12, tz="America/New_York"), 365),
+            (ZonedDateTime(2024, 12, 31, 12, tz="America/New_York"), 366),
+        ],
+    )
+    def test_day_of_year(self, d, expect):
+        assert d.day_of_year() == expect
+
+    @pytest.mark.parametrize(
+        "d, expect",
+        [
+            (ZonedDateTime(2024, 2, 29, 12, tz="America/New_York"), 29),
+            (ZonedDateTime(2023, 2, 15, 12, tz="America/New_York"), 28),
+            (ZonedDateTime(2023, 1, 15, 12, tz="America/New_York"), 31),
+            (ZonedDateTime(1900, 2, 15, 12, tz="UTC"), 28),
+            (ZonedDateTime(2000, 2, 15, 12, tz="UTC"), 29),
+        ],
+    )
+    def test_days_in_month(self, d, expect):
+        assert d.days_in_month() == expect
+
+    @pytest.mark.parametrize(
+        "d, days, leap",
+        [
+            (ZonedDateTime(2024, 2, 29, 12, tz="America/New_York"), 366, True),
+            (
+                ZonedDateTime(2023, 6, 15, 12, tz="America/New_York"),
+                365,
+                False,
+            ),
+            (ZonedDateTime(1900, 6, 15, 12, tz="UTC"), 365, False),
+            (ZonedDateTime(2000, 6, 15, 12, tz="UTC"), 366, True),
+        ],
+    )
+    def test_days_in_year_and_in_leap_year(self, d, days, leap):
+        assert d.days_in_year() == days
+        assert d.in_leap_year() is leap
+
+
+class TestIsRepeated:
+    def test_fixed_offset_zone(self):
+        d = ZonedDateTime(2020, 8, 15, tz="Etc/GMT+3")
+        assert d.is_repeated() is False
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_unambiguous(self, tz: str):
+        d = create_zdt(2020, 8, 15, 12, 8, 30, tz=tz)
+        assert not d.is_repeated()
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_repeated_time(self, tz: str):
+        d = create_zdt(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz=tz,
+            disambiguation="earlier",
+        )
+        assert d.is_repeated()
+
+        d2 = d.replace(disambiguation="later")
+        assert d2.is_repeated()
+
+    @pytest.mark.parametrize(
+        "tz",
+        ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE],
+    )
+    def test_skipped_time(self, tz: str):
+        d = create_zdt(2023, 3, 26, 2, 15, 30, tz=tz)
+        # skipped local times are shifted into unambiguous ones
+        assert not d.is_repeated()
+
+        # same for different disambiguation
+        d2 = create_zdt(
+            2023, 3, 26, 2, 15, 30, tz=tz, disambiguation="earlier"
+        )
+        assert not d2.is_repeated()
+
+
+class TestTransitions:
+    """``next_transition()`` and ``prev_transition()``."""
+
+    @pytest.mark.parametrize(
+        "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]
+    )
+    @pytest.mark.parametrize(
+        "method, local, expect",
+        [
+            # From summer: the next transition is the fall-back in October
+            # 2023, the previous the spring-forward in March. The returned
+            # instant is when the new offset takes effect, so
+            # disambiguation="later" matches the CET offset.
+            (
+                "next_transition",
+                (2023, 8, 15, 12),
+                ((2023, 10, 29, 2), "later"),
+            ),
+            (
+                "prev_transition",
+                (2023, 8, 15, 12),
+                ((2023, 3, 26, 3), "compatible"),
+            ),
+            # from winter
+            (
+                "next_transition",
+                (2024, 1, 15, 12),
+                ((2024, 3, 31, 3), "compatible"),
+            ),
+            (
+                "prev_transition",
+                (2024, 1, 15, 12),
+                ((2023, 10, 29, 2), "later"),
+            ),
+        ],
+    )
+    def test_amsterdam(self, tz, method, local, expect):
+        d = create_zdt(*local, tz=tz)
+        t = getattr(d, method)()
+        assert t is not None
+        args, disambiguation = expect
+        assert t.strict_eq(
+            create_zdt(*args, tz=tz, disambiguation=disambiguation)
+        )
+        # the same time zone: None for the POSIX and raw-file ones
+        assert t.tz_id == d.tz_id
+
+    @pytest.mark.parametrize(
+        "d, method, expect",
+        [
+            (
+                ZonedDateTime(2024, 1, 15, tz="Australia/Sydney"),
+                "next_transition",
+                # DST ends in April (fall-back)
+                ZonedDateTime(
+                    2024,
+                    4,
+                    7,
+                    2,
+                    tz="Australia/Sydney",
+                    disambiguation="later",
+                ),
+            ),
+            (
+                ZonedDateTime(2024, 1, 15, tz="Australia/Sydney"),
+                "prev_transition",
+                # DST started in October 2023 (spring-forward)
+                ZonedDateTime(2023, 10, 1, 3, tz="Australia/Sydney"),
+            ),
+            # At the exact moment of spring-forward in New York: the
+            # current transition is skipped
+            (
+                ZonedDateTime(2024, 3, 10, 3, tz="America/New_York"),
+                "next_transition",
+                ZonedDateTime(
+                    2024,
+                    11,
+                    3,
+                    1,
+                    tz="America/New_York",
+                    disambiguation="later",
+                ),
+            ),
+            (
+                ZonedDateTime(2024, 3, 10, 3, tz="America/New_York"),
+                "prev_transition",
+                ZonedDateTime(
+                    2023,
+                    11,
+                    5,
+                    1,
+                    tz="America/New_York",
+                    disambiguation="later",
+                ),
+            ),
+            # No transitions at all
+            (
+                create_zdt(2024, 6, 15, 12, tz="Etc/UTC"),
+                "next_transition",
+                None,
+            ),
+            (
+                create_zdt(2024, 6, 15, 12, tz="Etc/UTC"),
+                "prev_transition",
+                None,
+            ),
+            (
+                create_zdt(2024, 6, 15, 12, tz="Etc/GMT+2"),
+                "next_transition",
+                None,
+            ),
+            (
+                create_zdt(2024, 6, 15, 12, tz="Etc/GMT+2"),
+                "prev_transition",
+                None,
+            ),
+            # no DST in modern times
+            (
+                create_zdt(2024, 6, 15, 12, tz="Asia/Kolkata"),
+                "next_transition",
+                None,
+            ),
+            # Zones whose very first recorded transition is directly INTO a
+            # DST period: nothing precedes it, and the initial period has
+            # no DST. Iqaluit: 1942-08-01 00:00:00 UTC -> -04:00 (EWT).
+            pytest.param(
+                ZonedDateTime(1940, 1, 1, tz="America/Iqaluit"),
+                "next_transition",
+                ZonedDateTime(
+                    1942,
+                    7,
+                    31,
+                    20,
+                    tz="America/Iqaluit",
+                    disambiguation="later",
+                ),
+                marks=_NEEDS_TZDATA,
+            ),
+            pytest.param(
+                ZonedDateTime(1940, 1, 1, tz="America/Iqaluit"),
+                "prev_transition",
+                None,
+                marks=_NEEDS_TZDATA,
+            ),
+            pytest.param(
+                ZonedDateTime(1943, 1, 1, tz="America/Iqaluit"),
+                "prev_transition",
+                ZonedDateTime(
+                    1942,
+                    7,
+                    31,
+                    20,
+                    tz="America/Iqaluit",
+                    disambiguation="later",
+                ),
+                marks=_NEEDS_TZDATA,
+            ),
+            # Palmer: 1965-01-01 00:00:00 UTC -> -03:00 (DST), a fall-back
+            # in which local 21:00 is repeated
+            pytest.param(
+                ZonedDateTime(1963, 1, 1, tz="Antarctica/Palmer"),
+                "next_transition",
+                ZonedDateTime(
+                    1964,
+                    12,
+                    31,
+                    21,
+                    tz="Antarctica/Palmer",
+                    disambiguation="later",
+                ),
+                marks=_NEEDS_TZDATA,
+            ),
+            pytest.param(
+                ZonedDateTime(1965, 2, 1, tz="Antarctica/Palmer"),
+                "prev_transition",
+                ZonedDateTime(
+                    1964,
+                    12,
+                    31,
+                    21,
+                    tz="Antarctica/Palmer",
+                    disambiguation="later",
+                ),
+                marks=_NEEDS_TZDATA,
+            ),
+        ],
+    )
+    def test_examples(self, d, method, expect):
+        t = getattr(d, method)()
+        if expect is None:
+            assert t is None
+        else:
+            assert isinstance(t, ZonedDateTime)
+            assert t.strict_eq(expect)
+            assert t.tz_id == d.tz_id
+            # transitions are always on second boundaries
+            assert t.nanosecond == 0
+
+    @pytest.mark.parametrize("tz", [AMS_TZ_POSIX, AMS_TZ_RAWFILE])
+    @pytest.mark.parametrize(
+        "method, local",
+        [
+            ("next_transition", (2050, 12, 1)),
+            ("prev_transition", (2051, 4, 1)),
+        ],
+    )
+    def test_crosses_into_the_posix_tz_string(self, tz, method, local):
+        # After the last explicitly recorded transition, the POSIX TZ string
+        # takes over; both directions cross that boundary seamlessly. The
+        # last Sunday of March 2051: 2051-03-26 01:00:00 UTC springs
+        # forward to 03:00:00+02:00.
+        t = getattr(create_zdt(*local, tz=tz), method)()
+        assert t is not None
+        assert t.strict_eq(create_zdt(2051, 3, 26, 3, tz=tz))
+
+    @pytest.mark.parametrize(
+        "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]
+    )
+    @pytest.mark.parametrize(
+        "method, month", [("next_transition", 10), ("prev_transition", 3)]
+    )
+    def test_far_future_posix(self, tz, method, month):
+        t = getattr(create_zdt(2050, 6, 15, 12, tz=tz), method)()
+        assert t is not None
+        assert t.year == 2050
+        assert t.month == month  # fall-back, or spring-forward
+
+    @pytest.mark.parametrize(
+        "method, local, first, second",
+        [
+            (
+                "next_transition",
+                (2024, 1, 1),
+                ZonedDateTime(2024, 3, 10, 3, tz="America/New_York"),
+                ZonedDateTime(
+                    2024,
+                    11,
+                    3,
+                    1,
+                    tz="America/New_York",
+                    disambiguation="later",
+                ),
+            ),
+            (
+                "prev_transition",
+                (2024, 12, 1),
+                ZonedDateTime(
+                    2024,
+                    11,
+                    3,
+                    1,
+                    tz="America/New_York",
+                    disambiguation="later",
+                ),
+                ZonedDateTime(2024, 3, 10, 3, tz="America/New_York"),
+            ),
+        ],
+    )
+    def test_chain_nyc(self, method, local, first, second):
+        d = ZonedDateTime(*local, tz="America/New_York")
+        t1 = getattr(d, method)()
+        assert t1 is not None
+        t2 = getattr(t1, method)()
+        assert t2 is not None
+        assert t1.strict_eq(first)
+        assert t2.strict_eq(second)
+
+    @pytest.mark.parametrize(
+        "method, local, nanosecond",
+        [
+            ("next_transition", (2024, 1, 1), 123_456),
+            ("prev_transition", (2024, 12, 1), 999_999),
+        ],
+    )
+    def test_nanosecond_is_zero(self, method, local, nanosecond):
+        # Transitions are always on second boundaries
+        d = ZonedDateTime(*local, nanosecond=nanosecond, tz="America/New_York")
+        t = getattr(d, method)()
+        assert t is not None
+        assert t.nanosecond == 0
+
+    @pytest.mark.parametrize(
+        "method, local, required",
+        [
+            # Year 9999 may or may not have a transition depending on the
+            # POSIX rule year limits; year 1 may have none before it
+            ("next_transition", (9999, 12, 1), False),
+            ("next_transition", (1, 1, 1), True),
+            ("prev_transition", (9999, 12, 1), True),
+            ("prev_transition", (1, 1, 1), False),
+        ],
+    )
+    def test_near_range_edges(self, method, local, required):
+        # must not crash
+        t = getattr(ZonedDateTime(*local, tz="America/New_York"), method)()
+        if required:
+            assert t is not None
+        if t is not None:
+            assert isinstance(t, ZonedDateTime)
+
+    def test_next_same_offset_london_1968(self):
+        # British Standard Time: the offset stays +01:00, but the rules
+        # change from summer time to standard time, so it is a transition
+        d = ZonedDateTime(1968, 6, 1, tz="Europe/London")
+        t = d.next_transition()
+        assert t is not None
+        assert t.strict_eq(ZonedDateTime(1968, 10, 27, tz="Europe/London"))
+        assert t.offset == d.offset == hours(1)
+        assert t.dst_offset() == TimeDelta.ZERO
+        assert t.tz_abbrev() == "BST"
+        before = t.subtract(nanoseconds=1)
+        assert before.dst_offset() == hours(1)
+        assert before.tz_abbrev() == "BST"
+
+    def test_prev_same_offset_london_1968(self):
+        # the same-offset transition next_transition() finds from June 1968
+        d = ZonedDateTime(1969, 6, 1, tz="Europe/London")
+        t = d.prev_transition()
+        assert t is not None
+        assert t.strict_eq(ZonedDateTime(1968, 10, 27, tz="Europe/London"))
+        assert t.offset == hours(1)
+        assert t.dst_offset() == TimeDelta.ZERO
+        assert t.tz_abbrev() == "BST"
+
+    def test_next_standard_time_and_dst_change_together_argentina_1999(self):
+        # Argentina moved standard time from -03:00 to -04:00 and began DST
+        # at the same moment, so the offset stays -03:00 while the DST
+        # offset changes
+        tz = "America/Argentina/Buenos_Aires"
+        t = ZonedDateTime(1999, 9, 1, tz=tz).next_transition()
+        assert t is not None
+        assert t.strict_eq(ZonedDateTime(1999, 10, 3, tz=tz))
+        assert t.offset == hours(-3)
+        assert t.dst_offset() == hours(1)
+        assert t.subtract(nanoseconds=1).dst_offset() == TimeDelta.ZERO
+
+    def test_prev_standard_time_and_dst_change_together_argentina_2000(self):
+        # DST ended and standard time moved back to -03:00 at the same
+        # moment, so the offset stays -03:00 while the DST offset changes
+        tz = "America/Argentina/Buenos_Aires"
+        t = ZonedDateTime(2000, 6, 1, tz=tz).prev_transition()
+        assert t is not None
+        assert t.strict_eq(ZonedDateTime(2000, 3, 3, tz=tz))
+        assert t.offset == hours(-3)
+        assert t.dst_offset() == TimeDelta.ZERO
+        assert t.subtract(nanoseconds=1).dst_offset() == hours(1)
+
+    def test_abbreviation_only_anchorage_1983(self):
+        # Alaska renamed its zones on 1983-11-30: YST became AKST, the
+        # offset and DST offset unchanged
+        tz = "America/Anchorage"
+        t = ZonedDateTime(1983, 11, 1, tz=tz).next_transition()
+        assert t is not None
+        assert t.strict_eq(ZonedDateTime(1983, 11, 30, tz=tz))
+        assert t.tz_abbrev() == "AKST"
+        before = t.subtract(nanoseconds=1)
+        assert before.tz_abbrev() == "YST"
+        assert before.offset == t.offset == hours(-9)
+        assert before.dst_offset() == t.dst_offset() == TimeDelta.ZERO
+
+    def test_record_that_changes_nothing_is_skipped_tbilisi_1997(self):
+        # The database repeats the 1996 type at 1997-03-30, which changes
+        # neither the offset, the DST offset, nor the abbreviation
+        tz = "Asia/Tbilisi"
+        t = ZonedDateTime(1997, 3, 29, tz=tz).next_transition()
+        assert t is not None
+        assert t.strict_eq(
+            ZonedDateTime(1997, 10, 25, 23, tz=tz, disambiguation="later")
+        )
+        p = ZonedDateTime(1997, 4, 1, tz=tz).prev_transition()
+        assert p is not None
+        assert p.strict_eq(ZonedDateTime(1996, 3, 31, 1, tz=tz))
+
+    def test_prev_kolkata_historical(self):
+        # Asia/Kolkata has no transitions in modern times
+        # but has historical transitions
+        d = create_zdt(2024, 6, 15, 12, tz="Asia/Kolkata")
+        t = d.prev_transition()
+        # There are historical transitions, so it should return something
+        assert t is not None
+        assert t.year < 2024  # historical
+
+
+# Local times to compare against the standard library's ``dst()`` and
+# ``tzname()``: around the transitions of each zone, and past the last
+# recorded transition, where the POSIX TZ string takes over.
+_ZONEINFO_CASES = [
+    # America/New_York: standard US DST. Second Sunday of March: 2:00 AM
+    # springs to 3:00 AM; first Sunday of November: 2:00 AM falls back to
+    # 1:00 AM.
+    ("America/New_York", (2020, 7, 15, 12), 0),
+    ("America/New_York", (2020, 1, 15, 12), 0),
+    ("America/New_York", (2020, 3, 8, 1, 30), 0),
+    ("America/New_York", (2020, 3, 8, 3, 30), 0),
+    ("America/New_York", (2020, 11, 1, 1, 30), 0),
+    ("America/New_York", (2020, 11, 1, 1, 30), 1),
+    ("America/New_York", (2100, 7, 15, 12), 0),
+    ("America/New_York", (2100, 1, 15, 12), 0),
+    ("UTC", (2020, 7, 15, 12), 0),
+    ("Asia/Tokyo", (2020, 7, 15, 12), 0),
+    ("Asia/Tokyo", (2020, 1, 15, 12), 0),
+    ("Asia/Tokyo", (2100, 7, 15, 12), 0),
+    *(
+        pytest.param(*c, marks=_NEEDS_TZDATA)
+        for c in [
+            # Europe/Dublin: "negative DST" (standard=IST UTC+1, winter=GMT
+            # UTC+0 isdst=1). Spring-forward on the last Sunday of March,
+            # fall-back on the last Sunday of October.
+            ("Europe/Dublin", (2020, 7, 15, 12), 0),
+            ("Europe/Dublin", (2020, 1, 15, 12), 0),
+            ("Europe/Dublin", (2020, 3, 29, 0, 30), 0),
+            ("Europe/Dublin", (2020, 3, 29, 2, 30), 0),
+            ("Europe/Dublin", (2020, 10, 25, 1, 30), 0),
+            ("Europe/Dublin", (2020, 10, 25, 1, 30), 1),
+            ("Europe/Dublin", (2100, 7, 15, 12), 0),
+            ("Europe/Dublin", (2100, 1, 15, 12), 0),
+            # Australia/Sydney: southern hemisphere DST (summer in January).
+            # DST starts the first Sunday of October, ends the first Sunday
+            # of April.
+            ("Australia/Sydney", (2020, 1, 15, 12), 0),
+            ("Australia/Sydney", (2020, 7, 15, 12), 0),
+            ("Australia/Sydney", (2020, 10, 4, 1, 30), 0),
+            ("Australia/Sydney", (2020, 10, 4, 3, 30), 0),
+            ("Australia/Sydney", (2020, 4, 5, 2, 30), 0),
+            ("Australia/Sydney", (2020, 4, 5, 2, 30), 1),
+            ("Australia/Sydney", (2100, 1, 15, 12), 0),
+            # Pacific/Honolulu: no DST ever
+            ("Pacific/Honolulu", (2020, 7, 15, 12), 0),
+            ("Pacific/Honolulu", (2020, 1, 15, 12), 0),
+            ("Pacific/Honolulu", (2100, 6, 15, 12), 0),
+            # Zones whose very first recorded transition is INTO a DST
+            # state: the initial period has no DST. Iqaluit was UTC+0, then
+            # EWT (DST = +1h vs EST), then back to standard time.
+            ("America/Iqaluit", (1940, 1, 1, 12), 0),
+            ("America/Iqaluit", (1942, 9, 1, 12), 0),
+            ("America/Iqaluit", (1946, 1, 1, 12), 0),
+            # Palmer was UTC+0 until 1965-01-01, then DST (+1h vs -04)
+            ("Antarctica/Palmer", (1963, 6, 15, 12), 0),
+            ("Antarctica/Palmer", (1965, 2, 15, 12), 0),
+        ]
+    ),
+    *(
+        pytest.param(*c, marks=_NEEDS_CASABLANCA)
+        for c in [
+            # Africa/Casablanca: complex DST schedule
+            ("Africa/Casablanca", (2019, 7, 15, 12), 0),
+            ("Africa/Casablanca", (2019, 1, 15, 12), 0),
+            ("Africa/Casablanca", (2100, 7, 15, 12), 0),
+        ]
+    ),
+]
+
+
+class TestDstOffsetAndTzAbbrev:
+    @pytest.mark.parametrize("tz, local, fold", _ZONEINFO_CASES, ids=str)
+    def test_matches_zoneinfo(self, tz, local, fold):
+        d = ZonedDateTime(
+            *local, tz=tz, disambiguation="later" if fold else "earlier"
+        )
+        py_dt = py_datetime(*local).replace(fold=fold, tzinfo=ZoneInfo(tz))
+        assert d.dst_offset() == TimeDelta(
+            py_dt.dst()  # type: ignore[arg-type]
+        )
+        assert d.tz_abbrev() == py_dt.tzname()
+
+    @pytest.mark.parametrize(
+        "tz", ["Europe/Amsterdam", AMS_TZ_POSIX, AMS_TZ_RAWFILE]
+    )
+    @pytest.mark.parametrize(
+        "local, disambiguation, dst_offset, abbrev",
+        [
+            ((2020, 8, 15, 12), "compatible", hours(1), "CEST"),
+            ((2020, 1, 15, 12), "compatible", TimeDelta.ZERO, "CET"),
+            ((2023, 10, 29, 2, 30), "earlier", hours(1), "CEST"),
+            ((2023, 10, 29, 2, 30), "later", TimeDelta.ZERO, "CET"),
+            # POSIX TZ string fallback for dates beyond transition data
+            ((2100, 7, 15, 12), "compatible", hours(1), "CEST"),
+            ((2100, 1, 15, 12), "compatible", TimeDelta.ZERO, "CET"),
+        ],
+    )
+    def test_amsterdam(self, tz, local, disambiguation, dst_offset, abbrev):
+        d = create_zdt(*local, tz=tz, disambiguation=disambiguation)
+        assert d.dst_offset() == dst_offset
+        assert d.tz_abbrev() == abbrev
+
+    @pytest.mark.parametrize(
+        "d, dst_offset, abbrev",
+        [
+            (
+                ZonedDateTime(2020, 8, 15, tz="Etc/GMT+3"),
+                TimeDelta.ZERO,
+                "-03",
+            ),
+            (ZonedDateTime(2020, 8, 15, 12, tz="UTC"), TimeDelta.ZERO, "UTC"),
+            (ZonedDateTime(2100, 7, 15, 12, tz="UTC"), TimeDelta.ZERO, "UTC"),
+            (
+                ZonedDateTime(2020, 8, 15, 12, tz="Asia/Tokyo"),
+                TimeDelta.ZERO,
+                "JST",
+            ),
+            (
+                ZonedDateTime(2020, 1, 15, 12, tz="Asia/Tokyo"),
+                TimeDelta.ZERO,
+                "JST",
+            ),
+            (
+                ZonedDateTime(2100, 7, 15, 12, tz="Asia/Tokyo"),
+                TimeDelta.ZERO,
+                "JST",
+            ),
+            (
+                ZonedDateTime(2020, 8, 15, 12, tz="America/New_York"),
+                hours(1),
+                "EDT",
+            ),
+            (
+                ZonedDateTime(2020, 1, 15, 12, tz="America/New_York"),
+                TimeDelta.ZERO,
+                "EST",
+            ),
+            *(
+                pytest.param(
+                    ZonedDateTime(*local, tz="Pacific/Honolulu"),
+                    TimeDelta.ZERO,
+                    "HST",
+                    marks=_NEEDS_TZDATA,
+                )
+                for local in [
+                    (2020, 7, 15, 12),
+                    (2020, 1, 15, 12),
+                    (2100, 6, 15, 12),
+                ]
+            ),
+        ],
+    )
+    def test_examples(self, d, dst_offset, abbrev):
+        assert d.dst_offset() == dst_offset
+        assert d.tz_abbrev() == abbrev
+
+    def test_standard_time_and_dst_changed_together(self):
+        # Argentina 1999-2000: standard time -04:00 with a one-hour saving,
+        # so the offset equals the previous standard offset
+        d = ZonedDateTime(1999, 12, 1, tz="America/Argentina/Buenos_Aires")
+        assert d.offset == hours(-3)
+        assert d.dst_offset() == hours(1)
+
+    def test_returns_str(self):
+        d = create_zdt(2020, 8, 15, 12, tz="Europe/Amsterdam")
+        assert type(d.tz_abbrev()) is str
+
+
+class TestDayLength:
+    @pytest.mark.parametrize(
+        "d, expect",
+        [
+            # no special day
+            (
+                ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
+                hours(24),
+            ),
+            (ZonedDateTime(1832, 12, 15, 12, 1, 30, tz="UTC"), hours(24)),
+            # Longer day
+            (
+                ZonedDateTime(2023, 10, 29, 12, 8, 30, tz="Europe/Amsterdam"),
+                hours(25),
+            ),
+            (
+                create_zdt(2023, 10, 29, 12, 8, 30, tz=AMS_TZ_POSIX),
+                hours(25),
+            ),
+            (ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam"), hours(25)),
+            (
+                ZonedDateTime(2023, 10, 30, tz="Europe/Amsterdam").subtract(
+                    nanoseconds=1
+                ),
+                hours(25),
+            ),
+            # Shorter day
+            (
+                ZonedDateTime(2023, 3, 26, 12, 8, 30, tz="Europe/Amsterdam"),
+                hours(23),
+            ),
+            (ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"), hours(23)),
+            (
+                ZonedDateTime(2023, 3, 27, tz="Europe/Amsterdam").subtract(
+                    nanoseconds=1
+                ),
+                hours(23),
+            ),
+            # non-hour DST change
+            (
+                ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"),
+                hours(23.5),
+            ),
+            (
+                ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
+                hours(24.5),
+            ),
+            # Non-regular transition
+            (
+                ZonedDateTime(1894, 6, 1, 1, tz="Europe/Zurich"),
+                TimeDelta(hours=24, minutes=-30, seconds=-14),
+            ),
+            # DST starts at midnight
+            (ZonedDateTime(2016, 2, 20, tz="America/Sao_Paulo"), hours(25)),
+            (ZonedDateTime(2016, 2, 21, tz="America/Sao_Paulo"), hours(24)),
+            (
+                ZonedDateTime(
+                    2016,
+                    10,
+                    16,
+                    tz="America/Sao_Paulo",
+                    disambiguation="compatible",
+                ),
+                hours(23),
+            ),
+            (ZonedDateTime(2016, 10, 17, tz="America/Sao_Paulo"), hours(24)),
+            # Samoa skipped a day
+            (ZonedDateTime(2011, 12, 31, 21, tz="Pacific/Apia"), hours(24)),
+            (ZonedDateTime(2011, 12, 29, 21, tz="Pacific/Apia"), hours(24)),
+            # A day that starts twice
+            (
+                ZonedDateTime(
+                    2016,
+                    2,
+                    20,
+                    23,
+                    45,
+                    disambiguation="later",
+                    tz="America/Sao_Paulo",
+                ),
+                hours(25),
+            ),
+            (
+                ZonedDateTime(
+                    2016,
+                    2,
+                    20,
+                    23,
+                    45,
+                    disambiguation="earlier",
+                    tz="America/Sao_Paulo",
+                ),
+                hours(25),
+            ),
+        ],
+    )
+    def test_typical(self, d: ZonedDateTime, expect: TimeDelta):
+        assert d.day_length() == expect
+
+    def test_extreme_bounds(self):
+        # Negative UTC offsets at lower bound are fine
+        d_min_neg = ZonedDateTime(1, 1, 1, 2, tz="America/New_York")
+        assert d_min_neg.day_length() == hours(24)
+
+        # Positive UTC offsets at lower bound are NOT fine
+        d_min_pos = ZonedDateTime(1, 1, 1, 12, tz="Asia/Tokyo")
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            d_min_pos.day_length()
+
+        # upper bound is NOT fine
+        d_max_pos = ZonedDateTime(9999, 12, 31, 4, tz="Asia/Tokyo")
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            d_max_pos.day_length()
+
+        d_max_neg = ZonedDateTime(9999, 12, 31, 12, tz="America/New_York")
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            d_max_neg.day_length()
+
+    @pytest.mark.parametrize(
+        "d",
+        [
+            ZonedDateTime(2010, 11, 6, 12, tz="America/Goose_Bay"),
+            ZonedDateTime(2010, 11, 7, 12, tz="America/Goose_Bay"),
+            ZonedDateTime(2024, 4, 7, 1, tz="Australia/Lord_Howe"),
+            ZonedDateTime(2024, 10, 6, 1, tz="Australia/Lord_Howe"),
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguation="later",
+            ),
+        ],
+    )
+    def test_is_the_difference_of_consecutive_day_starts(self, d):
+        next_start = d.add(hours=30).start_of("day")
+        assert d.day_length() == next_start - d.start_of("day")
 
 
 class TestDayBoundariesAroundMidnight:
@@ -7752,20 +6271,30 @@ class TestDayBoundariesAroundMidnight:
         assert d.end_of("day").strict_eq(nov_7.subtract(nanoseconds=1))
 
 
-class TestClearTzCache:
-    @pytest.mark.skipif(
-        _EXTENSION_LOADED, reason="Rust extension has its own cache"
-    )
-    def test_clear_by_keys_clears_last_tz(self):
-        """Clearing the cache by key clears _last_tz_key when it matches."""
-        from whenever._tz import store
+class TestPickle:
+    def test_repeated_time(self):
+        d1 = ZonedDateTime(
+            2023,
+            10,
+            29,
+            2,
+            15,
+            30,
+            tz="Europe/Amsterdam",
+            disambiguation="earlier",
+        )
+        d2 = d1.replace(disambiguation="later")
+        assert pickle.loads(pickle.dumps(d1)).strict_eq(d1)
+        assert pickle.loads(pickle.dumps(d2)).strict_eq(d2)
 
-        # Load a time zone to populate the fast cache
-        ZonedDateTime(2024, 1, 1, tz="US/Eastern")
-        assert store._last_tz_key == "us/eastern"
-        # Now clear that exact key — _last_tz_key should be reset
-        clear_tzcache(only_keys=["US/Eastern"])
-        assert store._last_tz_key is None
+    @pytest.mark.parametrize("tz", [AMS_TZ_POSIX, AMS_TZ_RAWFILE])
+    def test_no_tzid(self, tz: str):
+        d = create_zdt(2023, 12, 3, 9, 15, tz=tz)
+        with pytest.raises(
+            ValueError,
+            match="cannot pickle ZonedDateTime without a time zone ID",
+        ):
+            pickle.dumps(d)
 
 
 # --- Fixtures for TestImplicitDisambiguationWarning ---

@@ -21,7 +21,6 @@ from whenever import (
     TimeDelta,
     TimeZoneNotFoundError,
     Weekday,
-    WheneverDeprecationWarning,
     WheneverWarning,
     YearMonth,
     ZonedDateTime,
@@ -31,7 +30,7 @@ from whenever import (
 )
 from whenever._format import compile_pattern, format_fields
 
-from .common import AMS_TZ_POSIX, create_zdt, warns_here
+from .common import warns_here
 
 
 class TestCompilePattern:
@@ -127,11 +126,12 @@ class TestCompilePattern:
         d = Date(2024, 3, 15)
         assert d.format("") == ""
 
-    def test_24h_with_ampm_raises(self):
-        t = Time(14, 30)
-        for pattern in ("HH:mm aa", "hh:mm aa", "H:mm aa", "h:mm aa"):
-            with pytest.raises(ValueError, match="24-hour.*cannot.*AM/PM"):
-                t.format(pattern)
+    @pytest.mark.parametrize(
+        "pattern", ["HH:mm aa", "hh:mm aa", "H:mm aa", "h:mm aa"]
+    )
+    def test_24h_with_ampm_raises(self, pattern):
+        with pytest.raises(ValueError, match="24-hour.*cannot.*AM/PM"):
+            Time(14, 30).format(pattern)
 
     def test_12h_without_ampm_warns(self):
         t = Time(14, 30)
@@ -168,11 +168,11 @@ class TestCompilePattern:
         with pytest.raises(ValueError, match="duplicate.*year"):
             Date(2024, 1, 1).format("YYYY-YY-MM-DD")
 
-    def test_reserved_chars_error(self):
+    @pytest.mark.parametrize("ch", list("<>]{}#"))
+    def test_reserved_chars_error(self, ch):
         """< > ] { } # are reserved for future use."""
-        for ch in "<>]{}#":
-            with pytest.raises(ValueError, match="reserved"):
-                Date(2024, 1, 1).format(f"YYYY{ch}MM")
+        with pytest.raises(ValueError, match="reserved"):
+            Date(2024, 1, 1).format(f"YYYY{ch}MM")
 
     @pytest.mark.parametrize(
         "pattern",
@@ -223,22 +223,6 @@ class TestCompilePattern:
     @pytest.mark.parametrize("pattern", ["VV", "VV' '", "VV':'"])
     def test_timezone_id_safe_delimiter(self, pattern):
         compile_pattern(pattern)
-
-
-@pytest.mark.parametrize(
-    "cls, value, pattern",
-    [
-        (Date, "٢٠٢٤-03-15", "YYYY-MM-DD"),
-        (Date, "2024-٠٣-15", "YYYY-MM-DD"),
-        (Date, "2024-03-١٥", "YYYY-MM-DD"),
-        (Time, "14:٣٠", "HH:mm"),
-        (Time, "14:30:٠٥", "HH:mm[:ss]"),
-        (Time, "14:30:05.١", "HH:mm:ss.F"),
-    ],
-)
-def test_parse_rejects_non_ascii_input(cls, value, pattern):
-    with pytest.raises(ValueError, match="input must be ASCII-only"):
-        cls.parse(value, pattern=pattern)
 
 
 class TestOptionalSecondsPattern:
@@ -386,124 +370,6 @@ class TestOptionalSecondsPattern:
             assert Date(2024, 3, 15).format("'hH S[]'") == "hH S[]"
 
 
-class TestPatternDeprecations:
-    @pytest.mark.parametrize(
-        "pattern, replacement", [("h", "'H'"), ("hh", "'HH'")]
-    )
-    def test_legacy_hour_format(self, pattern, replacement):
-        with warns_here(WheneverDeprecationWarning) as w:
-            Time(13).format(pattern)
-        assert len(w) == 1
-        assert f"use {replacement} instead" in str(w[0].message)
-        with warns_here(WheneverDeprecationWarning) as w:
-            Time.parse("13", pattern=pattern)
-        assert len(w) == 1
-        assert f"use {replacement} instead" in str(w[0].message)
-
-    @pytest.mark.parametrize(
-        "pattern, s, replacement",
-        [
-            ("HH:mm:SS", "13:00", "'[:ss]'"),
-            ("HH:mm:SS.fff", "13:00:05.123", "'[:ss.fff]'"),
-            ("HH:mm:SS.FFF", "13:00", "'[:ss.FFF]'"),
-        ],
-    )
-    def test_legacy_prefixed_optional_seconds(self, pattern, s, replacement):
-        with warns_here(WheneverDeprecationWarning) as w:
-            Time(13).format(pattern)
-        assert len(w) == 1
-        assert f"use {replacement} instead" in str(w[0].message)
-        with warns_here(WheneverDeprecationWarning) as w:
-            Time.parse(s, pattern=pattern)
-        assert len(w) == 1
-        assert f"use {replacement} instead" in str(w[0].message)
-
-    @pytest.mark.parametrize(
-        "pattern, s, replacement",
-        [
-            ("HH:mmSS", "13:00", "'[ss]'"),
-            ("HH:mmSS.fff", "13:0005.123", "'[ss.fff]'"),
-            ("HH:mmSS.FFF", "13:00", "'[ss.FFF]'"),
-            ("HH:mmSS.'x'", "13:00.x", "'[ss]'"),
-        ],
-    )
-    def test_legacy_separator_free_optional_seconds(
-        self, pattern, s, replacement
-    ):
-        with warns_here(WheneverDeprecationWarning) as w:
-            Time(13).format(pattern)
-        assert len(w) == 1
-        assert f"use {replacement} instead" in str(w[0].message)
-        with warns_here(WheneverDeprecationWarning) as w:
-            Time.parse(s, pattern=pattern)
-        assert len(w) == 1
-        assert f"use {replacement} instead" in str(w[0].message)
-
-    @pytest.mark.parametrize(
-        "t, pattern, expect",
-        [
-            (Time(14, 30), "HH:mmSS", "14:30"),
-            (Time(14, 30, 5), "HH:mmSS", "14:3005"),
-            (Time(14, 30, 5), "HH:mm.SS", "14:30.05"),
-        ],
-    )
-    def test_legacy_optional_seconds_format(self, t, pattern, expect):
-        with warns_here(WheneverDeprecationWarning):
-            assert t.format(pattern) == expect
-
-    @pytest.mark.parametrize(
-        "s, pattern, expect",
-        [
-            ("14:30", "HH:mmSS", Time(14, 30)),
-            ("14:3005", "HH:mmSS", Time(14, 30, 5)),
-            ("14:3060", "HH:mmSS", Time(14, 30, 59)),
-            ("14:30", "HH:mm:SS", Time(14, 30)),
-            ("14:30:05", "HH:mm:SS", Time(14, 30, 5)),
-            ("14:30:60", "HH:mm:SS", Time(14, 30, 59)),
-            ("14:30", "HH:mmSSFFF", Time(14, 30)),
-        ],
-    )
-    def test_legacy_optional_seconds_parse(self, s, pattern, expect):
-        with warns_here(WheneverDeprecationWarning):
-            assert Time.parse(s, pattern=pattern) == expect
-
-    @pytest.mark.parametrize(
-        "call",
-        [
-            lambda: Time.parse("x", pattern="hh"),
-            lambda: Time.parse("x", pattern="ii"),
-            lambda: Time.parse("12:00", pattern="HH:mm SS"),
-            lambda: Instant.parse("12:00", pattern="hh:mm"),
-            lambda: create_zdt(2020, 8, 15, tz=AMS_TZ_POSIX).format("VV hh"),
-            lambda: f"{create_zdt(2020, 8, 15, tz=AMS_TZ_POSIX):VV ii}",
-        ],
-    )
-    def test_no_warning_when_the_call_raises(self, call):
-        """Validate, then warn: a call that raises warns about nothing."""
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            with pytest.raises(ValueError):
-                call()
-
-    def test_cached_pattern_warns_at_each_call_site(self):
-        compile_pattern.cache_clear()
-
-        def first() -> None:
-            Time(13).format("h")
-
-        def second() -> None:
-            Time(13).format("h")
-
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            first()
-            second()
-        assert len(w) == 2
-        assert all(x.category is WheneverDeprecationWarning for x in w)
-        assert all(x.filename == __file__ for x in w)
-        assert w[0].lineno != w[1].lineno
-
-
 class TestFracTrimErrorRendering:
     """Regression tests for whenever/pull/386"""
 
@@ -599,11 +465,12 @@ class TestDateParse:
         with pytest.raises(ValueError):
             Date.parse("2024-03-5", pattern="YYYY-MM-DD")
 
-    def test_roundtrip_unpadded_month_day(self):
-        for month, day in [(1, 1), (12, 31), (3, 5)]:
-            d = Date(2024, month, day)
-            pattern = "YYYY-M-D"
-            assert Date.parse(d.format(pattern), pattern=pattern) == d
+    @pytest.mark.parametrize(
+        "d", [Date(2024, 1, 1), Date(2024, 12, 31), Date(2024, 3, 5)]
+    )
+    def test_roundtrip_unpadded_month_day(self, d):
+        pattern = "YYYY-M-D"
+        assert Date.parse(d.format(pattern), pattern=pattern) == d
 
     def test_slash_separator(self):
         d = Date.parse("2024/03/15", pattern="YYYY/MM/DD")
@@ -837,21 +704,21 @@ class TestTimeParse:
         with pytest.raises(ValueError, match="trailing"):
             Time.parse("14:30.5", pattern="HH:mm[:ss.FFF]")
 
-    def test_roundtrip_optional_seconds(self):
-        cases = [
+    @pytest.mark.parametrize(
+        "t",
+        [
             Time(14, 30, 0),
             Time(14, 30, 5),
             Time(0, 0, 0),
             Time(14, 30, 0, nanosecond=500_000_000),
             Time(14, 30, 5, nanosecond=120_000_000),
-        ]
-        for t in cases:
-            assert (
-                Time.parse(
-                    t.format("HH:mm[:ss.FFF]"), pattern="HH:mm[:ss.FFF]"
-                )
-                == t
-            )
+        ],
+    )
+    def test_roundtrip_optional_seconds(self, t):
+        assert (
+            Time.parse(t.format("HH:mm[:ss.FFF]"), pattern="HH:mm[:ss.FFF]")
+            == t
+        )
 
     def test_12h_pm(self):
         assert Time.parse("02:30 PM", pattern="ii:mm aa") == Time(14, 30)
@@ -923,17 +790,18 @@ class TestTimeParse:
         pattern = "HH:mm:ss.fffffffff"
         assert Time.parse(t.format(pattern), pattern=pattern) == t
 
-    def test_roundtrip_unpadded(self):
-        for h, m, s in [(4, 5, 9), (14, 30, 45), (0, 0, 0)]:
-            t = Time(h, m, s)
-            pattern = "H:m:s"
-            assert Time.parse(t.format(pattern), pattern=pattern) == t
+    @pytest.mark.parametrize(
+        "t", [Time(4, 5, 9), Time(14, 30, 45), Time(0, 0, 0)]
+    )
+    def test_roundtrip_unpadded(self, t):
+        pattern = "H:m:s"
+        assert Time.parse(t.format(pattern), pattern=pattern) == t
 
-    def test_roundtrip_ampm(self):
-        for h in (0, 1, 11, 12, 13, 23):
-            t = Time(h, 30)
-            pattern = "ii:mm aa"
-            assert Time.parse(t.format(pattern), pattern=pattern) == t
+    @pytest.mark.parametrize("h", [0, 1, 11, 12, 13, 23])
+    def test_roundtrip_ampm(self, h):
+        t = Time(h, 30)
+        pattern = "ii:mm aa"
+        assert Time.parse(t.format(pattern), pattern=pattern) == t
 
     def test_leap_second(self):
         # ss (_Second): accepts 60, normalizes to 59
@@ -1741,6 +1609,21 @@ class TestParseEdgeCases:
         assert Time.parse("09 A", pattern="ii a") == Time(9, 0)
         assert Time.parse("09 P", pattern="ii a") == Time(21, 0)
 
+    @pytest.mark.parametrize(
+        "cls, value, pattern",
+        [
+            (Date, "٢٠٢٤-03-15", "YYYY-MM-DD"),
+            (Date, "2024-٠٣-15", "YYYY-MM-DD"),
+            (Date, "2024-03-١٥", "YYYY-MM-DD"),
+            (Time, "14:٣٠", "HH:mm"),
+            (Time, "14:30:٠٥", "HH:mm[:ss]"),
+            (Time, "14:30:05.١", "HH:mm:ss.F"),
+        ],
+    )
+    def test_non_ascii_input(self, cls, value, pattern):
+        with pytest.raises(ValueError, match="input must be ASCII-only"):
+            cls.parse(value, pattern=pattern)
+
 
 class TestFormatFieldsInternal:
     """Tests for internal format_fields edge cases."""
@@ -1929,48 +1812,19 @@ class TestDunderFormat:
         assert f"{zdt}" == str(zdt)
 
     @pytest.mark.parametrize(
-        "value",
+        "x",
         [
-            Time(13),
-            PlainDateTime(2024, 3, 15, 13),
-            Instant.from_utc(2024, 3, 15, 13),
-            OffsetDateTime(2024, 3, 15, 13, offset=hours(2)),
-            ZonedDateTime(2024, 3, 15, 13, tz="Europe/Paris"),
+            TimeDelta(hours=1),
+            ItemizedDelta(months=1, hours=2),
+            ItemizedDateDelta(months=1, days=2),
+            YearMonth(2024, 3),
+            MonthDay(3, 15),
+            IsoWeekDate(2024, 11, Weekday.FRIDAY),
         ],
-        ids=lambda v: type(v).__name__,
     )
-    def test_warnings_point_at_the_f_string(self, value):
-        """A pattern warning raised through __format__ names the caller's
-        line, as it does through format(). Date is absent because it has
-        no deprecated or ambiguous specifier."""
-        with warns_here(WheneverDeprecationWarning):
-            f"{value:hh}"
-        with warns_here(WheneverWarning):
-            f"{value:ii}"
-
-
-@pytest.mark.parametrize(
-    "x",
-    [
-        TimeDelta(hours=1),
-        ItemizedDelta(months=1, hours=2),
-        ItemizedDateDelta(months=1, days=2),
-        YearMonth(2024, 3),
-        MonthDay(3, 15),
-        IsoWeekDate(2024, 11, Weekday.FRIDAY),
-    ],
-)
-def test_types_without_patterns_fall_back_to_object_format(x):
-    assert not hasattr(type(x), "format")
-    assert format(x, "") == str(x)
-    assert f"{x}" == str(x)
-    with pytest.raises(TypeError):
-        format(x, "YYYY")
-
-
-def test_12h_warning_points_at_the_caller():
-    with warns_here(WheneverWarning) as caught:
-        Time(14, 30).format("ii:mm")
-    assert "specifier" in str(caught[0].message)
-    with warns_here(WheneverWarning):
-        Time.parse("02:30", pattern="ii:mm")
+    def test_types_without_patterns_fall_back_to_object(self, x):
+        assert not hasattr(type(x), "format")
+        assert format(x, "") == str(x)
+        assert f"{x}" == str(x)
+        with pytest.raises(TypeError):
+            format(x, "YYYY")

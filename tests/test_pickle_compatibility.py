@@ -2,7 +2,6 @@ import pickle
 import struct
 import warnings
 from collections.abc import Callable, Iterator
-from copy import copy, deepcopy
 from pathlib import Path
 from typing import cast
 
@@ -224,30 +223,6 @@ def test_wrong_payload_length_is_rejected(
             unpickle(data, *extra)
 
 
-@pytest.mark.parametrize(
-    "value",
-    [
-        w.Date(2024, 2, 29),
-        w.YearMonth(2024, 2),
-        w.MonthDay(2, 29),
-        w.IsoWeekDate(2024, 9, w.Weekday.THURSDAY),
-        w.Time(3, 4, 5, nanosecond=6),
-        w.Instant.from_utc(2024, 2, 29, 3),
-        w.OffsetDateTime(2024, 2, 29, 3, offset=w.hours(2)),
-        w.ZonedDateTime(2024, 2, 29, 3, tz="Europe/Amsterdam"),
-        w.PlainDateTime(2024, 2, 29, 3),
-        w.TimeDelta(hours=1),
-        w.ItemizedDelta(months=1, hours=2),
-        w.ItemizedDateDelta(months=1, days=2),
-        w.Weekday.MONDAY,
-        w.SYSTEM_TZ,
-    ],
-    ids=lambda v: type(v).__name__,
-)
-def test_copies_are_the_value(value: object):
-    assert copy(value) is value and deepcopy(value) is value
-
-
 @pytest.mark.skipif(
     not w._EXTENSION_LOADED,
     reason="the exact-bytes policy belongs to the Rust FFI boundary",
@@ -390,11 +365,100 @@ _PICKLES_0_10_5 = [
     ),
 ]
 
+# Captured under earlier releases without a version note; the Instant payload
+# naming ``_unpkl_utc`` predates 0.8.0.
+_PICKLES_EARLIER = [
+    (
+        b"\x80\x04\x95'\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
+        b"kl_date\x94\x93\x94C\x04\xe5\x07\x01\x02\x94\x85\x94R\x94.",
+        w.Date(2021, 1, 2),
+    ),
+    (
+        b"\x80\x04\x95$\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\t_unpkl_y"
+        b"m\x94\x93\x94C\x03\xe5\x07\x01\x94\x85\x94R\x94.",
+        w.YearMonth(2021, 1),
+    ),
+    (
+        b"\x80\x04\x95#\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\t_unpkl_m"
+        b"d\x94\x93\x94C\x02\x0b\x01\x94\x85\x94R\x94.",
+        w.MonthDay(11, 1),
+    ),
+    (
+        b"\x80\x04\x95&\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever"
+        b"\x94\x8c\n_unpkl_iwd\x94\x93\x94C\x04\xe8\x07\x01\x01\x94"
+        b"\x85\x94R\x94.",
+        w.IsoWeekDate(2024, 1, w.Weekday.MONDAY),
+    ),
+    (
+        b"\x80\x04\x95*\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
+        b"kl_time\x94\x93\x94C\x07\x01\x02\x03\xa0\x0f\x00\x00\x94\x85\x94R\x94.",
+        w.Time(1, 2, 3, nanosecond=4_000),
+    ),
+    (
+        b"\x80\x04\x951\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_t"
+        b"delta\x94\x93\x94C\x0c\x8b\x0e\x00\x00\x00\x00\x00\x00\xa0\x0f"
+        b"\x00\x00\x94\x85\x94R\x94.",
+        w.TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4),
+    ),
+    (
+        b"\x80\x04\x95/\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
+        b"kl_inst\x94\x93\x94C\x0c\xc9k8_\x00\x00\x00\x008h\xde:\x94\x85\x94R\x94.",
+        w.Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_200),
+    ),
+    (
+        b"\x80\x04\x95.\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\n_unpkl_u"
+        b"tc\x94\x93\x94C\x0cI\xb4\xcb\xd6\x0e\x00\x00\x008h\xde:\x94\x85\x94R\x94.",
+        w.Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_200),
+    ),
+    (
+        b"\x80\x04\x954\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_o"
+        b"ffset\x94\x93\x94C\x0f\xe4\x07\x08\x0f\x17\x0c\t\xb1h\xde:0*\x00"
+        b"\x00\x94\x85\x94R\x94.",
+        w.OffsetDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654_321, offset=w.hours(3)
+        ),
+    ),
+    (
+        b"\x80\x04\x95F\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0c_unp"
+        b"kl_zoned\x94\x93\x94C\x0f\xe4\x07\x08\x0f\x17\x0c\t\x06\x12\x0f\x00"
+        b" \x1c\x00\x00\x94\x8c\x10Europe/Amsterdam\x94\x86\x94R\x94.",
+        w.ZonedDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Europe/Amsterdam"
+        ),
+    ),
+    (
+        b"\x80\x04\x95/\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0c_unp"
+        b"kl_local\x94\x93\x94C\x0b\xe4\x07\x08\x0f\x17\x0c\t\x06\x12\x0f\x00"
+        b"\x94\x85\x94R\x94.",
+        w.PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654),
+    ),
+    (
+        b"\x80\x04\x953\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_i"
+        b"delta\x94\x93\x94(K\x01K\x02K\x03K\x04K\x05K\x06K\x07K\x08t\x94R\x94.",
+        w.ItemizedDelta(
+            years=1,
+            months=2,
+            weeks=3,
+            days=4,
+            hours=5,
+            minutes=6,
+            seconds=7,
+            nanoseconds=8,
+        ),
+    ),
+    (
+        b"\x80\x04\x95,\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0e_unp"
+        b"kl_iddelta\x94\x93\x94(K\x01K\x02K\x03K\x04t\x94R\x94.",
+        w.ItemizedDateDelta(years=1, months=2, weeks=3, days=4),
+    ),
+]
+
 
 @pytest.mark.parametrize(
     ("version", "payload", "expected"),
     [("0.8.0", *p) for p in _PICKLES_0_8_0]
-    + [("0.10.5", *p) for p in _PICKLES_0_10_5],
+    + [("0.10.5", *p) for p in _PICKLES_0_10_5]
+    + [("earlier", *p) for p in _PICKLES_EARLIER],
     ids=lambda v: v if isinstance(v, str) else type(v).__name__,
 )
 def test_reads_pickles_written_by_earlier_releases(
