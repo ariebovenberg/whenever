@@ -3734,7 +3734,7 @@ class _TimePatchContextManager(ContextManager[TimePatch], Protocol):
     def __call__(self, f: Callable[_P, _R], /) -> Callable[_P, _R]: ...
 
 def patch_current_time(
-    i: Instant | OffsetDateTime | ZonedDateTime, /, *, keep_ticking: bool
+    dt: Instant | OffsetDateTime | ZonedDateTime, /, *, keep_ticking: bool
 ) -> _TimePatchContextManager: ...
 
 # Deprecated: use get_tzpath().

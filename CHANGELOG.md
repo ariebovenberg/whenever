@@ -14,7 +14,9 @@ deprecated interfaces are removed.
   library conversion methods, `TimeDelta.in_*()` convenience methods,
   `Date.days_since()` and `Date.days_until()`, deprecated `Date` operators,
   `parse_strptime()`, `ZonedDateTime.start_of_day()`, `ignore_dst`, and
-  `ImplicitlyIgnoringDST`.
+  `ImplicitlyIgnoringDST`. Pickles of `DateDelta` and `DateTimeDelta` no
+  longer load; pickles of every other type written by 0.8.0 or later keep
+  loading.
 
   See the 0.10.0 entry below for migration instructions.
 
@@ -94,7 +96,7 @@ deprecated interfaces are removed.
   its local representation with the current rules.
 
 - Scheduled for 1.0: `Instant` pickles written before 0.8.0 stop loading.
-  Pickles written by 0.8.0 or later keep loading in 1.0.
+  Pickles written by 0.8.0 or later of a type 1.0 still has keep loading.
 
 **Added and improved**
 
@@ -294,8 +296,14 @@ deprecated interfaces are removed.
   accepts a lowercase `w`.
 - A `format()` or `parse()` that raises no longer warns first about a
   12-hour clock without AM/PM.
+- Pydantic validation accepts a `str` subclass, as `parse_iso()` does.
+  `patch_current_time()` rejects an argument that is not an exact time with
+  a `TypeError` naming the accepted types, as `TimePatch.move_to()` does,
+  and `TimePatch.shift()` with a rejected keyword no longer warns before
+  raising.
 
-Migration summary:
+Migration summary. A type checker that implements PEP 702 (`@deprecated`)
+flags each spelling in this table at the call site:
 
 | Deprecated spelling | Preferred spelling |
 |---|---|

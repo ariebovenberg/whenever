@@ -9,7 +9,7 @@ from threading import RLock
 from typing import Any, Iterable, Iterator, Protocol, no_type_check
 from warnings import warn
 
-from ._common import DAYS_NOT_ALWAYS_24H_MSG
+from ._common import DAYS_NOT_ALWAYS_24H_MSG, UNSET
 from ._core import (
     DaysAssumed24HoursWarning,
     Instant,
@@ -43,8 +43,32 @@ __all__ = [
 
 
 class TimePatch(Protocol):  # pragma: no cover
-    def shift(self, *args: Any, **kwargs: Any) -> None:
-        """Move the patched clock by an exact elapsed-time amount."""
+    """The handle to an active **time patch**: move the patched clock with
+    ``shift()`` or ``move_to()``.
+    """
+
+    def shift(
+        self,
+        delta: TimeDelta = UNSET,
+        /,
+        *,
+        weeks: float = 0,
+        days: float = 0,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+        days_assumed_24h_ok: bool = False,
+    ) -> None:
+        """Move the patched clock by an elapsed time, given as a
+        ``TimeDelta`` or as the keywords of ``Instant.add()``.
+        ``days=`` and ``weeks=`` count 24-hour days and warn with
+        :exc:`~whenever.DaysAssumed24HoursWarning` unless
+        ``days_assumed_24h_ok=True``. A ticking patch shifts from the
+        current instant.
+        """
         ...
 
     def move_to(
@@ -82,18 +106,25 @@ class _TimePatch:
         self._pin = pin
 
     def shift(self, *args: Any, **kwargs: Any) -> None:
-        """Move the patched clock by an exact elapsed-time amount."""
+        """Move the patched clock by an elapsed time, given as a
+        ``TimeDelta`` or as the keywords of ``Instant.add()``.
+        ``days=`` and ``weeks=`` count 24-hour days and warn with
+        :exc:`~whenever.DaysAssumed24HoursWarning` unless
+        ``days_assumed_24h_ok=True``. A ticking patch shifts from the
+        current instant.
+        """
         if not args:
             # Build the delta here rather than in Instant.add(), so that the
             # days-are-24-hours warning points at the caller of shift().
             ok = kwargs.pop("days_assumed_24h_ok", False)
+            delta = TimeDelta(**kwargs, days_assumed_24h_ok=True)
             if (kwargs.get("weeks") or kwargs.get("days")) and not ok:
                 warn(
                     DAYS_NOT_ALWAYS_24H_MSG,
                     DaysAssumed24HoursWarning,
                     stacklevel=2,
                 )
-            args, kwargs = (TimeDelta(**kwargs, days_assumed_24h_ok=True),), {}
+            args, kwargs = (delta,), {}
         with _patch_lock:
             self._check_active()
             current = Instant.now() if self._keep_ticking else self._pin
@@ -128,7 +159,9 @@ def patch_current_time(
     *,
     keep_ticking: bool,
 ) -> Iterator[TimePatch]:
-    """Patch the current time to a fixed value (for testing purposes).
+    """Patch the current time as whenever sees it, for testing.
+    A **frozen** patch (``keep_ticking=False``) holds one instant; a
+    **ticking** patch (``keep_ticking=True``) advances from it.
     Works as a context manager or as a decorator. Patches do not nest:
     creating one while another is active raises :exc:`RuntimeError`.
     The decorator form does not pass the handle to the decorated function.
@@ -162,6 +195,11 @@ def patch_current_time(
     """
     global _active_patch
 
+    if not isinstance(dt, (Instant, OffsetDateTime, ZonedDateTime)):
+        raise TypeError(
+            "patch_current_time() argument must be an Instant, "
+            "OffsetDateTime, or ZonedDateTime"
+        )
     with _patch_lock:
         if _active_patch is not None:
             raise RuntimeError("a time patch is already active")
@@ -354,11 +392,12 @@ def _pydantic_parse(cls: type, v: object) -> object:
     # exact type comparison is OK: whenever types don't allow subclassing
     if type(v) is cls:
         return v
-    # whenever also doesn't allow string subclasses
-    elif type(v) is str:
+    elif isinstance(v, str):
         return cls.parse_iso(v)
     else:
-        raise ValueError(f"cannot parse {cls.__name__} from type {type(v)}")
+        raise ValueError(
+            f"cannot parse {cls.__name__} from type {type(v).__name__}"
+        )
 
 
 @no_type_check

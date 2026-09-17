@@ -127,10 +127,11 @@ offset precision.
 ## Pydantic integration
 
 `whenever` types support serialization and deserialization with
-[Pydantic](https://docs.pydantic.dev). Existing instances are preserved;
-strings are validated with each type's `parse_iso()` method and serialized to
-its canonical ISO representation. Other input types and invalid strings raise
-Pydantic's `ValidationError`.
+[Pydantic](https://docs.pydantic.dev) 2. Existing instances are preserved;
+strings are validated with each type's `parse_iso()` method and serialized as
+its **ISO 8601 string**. Other input types and invalid strings raise
+Pydantic's `ValidationError`. The JSON schema of every `whenever` field is a
+string.
 
 ```python
 >>> from pydantic import BaseModel
@@ -150,6 +151,5 @@ Pydantic's `ValidationError`.
 
 ```{note}
 
-Whenever's parsing is stricter than Pydantic's default `datetime` parsing
-behavior. More flexible parsing may be added in the future.
+Parsing is ISO 8601 only, stricter than Pydantic's own `datetime` parsing.
 ```

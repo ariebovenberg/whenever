@@ -7551,7 +7551,10 @@ class PotentialDstBugWarning(WheneverWarning):
 
 class PickleOffsetMismatchWarning(WheneverWarning):
     """The offset stored in a ZonedDateTime pickle no longer matches the
-    time zone's current rules.
+    time zone's current rules. The instant is preserved; the local fields
+    and offset are recomputed from the current rules. Not escapable per
+    call: filter the category to reject a mismatch. See the pickling guide
+    and ADR 0006.
     """
 
 

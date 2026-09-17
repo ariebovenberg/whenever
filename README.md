@@ -121,7 +121,7 @@ while many serious and long-standing issues remain unaddressed.
 - 📆 Support for date arithmetic
 - ⏱️ Nanosecond precision
 - 🗄️ [SQLAlchemy support](https://pypi.org/project/whenever-sqlalchemy/)
-- 🪃 Pydantic support (beta)
+- 🪃 Pydantic support
 - 🦀 Rust!—but with a [pure-Python option](https://whenever.readthedocs.io/en/latest/faq.html#how-can-i-use-the-pure-python-version)
 - 🧵 Free-threading support (beta)
 - 🚀 Supports per-interpreter GIL

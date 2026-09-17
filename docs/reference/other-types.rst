@@ -41,13 +41,25 @@ Sunday 7. The module constants are the members:
 
 
 .. autotype:: DeltaUnitStr
+
+   The components of an :class:`ItemizedDelta`: its mapping keys and the
+   units ``in_units=`` accepts. See :ref:`durations`.
+
 .. autotype:: DeltaTotalUnitStr
 
    The units ``total()`` accepts, ``milliseconds`` and ``microseconds``
    included. See :ref:`delta-total`.
 
 .. autotype:: DateDeltaUnitStr
+
+   The calendar units: the components of an :class:`ItemizedDateDelta` and
+   the units ``in_units=`` accepts on a date.
+
 .. autotype:: ExactDeltaUnitStr
+
+   The exact units, ``weeks`` through ``nanoseconds``: the units
+   ``in_units=`` accepts on an exact time.
+
 .. data:: AnyDelta
 
    ``TimeDelta | ItemizedDelta | ItemizedDateDelta``: the union of the three

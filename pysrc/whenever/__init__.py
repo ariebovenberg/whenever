@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-
 # Almost everything is lazily imported, to speed up initial import time.
 def __getattr__(name: str) -> object:
     # When any name from a group is first accessed, the whole module is loaded

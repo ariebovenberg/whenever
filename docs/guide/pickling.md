@@ -2,17 +2,27 @@
 myst:
   html_meta:
     description: >-
-      How a pickled ZonedDateTime behaves across a time zone data update: the
-      instant is preserved, local fields and offset are recomputed, and
-      PickleOffsetMismatchWarning reports the difference. Which versions
-      and backends can read each other's pickles.
+      Pickling and copying whenever values: every type pickles on both
+      backends, copy() and deepcopy() return the value itself, and a pickled
+      ZonedDateTime across a time zone data update keeps its instant while
+      PickleOffsetMismatchWarning reports the recomputed offset. Which
+      versions can read each other's pickles.
 ---
 
 (pickling)=
-# Pickling zoned datetimes
+# Pickling and copying
+
+Every `whenever` value pickles, on the Rust extension and on the pure-Python
+backend alike, and a pickle written by one backend loads on the other. The one
+exception is a {class}`~whenever.ZonedDateTime` whose system time zone has no
+time zone ID: pickling it raises `ValueError` (see {ref}`systemtime`).
+`copy.copy()` and `copy.deepcopy()` return the value itself, because values
+are immutable.
+
+## Zoned datetimes across time zone data updates
 
 A pickled {class}`~whenever.ZonedDateTime` stores its local fields, observed
-offset, and IANA time zone ID. It does not embed a snapshot of the time zone
+offset, and time zone ID. It does not embed a snapshot of the time zone
 database. Unpickling loads the rules available in the new environment, which
 may differ after a time zone data update or on another machine.
 
@@ -59,7 +69,8 @@ out-of-range payloads still raise exceptions.
 
 ## Compatibility
 
-Pickles are readable across the Python and Rust backends of the same version,
-and across versions: 1.0 reads pickles written by 0.8.0 or later. The payload
-stores a time zone ID, never the rules, so what a pickle loads as depends on
-the time zone data of the machine that loads it.
+1.0 reads every pickle written by 0.8.0 or later of a type it still has.
+`DateDelta` and `DateTimeDelta` pickles stopped loading in 0.11 with their
+types; `SystemDateTime` pickles in 0.9.0. The payload stores a time zone ID,
+never the rules, so what a pickle loads as depends on the time zone data of
+the machine that loads it.

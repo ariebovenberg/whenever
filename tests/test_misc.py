@@ -386,6 +386,10 @@ def test_time_machine():
         assert Instant.now() == Instant.from_utc(1980, 3, 2, hour=2)
 
 
+class _StrSubclass(str):
+    pass
+
+
 @pytest.mark.parametrize(
     "value, invalid_iso",
     [
@@ -416,9 +420,13 @@ def test_pydantic(value, invalid_iso):
 
     assert adapter.validate_python(value) is value
     assert adapter.validate_python(str(value)) == value
+    assert adapter.validate_python(_StrSubclass(str(value))) == value
     assert adapter.validate_json(serialized) == value
     assert adapter.dump_json(value) == serialized.encode()
-    with pytest.raises(pydantic.ValidationError, match="cannot parse"):
+    with pytest.raises(
+        pydantic.ValidationError,
+        match=f"cannot parse {type(value).__name__} from type int",
+    ):
         adapter.validate_python(42)
     with pytest.raises(pydantic.ValidationError):
         adapter.validate_python(invalid_iso)
@@ -526,6 +534,17 @@ def test_time_patch_move_to_rejects_non_exact_time():
             p.move_to(Date(2020, 8, 15))  # type: ignore[arg-type]
 
 
+def test_patch_current_time_rejects_non_exact_time():
+    with pytest.raises(
+        TypeError, match=r"patch_current_time\(\) argument must be an Instant"
+    ):
+        with patch_current_time(
+            PlainDateTime(2020, 1, 1),  # type: ignore[arg-type]
+            keep_ticking=False,
+        ):
+            pass  # pragma: no cover
+
+
 def test_time_patch_rejects_invalid_shift_arguments():
     i = Instant.from_utc(1980, 3, 2, hour=2)
     with patch_current_time(i, keep_ticking=False) as handle:
@@ -535,6 +554,10 @@ def test_time_patch_rejects_invalid_shift_arguments():
             handle.shift(years=1)  # type: ignore[call-overload]
         with pytest.raises(TypeError, match="[Cc]annot mix"):
             handle.shift(hours(1), minutes=1)  # type: ignore[call-overload]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with pytest.raises(TypeError, match="unexpected keyword"):
+                handle.shift(days=1, foo=1)  # type: ignore[call-overload]
 
 
 def test_patch_current_time_decorator_does_not_inject_handle():
@@ -1138,11 +1161,14 @@ def test_time_patch_shift_warning_location():
         with warns_here(DaysAssumed24HoursWarning):
             p.shift(days=1)
         assert Instant.now() == i.add(hours=24)
+        with warns_here(DaysAssumed24HoursWarning):
+            p.shift(weeks=1)
+        assert Instant.now() == i.add(hours=24 * 8)
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             p.shift(days=1, days_assumed_24h_ok=True)
             p.shift(hours(1))
-        assert Instant.now() == i.add(hours=49)
+        assert Instant.now() == i.add(hours=24 * 9 + 1)
 
 
 def test_itemized_date_delta_accepts_a_plain_reference():

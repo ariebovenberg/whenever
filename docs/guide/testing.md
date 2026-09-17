@@ -11,7 +11,7 @@ myst:
 
 ## Patching the current time
 
-Sometimes you need to 'fake' the output of `.now()` functions, typically for testing.
+Sometimes you need to control what `.now()` returns, typically for testing.
 `whenever` supports various ways to do this, depending on your needs:
 
 1. With {func}`whenever.patch_current_time`. It affects only
@@ -26,7 +26,7 @@ Sometimes you need to 'fake' the output of `.now()` functions, typically for tes
 
 It's also possible to use the
 [freezegun](https://github.com/spulec/freezegun) library,
-but it will *only work on the Pure-Python version* of `whenever`.
+but it will *only work on the pure-Python backend* of `whenever`.
 ```
 
 The context manager yields a {class}`~whenever.TimePatch` handle to the
@@ -42,8 +42,9 @@ movement and {meth}`~whenever.TimePatch.move_to` to set a new exact time:
 ...     assert Instant.now() == Instant("2024-06-01T12:00:00Z")
 ```
 
-`shift()` accepts exact units only. To perform calendar arithmetic, calculate
-the target explicitly and pass it to `move_to()`. A time patch is either
+`shift()` moves by elapsed time; `days=` and `weeks=` count 24-hour days and
+warn, as `Instant.add()` does. For months or years, compute the target and
+pass it to `move_to()`. A time patch is either
 **frozen** (`keep_ticking=False`) or **ticking** (`keep_ticking=True`). With a
 ticking patch, shifts apply to the patched current instant at the moment of
 the call and the clock then continues ticking from the result.

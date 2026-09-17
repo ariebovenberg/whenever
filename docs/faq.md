@@ -257,6 +257,7 @@ directory of the repository.
 Yes! Have a look at [`whenever-sqlalchemy`](https://pypi.org/project/whenever-sqlalchemy/),
 a separate package that provides SQLAlchemy types and utilities for working with `whenever`.
 
+(faq-pure-python)=
 ## How can I use the pure-Python version?
 
 `whenever` is implemented both in Rust and in pure Python. By default,
@@ -320,6 +321,8 @@ You can check if the Rust extension is being used by running:
 ```bash
 python -c "import whenever; print(whenever._EXTENSION_LOADED)"
 ```
+
+This attribute is a diagnostic, not part of the API.
 
 ## What about `dateutil`?
 

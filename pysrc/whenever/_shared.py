@@ -837,7 +837,7 @@ class IsoWeekDate(_Base):
 @no_type_check
 def _unpkl_iwd(data: bytes) -> IsoWeekDate:
     year, week, day = unpack("<hBB", data)
-    return IsoWeekDate._from_parts_unchecked(year, week, Weekday(day))
+    return IsoWeekDate(year, week, Weekday(day))
 
 
 def _parse_iso_week_date(s: str) -> tuple[int, int, int]:

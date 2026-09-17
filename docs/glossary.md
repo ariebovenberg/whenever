@@ -265,4 +265,17 @@ partial type
   `MonthDay`, and `IsoWeekDate`. *Partial* is the short form.
   Preferred over *smaller types*, *date-only types*, and *component types*.
   See {ref}`partial-api`.
+
+Rust extension
+  The compiled backend the default wheel ships, loaded when `import
+  whenever` finds it. *Backend* names either of the two.
+  Preferred over *native binary*, *compiled core*, and *the extension*.
+  See {doc}`performance`.
+
+pure-Python backend
+  The fallback that loads when the Rust extension is absent, and the
+  reference the extension mirrors. Behaviour is the same; speed is not.
+  Preferred over *pure-Python version*, *pure-Python implementation*,
+  *pure-Python option*, *pure-Python fallback*, and *pure-Python wheel*.
+  See {ref}`faq-pure-python`.
 ```
