@@ -511,11 +511,7 @@ You can use methods like :meth:`~PlainDateTime.assume_utc`
 or :meth:`~PlainDateTime.assume_tz` to find the corresponding exact time.
 ";
 pub(crate) const DATE_DAY: &CStr = c"\
-The day component of the date
-
->>> Date(2021, 1, 2).day
-2
-";
+The day component of the date";
 pub(crate) const DATE_DAY_OF_WEEK: &CStr = c"\
 The day of the week
 
@@ -603,11 +599,7 @@ The ISO week date for this date
 IsoWeekDate(\"2025-W01-1\")
 ";
 pub(crate) const DATE_MONTH: &CStr = c"\
-The month component of the date
-
->>> Date(2021, 1, 2).month
-1
-";
+The month component of the date";
 pub(crate) const DATE_MONTH_DAY: &CStr = c"\
 The month and day (without a year component)
 
@@ -792,11 +784,7 @@ Companion to :meth:`since` that calculates the difference until another date.
 See :meth:`since` for more information.
 ";
 pub(crate) const DATE_YEAR: &CStr = c"\
-The year component of the date
-
->>> Date(2021, 1, 2).year
-2021
-";
+The year component of the date";
 pub(crate) const DATE_YEAR_MONTH: &CStr = c"\
 The year and month (without a day component)
 
@@ -1585,23 +1573,11 @@ basic
     Whether to use the basic ISO format (without separators) instead of the extended one.
 ";
 pub(crate) const TIME_HOUR: &CStr = c"\
-The hour component of the time
-
->>> Time(12, 30, 0).hour
-12
-";
+The hour component of the time";
 pub(crate) const TIME_MINUTE: &CStr = c"\
-The minute component of the time
-
->>> Time(12, 30, 0).minute
-30
-";
+The minute component of the time";
 pub(crate) const TIME_NANOSECOND: &CStr = c"\
-The nanosecond component of the time
-
->>> Time(\"12:30:00.003\").nanosecond
-3000000
-";
+The nanosecond component of the time";
 pub(crate) const TIME_ON: &CStr = c"\
 Combine a time with a date to create a datetime
 
@@ -1671,11 +1647,7 @@ the day wraps around to midnight:
 Time(\"00:00:00\")
 ";
 pub(crate) const TIME_SECOND: &CStr = c"\
-The second component of the time
-
->>> Time(12, 30, 0).second
-0
-";
+The second component of the time";
 pub(crate) const TIME_TO_STDLIB: &CStr = c"\
 Convert to a standard library :class:`~datetime.time`
 

@@ -674,29 +674,17 @@ class Date(_Base):
 
     @property
     def year(self) -> int:
-        """The year component of the date
-
-        >>> Date(2021, 1, 2).year
-        2021
-        """
+        """The year component of the date"""
         return self._py_date.year
 
     @property
     def month(self) -> int:
-        """The month component of the date
-
-        >>> Date(2021, 1, 2).month
-        1
-        """
+        """The month component of the date"""
         return self._py_date.month
 
     @property
     def day(self) -> int:
-        """The day component of the date
-
-        >>> Date(2021, 1, 2).day
-        2
-        """
+        """The day component of the date"""
         return self._py_date.day
 
     def year_month(self) -> YearMonth:
@@ -1447,38 +1435,22 @@ class Time(_Base):
 
     @property
     def hour(self) -> int:
-        """The hour component of the time
-
-        >>> Time(12, 30, 0).hour
-        12
-        """
+        """The hour component of the time"""
         return self._py.hour
 
     @property
     def minute(self) -> int:
-        """The minute component of the time
-
-        >>> Time(12, 30, 0).minute
-        30
-        """
+        """The minute component of the time"""
         return self._py.minute
 
     @property
     def second(self) -> int:
-        """The second component of the time
-
-        >>> Time(12, 30, 0).second
-        0
-        """
+        """The second component of the time"""
         return self._py.second
 
     @property
     def nanosecond(self) -> int:
-        """The nanosecond component of the time
-
-        >>> Time("12:30:00.003").nanosecond
-        3000000
-        """
+        """The nanosecond component of the time"""
         return self._nanos
 
     def on(self, date: Date, /) -> PlainDateTime:
