@@ -24,11 +24,11 @@ pub(crate) fn warn_lossy_stdlib_subclass<T: PyStaticType>(
         return Ok(());
     };
     let package = module.as_str()?.split('.').next().unwrap_or("");
-    if !matches!(
+    let unreliable = matches!(
         (package, base),
         ("pandas", "datetime") | ("pandas", "timedelta") | ("pendulum", "timedelta")
-    ) && !(base == "date" && PyDateTime::isinstance(obj))
-    {
+    ) || (base == "date" && PyDateTime::isinstance(obj));
+    if !unreliable {
         return Ok(());
     }
     let qualname = cls.getattr(c"__qualname__")?;
