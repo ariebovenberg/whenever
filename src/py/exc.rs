@@ -18,7 +18,7 @@ pub(crate) struct PyErrMarker; // sentinel that the Python error indicator is se
 pub(crate) type PyResult<T> = Result<T, PyErrMarker>;
 pub(crate) type PyReturn = PyResult<Owned<PyObj>>;
 
-const RANGE_ERROR_MSG: &str = "Value or calculation out of range";
+const RANGE_ERROR_MSG: &str = "value or calculation out of range";
 
 /// Extension methods for [`PyResult`] to handle Python exceptions.
 pub(crate) trait PyResultExt<T>: Sized {
@@ -140,6 +140,14 @@ pub(crate) trait RaiseExt<T> {
     {
         self.ok_or_raise(exc_type_error(), msg)
     }
+
+    fn ok_or_else_type_err<F, M: ToPy>(self, fmt: F) -> PyResult<T>
+    where
+        Self: Sized,
+        F: FnOnce() -> M,
+    {
+        self.ok_or_else_raise(exc_type_error(), fmt)
+    }
 }
 
 impl<T> RaiseExt<T> for Option<T> {
@@ -194,6 +202,25 @@ pub(crate) fn raise_range_err<T>() -> PyResult<T> {
 /// `stacklevel` controls how many frames to skip (1 = caller).
 pub(crate) fn warn_with_class(warning_cls: PyObj, msg: &CStr, stacklevel: isize) -> PyResult<()> {
     match unsafe { PyErr_WarnEx(warning_cls.as_ptr(), msg.as_ptr(), stacklevel as _) } {
+        0 => Ok(()),
+        _ => Err(PyErrMarker),
+    }
+}
+
+/// Like `warn_with_class`, with a Python `str` as the message.
+pub(crate) fn warn_with_class_obj(
+    warning_cls: PyObj,
+    msg: PyObj,
+    stacklevel: isize,
+) -> PyResult<()> {
+    match unsafe {
+        PyErr_WarnFormat(
+            warning_cls.as_ptr(),
+            stacklevel as _,
+            c"%U".as_ptr(),
+            msg.as_ptr(),
+        )
+    } {
         0 => Ok(()),
         _ => Err(PyErrMarker),
     }

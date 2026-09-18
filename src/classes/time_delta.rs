@@ -6,14 +6,12 @@ pub(crate) use crate::domain::time_delta::{DeltaIncrement, TimeDelta};
 
 use crate::{
     classes::{
-        date_delta::{DateDelta, InitError},
-        datetime_delta::{DateTimeDelta, handle_exact_unit},
         instant::Instant,
         offset_datetime::OffsetDateTime,
         plain_datetime::{plain_since_inner, resolve_local_relative_to, total_calendar_plain},
         zoned_datetime::{ZonedDateTime, zoned_since_in_units, zoned_target},
     },
-    common::{pickle, round_args as round},
+    common::{compat::warn_lossy_stdlib_subclass, pickle, round_args as round},
     docstrings as doc,
     domain::{
         difference::{
@@ -22,6 +20,7 @@ use crate::{
         },
         scalar::*,
         time_delta::ParseError,
+        units::*,
     },
     py::*,
     pymodule::State,
@@ -52,21 +51,40 @@ impl TimeDelta {
         }
     }
 
+    /// The full value is checked, so a `timedelta` past `TimeDelta::MAX` by
+    /// less than a second is rejected too.
     pub(crate) fn from_stdlib_timedelta(d: PyTimeDelta) -> Option<Self> {
-        Some(TimeDelta {
-            secs: d.whole_seconds()?,
-            subsec: d.subsec(),
-        })
+        Self::from_nanos(d.total_nanos())
     }
 }
 
-impl PyPayload for TimeDelta {}
+impl PyPayload for TimeDelta {
+    fn class(state: &State) -> PyClass<Self> {
+        *state.time_delta_type
+    }
+}
 
-pub(crate) const MAX_SECS: u64 = (Year::MAX.get() as u64) * 366 * 24 * S_PER_HOUR as u64;
+pub(crate) const MAX_SECS: u64 = DeltaSeconds::MAX.get() as u64;
 pub(crate) const MAX_HOURS: u64 = MAX_SECS / S_PER_HOUR as u64;
-pub(crate) const MAX_MINUTES: u64 = MAX_SECS / 60;
-pub(crate) const MAX_MILLISECONDS: u64 = MAX_SECS * 1_000;
-pub(crate) const MAX_MICROSECONDS: u64 = MAX_SECS * 1_000_000;
+
+fn handle_exact_unit(value: PyObj, max: u64, name: &str, factor: i128) -> PyResult<i128> {
+    if let Some(int) = value.cast_allow_subclass::<PyInt>() {
+        let i = int.to_i64()?;
+        (i.unsigned_abs() <= max)
+            .then(|| i as i128 * factor)
+            .ok_or_range_err()
+    } else if let Some(py_float) = value.cast_allow_subclass::<PyFloat>() {
+        let f = py_float.to_f64()?;
+        (f.abs() <= max as f64)
+            .then_some((f * factor as f64) as i128)
+            .ok_or_range_err()
+    } else {
+        raise_type_err(format!("{name} must be an integer or float"))?
+    }
+}
+pub(crate) const MAX_MINUTES: u64 = MAX_SECS / S_PER_MINUTE as u64;
+pub(crate) const MAX_MILLISECONDS: u64 = MAX_SECS * (NS_PER_SECOND / NS_PER_MILLISECOND) as u64;
+pub(crate) const MAX_MICROSECONDS: u64 = MAX_SECS * (NS_PER_SECOND / NS_PER_MICROSECOND) as u64;
 
 pub(crate) const SINGLETONS: &[(&CStr, TimeDelta); 3] = &[
     (
@@ -88,21 +106,21 @@ pub(crate) fn set_timedelta_from_kwargs(
     eq: StrEqFn,
     state: &State,
 ) -> PyResult<bool> {
-    let unit = if eq(key, *state.str_weeks) {
+    let unit = if eq(key, *state.strs.weeks) {
         ExactUnit::Weeks
-    } else if eq(key, *state.str_days) {
+    } else if eq(key, *state.strs.days) {
         ExactUnit::Days
-    } else if eq(key, *state.str_hours) {
+    } else if eq(key, *state.strs.hours) {
         ExactUnit::Hours
-    } else if eq(key, *state.str_minutes) {
+    } else if eq(key, *state.strs.minutes) {
         ExactUnit::Minutes
-    } else if eq(key, *state.str_seconds) {
+    } else if eq(key, *state.strs.seconds) {
         ExactUnit::Seconds
-    } else if eq(key, *state.str_milliseconds) {
+    } else if eq(key, *state.strs.milliseconds) {
         ExactUnit::Milliseconds
-    } else if eq(key, *state.str_microseconds) {
+    } else if eq(key, *state.strs.microseconds) {
         ExactUnit::Microseconds
-    } else if eq(key, *state.str_nanoseconds) {
+    } else if eq(key, *state.strs.nanoseconds) {
         ExactUnit::Nanoseconds
     } else {
         return Ok(false);
@@ -125,7 +143,7 @@ where
     let mut units = ExactUnitSet::EMPTY;
 
     handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, *state.str_days_assumed_24h_ok) {
+        if eq(key, *state.strs.days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy()?;
             Ok(true)
         } else {
@@ -155,10 +173,8 @@ fn __new__(cls: PyClass<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> Py
             let arg = args.iter().next().unwrap();
             if PyStr::isinstance(arg) {
                 parse_iso(cls, arg)
-            } else if arg.cast_allow_subclass::<PyTimeDelta>().is_some() {
-                let d = arg
-                    .cast_exact::<PyTimeDelta>()
-                    .ok_or_type_err("argument must be datetime.timedelta exactly")?;
+            } else if let Some(d) = arg.cast_allow_subclass::<PyTimeDelta>() {
+                warn_lossy_stdlib_subclass::<PyTimeDelta>(state, arg, "timedelta")?;
                 TimeDelta::from_stdlib_timedelta(d)
                     .ok_or_range_err()?
                     .to_obj(cls)
@@ -199,7 +215,7 @@ pub(crate) fn seconds(state: &State, arg: PyObj) -> PyReturn {
         arg,
         MAX_SECS,
         "seconds",
-        1_000_000_000_i128,
+        NS_PER_SECOND as i128,
     )?)
     .to_obj(*state.time_delta_type)
 }
@@ -225,13 +241,9 @@ pub(crate) fn microseconds(state: &State, arg: PyObj) -> PyReturn {
 }
 
 pub(crate) fn nanoseconds(state: &State, arg: PyObj) -> PyReturn {
-    TimeDelta::from_nanos(
-        arg.cast_allow_subclass::<PyInt>()
-            .ok_or_value_err("nanoseconds must be an integer")?
-            .to_i128()?,
-    )
-    .ok_or_range_err()?
-    .to_obj(*state.time_delta_type)
+    TimeDelta::from_nanos(arg.expect_int("nanoseconds")?.to_i128()?)
+        .ok_or_range_err()?
+        .to_obj(*state.time_delta_type)
 }
 
 fn __richcmp__(cls: PyClass<TimeDelta>, a: TimeDelta, arg: PyObj, op: c_int) -> PyReturn {
@@ -300,7 +312,8 @@ fn mul_float(delta_obj: PyObj, factor: f64) -> PyReturn {
     } else {
         // SAFETY: one of the arguments is always the self type (the other is float)
         let (cls, delta) = unsafe { delta_obj.assume_heaptype::<TimeDelta>() };
-        TimeDelta::from_nanos_f64(delta.to_nanos_f64() * factor)
+        delta
+            .scale_f64(factor, false)
             .ok_or_range_err()?
             .to_obj(cls)
     }
@@ -315,21 +328,9 @@ fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
             if factor == 1 {
                 return Ok(Some(a_obj.newref()));
             } else if factor == 0 {
-                raise(exc_zero_division_error(), "Division by zero")?
+                raise(exc_zero_division_error(), "division by zero")?
             }
-            let nanos = delta.total_nanos();
-            // SAFETY: division by integer is never bigger than the original value.
-            Ok(Some(
-                TimeDelta::from_nanos_unchecked(
-                    // NOTE: try integer division if possible to avoid precision loss.
-                    if nanos % factor == 0 {
-                        nanos / factor
-                    } else {
-                        (nanos as f64 / factor as f64).round() as i128
-                    },
-                )
-                .to_obj(cls)?,
-            ))
+            Ok(Some(delta.div_round_half_even(factor).to_obj(cls)?))
         } else if let Some(py_float) = b_obj.cast_allow_subclass::<PyFloat>() {
             // SAFETY: the first operand is a TimeDelta and the second is a float.
             let (cls, delta) = unsafe { a_obj.assume_heaptype::<TimeDelta>() };
@@ -337,16 +338,17 @@ fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
             if factor == 1.0 {
                 return Ok(Some(a_obj.newref()));
             } else if factor == 0.0 {
-                raise(exc_zero_division_error(), "Division by zero")?
+                raise(exc_zero_division_error(), "division by zero")?
             }
             Ok(Some(
-                TimeDelta::from_nanos_f64(delta.to_nanos_f64() / factor)
+                delta
+                    .scale_f64(factor, true)
                     .ok_or_range_err()?
                     .to_obj(cls)?,
             ))
         } else if let BinaryCall::SameType { slf, other, .. } = operands {
             if other.is_zero() {
-                raise(exc_zero_division_error(), "Division by zero")?
+                raise(exc_zero_division_error(), "division by zero")?
             }
             Ok(Some(
                 (slf.total_nanos() as f64 / other.total_nanos() as f64).to_py()?,
@@ -363,7 +365,7 @@ fn __floordiv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
             return Ok(None);
         };
         if other.is_zero() {
-            raise(exc_zero_division_error(), "Division by zero")?
+            raise(exc_zero_division_error(), "division by zero")?
         }
         // NOTE: we can't avoid using i128 *in general*, because the divisor
         //       may be 1 nanosecond and the dividend TimeDelta.MAX
@@ -387,7 +389,7 @@ fn __mod__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
         let slf = slf.total_nanos();
         let other = other.total_nanos();
         if other == 0 {
-            raise(exc_zero_division_error(), "Division by zero")?
+            raise(exc_zero_division_error(), "division by zero")?
         }
         let mut result = slf % other;
         // Adjust for "correct" (Python style) floor division with mixed signs
@@ -418,39 +420,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
             )),
             BinaryCall::ExtTypes { cls, slf, other } => {
                 let state = cls.state();
-                if let Some(mut ddelta) = other.extract(*state.date_delta_type) {
-                    if negate {
-                        ddelta = -ddelta;
-                    }
-                    warn_with_class(
-                        *state.warn_deprecation,
-                        c"DateTimeDelta is deprecated and will be removed in a future release; use ItemizedDelta instead.",
-                        1,
-                    )?;
-                    Ok(Some(
-                        DateTimeDelta::new(ddelta, *slf)
-                            .ok_or_value_err("mixed sign of delta components")?
-                            .to_obj(*state.datetime_delta_type)?,
-                    ))
-                } else if let Some(mut dtdelta) = other.extract(*state.datetime_delta_type) {
-                    if negate {
-                        dtdelta = -dtdelta;
-                    }
-                    Ok(Some(
-                        dtdelta
-                            .add(DateTimeDelta {
-                                date: DateDelta::ZERO,
-                                time: *slf,
-                            })
-                            .map_err(|e| {
-                                value_err(match e {
-                                    InitError::TooBig => "Result out of range",
-                                    InitError::MixedSign => "mixed sign of delta components",
-                                })
-                            })?
-                            .to_obj(*state.datetime_delta_type)?,
-                    ))
-                } else if negate {
+                if negate {
                     Ok(None)
                 } else {
                     match_type!(
@@ -492,6 +462,7 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                             Ok(Some(zdt.shift(
                                 slf.to_shift(),
                                 None,
+                                1,
                                 state,
                                 *state.zoned_datetime_type,
                             )?))
@@ -513,8 +484,7 @@ fn __abs__(cls: PyClass<TimeDelta>, slf: PyRef<'_, TimeDelta>) -> PyReturn {
     }
 }
 
-#[allow(static_mut_refs)]
-static mut SLOTS: &[PyType_Slot] = &[
+static SLOTS: PyDefSlice<PyType_Slot> = PyDefSlice::new(&[
     slotmethod!(TimeDelta, Py_tp_new, __new__),
     slotmethod!(TimeDelta, Py_tp_richcompare, __richcmp__),
     slotmethod!(TimeDelta, Py_nb_negative, __neg__, 1),
@@ -534,7 +504,7 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_methods,
-        pfunc: unsafe { METHODS.as_ptr() as *mut c_void },
+        pfunc: METHODS.as_pfunc(),
     },
     PyType_Slot {
         slot: Py_tp_hash,
@@ -546,13 +516,13 @@ static mut SLOTS: &[PyType_Slot] = &[
     },
     PyType_Slot {
         slot: Py_tp_dealloc,
-        pfunc: generic_dealloc as *mut c_void,
+        pfunc: generic_dealloc::<TimeDelta> as *mut c_void,
     },
     PyType_Slot {
         slot: 0,
         pfunc: NULL(),
     },
-];
+]);
 
 fn __reduce__(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     let data = pickle::encode_time_delta(slf);
@@ -569,123 +539,11 @@ pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
         .to_obj(*state.time_delta_type)
 }
 
-fn in_nanoseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"in_nanoseconds() is deprecated and will be removed in a future release; use total('nanoseconds') instead.",
-        1,
-    )?;
-    slf.total_nanos().to_py()
-}
-
-fn in_microseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"in_microseconds() is deprecated and will be removed in a future release; use total('microseconds') instead.",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 * 1e6 + subsec.get() as f64 * 1e-3).to_py()
-}
-
-fn in_milliseconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"in_milliseconds() is deprecated and will be removed in a future release; use total('milliseconds') instead.",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 * 1e3 + subsec.get() as f64 * 1e-6).to_py()
-}
-
-fn in_seconds(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"in_seconds() is deprecated and will be removed in a future release; use total('seconds') instead.",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 + subsec.get() as f64 * 1e-9).to_py()
-}
-
-fn in_minutes(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"in_minutes() is deprecated and will be removed in a future release; use total('minutes') instead.",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 / 60.0 + subsec.get() as f64 * 1e-9 / 60.0).to_py()
-}
-
-fn in_hours(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"in_hours() is deprecated and will be removed in a future release; use total('hours') instead.",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 / 3600.0 + subsec.get() as f64 * 1e-9 / 3600.0).to_py()
-}
-
-fn in_days_of_24h(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"in_days_of_24h() is deprecated and will be removed in a future release; use total('days') instead.",
-        1,
-    )?;
-    let TimeDelta { secs, subsec } = slf;
-    (secs.get() as f64 / S_PER_DAY as f64 + subsec.get() as f64 * 1e-9 / S_PER_DAY as f64).to_py()
-}
-
-fn from_py_timedelta(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"from_py_timedelta() is deprecated and will be removed in a future release; use TimeDelta() instead.",
-        1,
-    )?;
-    if let Some(d) = arg.cast_exact::<PyTimeDelta>() {
-        TimeDelta::from_stdlib_timedelta(d)
-            .ok_or_range_err()?
-            .to_obj(cls)
-    } else {
-        raise_type_err("argument must be datetime.timedelta exactly")
-    }
-}
-
 fn to_stdlib(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     cls.state()
         .py_api()?
         .new_timedelta(slf)
         .map(Owned::into_obj)
-}
-
-fn py_timedelta(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
-    warn_with_class(
-        *cls.state().warn_deprecation,
-        c"py_timedelta() is deprecated and will be removed in a future release; use to_stdlib() instead.",
-        1,
-    )?;
-    to_stdlib(cls, slf)
-}
-
-fn in_hrs_mins_secs_nanos(_: PyType, slf: TimeDelta) -> PyReturn {
-    let TimeDelta { secs, subsec } = slf;
-    let secs = secs.get();
-    let (secs, nanos) = if secs >= 0 {
-        (secs, subsec.get())
-    } else if subsec.get() == 0 {
-        (secs, 0)
-    } else {
-        (secs + 1, subsec.get() - NS_PER_SEC as i32)
-    };
-    [
-        (secs / S_PER_HOUR as i64).to_py()?,
-        (secs % S_PER_HOUR as i64 / 60).to_py()?,
-        (secs % 60).to_py()?,
-        nanos.to_py()?,
-    ]
-    .into_pytuple()
 }
 
 fn format_iso(_: PyType, slf: TimeDelta) -> PyReturn {
@@ -697,10 +555,10 @@ fn parse_iso(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
         .cast_allow_subclass::<PyStr>()
         // NOTE: this exception message also needs to make sense when
         // called through the constructor
-        .ok_or_type_err("when parsing from ISO format, the argument must be str")?;
+        .ok_or_type_err("parse_iso() argument must be a string")?;
     match TimeDelta::parse_iso(py_str.as_utf8()?) {
         Ok(d) => d.to_obj(cls),
-        Err(ParseError::Invalid) => raise_value_err(format!("Invalid format: {arg}")),
+        Err(ParseError::Invalid) => raise_value_err(format!("invalid ISO 8601 string: {arg}")),
         Err(ParseError::OutOfRange) => raise_range_err(),
     }
 }
@@ -750,9 +608,9 @@ fn add_method(
     }
     let other = match arg {
         Some(arg) => arg.extract(cls).ok_or_type_err(if negate {
-            "subtract() argument must be a whenever.TimeDelta"
+            "subtract() argument must be a TimeDelta"
         } else {
-            "add() argument must be a whenever.TimeDelta"
+            "add() argument must be a TimeDelta"
         })?,
         None if kwargs.original_len() == 0 => return slf.to_obj(cls),
         None => timedelta_from_kwargs(fname, kwargs, cls.state())?,
@@ -776,16 +634,22 @@ fn in_units(
     let mut increment = difference::DifferenceIncrement::MIN;
     let mut relative_to_arg = None;
     let mut suppress_24h_warning = false;
+    let mut naive_arithmetic_ok = false;
+    let mut stale_offset_ok = false;
 
     handle_kwargs("in_units", kwargs, |key, value, eq| {
-        if eq(key, *state.str_round_mode) {
-            mode = round::Mode::from_py_named("rounding mode", value, &state.round_mode_strs)?;
-        } else if eq(key, *state.str_round_increment) {
+        if eq(key, *state.strs.round_mode) {
+            mode = round::Mode::from_py_named("round_mode", value, &state.strs)?;
+        } else if eq(key, *state.strs.round_increment) {
             increment = difference::DifferenceIncrement::from_py(value)?;
-        } else if eq(key, *state.str_relative_to) {
+        } else if eq(key, *state.strs.relative_to) {
             relative_to_arg = Some(value);
-        } else if eq(key, *state.str_days_assumed_24h_ok) {
+        } else if eq(key, *state.strs.days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy()?;
+        } else if eq(key, *state.strs.naive_arithmetic_ok) {
+            naive_arithmetic_ok = value.is_truthy()?;
+        } else if eq(key, *state.strs.stale_offset_ok) {
+            stale_offset_ok = value.is_truthy()?;
         } else {
             return Ok(false);
         }
@@ -815,7 +679,12 @@ fn in_units(
 
         // PlainDateTime/OffsetDateTime: treat local time as UTC (no DST).
         // Emit appropriate warnings only when calendar or day/week units are involved.
-        let b_dt = resolve_local_relative_to(arg, state, has_cal_or_date)?;
+        let b_dt = resolve_local_relative_to(
+            arg,
+            state,
+            has_cal_or_date && !naive_arithmetic_ok,
+            has_cal_or_date && !stale_offset_ok,
+        )?;
 
         // Compute the shifted datetime by treating b_dt as UTC anchor.
         let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
@@ -832,6 +701,9 @@ fn in_units(
             false,
         )
     } else {
+        let Some(exact) = units.to_exact_assuming_24h_days() else {
+            return raise_type_err("relative_to is required for years and months");
+        };
         if units.has_days_or_weeks() && !suppress_24h_warning {
             warn_with_class(
                 *state.warn_days_not_always_24h,
@@ -839,14 +711,9 @@ fn in_units(
                 1,
             )?;
         }
-        if let Some(exact) = units.to_exact_assuming_24h_days() {
-            let result = slf
-                .in_exact_units(exact, increment, mode.to_abs_euclid(neg))
-                .ok_or_range_err()?;
-            result.to_obj(state)
-        } else {
-            raise_type_err("years and months units require a `relative_to` argument")
-        }
+        slf.in_exact_units(exact, increment, mode.to_abs_euclid(neg))
+            .ok_or_range_err()?
+            .to_obj(state)
     }
 }
 
@@ -862,11 +729,17 @@ fn total(
 
     let mut relative_to_arg = None;
     let mut suppress_24h_warning = false;
+    let mut naive_arithmetic_ok = false;
+    let mut stale_offset_ok = false;
     handle_kwargs("total", kwargs, |key, value, eq| {
-        if eq(key, *state.str_relative_to) {
+        if eq(key, *state.strs.relative_to) {
             relative_to_arg = Some(value);
-        } else if eq(key, *state.str_days_assumed_24h_ok) {
+        } else if eq(key, *state.strs.days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy()?;
+        } else if eq(key, *state.strs.naive_arithmetic_ok) {
+            naive_arithmetic_ok = value.is_truthy()?;
+        } else if eq(key, *state.strs.stale_offset_ok) {
+            stale_offset_ok = value.is_truthy()?;
         } else {
             return Ok(false);
         }
@@ -897,8 +770,7 @@ fn total(
         Err(calendar_unit) => calendar_unit,
     };
 
-    let arg = relative_to_arg
-        .ok_or_type_err("for calendar units, a `relative_to` argument must be passed")?;
+    let arg = relative_to_arg.ok_or_type_err("relative_to is required for years and months")?;
 
     // ZonedDateTime: full DST-aware path via zoned_target.
     if let Some(zdt) = arg.extract_ref(*state.zoned_datetime_type) {
@@ -911,7 +783,7 @@ fn total(
     // diff, emitting appropriate warnings. Same approach as Python's
     // `assume_tz("UTC")` trick (to_tz("UTC") would be wrong: it re-interprets
     // the instant in UTC rather than keeping the local date as the anchor).
-    let b_dt = resolve_local_relative_to(arg, state, true)?;
+    let b_dt = resolve_local_relative_to(arg, state, !naive_arithmetic_ok, !stale_offset_ok)?;
 
     let neg = slf.is_negative();
     let a_inst = b_dt.assume_utc().shift(slf).ok_or_range_err()?;
@@ -956,31 +828,13 @@ pub(crate) fn total_calendar(
     (trunc_amount as f64 + r.to_nanos_f64() / e.to_nanos_f64()).to_py()
 }
 
-static mut METHODS: &[PyMethodDef] = &[
+static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(TimeDelta, __reduce__, c""),
     method0!(TimeDelta, format_iso, doc::TIMEDELTA_FORMAT_ISO),
     classmethod1!(TimeDelta, parse_iso, doc::TIMEDELTA_PARSE_ISO),
-    method0!(TimeDelta, in_nanoseconds, doc::TIMEDELTA_IN_NANOSECONDS),
-    method0!(TimeDelta, in_microseconds, doc::TIMEDELTA_IN_MICROSECONDS),
-    method0!(TimeDelta, in_milliseconds, doc::TIMEDELTA_IN_MILLISECONDS),
-    method0!(TimeDelta, in_seconds, doc::TIMEDELTA_IN_SECONDS),
-    method0!(TimeDelta, in_minutes, doc::TIMEDELTA_IN_MINUTES),
-    method0!(TimeDelta, in_hours, doc::TIMEDELTA_IN_HOURS),
-    method0!(TimeDelta, in_days_of_24h, doc::TIMEDELTA_IN_DAYS_OF_24H),
-    classmethod1!(
-        TimeDelta,
-        from_py_timedelta,
-        doc::TIMEDELTA_FROM_PY_TIMEDELTA
-    ),
     method0!(TimeDelta, to_stdlib, doc::TIMEDELTA_TO_STDLIB),
-    method0!(TimeDelta, py_timedelta, doc::TIMEDELTA_PY_TIMEDELTA),
-    method0!(
-        TimeDelta,
-        in_hrs_mins_secs_nanos,
-        doc::TIMEDELTA_IN_HRS_MINS_SECS_NANOS
-    ),
     method_kwargs!(TimeDelta, round, doc::TIMEDELTA_ROUND),
     method_kwargs!(TimeDelta, add, doc::TIMEDELTA_ADD),
     method_kwargs!(TimeDelta, subtract, doc::TIMEDELTA_SUBTRACT),
@@ -992,10 +846,10 @@ static mut METHODS: &[PyMethodDef] = &[
         doc::PYDANTIC_SCHEMA
     ),
     PyMethodDef::zeroed(),
-];
+]);
 
-pub(crate) static mut SPEC: PyType_Spec =
-    type_spec::<TimeDelta>(c"whenever.TimeDelta", unsafe { SLOTS });
+pub(crate) static SPEC: PyDefCell<PyType_Spec> =
+    PyDefCell::new(type_spec::<TimeDelta>(c"whenever.TimeDelta", &SLOTS));
 
 #[cfg(test)]
 mod tests {

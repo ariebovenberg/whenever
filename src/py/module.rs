@@ -1,40 +1,26 @@
 //! Functions for working with the module object.
 
-use super::{base::*, exc::*, types::*};
+use super::{base::*, exc::*, typed::*, types::*};
 use crate::pymodule::State;
 use core::mem::MaybeUninit;
 use pyo3_ffi::*;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct PyModule {
-    obj: PyObj,
-}
+pub(crate) struct ModuleTag;
 
-impl PyBase for PyModule {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyModule {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyModule {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+impl TypeTag for ModuleTag {
+    fn check_exact(obj: PyObj) -> bool {
         unsafe { PyModule_CheckExact(obj.as_ptr()) != 0 }
     }
 
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn check(obj: PyObj) -> bool {
         unsafe { PyModule_Check(obj.as_ptr()) != 0 }
     }
 }
 
-impl PyModule {
+pub(crate) type PyModule = Typed<ModuleTag>;
+
+impl Typed<ModuleTag> {
     pub(crate) fn state(&self) -> &MaybeUninit<Option<State>> {
         // SAFETY: calling CPython API with valid arguments
         unsafe {
@@ -48,8 +34,9 @@ impl PyModule {
     /// Mutably borrow the module-state slot during a module lifecycle transition.
     ///
     /// # Safety
-    /// This may only be called during module initialization or teardown, while CPython prevents
-    /// simultaneous access to the active module state.
+    /// This may only be called during module initialization or teardown, where the module
+    /// state is only accessed under CPython's own synchronization (module-init exclusivity
+    /// on the way in, the GC pause on the way out).
     pub(crate) unsafe fn state_mut(&mut self) -> &mut MaybeUninit<Option<State>> {
         // SAFETY: calling CPython API with valid arguments
         unsafe {

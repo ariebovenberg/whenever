@@ -8,6 +8,7 @@ use super::{
     itemized_date_delta::ItemizedDateDelta,
     round,
     scalar::{DeltaDays, DeltaField, DeltaMonths, Month, Year, *},
+    units::*,
 };
 
 /// A Date-like struct that allows Feb 29 on non-leap years.
@@ -319,10 +320,6 @@ impl DifferenceUnit {
         self.to_exact_with_days(false)
     }
 
-    pub(crate) fn to_exact_assuming_24h_days(self) -> Result<ExactUnit, CalendarUnit> {
-        self.to_exact_with_days(true)
-    }
-
     fn to_exact_with_days(self, days_are_24h: bool) -> Result<ExactUnit, CalendarUnit> {
         Ok(match self {
             DifferenceUnit::Weeks if days_are_24h => ExactUnit::Weeks,
@@ -373,9 +370,9 @@ impl ExactUnit {
         match self {
             ExactUnit::Hours => NS_PER_HOUR as i64,
             ExactUnit::Minutes => NS_PER_MINUTE as i64,
-            ExactUnit::Seconds => NS_PER_SEC as i64,
+            ExactUnit::Seconds => NS_PER_SECOND as i64,
             ExactUnit::Nanoseconds => 1,
-            ExactUnit::Milliseconds => 1_000_000,
+            ExactUnit::Milliseconds => NS_PER_MILLISECOND as i64,
             ExactUnit::Microseconds => 1_000,
             // weeks/days also have ns equivalents when treating days as always 24h
             ExactUnit::Weeks => NS_PER_WEEK as i64,
@@ -637,7 +634,7 @@ impl TotalUnit {
 /// Semantic specification for a `since()` or `until()` difference.
 #[derive(Debug, Copy, Clone)]
 pub(crate) enum DifferenceSpec {
-    Total(DifferenceUnit),
+    Total(TotalUnit),
     InUnits {
         units: DifferenceUnitSet,
         mode: round::Mode,
@@ -650,10 +647,7 @@ impl DifferenceSpec {
         match self {
             DifferenceSpec::Total(u) => matches!(
                 u,
-                DifferenceUnit::Years
-                    | DifferenceUnit::Months
-                    | DifferenceUnit::Weeks
-                    | DifferenceUnit::Days
+                TotalUnit::Years | TotalUnit::Months | TotalUnit::Weeks | TotalUnit::Days
             ),
             DifferenceSpec::InUnits { units, .. } => units.has_calendar(),
         }

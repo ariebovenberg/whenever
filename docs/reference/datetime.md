@@ -51,19 +51,24 @@ exact points in time:
 |----|:--------:|:-----:|:------:|
 | `now()`  | {meth}`🔗 <Instant.now>`  | {meth}`🔗 <ZonedDateTime.now>` | {meth}`🔗 <OffsetDateTime.now>` |
 |    |   |   |   |
-|  `timestamp()` [^1] | {meth}`🔗 <Instant.timestamp>`   | {meth}`🔗 <ZonedDateTime.timestamp>` | {meth}`🔗 <OffsetDateTime.timestamp>`  |
-| `from_timestamp()` [^2]  | {meth}`🔗 <Instant.from_timestamp>` | {meth}`🔗 <ZonedDateTime.from_timestamp>` | {meth}`🔗 <OffsetDateTime.from_timestamp>`  |
+|  `timestamp()` | {meth}`🔗 <Instant.timestamp>`   | {meth}`🔗 <ZonedDateTime.timestamp>` | {meth}`🔗 <OffsetDateTime.timestamp>`  |
+| `from_timestamp()` [^2]  | {meth}`🔗 <Instant.from_timestamp>` | deprecated, removed in 1.0 | deprecated, removed in 1.0  |
 |    |   |   |   |
 |  `to_fixed_offset()`  | {meth}`🔗 <Instant.to_fixed_offset>` | {meth}`🔗 <ZonedDateTime.to_fixed_offset>`  | {meth}`🔗 <OffsetDateTime.to_fixed_offset>`   |
 |  `to_tz()`  | {meth}`🔗 <Instant.to_tz>`  | {meth}`🔗 <ZonedDateTime.to_tz>` | {meth}`🔗 <OffsetDateTime.to_tz>`                          |
-|  `to_system_tz()`  | {meth}`🔗 <Instant.to_system_tz>` | {meth}`🔗 <ZonedDateTime.to_system_tz>` | {meth}`🔗 <OffsetDateTime.to_system_tz>` |
 |    |   |   |   |
 |  `x > other_exact` [^3]  | {meth}`🔗 <Instant.__gt__>`    | {meth}`🔗 <ZonedDateTime.__gt__>`    | {meth}`🔗 <OffsetDateTime.__gt__>`   |
 |  `x - other_exact`  | {meth}`🔗 <Instant.__sub__>`        | {meth}`🔗 <ZonedDateTime.__sub__>`        | {meth}`🔗 <OffsetDateTime.__sub__>`       |
 |  `x == other_exact`  | {meth}`🔗 <Instant.__eq__>`        | {meth}`🔗 <ZonedDateTime.__eq__>`        | {meth}`🔗 <OffsetDateTime.__eq__>`       |
-|  `exact_eq()`  | {meth}`🔗 <Instant.exact_eq>`       | {meth}`🔗 <ZonedDateTime.exact_eq>`       | {meth}`🔗 <OffsetDateTime.exact_eq>`      |
+|  `strict_eq()`  | {meth}`🔗 <Instant.strict_eq>`       | {meth}`🔗 <ZonedDateTime.strict_eq>`       | {meth}`🔗 <OffsetDateTime.strict_eq>`      |
 |    |   |   |   |
 |  `x + TimeDelta`  | {meth}`🔗 <Instant.__add__>` | {meth}`🔗 <ZonedDateTime.__add__>`  | {meth}`🔗 <OffsetDateTime.__add__>` |
+|  `round()`  | {meth}`🔗 <Instant.round>` | {meth}`🔗 <ZonedDateTime.round>`  | {meth}`🔗 <OffsetDateTime.round>` |
+|    |   |   |   |
+|  `to_stdlib()`  | {meth}`🔗 <Instant.to_stdlib>` | {meth}`🔗 <ZonedDateTime.to_stdlib>`  | {meth}`🔗 <OffsetDateTime.to_stdlib>` |
+
+Timestamp conversion floors at the requested unit in both directions; see
+{ref}`timestamps`.
 
 
 ## Local time methods
@@ -80,24 +85,42 @@ local date and time values:
 | `date()`                                      | {meth}`🔗 <PlainDateTime.date>`                                      | {meth}`🔗 <ZonedDateTime.date>`                                      | {meth}`🔗 <OffsetDateTime.date>`                                       |
 | `time()`                                      | {meth}`🔗 <PlainDateTime.time>`                                      | {meth}`🔗 <ZonedDateTime.time>`                                      | {meth}`🔗 <OffsetDateTime.time>`                                       |
 |    |   |   |
-| `replace()` [^4]                              | {meth}`🔗 <PlainDateTime.replace>`                              | {meth}`🔗 <ZonedDateTime.replace>`                              | {meth}`🔗 <OffsetDateTime.replace>`                               |
+| `replace()`                                   | {meth}`🔗 <PlainDateTime.replace>`                              | {meth}`🔗 <ZonedDateTime.replace>`                              | {meth}`🔗 <OffsetDateTime.replace>`                               |
+| `replace_date()`, `replace_time()`            | {meth}`🔗 <PlainDateTime.replace_date>`, {meth}`🔗 <PlainDateTime.replace_time>` | {meth}`🔗 <ZonedDateTime.replace_date>`, {meth}`🔗 <ZonedDateTime.replace_time>` | {meth}`🔗 <OffsetDateTime.replace_date>`, {meth}`🔗 <OffsetDateTime.replace_time>` |
 | `add()`, `subtract()`      | {meth}`🔗 <PlainDateTime.add>`, {meth}`🔗 <PlainDateTime.subtract>`      | {meth}`🔗 <ZonedDateTime.add>`, {meth}`🔗 <ZonedDateTime.subtract>`      | {meth}`🔗 <OffsetDateTime.add>`, {meth}`🔗 <OffsetDateTime.subtract>`      |
 | `since()`, `until()`      | {meth}`🔗 <PlainDateTime.since>`, {meth}`🔗 <PlainDateTime.until>`      | {meth}`🔗 <ZonedDateTime.since>`, {meth}`🔗 <ZonedDateTime.until>`      | {meth}`🔗 <OffsetDateTime.since>`, {meth}`🔗 <OffsetDateTime.until>`      |
 | `round()`                                     | {meth}`🔗 <PlainDateTime.round>`                                     | {meth}`🔗 <ZonedDateTime.round>`                                     | {meth}`🔗 <OffsetDateTime.round>`                                      |
 |    |   |   |
 | `start_of()`, `end_of()`    | {meth}`🔗 <PlainDateTime.start_of>`, {meth}`🔗 <PlainDateTime.end_of>`    | {meth}`🔗 <ZonedDateTime.start_of>`, {meth}`🔗 <ZonedDateTime.end_of>`    | {meth}`🔗 <OffsetDateTime.start_of>`, {meth}`🔗 <OffsetDateTime.end_of>`    |
 |    |   |   |
+| `day_of_week()`              | {meth}`🔗 <PlainDateTime.day_of_week>`                                 | {meth}`🔗 <ZonedDateTime.day_of_week>`                                 | {meth}`🔗 <OffsetDateTime.day_of_week>`                                  |
 | `day_of_year()`              | {meth}`🔗 <PlainDateTime.day_of_year>`                                 | {meth}`🔗 <ZonedDateTime.day_of_year>`                                 | {meth}`🔗 <OffsetDateTime.day_of_year>`                                  |
 | `days_in_month()`            | {meth}`🔗 <PlainDateTime.days_in_month>`                               | {meth}`🔗 <ZonedDateTime.days_in_month>`                               | {meth}`🔗 <OffsetDateTime.days_in_month>`                                |
 | `days_in_year()`             | {meth}`🔗 <PlainDateTime.days_in_year>`                                | {meth}`🔗 <ZonedDateTime.days_in_year>`                                | {meth}`🔗 <OffsetDateTime.days_in_year>`                                 |
 | `in_leap_year()`             | {meth}`🔗 <PlainDateTime.in_leap_year>`                                | {meth}`🔗 <ZonedDateTime.in_leap_year>`                                | {meth}`🔗 <OffsetDateTime.in_leap_year>`                                 |
+|    |   |   |
+| `to_stdlib()`                | {meth}`🔗 <PlainDateTime.to_stdlib>`                                   | {meth}`🔗 <ZonedDateTime.to_stdlib>`                                   | {meth}`🔗 <OffsetDateTime.to_stdlib>`                                    |
 
+Each type's replacement carries its own resolution: `disambiguation=` on
+{class}`ZonedDateTime`, `stale_offset_ok=` on {class}`OffsetDateTime`, and
+nothing on {class}`PlainDateTime`. {class}`Instant` has no `replace()`,
+because it has no local fields; see the {ref}`FAQ <faq-instant-no-local>`.
 
 :::{note}
 Although {class}`Instant`'s debug representation is in
 UTC, it does not have local time methods.
 See the {ref}`FAQ <faq-instant-no-local>` for more details.
 :::
+
+## Methods on all four types
+
+Text in and out is shared by all four types; see {ref}`iso8601` and
+{ref}`pattern-format`:
+
+|   | {class}`Instant` | {class}`ZonedDateTime` | {class}`OffsetDateTime` | {class}`PlainDateTime` |
+|----|:--------:|:-----:|:------:|:------:|
+| `format_iso()`, `parse_iso()` | {meth}`🔗 <Instant.format_iso>`, {meth}`🔗 <Instant.parse_iso>` | {meth}`🔗 <ZonedDateTime.format_iso>`, {meth}`🔗 <ZonedDateTime.parse_iso>` | {meth}`🔗 <OffsetDateTime.format_iso>`, {meth}`🔗 <OffsetDateTime.parse_iso>` | {meth}`🔗 <PlainDateTime.format_iso>`, {meth}`🔗 <PlainDateTime.parse_iso>` |
+| `format()`, `parse()` | {meth}`🔗 <Instant.format>`, {meth}`🔗 <Instant.parse>` | {meth}`🔗 <ZonedDateTime.format>`, {meth}`🔗 <ZonedDateTime.parse>` | {meth}`🔗 <OffsetDateTime.format>`, {meth}`🔗 <OffsetDateTime.parse>` | {meth}`🔗 <PlainDateTime.format>`, {meth}`🔗 <PlainDateTime.parse>` |
 
 ## Other methods
 
@@ -107,7 +130,7 @@ Several other methods are unique to one or more classes:
 |--------------------------------------------|-----------------------------------------|----------------------------------------|-------------------------------------------------------|
 | {attr}`~Instant.MIN`, {attr}`~Instant.MAX` |                                         |                                        | {attr}`~PlainDateTime.MIN`, {attr}`~PlainDateTime.MAX` |
 | {meth}`~Instant.from_utc`                  |                                         |                                        |                                                        |
-| {attr}`~Instant.format_rfc2822`            |                                         | {meth}`~OffsetDateTime.format_rfc2822` |                                                        |
+| {meth}`~Instant.format_rfc2822`, {meth}`~Instant.parse_rfc2822` |                    | {meth}`~OffsetDateTime.format_rfc2822`, {meth}`~OffsetDateTime.parse_rfc2822` |                     |
 |                                            | {meth}`~ZonedDateTime.to_instant`       | {meth}`~OffsetDateTime.to_instant`     |                                                        |
 |                                            | {meth}`~ZonedDateTime.to_plain`         | {meth}`~OffsetDateTime.to_plain`       |                                                        |
 |                                            | {attr}`~ZonedDateTime.offset`           | {attr}`~OffsetDateTime.offset`         |                                                        |
@@ -116,28 +139,27 @@ Several other methods are unique to one or more classes:
 |                                            |                                         |                                        | {meth}`x - other_plain <PlainDateTime.__sub__>`         |
 |                                            |                                         |                                        | {meth}`~PlainDateTime.assume_utc`                      |
 |                                            |                                         | {meth}`~OffsetDateTime.assume_tz`      | {meth}`~PlainDateTime.assume_tz`                       |
-|                                            |                                         |                                        | {meth}`~PlainDateTime.assume_system_tz`                |
 |                                            |                                         |                                        | {meth}`~PlainDateTime.assume_fixed_offset`             |
-|                                            |                                         | {meth}`~OffsetDateTime.parse_strptime` *(deprecated)* | {meth}`~PlainDateTime.parse_strptime` *(deprecated)*                  |
-|                                            | {attr}`~ZonedDateTime.tz`               |                                        |                                                        |
-|                                            | {meth}`~ZonedDateTime.now_in_system_tz` |                                        |                                                        |
-|                                            | {meth}`~ZonedDateTime.is_ambiguous`     |                                        |                                                        |
+|                                            | {attr}`~ZonedDateTime.tz_id`            |                                        |                                                        |
+|                                            | {meth}`~ZonedDateTime.is_repeated`      |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.dst_offset`       |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.tz_abbrev`        |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.day_length`       |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.next_transition`  |                                        |                                                        |
 |                                            | {meth}`~ZonedDateTime.prev_transition`  |                                        |                                                        |
-|                                            | {meth}`~ZonedDateTime.start_of_day` *(deprecated)* |                                        |                                                        |
+
+{class}`OffsetDateTime` and {class}`ZonedDateTime` have no `MIN` and `MAX`:
+their earliest and latest values depend on the offset or the time zone.
+
+:::{note}
+{meth}`~Instant.from_utc` is the field constructor of {class}`Instant`:
+`Instant(2020, 1, 1)` does not exist because it would silently mean UTC.
+See the {ref}`FAQ <faq-instant-no-local>`.
+:::
 
 
-[^1]: `timestamp_millis()` and `timestamp_nanos()` methods are also
-    available for millisecond and nanosecond precision.
-
-[^2]: `from_timestamp_millis()` and `from_timestamp_nanos()` methods are
-    also available for millisecond and nanosecond precision.
+[^2]: Use {meth}`Instant.from_timestamp`; then convert it with `to_tz()`
+    or `to_fixed_offset()` when another exact representation is needed.
 
 [^3]: The other comparison operators `<=`, `<`, and `>=` are also
     supported.
-
-[^4]: `replace_date()` and `replace_time()` are also available for
-    replacing only the date or time component.

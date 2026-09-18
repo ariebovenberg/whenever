@@ -31,15 +31,11 @@ impl OncePyObj {
     #[cold]
     fn get_slow(&self) -> PyResult<PyObj> {
         let owned = (self.init)()?;
-        // SAFETY: `owned` transfers a valid reference which remains stored in this cell.
-        let obj = unsafe { PyObj::from_ptr_unchecked(owned.into_raw()) };
-        match self.ptr.try_init(obj.as_nonnull()) {
-            Ok(()) => Ok(obj),
-            Err(winner) => {
-                // Another init won the race — DECREF ours, return theirs
-                unsafe { Py_DECREF(obj.as_ptr()) };
-                Ok(PyObj::new(winner))
-            }
+        match self.ptr.try_init(owned.as_nonnull()) {
+            // SAFETY: `into_raw` transfers the reference now stored in the cell.
+            Ok(()) => Ok(unsafe { PyObj::from_ptr_unchecked(owned.into_raw()) }),
+            // Another init won the race — `owned`'s drop DECREFs ours, return theirs.
+            Err(winner) => Ok(PyObj::new(winner)),
         }
     }
 
@@ -114,7 +110,9 @@ pub(crate) fn __get_pydantic_core_schema__<T: PyPayload>(
     _: &[PyObj],
     _: &mut IterKwargs,
 ) -> PyReturn {
-    cls.state().get_pydantic_schema.get()?.call1(cls)
+    import(c"whenever._common")?
+        .getattr(c"pydantic_schema")?
+        .call1(cls)
 }
 
 pub(crate) fn not_implemented() -> PyReturn {

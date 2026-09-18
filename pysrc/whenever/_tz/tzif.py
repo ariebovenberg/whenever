@@ -12,30 +12,29 @@ from datetime import datetime as _datetime, timezone as _timezone
 from io import BytesIO
 from typing import IO, MutableSequence, Sequence, final
 
-from .common import Ambiguity, Fold, Gap, Unambiguous
+from .._common import EPOCH_SECS_MAX, EPOCH_SECS_MIN
+from .common import Fold, Gap, LocalMapping, Unique
 from .posix import TzStr, epoch_for_date, year_for_epoch
 
 EpochSecs = int
 Offset = int
 OffsetDelta = int
+TransitionMeta = tuple[int, int | None, str]
 Year = int
-
-EPOCH_SECS_MIN = -62135596800
-EPOCH_SECS_MAX = 253402300799
 
 
 @final
 class TimeZone:
-    """A complete timezone definition, enough to represent a tzif file.
+    """A complete time zone definition, enough to represent a tzif file.
 
     Can also be used to represent a POSIX TZ string (if the transition arrays
-    are empty) or an anonymous timezone (if the `key` field is set to `None`).
+    are empty) or an anonymous time zone (if the `key` field is set to `None`).
 
-    The timezone data is stored as four parallel arrays (two pairs):
+    The time zone data is stored as four parallel arrays (two pairs):
 
     UTC pair — for mapping an exact UTC instant to a UTC offset:
       _utc_epochs[i]   is the epoch at which transition i occurs (UTC seconds).
-      _utc_offsets[i]  is the UTC offset in seconds active *before* transition i.
+      _utc_offsets[i]  is the UTC offset in seconds active *from* transition i.
       ``bisect_right(_utc_epochs, t) - 1`` gives the index of the active offset.
 
     Local pair — for mapping a local (wall-clock) time to a UTC offset,
@@ -58,6 +57,7 @@ class TimeZone:
         "_local_values",
         "_end",
         "_meta_by_utc",
+        "_abbrev_data",
     )
 
     # The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
@@ -77,8 +77,9 @@ class TimeZone:
         _utc_offsets: tuple[Offset, ...],
         _local_epochs: tuple[EpochSecs, ...],
         _local_values: tuple[tuple[Offset, OffsetDelta], ...],
-        _end: TzStr | None = None,
-        _meta_by_utc: tuple[tuple[int, str], ...] = (),
+        _end: TzStr | None,
+        _meta_by_utc: tuple[TransitionMeta, ...],
+        _abbrev_data: bytes,
     ):
         self.key = key
         self._utc_epochs = _utc_epochs
@@ -87,6 +88,7 @@ class TimeZone:
         self._local_values = _local_values
         self._end = _end
         self._meta_by_utc = _meta_by_utc
+        self._abbrev_data = _abbrev_data
 
     def offset_for_instant(self, t: EpochSecs) -> Offset:
         """Get the UTC offset at the given exact time"""
@@ -103,13 +105,13 @@ class TimeZone:
             assert self._utc_offsets  # ensured during parsing
             return self._utc_offsets[-1]
 
-    def ambiguity_for_local(self, dt: _datetime) -> Ambiguity:
+    def ambiguity_for_local(self, dt: _datetime) -> LocalMapping:
         assert dt.tzinfo is None
         return self._ambiguity_for_local_epoch(
             int(dt.replace(tzinfo=_timezone.utc).timestamp())
         )
 
-    def _ambiguity_for_local_epoch(self, t: EpochSecs) -> Ambiguity:
+    def _ambiguity_for_local_epoch(self, t: EpochSecs) -> LocalMapping:
         """Get the UTC offset at the given local time (expressed in epoch seconds)"""
         idx = _bisect_right(self._local_epochs, t)
         if idx < len(self._local_epochs):
@@ -119,7 +121,7 @@ class TimeZone:
             ambiguity = 0 if t < (next_transition - abs(change)) else change
 
             if ambiguity == 0:
-                return Unambiguous(offset)
+                return Unique(offset)
             elif ambiguity < 0:
                 return Fold(next_transition, offset, offset + ambiguity)
             else:  # ambiguity > 0
@@ -134,24 +136,26 @@ class TimeZone:
         else:
             assert self._local_values  # ensured during parsing
             prev_offset, last_shift = self._local_values[-1]
-            return Unambiguous(prev_offset + last_shift)
+            return Unique(prev_offset + last_shift)
 
     def meta_for_instant(self, t: EpochSecs) -> tuple[int, str]:
-        """Get timezone metadata (dst_saving_secs, abbreviation)
+        """Get time zone metadata (dst_saving_secs, abbreviation)
         at the given exact time."""
         idx = _bisect_right(self._utc_epochs, t)
         if idx < len(self._utc_epochs):
-            return self._meta_by_utc[max(0, idx - 1)]
+            saving, _, abbrev = self._meta_by_utc[max(0, idx - 1)]
+            return saving, abbrev
 
         # After last transition: try POSIX TZ string, then fall back
         if self._end is not None:
             return self._end.meta_for_instant(t)
         else:
             assert self._meta_by_utc  # ensured during parsing
-            return self._meta_by_utc[-1]
+            saving, _, abbrev = self._meta_by_utc[-1]
+            return saving, abbrev
 
     def next_transition(self, t: EpochSecs) -> tuple[EpochSecs, Offset] | None:
-        """Get the (epoch, new_offset) of the next UTC offset transition
+        """Get the (epoch, new_offset) of the next transition record
         strictly after `t`, or None if there is no next transition."""
         idx = _bisect_right(self._utc_epochs, t)
         if idx < len(self._utc_epochs):
@@ -161,7 +165,7 @@ class TimeZone:
         return None  # pragma: no cover
 
     def prev_transition(self, t: EpochSecs) -> tuple[EpochSecs, Offset] | None:
-        """Get the (epoch, new_offset) of the previous UTC offset transition
+        """Get the (epoch, new_offset) of the previous transition record
         strictly before `t`, or None if there is no previous transition."""
         # If past all recorded transitions, check POSIX first
         if self._end is not None and (
@@ -178,20 +182,20 @@ class TimeZone:
         return None
 
     # NOTE: this equality check needs to be fast, since it's used in
-    # some routines to check if the timezone is indeed changing.
+    # some routines to check if the time zone is indeed changing.
     def __eq__(self, other: object) -> bool:
         # We first check for identity, as that's the cheapest check
         # and makes the common case fast.
         if self is other:
             return True
         # Identity inequality doesn't rule out equality, as two different
-        # instances may represent the same timezone due to cache clearing.
+        # instances may represent the same time zone due to cache clearing.
         elif type(other) is TimeZone:
             return (
                 # We compare the key first, as it's the cheapest to compare,
                 # and most likely to differ
                 self.key == other.key
-                # Only in rare cases (i.e. system timezone changes or cache clears)
+                # Only in rare cases (i.e. system time zone changes or cache clears)
                 # should we need to compare the rest of the data. It's relatively
                 # expensive, so we do it last.
                 and self._utc_epochs == other._utc_epochs
@@ -199,6 +203,8 @@ class TimeZone:
                 and self._local_epochs == other._local_epochs
                 and self._local_values == other._local_values
                 and self._end == other._end
+                and self._meta_by_utc == other._meta_by_utc
+                and self._abbrev_data == other._abbrev_data
             )
         return NotImplemented  # pragma: no cover
 
@@ -212,6 +218,8 @@ class TimeZone:
             _local_epochs=(),
             _local_values=(),
             _end=TzStr.parse(s),
+            _meta_by_utc=(),
+            _abbrev_data=b"",
         )
 
     @classmethod
@@ -317,14 +325,14 @@ _PRECALC_UNTIL = 2050
 
 def _extend_with_posix(
     offsets: MutableSequence[tuple[EpochSecs, Offset]],
-    meta: MutableSequence[tuple[int, str]],
+    meta: MutableSequence[TransitionMeta],
     end: TzStr,
 ) -> None:
     """Append pre-computed DST transitions from the POSIX TZ rule to *offsets*
     and *meta*, covering years from (last recorded year + 1) to
     ``_PRECALC_UNTIL`` inclusive.
 
-    For timezones without a DST rule the tables are already complete; this
+    For time zones without a DST rule the tables are already complete; this
     function returns immediately.
     """
     if not end.dst:
@@ -347,14 +355,14 @@ def _extend_with_posix(
         if dst_start < dst_end:
             # Northern hemisphere: DST active in summer
             transitions = (
-                ((dst_start, dst_offset), (dst_saving, dst_abbrev)),
-                ((dst_end, std), (0, std_abbrev)),
+                ((dst_start, dst_offset), (dst_saving, None, dst_abbrev)),
+                ((dst_end, std), (0, None, std_abbrev)),
             )
         else:
             # Southern hemisphere: DST active in winter
             transitions = (
-                ((dst_end, std), (0, std_abbrev)),
-                ((dst_start, dst_offset), (dst_saving, dst_abbrev)),
+                ((dst_end, std), (0, None, std_abbrev)),
+                ((dst_start, dst_offset), (dst_saving, None, dst_abbrev)),
             )
         for transition, transition_meta in transitions:
             if transition[0] > last_epoch:
@@ -422,6 +430,7 @@ def _parse_content(
         _local_values=tuple(v for _, v in local_transitions),
         _end=end,
         _meta_by_utc=tuple(meta_by_utc),
+        _abbrev_data=abbrev_data,
     )
 
 
@@ -472,10 +481,16 @@ def _load_transitions(
     abbrev_data: bytes,
 ) -> tuple[
     MutableSequence[tuple[EpochSecs, Offset]],
-    MutableSequence[tuple[int, str]],
+    MutableSequence[TransitionMeta],
 ]:
-    """Load transitions and metadata from parsed data"""
-    first_utoff, _, first_abbrind = types[0]
+    """Load transitions and metadata from parsed data.
+
+    A record whose type repeats the previous record's changes nothing
+    observable, so it is dropped: a transition is a change of the offset,
+    the DST saving, or the abbreviation.
+    """
+    prev_type = types[0]
+    first_utoff, _, first_abbrind = prev_type
 
     # Pre-seed last_std_offset from the first non-DST type in actual transitions.
     # This ensures correct DST saving computation when the very first transitions
@@ -489,19 +504,27 @@ def _load_transitions(
     offsets: list[tuple[EpochSecs, Offset]] = [
         (EPOCH_SECS_MIN, first_utoff),
     ]
-    meta: list[tuple[int, str]] = [
-        (0, _abbrev_at(abbrev_data, first_abbrind)),
+    meta: list[TransitionMeta] = [
+        (0, first_abbrind, _abbrev_at(abbrev_data, first_abbrind)),
     ]
 
     for idx, epoch in zip(indices, transition_times):
-        utoff, isdst, abbrind = types[idx]
+        if types[idx] == prev_type:
+            continue
+        prev_type = utoff, isdst, abbrind = types[idx]
         offsets.append((epoch, utoff))
 
-        dst_saving = utoff - last_std_offset if isdst else 0
         if not isdst:
+            dst_saving = 0
             last_std_offset = utoff
+        elif utoff == last_std_offset:
+            # Standard time moved and DST began at the same moment, so the
+            # saving cannot be read off the previous standard offset.
+            dst_saving = 3600
+        else:
+            dst_saving = utoff - last_std_offset
 
-        meta.append((dst_saving, _abbrev_at(abbrev_data, abbrind)))
+        meta.append((dst_saving, abbrind, _abbrev_at(abbrev_data, abbrind)))
 
     return offsets, meta
 

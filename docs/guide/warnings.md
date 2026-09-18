@@ -10,7 +10,7 @@ myst:
 # Handling warnings
 
 `whenever` emits warnings when operations may produce incorrect results,
-for example due to DST transitions, missing context, or field-wise
+for example due to DST transitions, missing context, or component-wise
 composition of calendar units. This is intentional: the operations
 are classic "footguns", but forbidding them entirely would be too strict.
 Warnings are an ideal mechanism to ensure the potential issues don't pass unnoticed.
@@ -26,16 +26,22 @@ fully, giving you several levels of control.
 UserWarning (stdlib)
 └── WheneverWarning
     ├── CalendarUnitCompositionWarning
+    ├── PickleOffsetMismatchWarning
     ├── PotentialDstBugWarning
     │   ├── DaysAssumed24HoursWarning
+    │   ├── ImplicitDisambiguationWarning
     │   ├── NaiveArithmeticWarning
     │   └── StaleOffsetWarning
     └── WheneverDeprecationWarning
 ```
 
+One warning has no class of its own: a pattern with a 12-hour clock (`i` or
+`ii`) and no AM/PM specifier emits `WheneverWarning` itself. Filter it by
+message if that case needs separate handling.
+
 ## Turn warnings into errors
 
-For production code, **turn whenever's warnings into exceptions** as early as
+For application code, **turn whenever's warnings into exceptions** as early as
 possible — typically in your module's setup or at
 the top of your application entry point:
 
@@ -59,11 +65,14 @@ as `PYTHONWARNINGS=error` but scoped to `whenever`'s warning hierarchy only.
 To target a specific warning type instead:
 
 ```python
-# Only error on timezone-unaware arithmetic (PlainDateTime):
+# Only error on arithmetic that ignores time zones (PlainDateTime):
 warnings.filterwarnings("error", category=whenever.NaiveArithmeticWarning)
 
 # Only error on potentially stale offset operations (OffsetDateTime):
 warnings.filterwarnings("error", category=whenever.StaleOffsetWarning)
+
+# Require an explicit policy for a repeated or skipped local time:
+warnings.filterwarnings("error", category=whenever.ImplicitDisambiguationWarning)
 ```
 
 ### In pytest
@@ -118,15 +127,20 @@ warnings.filterwarnings(
 ## Suppress specific calls
 
 Sometimes an operation is deliberately imprecise — and that's fine, as long as
-the decision is conscious and documented. Each method that may emit a
-DST-related warning accepts a boolean keyword argument that suppresses it:
+the decision is conscious and documented. Each warning that a single call can
+justify has a {term}`call-local escape`: a boolean keyword ending in `_ok`
+that suppresses it for that one call, and is named in the warning's message.
 
 | Keyword argument | Suppresses | Used on |
 |---|---|---|
-| `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | {class}`~whenever.TimeDelta` methods, {class}`~whenever.Instant` `add`/`subtract` |
-| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` methods |
-| `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods |
+| `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | the {class}`~whenever.TimeDelta` constructor and methods, {class}`~whenever.Instant` `add`/`subtract`, {meth}`TimePatch.shift() <whenever.TimePatch.shift>` |
+| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` `add`/`subtract`, `since`/`until`, `now()`, `replace()`, `replace_date()`, `replace_time()`, `round()`, `start_of()`, `end_of()`; the delta methods `total()`, `in_units()`, `add()`, and `subtract()` with an {class}`~whenever.OffsetDateTime` as `relative_to` |
+| `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods; the delta methods `total()`, `in_units()`, `add()`, and `subtract()` with a {class}`~whenever.PlainDateTime` as `relative_to` |
 | `cal_unit_composition_ok=True` | {class}`~whenever.CalendarUnitCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
+| `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `replace()`, `add`/`subtract`, and `assume_tz()` |
+| none: filter the category | {class}`~whenever.PickleOffsetMismatchWarning` | `pickle.loads()` of a {class}`~whenever.ZonedDateTime` |
+| none: fix the pattern | the 12-hour {class}`~whenever.WheneverWarning` | `format()` and `parse()`: add `a`/`aa`, or use `H`/`HH` |
+| none: convert explicitly | the lossy-subclass {class}`~whenever.WheneverWarning` | constructors given a `pandas` or `pendulum` object, or `Date()` given a `datetime` |
 
 For example:
 
@@ -140,10 +154,8 @@ next_departure = scheduled.add(hours=1, naive_arithmetic_ok=True)
 The keyword argument documents the decision at the call site
 while keeping the suppression limited to exactly one operation.
 
-```{note}
-These keyword arguments supersede the ``ignore_dst`` keyword argument
-(deprecated in 0.10).
-```
+For the distinction between observed and permanently fixed offsets, see
+{ref}`offset-datetime-guidance`.
 
 ### Operators
 
@@ -191,7 +203,7 @@ other contexts, or other contexts may interfere with yours. This is a
 addressed by the ``PYTHON_CONTEXT_AWARE_WARNINGS`` flag introduced in
 Python 3.14.
 
-The per-method keyword arguments described above don't have this limitation —
+The call-local escapes described above don't have this limitation —
 they suppress the warning for exactly one call, regardless of concurrency.
 ```
 
@@ -215,9 +227,9 @@ underlying issue or suppress it explicitly with the appropriate keyword argument
 
 | Situation | Recommended approach |
 |---|---|
-| Production code | `filterwarnings("error", ...)` at startup |
+| Application code | `filterwarnings("error", ...)` at startup |
 | CI / test suite | `filterwarnings = error::whenever.WheneverWarning` in `pytest.ini` |
-| One intentional imprecision | Per-method kwarg (e.g. `naive_arithmetic_ok=True`) + a comment |
+| One intentional imprecision | Call-local escape (e.g. `naive_arithmetic_ok=True`) + a comment |
 | Suppress operator warnings | `warnings.catch_warnings()` block (Python ≥ 3.14 for concurrency safety) |
 | Entire module intentionally imprecise | `filterwarnings("ignore", ..., module=r"mymodule\.*")` |
 | Exploratory scripts | `filterwarnings("ignore", ...)` globally |

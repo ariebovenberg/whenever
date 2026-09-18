@@ -3,49 +3,37 @@ use std::num::{NonZero, NonZeroU64, NonZeroU128};
 
 use crate::{
     docstrings as doc,
-    domain::scalar::{
-        NS_PER_DAY, NS_PER_HOUR, NS_PER_MICROSEC, NS_PER_MILLISEC, NS_PER_MINUTE, NS_PER_SEC,
-        NS_PER_WEEK, SubSecNanos,
-    },
+    domain::scalar::SubSecNanos,
     domain::time_delta::DeltaIncrement,
+    domain::units::{
+        NS_PER_DAY, NS_PER_HOUR, NS_PER_MICROSECOND, NS_PER_MILLISECOND, NS_PER_MINUTE,
+        NS_PER_SECOND, NS_PER_WEEK,
+    },
     py::*,
-    pymodule::State,
+    pymodule::{InternedStrings, State},
 };
 
 pub(crate) use crate::domain::round::Mode;
 
-#[derive(Debug)]
-pub(crate) struct ModeStrs {
-    pub(crate) str_floor: Owned<PyObj>,
-    pub(crate) str_ceil: Owned<PyObj>,
-    pub(crate) str_trunc: Owned<PyObj>,
-    pub(crate) str_expand: Owned<PyObj>,
-    pub(crate) str_half_floor: Owned<PyObj>,
-    pub(crate) str_half_ceil: Owned<PyObj>,
-    pub(crate) str_half_even: Owned<PyObj>,
-    pub(crate) str_half_trunc: Owned<PyObj>,
-    pub(crate) str_half_expand: Owned<PyObj>,
-}
-
 impl Mode {
-    pub(crate) fn from_py(s: PyObj, strs: &ModeStrs) -> PyResult<Mode> {
+    pub(crate) fn from_py(s: PyObj, strs: &InternedStrings) -> PyResult<Mode> {
         Self::from_py_named("mode", s, strs)
     }
 
-    pub(crate) fn from_py_named(name: &str, s: PyObj, strs: &ModeStrs) -> PyResult<Mode> {
+    pub(crate) fn from_py_named(name: &str, s: PyObj, strs: &InternedStrings) -> PyResult<Mode> {
         match_interned_str(
             name,
             s,
             &[
-                (*strs.str_floor, Mode::Floor),
-                (*strs.str_ceil, Mode::Ceil),
-                (*strs.str_trunc, Mode::Trunc),
-                (*strs.str_expand, Mode::Expand),
-                (*strs.str_half_floor, Mode::HalfFloor),
-                (*strs.str_half_ceil, Mode::HalfCeil),
-                (*strs.str_half_even, Mode::HalfEven),
-                (*strs.str_half_trunc, Mode::HalfTrunc),
-                (*strs.str_half_expand, Mode::HalfExpand),
+                (*strs.floor, Mode::Floor),
+                (*strs.ceil, Mode::Ceil),
+                (*strs.trunc, Mode::Trunc),
+                (*strs.expand, Mode::Expand),
+                (*strs.half_floor, Mode::HalfFloor),
+                (*strs.half_ceil, Mode::HalfCeil),
+                (*strs.half_even, Mode::HalfEven),
+                (*strs.half_trunc, Mode::HalfTrunc),
+                (*strs.half_expand, Mode::HalfExpand),
             ],
         )
     }
@@ -70,26 +58,26 @@ impl RoundUnit {
             find_interned_by(
                 v,
                 &[
-                    (*state.str_nanosecond, RoundUnit::Nanosecond),
-                    (*state.str_microsecond, RoundUnit::Microsecond),
-                    (*state.str_millisecond, RoundUnit::Millisecond),
-                    (*state.str_second, RoundUnit::Second),
-                    (*state.str_minute, RoundUnit::Minute),
-                    (*state.str_hour, RoundUnit::Hour),
-                    (*state.str_day, RoundUnit::Day),
+                    (*state.strs.nanosecond, RoundUnit::Nanosecond),
+                    (*state.strs.microsecond, RoundUnit::Microsecond),
+                    (*state.strs.millisecond, RoundUnit::Millisecond),
+                    (*state.strs.second, RoundUnit::Second),
+                    (*state.strs.minute, RoundUnit::Minute),
+                    (*state.strs.hour, RoundUnit::Hour),
+                    (*state.strs.day, RoundUnit::Day),
                 ],
                 eq,
             )
-            .or_else(|| (for_delta && eq(v, *state.str_week)).then_some(RoundUnit::Week))
+            .or_else(|| (for_delta && eq(v, *state.strs.week)).then_some(RoundUnit::Week))
         })
     }
 
     pub(crate) const fn default_increment(self) -> u64 {
         match self {
             RoundUnit::Nanosecond => 1,
-            RoundUnit::Microsecond => NS_PER_MICROSEC as _,
-            RoundUnit::Millisecond => NS_PER_MILLISEC as _,
-            RoundUnit::Second => NS_PER_SEC as _,
+            RoundUnit::Microsecond => NS_PER_MICROSECOND as _,
+            RoundUnit::Millisecond => NS_PER_MILLISECOND as _,
+            RoundUnit::Second => NS_PER_SECOND as _,
             RoundUnit::Minute => NS_PER_MINUTE,
             RoundUnit::Hour => NS_PER_HOUR,
             RoundUnit::Day => NS_PER_DAY,
@@ -112,12 +100,13 @@ pub(crate) enum RoundIncrement {
 pub(crate) struct Args {
     pub(crate) increment: RoundIncrement,
     pub(crate) mode: Mode,
-    pub(crate) got_ignore_dst: bool,
     pub(crate) suppress_stale: bool,
 }
 
-static INCREMENT_DIV_MSG: &str =
-    "Invalid increment. Must be positive and divide a 24-hour day evenly.";
+static INCREMENT_POSITIVE_MSG: &str = "increment must be a positive integer";
+static INCREMENT_DIV_MSG: &str = "increment must divide a 24-hour day evenly";
+static UNIT_POSITIVE_MSG: &str = "unit must be a positive TimeDelta";
+static UNIT_DIV_MSG: &str = "unit must divide a 24-hour day evenly";
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum ArgsContext {
@@ -135,25 +124,19 @@ impl Args {
         let opt_arg = handle_opt_arg("round", args)?;
 
         let mut mode = Mode::HalfEven;
-        let mut got_ignore_dst = false;
         let mut suppress_stale = false;
         let mut increment_kwarg = None;
         handle_kwargs("round", kwargs, |key, value, eq| {
-            if eq(key, *state.str_mode) {
-                mode = Mode::from_py(value, &state.round_mode_strs)?;
-            } else if eq(key, *state.str_increment) {
-                let raw_increment = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_value_err("increment must be an integer")?
-                    .to_i64()?;
+            if eq(key, *state.strs.mode) {
+                mode = Mode::from_py(value, &state.strs)?;
+            } else if eq(key, *state.strs.increment) {
+                let raw_increment = value.expect_int("increment")?.to_i64()?;
                 if raw_increment <= 0 {
-                    raise_value_err("increment must be a positive integer")?;
+                    raise_value_err(INCREMENT_POSITIVE_MSG)?;
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU64::new_unchecked(raw_increment as _) });
-            } else if context == ArgsContext::Offset && eq(key, *state.str_ignore_dst) {
-                got_ignore_dst = true;
-            } else if context == ArgsContext::Offset && eq(key, *state.str_stale_offset_ok) {
+            } else if context == ArgsContext::Offset && eq(key, *state.strs.stale_offset_ok) {
                 suppress_stale = value.is_truthy()?;
             } else {
                 return Ok(false);
@@ -162,19 +145,24 @@ impl Args {
         })?;
 
         let increment = match opt_arg {
-            None => RoundIncrement::Exact(unsafe { NonZeroU64::new_unchecked(1_000_000_000) }),
+            None => {
+                RoundIncrement::Exact(unsafe { NonZeroU64::new_unchecked(NS_PER_SECOND as u64) })
+            }
             Some(arg) => {
                 if let Some(delta) = arg.extract(*state.time_delta_type) {
+                    if increment_kwarg.is_some() {
+                        raise_type_err("cannot specify an increment with a TimeDelta argument")?;
+                    }
+                    if delta.is_negative() || delta.is_zero() {
+                        raise_value_err(UNIT_POSITIVE_MSG)?;
+                    }
                     let nanos = delta
                         .total_nanos()
                         .try_into()
                         .ok()
                         .and_then(NonZero::<u64>::new)
                         .filter(|&n| NS_PER_DAY.is_multiple_of(n.get()))
-                        .ok_or_value_err(INCREMENT_DIV_MSG)?;
-                    if increment_kwarg.is_some() {
-                        raise_type_err("cannot specify an increment with a TimeDelta argument")?;
-                    }
+                        .ok_or_value_err(UNIT_DIV_MSG)?;
                     RoundIncrement::Exact(nanos)
                 } else {
                     let unit = RoundUnit::from_py(arg, state, false)?;
@@ -201,7 +189,6 @@ impl Args {
         Ok(Args {
             increment,
             mode,
-            got_ignore_dst,
             suppress_stale,
         })
     }
@@ -222,19 +209,16 @@ impl DeltaArgs {
         let mut increment_kwarg = None;
         let mut suppress_24h_warning = false;
         handle_kwargs("round", kwargs, |key, value, eq| {
-            if eq(key, *state.str_mode) {
-                mode = Mode::from_py(value, &state.round_mode_strs)?;
-            } else if eq(key, *state.str_increment) {
-                let raw_increment = value
-                    .cast_allow_subclass::<PyInt>()
-                    .ok_or_value_err("increment must be an integer")?
-                    .to_i128()?;
+            if eq(key, *state.strs.mode) {
+                mode = Mode::from_py(value, &state.strs)?;
+            } else if eq(key, *state.strs.increment) {
+                let raw_increment = value.expect_int("increment")?.to_i128()?;
                 if raw_increment <= 0 {
-                    raise_value_err("increment must be a positive integer")?;
+                    raise_value_err(INCREMENT_POSITIVE_MSG)?;
                 }
                 // SAFETY: we just checked that it's >0
                 increment_kwarg = Some(unsafe { NonZeroU128::new_unchecked(raw_increment as _) });
-            } else if eq(key, *state.str_days_assumed_24h_ok) {
+            } else if eq(key, *state.strs.days_assumed_24h_ok) {
                 suppress_24h_warning = value.is_truthy()?;
             } else {
                 return Ok(false);
@@ -252,7 +236,7 @@ impl DeltaArgs {
                         raise_type_err("cannot specify an increment with a TimeDelta argument")?;
                     }
                     if delta.is_negative() || delta.is_zero() {
-                        raise_value_err("rounding TimeDelta must be positive")?;
+                        raise_value_err(UNIT_POSITIVE_MSG)?;
                     }
                     DeltaIncrement {
                         secs: delta.secs.get() as u64,

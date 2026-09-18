@@ -5,10 +5,13 @@ from typing import Literal, TypeAlias
 __all__ = [
     "RoundModeStr",
     "DeltaUnitStr",
+    "DeltaTotalUnitStr",
     "DateDeltaUnitStr",
     "ExactDeltaUnitStr",
     "DisambiguateStr",
+    "DisambiguationStr",
     "OffsetMismatchStr",
+    "TimestampUnitStr",
 ]
 
 RoundModeStr: TypeAlias = Literal[
@@ -32,12 +35,33 @@ DeltaUnitStr: TypeAlias = Literal[
     "seconds",
     "nanoseconds",
 ]
+DeltaTotalUnitStr: TypeAlias = Literal[
+    "years",
+    "months",
+    "weeks",
+    "days",
+    "hours",
+    "minutes",
+    "seconds",
+    "milliseconds",
+    "microseconds",
+    "nanoseconds",
+]
 DateDeltaUnitStr: TypeAlias = Literal["years", "months", "weeks", "days"]
 ExactDeltaUnitStr: TypeAlias = Literal[
     "weeks", "days", "hours", "minutes", "seconds", "nanoseconds"
 ]
 DisambiguateStr: TypeAlias = Literal["compatible", "earlier", "later", "raise"]
+DisambiguationStr: TypeAlias = Literal[
+    "compatible", "earlier", "later", "raise"
+]
 OffsetMismatchStr: TypeAlias = Literal["raise", "keep_instant", "keep_local"]
+TimestampUnitStr: TypeAlias = Literal[
+    "second",
+    "millisecond",
+    "microsecond",
+    "nanosecond",
+]
 
 # we override the above type aliases with proper type aliases in Python 3.12
 try:

@@ -11,39 +11,130 @@ from datetime import (  # noqa: F401
     timedelta as _timedelta,
     timezone as _timezone,
 )
-from functools import lru_cache
+from functools import lru_cache, partial, wraps
+from math import isfinite as _isfinite
+from operator import index as _index
 from typing import TYPE_CHECKING, Any, TypeVar, no_type_check
 from warnings import warn
+
+from ._typing import TimestampUnitStr
 
 UTC = _timezone.utc
 DUMMY_LEAP_YEAR = 4
 Nanos = int  # 0-999_999_999
+
+# The unit scalars every other module builds its tables and bounds from.
+S_PER_MINUTE = 60
+S_PER_HOUR = 60 * S_PER_MINUTE
+S_PER_DAY = 24 * S_PER_HOUR
+DAYS_PER_WEEK = 7
+NS_PER_MICROSECOND = 1_000
+NS_PER_MILLISECOND = 1_000 * NS_PER_MICROSECOND
+NS_PER_SECOND = 1_000 * NS_PER_MILLISECOND
+NS_PER_MINUTE = S_PER_MINUTE * NS_PER_SECOND
+NS_PER_HOUR = S_PER_HOUR * NS_PER_SECOND
+NS_PER_DAY = S_PER_DAY * NS_PER_SECOND
+NS_PER_WEEK = DAYS_PER_WEEK * NS_PER_DAY
+
+# The 1-based proleptic Gregorian ordinal of 1970-01-01, as
+# datetime.date.toordinal() counts it. The Rust extension counts days from
+# the same epoch 0-based, so its offset is one smaller.
+EPOCH_ORDINAL = 719_163
+
+# Instant.MIN and Instant.MAX in seconds since the epoch
+EPOCH_SECS_MIN = -62_135_596_800
+EPOCH_SECS_MAX = 253_402_300_799
+
+# The bounds on the fields of TimeDelta, ItemizedDelta, and ItemizedDateDelta.
+# Each year counts at its widest, so a field never rejects a value the delta
+# as a whole can hold.
+_MAX_WEEKS_PER_YEAR = 53
+_MAX_DELTA_YEARS = 9999
+_MAX_DELTA_MONTHS = _MAX_DELTA_YEARS * 12
+_MAX_DELTA_WEEKS = _MAX_DELTA_YEARS * _MAX_WEEKS_PER_YEAR
+_MAX_DELTA_DAYS = _MAX_DELTA_YEARS * 366
+_MAX_DELTA_HOURS = _MAX_DELTA_DAYS * 24
+_MAX_DELTA_MINUTES = _MAX_DELTA_HOURS * 60
+_MAX_DELTA_SECONDS = _MAX_DELTA_MINUTES * 60
+_MAX_DELTA_NANOS = _MAX_DELTA_SECONDS * NS_PER_SECOND
+_MAX_SUBSEC_NANOS = NS_PER_SECOND - 1
+
+# unit -> (nanoseconds per unit, units per second)
+_TIMESTAMP_UNITS: dict[TimestampUnitStr, tuple[int, int]] = {
+    "second": (NS_PER_SECOND, 1),
+    "millisecond": (NS_PER_MILLISECOND, NS_PER_SECOND // NS_PER_MILLISECOND),
+    "microsecond": (NS_PER_MICROSECOND, NS_PER_SECOND // NS_PER_MICROSECOND),
+    "nanosecond": (1, NS_PER_SECOND),
+}
 
 WARNING_HANDLING_DOCS_MSG = (
     "For project-wide warning configuration, see "
     "https://whenever.readthedocs.io/en/latest/guide/warnings.html"
 )
 
+OFFSET_DATETIME_DOCS_MSG = (
+    "For comprehensive OffsetDateTime guidance, see "
+    "https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html"
+    "#offset-datetime-guidance for details and examples."
+)
+
 OFFSET_SHIFT_STALE_MSG = (
-    "Shifting an OffsetDateTime keeps its fixed UTC offset. If the operation "
-    "crosses a DST or other timezone transition, that offset may become stale—"
-    "no longer matching the region's actual offset "
-    "(e.g. adding 1 day to 2024-03-09 12:00-07:00 gives 2024-03-10 12:00-07:00, "
-    "but if this offset represents Denver, Colorado (America/Denver), "
-    "the actual offset changed to -06:00 on that date). "
-    "Convert to ZonedDateTime first (using .assume_tz()) for timezone-aware arithmetic. "
-    "If the fixed offset is intentional, pass `stale_offset_ok=True`. "
+    "An OffsetDateTime's offset is usually an observation, not a time zone rule. "
+    "The arithmetic is mathematically valid and preserves that fixed offset, "
+    "but OffsetDateTime does not retain regional time zone rules. The result's "
+    "offset may therefore be stale relative to the source time zone, even after "
+    "an exact shift. If the originating time zone is known, convert to "
+    "ZonedDateTime first using .assume_tz(). If fixed-offset arithmetic is "
+    "intentional or the risk is accepted, pass `stale_offset_ok=True` to "
+    "`add()` or `subtract()`; `+` and `-` take no keyword. For an entirely "
+    "fixed-offset domain, configure StaleOffsetWarning globally. "
+    + OFFSET_DATETIME_DOCS_MSG
+    + " "
+    + WARNING_HANDLING_DOCS_MSG
+)
+
+PLAIN_RELATIVE_TO_UNAWARE_MSG = (
+    "Using a PlainDateTime as reference does not account for time zone transitions: "
+    "without a time zone, converting between calendar units (months, days) and "
+    "exact time units (hours, seconds) is ambiguous across DST boundaries. "
+    "Use .assume_tz('<tz>') for results that account for the time zone. "
+    "If time zone transitions are intentionally irrelevant here, pass "
+    "`naive_arithmetic_ok=True`. " + WARNING_HANDLING_DOCS_MSG
+)
+
+STALE_OFFSET_CALENDAR_MSG = (
+    "You are calculating calendar units relative to an OffsetDateTime. Because "
+    "it contains only a fixed offset, Whenever must assume that the offset "
+    "remains constant throughout the calculation. That offset may be stale "
+    "relative to the source time zone during part of the period if the value "
+    "represents a region that crosses a DST or other rule change. Use a "
+    "ZonedDateTime for calendar arithmetic that accounts for the time zone. If the fixed-offset "
+    "assumption is intentional, pass `stale_offset_ok=True`. "
+    + OFFSET_DATETIME_DOCS_MSG
+    + " "
     + WARNING_HANDLING_DOCS_MSG
 )
 
 PLAIN_SHIFT_UNAWARE_MSG = (
-    "Shifting a PlainDateTime by exact time units does not account for timezone transitions "
+    "Shifting a PlainDateTime by exact time units does not account for time zone transitions "
     "that may occur in the interval "
     "(e.g. adding 2 hours to 2023-03-26 01:30 in Amsterdam crosses the spring-forward "
     "transition, so only 1 real hour has passed). "
-    "Use .assume_tz('<tz>') + delta if you know the timezone. "
-    "If timezone transitions are intentionally irrelevant here, pass "
-    "`naive_arithmetic_ok=True`. " + WARNING_HANDLING_DOCS_MSG
+    "Use .assume_tz('<tz>') + delta if you know the time zone. "
+    "If time zone transitions are intentionally irrelevant here, pass "
+    "`naive_arithmetic_ok=True` to `add()`, `subtract()`, `difference()`, "
+    "`since()`, or `until()`; `+` and `-` take no keyword. "
+    + WARNING_HANDLING_DOCS_MSG
+)
+
+DAYS_NOT_ALWAYS_24H_MSG = (
+    "You are using days or weeks as exact time, so Whenever will treat each day "
+    "as exactly 24 hours. A calendar day can be 23 or 25 hours during a DST "
+    "transition, so this may differ from calendar arithmetic. If you mean "
+    "calendar days, perform the operation on a ZonedDateTime or pass "
+    "`relative_to=...` where supported. If fixed 24-hour periods are "
+    "intentional, pass `days_assumed_24h_ok=True`. "
+    + WARNING_HANDLING_DOCS_MSG
 )
 
 # A self-set variable to detect if we're being run by sphinx autodoc
@@ -62,6 +153,26 @@ UNSET: Any = type(
 )()
 
 
+class _SystemTZ:
+    __slots__ = ()
+    __module__ = "whenever"
+
+    def __repr__(self) -> str:
+        return "SYSTEM_TZ"
+
+    def __copy__(self) -> _SystemTZ:
+        return self
+
+    def __deepcopy__(self, memo: object, /) -> _SystemTZ:
+        return self
+
+    def __reduce__(self) -> str:
+        return "SYSTEM_TZ"
+
+
+SYSTEM_TZ = _SystemTZ()
+
+
 # We cache fixed-offset tzinfo objects to avoid creating multiple identical ones.
 # It's very common to only have whole-hour offsets, so this helps a lot.
 @lru_cache
@@ -69,11 +180,16 @@ def mk_fixed_tzinfo(secs: int, /) -> _timezone:
     return _timezone(_timedelta(seconds=secs))
 
 
+def round_offset_to_minute(offset: int, /) -> int:
+    sign = 1 if offset >= 0 else -1
+    return sign * ((abs(offset) + 30) // 60 * 60)
+
+
 def check_utc_bounds(dt: _datetime) -> _datetime:
     try:
         dt.astimezone(UTC)
     except (OverflowError, ValueError):
-        raise ValueError("Instant out of range")
+        raise ValueError(RANGE_MSG) from None
     return dt
 
 
@@ -93,16 +209,218 @@ class WheneverWarning(UserWarning):
 # A custom warnings class to prevent silent deprecation warnings in user code.
 # See https://sethmlarson.dev/deprecations-via-warnings-dont-work-for-python-libraries
 class WheneverDeprecationWarning(WheneverWarning):
-    """Raised when a deprecated feature of the ``whenever`` library is used.
+    """Emitted when a deprecated feature of the ``whenever`` library is used.
 
     This is a custom warning class (not a subclass of
     :class:`DeprecationWarning`) so that deprecation warnings from this
     library are visible by default—unlike standard ``DeprecationWarning``,
-    which Python silences in production code.
+    which Python silences in application code.
     """
 
 
+# Stdlib subclasses known to carry more than the stdlib fields, keyed on the
+# top-level package. A subclass that adds nothing (freezegun) passes silently.
+# A datetime read as a date is the same case: its time is dropped.
+_LOSSY_STDLIB_SUBCLASSES = frozenset(
+    [("pandas", _datetime), ("pandas", _timedelta), ("pendulum", _timedelta)]
+)
+
+
+def warn_lossy_stdlib_subclass(
+    obj: Any, base: type, /, *, stacklevel: int
+) -> None:
+    cls = type(obj)
+    if cls is base:
+        return
+    package = cls.__module__.partition(".")[0]
+    if (package, base) in _LOSSY_STDLIB_SUBCLASSES or (
+        base is _date and isinstance(obj, _datetime)
+    ):
+        warn(
+            f"{package}.{cls.__qualname__} contains data that cannot be "
+            f"reliably read through the datetime.{base.__name__} fields; "
+            "convert it explicitly",
+            WheneverWarning,
+            stacklevel=stacklevel + 1,
+        )
+
+
+def warn_deprecated(message: str, /, *, stacklevel: int) -> None:
+    warn(
+        message,
+        WheneverDeprecationWarning,
+        stacklevel=stacklevel + 1,
+    )
+
+
+def normalize_renamed_keyword(
+    new_value: Any,
+    kwargs: dict[str, Any],
+    /,
+    *,
+    function_name: str,
+    new_name: str,
+    old_name: str,
+) -> tuple[Any, bool]:
+    """The value, and whether it came by the deprecated name.
+
+    The caller warns with ``warn_renamed_keyword`` once its call has
+    succeeded: a call that raises emits no warning.
+    """
+    old_value = kwargs.pop(old_name, UNSET)
+    if old_value is UNSET:
+        return new_value, False
+    if new_value is not UNSET:
+        raise TypeError(
+            f"{function_name}() received both '{new_name}' "
+            f"and deprecated '{old_name}'"
+        )
+    return old_value, True
+
+
+def warn_renamed_keyword(
+    new_name: str, old_name: str, /, *, stacklevel: int
+) -> None:
+    warn_deprecated(
+        f"'{old_name}' is deprecated; use '{new_name}' instead",
+        stacklevel=stacklevel + 1,
+    )
+
+
+def check_no_kwargs(
+    kwargs: dict[str, Any],
+    function_name: str,
+    /,
+) -> None:
+    if kwargs:
+        raise TypeError(
+            f"{function_name}() got an unexpected keyword argument "
+            f"{next(iter(kwargs))!r}"
+        )
+
+
+# One message template per condition, identical on both backends and pinned
+# by the per-type test files. The templates used at one site are spelled
+# there; this one is shared.
+RANGE_MSG = "value or calculation out of range"
+
+
+def invalid(name: str, value: Any, /) -> ValueError:
+    """A parameter with a fixed set of values got something else."""
+    return ValueError(f"invalid {name}: {value!r}")
+
+
+def expect_int(name: str, value: Any, /) -> int:
+    """Read an integer through the index protocol, as CPython's own
+    argument parser does. A ``bool`` passes; a ``float`` does not."""
+    try:
+        return _index(value)
+    except TypeError:
+        raise TypeError(f"{name} must be an integer") from None
+
+
+def check_nanos(nanosecond: Any, /) -> int:
+    nanos = expect_int("nanosecond", nanosecond)
+    if not 0 <= nanos < 1_000_000_000:
+        raise ValueError("invalid time")
+    return nanos
+
+
+def tzid_display(tzid: str | None, /) -> str:
+    """How messages name a time zone."""
+    if tzid is None:
+        return "the system time zone (with unknown ID)"
+    return f"time zone '{tzid}'"
+
+
+def format_offset_secs(secs: int, /) -> str:
+    """``+05:00``, with seconds only when nonzero."""
+    sign = "-" if secs < 0 else "+"
+    hours, rem = divmod(abs(secs), 3_600)
+    minutes, seconds = divmod(rem, 60)
+    return f"{sign}{hours:02d}:{minutes:02d}" + (
+        f":{seconds:02d}" if seconds else ""
+    )
+
+
+def split_timestamp(
+    value: int | float,
+    unit: Any,
+    /,
+) -> tuple[int, int]:
+    try:
+        nanoseconds_per_unit, units_per_second = _TIMESTAMP_UNITS[unit]
+    except (KeyError, TypeError):
+        raise invalid("unit", unit) from None
+
+    if unit == "second":
+        if not isinstance(value, (int, float)):
+            raise TypeError("timestamp must be an integer or float")
+        if isinstance(value, float) and not _isfinite(value):
+            raise ValueError(RANGE_MSG)
+        seconds, fraction = divmod(value, 1)
+        seconds, nanos = int(seconds), int(fraction * 1_000_000_000)
+    else:
+        if not isinstance(value, int):
+            raise TypeError(f"timestamp in {unit}s must be an integer")
+        seconds, remainder = divmod(value, units_per_second)
+        nanos = remainder * nanoseconds_per_unit
+    # Check the instant range here, before any time zone arithmetic can
+    # overflow on a value far outside it.
+    if not EPOCH_SECS_MIN <= seconds <= EPOCH_SECS_MAX:
+        raise ValueError(RANGE_MSG)
+    return seconds, nanos
+
+
+def timestamp_from_parts(
+    seconds: int,
+    nanosecond: int,
+    unit: Any,
+    /,
+) -> int:
+    try:
+        nanoseconds_per_unit, units_per_second = _TIMESTAMP_UNITS[unit]
+    except (KeyError, TypeError):
+        raise invalid("unit", unit) from None
+    return seconds * units_per_second + nanosecond // nanoseconds_per_unit
+
+
 _T = TypeVar("_T")
+
+
+@no_type_check
+def _pydantic_parse(cls: type, v: object) -> object:
+    # exact type comparison is OK: whenever types don't allow subclassing
+    if type(v) is cls:
+        return v
+    elif isinstance(v, str):
+        return cls.parse_iso(v)
+    else:
+        raise ValueError(
+            f"cannot parse {cls.__name__} from type {type(v).__name__}"
+        )
+
+
+@no_type_check
+def pydantic_schema(cls):
+    from pydantic_core import core_schema
+
+    return core_schema.json_or_python_schema(
+        # NOTE: We can't use no_info_plain_validator_function here, because
+        # this breaks JSON schema generation...but only when used with the
+        # "serialization" mode for some reason...
+        json_schema=core_schema.no_info_after_validator_function(
+            cls.parse_iso,
+            core_schema.str_schema(strict=True),
+            serialization=core_schema.to_string_ser_schema(),
+        ),
+        python_schema=core_schema.no_info_plain_validator_function(
+            partial(_pydantic_parse, cls),
+            # NOTE: not setting serializer here somehow breaks the JSON schema
+            # generation when defaults are present...yeah...
+            serialization=core_schema.to_string_ser_schema(),
+        ),
+    )
 
 
 # Basic behavior common to all classes
@@ -121,8 +439,6 @@ class _Base:
     @no_type_check
     @classmethod
     def __get_pydantic_core_schema__(cls, *_, **kwargs):
-        from ._utils import pydantic_schema
-
         return pydantic_schema(cls)
 
     @classmethod
@@ -136,10 +452,13 @@ else:
 
     def final(cls):
 
-        def init_subclass_not_allowed(cls, **kwargs):  # pragma: no cover
-            raise TypeError("Subclassing not allowed")
+        def init_subclass_not_allowed(subcls, **kwargs):
+            raise TypeError(
+                f"type '{cls.__module__}.{cls.__qualname__}' "
+                "is not an acceptable base type"
+            )
 
-        cls.__init_subclass__ = init_subclass_not_allowed
+        cls.__init_subclass__ = classmethod(init_subclass_not_allowed)
         return cls
 
 
@@ -150,25 +469,22 @@ _Tcall = TypeVar("_Tcall", bound=Callable[..., None])
 # in mypy getting too confused. I've tried a lot.
 def add_alternate_constructors(
     init_default: _Tcall,
-    py_type: type | None = None,
-    deprecation_msg: str | None = None,
+    py_type: type | None,
 ) -> _Tcall:
     """Add alternate constructors to a class's __init__ method."""
+    accepted = "an ISO 8601 string" + (
+        "" if py_type is None else f" or datetime.{py_type.__name__}"
+    )
 
+    @wraps(init_default)
     def __init__(self: Any, *args: Any, **kwargs: Any) -> None:
         match args:
-            case [str() as iso_string] if not kwargs:
-                if deprecation_msg:
-                    warn(
-                        deprecation_msg,
-                        WheneverDeprecationWarning,
-                        stacklevel=2,
-                    )
-                self._init_from_iso(iso_string)
-            case [obj] if (
-                py_type is not None and not kwargs and isinstance(obj, py_type)
-            ):
-                self._init_from_py(obj)
+            case [str() as iso_string]:
+                self._init_from_iso(iso_string, **kwargs)
+            case [obj] if py_type is not None and isinstance(obj, py_type):
+                self._init_from_py(obj, **kwargs)
+            case [obj] if not isinstance(obj, int):
+                raise TypeError(f"{type(self).__name__}() requires {accepted}")
             case _:
                 init_default(self, *args, **kwargs)
 

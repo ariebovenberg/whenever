@@ -1,13 +1,281 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 (unreleased)
 
-- Add LLM-friendly Markdown documentation, including `llms.txt` and
+This release is intended as a soft 1.0 release: it establishes the planned
+1.0 API while retaining compatibility shims for newly deprecated interfaces.
+Unless significant issues arise, this API will become 1.0 after those
+deprecated interfaces are removed. Scheduled for 1.0 as well: `Instant`
+pickles written before 0.8.0 stop loading, while pickles written by 0.8.0 or
+later of a type 1.0 still has keep loading.
+
+**Breaking changes**
+
+- Removed APIs deprecated before 0.11: `DateDelta`, `DateTimeDelta`, the
+  `years()`, `months()`, `weeks()`, and `days()` helpers, legacy standard
+  library conversion methods, `TimeDelta.in_*()` convenience methods,
+  `Date.days_since()` and `Date.days_until()`, deprecated `Date` operators,
+  `parse_strptime()`, `ZonedDateTime.start_of_day()`, `ignore_dst`, and
+  `ImplicitlyIgnoringDST`. Pickles of `DateDelta` and `DateTimeDelta` no
+  longer load; pickles of every other type written by 0.8.0 or later keep
+  loading.
+
+  See the 0.10.0 entry below for migration instructions.
+
+- Resolving a repeated or skipped local time without an explicit
+  `disambiguation=` policy now emits `ImplicitDisambiguationWarning`. The
+  `"compatible"` default still applies, so the result is unchanged; the
+  warning fires on calls that ran silently in 0.10.5: the `ZonedDateTime`
+  constructor, `assume_tz()`, and `parse_iso()` without an offset for a
+  repeated or skipped local time, and `replace*()`, calendar-unit
+  `add()`/`subtract()`, and `+`/`-` when the result lands in a skipped
+  time. `to_tz()`, exact-unit arithmetic, `round()`, pickling, and standard
+  library conversion never warn. Passing `disambiguation="compatible"`
+  keeps the old result silently.
+
+  **Rationale**: an unstated policy silently picks one of two instants, or
+  invents one, which is the class of DST bug this library exists to flag.
+  Stating the policy makes the choice visible where it is made.
+
+- Timestamp APIs are consolidated around a `unit=` argument.
+  `Instant.from_timestamp(..., unit=)` and exact-time `.timestamp(unit=)`
+  support seconds, milliseconds, microseconds, and nanoseconds.
+  `timestamp_millis()`, `timestamp_nanos()`, and their matching `Instant`
+  factories are deprecated, as are the timestamp factories on
+  `OffsetDateTime` and `ZonedDateTime`: construct an `Instant` first, then
+  call `to_fixed_offset()` or `to_tz()`.
+
+  **Rationale**: one unit-selectable API is easier to discover and extend,
+  while `Instant` is the natural type for constructing an exact time from a
+  timestamp.
+
+- The convenience methods specific to the system time zone are deprecated:
+  `to_system_tz()`, `assume_system_tz()`, `Date.today_in_system_tz()`,
+  `ZonedDateTime.now_in_system_tz()`, and `ZonedDateTime.from_system_tz()`.
+  `SYSTEM_TZ` is now a public sentinel accepted wherever a named time zone is
+  accepted, including `Date.today()`, `ZonedDateTime`, `now()`, `to_tz()`,
+  and `assume_tz()`.
+
+  **Rationale**: one sentinel lets the regular time zone APIs cover the system
+  time zone without duplicating every operation. It also makes call-time
+  system time zone resolution explicit and takes advantage of the sentinel
+  pattern recently standardized by [PEP 661](https://peps.python.org/pep-0661/).
+
+- Several public names are clarified, and the old spellings are deprecated.
+  The migration table at the end of this entry lists every pair.
+
+  **Rationale**: the new names describe their concepts more precisely and
+  use one vocabulary across the API. The `tz_id_display=` values say what
+  the call does: `"required"` can raise, `"if_available"` says when the ID
+  is written, and `"omit"` says what happens instead; `"always"`, `"auto"`,
+  and `"never"` each needed the docstring to say which of those it meant.
+  `TZPATH` was a module attribute that `from whenever import TZPATH` froze
+  at import time, so a later `reset_tzpath()` was invisible to it;
+  `get_tzpath()` reads the current path on every call.
+
+- Patterns use `H`/`HH` for the 24-hour clock; `h`/`hh` are deprecated.
+  Optional seconds are a bracketed tail after `mm`: `[:ss]`, `[:ss.fff]`,
+  `[:ss.FFF]`, or `[ss]` without a separator. The `SS` spellings remain with
+  deprecation warnings through 0.11. Patterns and parsed input strings are
+  ASCII-only.
+
+  **Rationale**: `H`/`HH` is the near-universal spelling for a 24-hour
+  specifier, and brackets make the optional separator and seconds tail
+  explicit. Where a bracket group may appear is set out in the
+  [pattern reference](https://whenever.readthedocs.io/en/latest/reference/pattern-format.html).
+
+- Pattern offsets without seconds now round time zone offset seconds to the
+  nearest minute. Hour-only `x`/`X` patterns reject values whose rounded
+  offsets still contain minutes.
+
+  **Rationale**: an offset with seconds cannot be written in a pattern
+  without them, and rounding to the nearest minute is what Temporal does
+  in the same case.
+
+- Fixed-offset arguments passed as bare integers signifying hours are
+  deprecated. Use `TimeDelta` or a factory like `hours()` instead.
+
+  **Rationale**: the unit of a bare integer is implicit, which makes offset
+  values easy to misread or misuse.
+
+- Unpickling a `ZonedDateTime` now preserves its stored instant while applying
+  the time zone rules available in the loading environment. If those rules
+  produce a different offset, the local representation is updated and a
+  `PickleOffsetMismatchWarning` is emitted.
+
+  **Rationale**: time zone databases change. Preserving the instant avoids
+  silently changing when the stored event occurred while still reconciling
+  its local representation with the current rules.
+
+**Added and improved**
+
+- Time zone IDs are matched case-insensitively in ASCII letters. The
+  database spelling is used in attributes, representations, ISO output, and
+  pickles, and aliases such as `US/Eastern` are preserved.
+  `clear_tzcache(only_keys=)` matches IDs the same way.
+- Added `offset_mismatch=` to `ZonedDateTime` parsing. A numeric offset is
+  matched at its written precision, while `Z` always identifies an exact UTC
+  instant. `OffsetDateTime.assume_tz()` supports the same policy and uses
+  `disambiguation=` when retaining local time.
+- Added `Date.today(tz)`.
+- Added millisecond and microsecond totals to datetime differences and
+  `ItemizedDelta.total()`. `ItemizedDelta` and `ItemizedDateDelta` are
+  hashable, so they can be `set` members and `dict` keys.
+- Added `YearMonth.add()` and `subtract()`, `MonthDay.is_leap_day()`, and
+  `day_of_week()` on `PlainDateTime`, `OffsetDateTime`, and `ZonedDateTime`.
+- `TimeDelta()` accepts `timedelta` subclasses, like the other standard
+  library overloads.
+- Added a `WheneverWarning` when a `pandas` or `pendulum` object is read
+  through the standard library fields, which cannot represent all of its
+  data.
+- Stabilized `patch_current_time()` and exposed its `TimePatch` handle with
+  `shift()` and `move_to()`. It supports pre-1970 instants, and as a
+  decorator it keeps the wrapped function's signature.
+- Added LLM-friendly Markdown documentation, including `llms.txt` and
   `llms-full.txt`.
-- **Fixed**: rounding with an odd `increment` rounded away from zero one step
-  early in the Rust extension. For example
+- `TimeDelta.total()`, `TimeDelta.in_units()`, `ItemizedDelta.total()`,
+  `ItemizedDelta.in_units()`, and calendar-aware `add()`/`subtract()` accept
+  `naive_arithmetic_ok=` for a `PlainDateTime` reference and
+  `stale_offset_ok=` for an `OffsetDateTime` reference, the escapes their
+  warnings name.
+
+**Changed**
+
+- `OffsetDateTime.replace()` no longer emits `StaleOffsetWarning` when
+  `offset=` is passed: the offset is stated, not carried.
+- `OffsetDateTime.since()` and `until()` emit `StaleOffsetWarning` when a
+  calendar difference has a remainder in exact units, since that remainder
+  is computed with the offset held fixed; `stale_offset_ok=` escapes it.
+- `Date()` emits `WheneverWarning` when given a `datetime`, whose time it
+  drops; call `.date()` first.
+- `Time()` rejects a `time` with a tzinfo, as `PlainDateTime()` rejects an
+  aware `datetime`.
+- An empty `TZ` environment variable resolves to UTC, as the C library reads
+  it, instead of raising `TimeZoneNotFoundError`.
+- `ZonedDateTime()` accepts a `datetime` whose tzinfo is a `ZoneInfo`
+  subclass.
+- Multiplying or dividing a `TimeDelta` by a number rounds half-even to the
+  nearest nanosecond on both backends; an integer operand is exact. The
+  pure-Python backend truncated, the Rust extension rounded away from zero,
+  and both lost precision on long deltas.
+- Integer fields, itemized delta components, and integer keywords such as
+  `increment=` accept integer-like objects such as numpy integers on both
+  backends. `ItemizedDelta(days=1.5)` and `ItemizedDelta(months=float('nan'))`
+  raise `TypeError` everywhere, where the pure-Python backend produced a
+  delta that was not equal to itself.
+- `relative_to` on `ItemizedDelta.add()` and `subtract()` accepts
+  `PlainDateTime` and `OffsetDateTime` with the same warnings as
+  `in_units()`. Composing two date deltas returns an `ItemizedDateDelta`
+  whatever the reference, and `ItemizedDateDelta.in_units()` and `total()`
+  accept a datetime reference, reading its date.
+- A type checker now accepts `Date + ItemizedDateDelta`, and rejects
+  `disambiguation=` on the forms of `ZonedDateTime.add()`/`subtract()` that
+  take exact units only, since those cannot land on a repeated or skipped
+  local time. The operand of `since()`/`until()` is named `other`.
+- Argument validation is tightened. `format_iso(basic=...)` reads its flag
+  by truthiness like every other flag, so a non-`bool` no longer raises.
+  `"week"` is a valid unit only on `TimeDelta.round()`, where a week has a
+  fixed length, and `round()` with a `TimeDelta` unit rejects an explicit
+  `increment=`: the delta is the increment. `start_of()` and `end_of()`
+  raise `ValueError` for a boundary past the supported range, such as
+  `end_of("year")` in 9999, as do the deprecated `from_timestamp*()`
+  factories of `OffsetDateTime` and `ZonedDateTime`, in place of
+  `OverflowError`.
+- An invalid ISO 8601 or RFC 2822 string is rejected with a message that
+  names the format, from the constructors as well as the parse functions,
+  and a string that names no time zone raises `TimeZoneNotFoundError` (a
+  `ValueError`) wherever it is given, including inside an ISO string.
+
+**Fixed**
+
+- The pure-Python backend and the Rust extension now reject the same inputs
+  with the same exception type and message; they differed across the delta
+  family, arithmetic, rounding, the pattern engine, time zone IDs, the
+  search path, and pydantic validation. An out-of-range result is a
+  `ValueError` on both, where the pure-Python backend leaked
+  `OverflowError`, `OSError`, or another standard library exception, for
+  example from `Instant.from_timestamp()` far outside `Instant.MIN..MAX`.
+  `TimeDelta(hours="1")` no longer hangs the pure-Python backend, and
+  `str()` of a `ZonedDateTime` without a time zone ID no longer raises
+  there.
+- Warnings point at the caller, where several pointed at internal frames,
+  and a call that rejects an argument no longer warns before it raises.
+- `help()` on a Rust extension method that takes keyword arguments, such as
+  `Instant.parse`, showed no documentation; it now does on both backends.
+- `repr(Weekday.MONDAY)` is `Weekday.MONDAY`, which rebuilds the member.
+- An `ItemizedDateDelta` with a datetime reference failed with a bare
+  `AssertionError`.
+- Rounding with an odd `increment` rounded away from zero one step early in
+  the Rust extension:
   `TimeDelta(nanoseconds=2).round("nanosecond", increment=5, mode="half_expand")`
   returned 5ns instead of 0ns.
+- `reset_tzpath()` given an iterator set an empty search path, and the
+  pure-Python backend accepted `bytes` entries.
+- `ZonedDateTime.round()` and `day_length()` handle daylight saving gaps as
+  `start_of()` and `end_of()` do: a boundary inside a gap snaps to its edge.
+  Rounding to a day measures elapsed time rather than the clock reading,
+  which matters on days that are not 24 hours long.
+- `ZonedDateTime.start_of()` and `round()` in a fall-back shorter than the
+  unit resolve to the first occurrence, as `end_of()` already did, so the
+  unit intervals tile the timeline again. In Colombo, where clocks fell
+  back from 00:30 to 00:00 on 2006-04-15, both occurrences of 00:15 now
+  share the hour that starts at 00:00+06:00.
+- `dst_offset()` reported zero for historical periods in which standard
+  time and daylight saving time changed at the same moment (Argentina,
+  1999), and `next_transition()`/`prev_transition()` no longer stop at a
+  database record that changes neither the offset, the DST offset, nor the
+  abbreviation.
+- Formatting `VV` without a time zone ID consistently raises, and
+  `IsoWeekDate.parse_iso()` accepts a lowercase `w`.
+- Constructing a `ZonedDateTime` from a standard library `datetime` follows
+  the same resolution flow as ISO parsing: an offset that disagrees with
+  *whenever*'s time zone rules raises `InvalidOffsetError` by default, and
+  `offset_mismatch=` and `disambiguation=` resolve it.
+
+Migration summary. A type checker that implements PEP 702 (`@deprecated`)
+flags each spelling in this table at the call site:
+
+| Deprecated spelling | Preferred spelling |
+|---|---|
+| `disambiguate=` | `disambiguation=` |
+| `DisambiguateStr` | `DisambiguationStr` |
+| `from_timestamp_millis(v)` | `from_timestamp(v, unit="millisecond")` |
+| `from_timestamp_nanos(v)` | `from_timestamp(v, unit="nanosecond")` |
+| `timestamp_millis()` | `timestamp(unit="millisecond")` |
+| `timestamp_nanos()` | `timestamp(unit="nanosecond")` |
+| `ZonedDateTime.from_timestamp(v, tz=tz)` | `Instant.from_timestamp(v).to_tz(tz)` |
+| `ZonedDateTime.from_timestamp_millis(v, tz=tz)` | `Instant.from_timestamp(v, unit="millisecond").to_tz(tz)` |
+| `ZonedDateTime.from_timestamp_nanos(v, tz=tz)` | `Instant.from_timestamp(v, unit="nanosecond").to_tz(tz)` |
+| `OffsetDateTime.from_timestamp(v, offset=o)` | `Instant.from_timestamp(v).to_fixed_offset(o)` |
+| `OffsetDateTime.from_timestamp_millis(v, offset=o)` | `Instant.from_timestamp(v, unit="millisecond").to_fixed_offset(o)` |
+| `OffsetDateTime.from_timestamp_nanos(v, offset=o)` | `Instant.from_timestamp(v, unit="nanosecond").to_fixed_offset(o)` |
+| `format_iso(tz="omit")` | `format_iso(tz_id_display="omit")` |
+| `tz_id_display="always"` | `tz_id_display="required"` |
+| `tz_id_display="auto"` | `tz_id_display="if_available"` |
+| `tz_id_display="never"` | `tz_id_display="omit"` |
+| `to_system_tz()` | `to_tz(SYSTEM_TZ)` |
+| `assume_system_tz()` | `assume_tz(SYSTEM_TZ)` |
+| `Date.today_in_system_tz()` | `Date.today(SYSTEM_TZ)` |
+| `ZonedDateTime.now_in_system_tz()` | `ZonedDateTime.now(SYSTEM_TZ)` |
+| `ZonedDateTime.from_system_tz(...)` | `ZonedDateTime(..., tz=SYSTEM_TZ)` |
+| `ZonedDateTime.tz` | `ZonedDateTime.tz_id` |
+| `exact_eq()` | `strict_eq()` |
+| `parse(..., format=p)` | `parse(..., pattern=p)` |
+| pattern `h` / `hh` | `H` / `HH` |
+| pattern `:SS` | `[:ss]` |
+| pattern `:SS.fff` | `[:ss.fff]` |
+| pattern `:SS.FFF` | `[:ss.FFF]` |
+| separator-free pattern `SS` | `[ss]` |
+| `offset=2`, `replace(offset=2)`, `to_fixed_offset(2)`, `assume_fixed_offset(2)`, `OffsetDateTime.now(2)` | `hours(2)` in place of `2` |
+| `MonthDay.is_leap()` | `MonthDay.is_leap_day()` |
+| `ZonedDateTime.is_ambiguous()` | `ZonedDateTime.is_repeated()` |
+| `TZPATH` | `get_tzpath()` |
+
+`[:ss.fff]` isn't a pure rename of `:SS.fff`: with zero seconds and fraction,
+the old spelling emitted a dangling `12:00.000` instead of `12:00`.
+
+`tz_id` is typed `str | None`, where `tz` was typed `str`. Code that passed
+`.tz` where a `str` was required now needs a check or an assertion.
 
 ## 0.10.5 (2026-08-07)
 
@@ -51,7 +319,7 @@
   empty fractions, `24:00`, trailing duration separators, and overflow in the
   Rust duration parsers.
 - Removed CI checks for PyPy 3.10, which is EOL.
-- Parsing a non-ASCII timezone ID now raises `ValueError` instead of
+- Parsing a non-ASCII time zone ID now raises `ValueError` instead of
   `TimeZoneNotFoundError` in the pure Python version, making it consistent
   with the Rust extension. Thanks to @gaoflow for the report and fix (#393)
 
@@ -68,7 +336,7 @@
 
 - Reduced import time by ~60% when the Rust extension is active.
   This was achieved by deferring the import of several internal submodules
-  and timezone database setup until they are actually needed.
+  and time zone database setup until they are actually needed.
 
 **Added**
 
@@ -81,17 +349,17 @@
 - Restored utility functions to `whenever.__all__` and ensured `dir(whenever)`
   includes lazily loaded public attributes without importing them.
 - Fixed `Date.today_in_system_tz()` in the Rust extension so it uses whenever's
-  cached system timezone instead of from `datetime`.
+  cached system time zone instead of from `datetime`.
 - Fixed `ZonedDateTime.start_of()` and `end_of()` around DST transitions.
   Calendar-unit boundaries are exactly 1 nanosecond before the next
   `start_of()`. Sub-day units preserve the current occurrence of repeated local
   times when possible, while correctly handling gaps and folds shorter than the
   requested unit.
 - Fixed a pure-Python regression introduced in 0.10.0 that could return incorrect
-  offsets for part of a year. This occurred when a timezone switched from explicitly
+  offsets for part of a year. This occurred when a time zone switched from explicitly
   recorded transitions to recurring transition rules partway through that year.
-  This affected a handful of timezones, and in practice only when
-  system timezone data wasn't present (e.g. on Windows).
+  This affected a handful of time zones, and in practice only when
+  system time zone data wasn't present (e.g. on Windows).
   The Rust extension (the default) was not affected.
   A rigorous test ensures this won't regress again in the future.
 - Limit free threading support to Python 3.14 and later.
@@ -157,8 +425,8 @@ See the full list below.
 
 - Behavior of an edge case is changed: disambiguation of non-existent times
   as a result of calendar arithmetic (or `replace()`) no longer tries to reuse
-  the previous offset. This change also fixes a rare bug in case a timezone
-  transition skips an entire day (like the Samoa timezone did in 2011) (#252).
+  the previous offset. This change also fixes a rare bug in case a time zone
+  transition skips an entire day (like the Samoa time zone did in 2011) (#252).
 
   **Rationale**: Unlike the case of repeated times, reusing the previous
   offset for non-existent times doesn't have the advantage of preventing
@@ -201,7 +469,7 @@ See the full list below.
   and custom format strings.
 - New `ZonedDateTime.next_transition()` and `ZonedDateTime.prev_transition()` methods
   for finding the next or previous UTC offset transition (e.g. DST change)
-  relative to the current datetime. Returns `None` for timezones without
+  relative to the current datetime. Returns `None` for time zones without
   transitions (e.g. UTC or fixed-offset).
 - New `since()` and `until()` methods on `Date`, `ZonedDateTime`,
   `OffsetDateTime`, and `PlainDateTime` for calculating the difference
@@ -218,7 +486,7 @@ See the full list below.
   `+` and `-` were supported already, but these methods make it easier
   for simple operations, as well as making the API more consistent with other classes.
 - New `OffsetDateTime.assume_tz()` method for associating an offset datetime
-  with a timezone.
+  with a time zone.
 - `round()` methods now support four new rounding modes:
   `trunc`, `expand`, `half_trunc`, and `half_expand`.
   They also now support larger and irregular values for `increment`.
@@ -227,8 +495,8 @@ See the full list below.
 - All types that have a Python standard library equivalent now also accept these
   objects in the constructor. For example: `Date(datetime.date(2024, 1, 1))`.
 - New `ZonedDateTime.dst_offset()`
-  and `ZonedDateTime.tz_abbrev()` methods for querying timezone metadata
-  (DST offset adjustment and timezone abbreviation).
+  and `ZonedDateTime.tz_abbrev()` methods for querying time zone metadata
+  (DST offset adjustment and time zone abbreviation).
 - Warning classes (`StaleOffsetWarning`,
   `NaiveArithmeticWarning`, `DaysAssumed24HoursWarning`)
   and corresponding per-method keyword arguments
@@ -273,7 +541,7 @@ Added support for free-threaded Python (#166)
 
 ## 0.9.3 (2025-10-16)
 
-Fixed incorrect offsets for some timezones before the start of their first
+Fixed incorrect offsets for some time zones before the start of their first
 recorded transition (typically pre-1950) (#296)
 
 ## 0.9.2 (2025-09-29)
@@ -297,8 +565,8 @@ migration away from `SystemDateTime`.
   To create a more consistent and intuitive API, the `SystemDateTime` class
   has been removed. Its functionality is now fully integrated into an
   enhanced `ZonedDateTime`, which now serves as the single, canonical class
-  for all timezone-aware datetimes, including those based on the system's
-  local timezone.
+  for all datetimes that carry a time zone, including those based on the system's
+  local time zone.
 
   **Rationale:**
 
@@ -306,21 +574,21 @@ migration away from `SystemDateTime`.
   compromised the library's consistency and predictability:
 
    * Inconsistent Behavior: Methods like `replace()` and `add()` on a
-     `SystemDateTime` instance would use the current system timezone definition,
+     `SystemDateTime` instance would use the current system time zone definition,
      not necessarily the one that was active when the instance was created.
-     This could lead to subtle and unpredictable bugs if the system timezone
+     This could lead to subtle and unpredictable bugs if the system time zone
      changed during the program's execution.
    * API Division: Despite having nearly identical interfaces, `SystemDateTime`
      and `ZonedDateTime` were not interchangeable. A function expecting a
      `ZonedDateTime` could not accept a `SystemDateTime`, forcing users to write
      more complex code with `Union` type hints.
-   * Maintenance Overhead: Maintaining two parallel APIs for timezone-aware
-     datetimes led to significant code duplication and a higher maintenance
+   * Maintenance Overhead: Maintaining two parallel APIs for datetimes
+     with a time zone led to significant code duplication and a higher maintenance
      burden.
 
-  This change unifies the API by integrating system timezone support
+  This change unifies the API by integrating system time zone support
   directly into `ZonedDateTime`, providing a single, consistent way to handle
-  all timezone-aware datetimes. The original use cases for `SystemDateTime`
+  all datetimes that carry a time zone. The original use cases for `SystemDateTime`
   are fully supported by the improved `ZonedDateTime`.
 
   This new, unified approach also provides two major benefits:
@@ -329,7 +597,7 @@ migration away from `SystemDateTime`.
      now orders of magnitude faster than they were on the old `SystemDateTime`.
    * Cross-Platform Consistency: The new `whenever.reset_system_tz()` function
      provides a reliable, cross-platform way to update the library's view of
-     the system timezone, replacing the previous reliance on the Unix-only
+     the system time zone, replacing the previous reliance on the Unix-only
      `time.tzset()`.
 
   **Migration:**
@@ -342,16 +610,16 @@ migration away from `SystemDateTime`.
     methods now return a `ZonedDateTime` instance. In most cases,
     no code change is needed.
   - Instead of `time.tzset()`, use `whenever.reset_system_tz()` to
-    update the system timezone (for `whenever` only).
+    update the system time zone (for `whenever` only).
 
-- `ZonedDateTime` instances with a system timezone may in rare cases
-  not have a known IANA timezone ID (the `tz` property will be `None`).
+- `ZonedDateTime` instances with a system time zone may in rare cases
+  not have a known IANA time zone ID (the `tz` property will be `None`).
   This is an unfortunate limitation of some platforms.
   Such `ZonedDateTime` instances can still be used for all operations,
   and will account for DST correctly. However, these instances cannot be pickled,
-  and their ISO format will not be able to include the timezone ID.
+  and their ISO format will not be able to include the time zone ID.
 
-  **Rationale:** This is an necessary compromise for broad system timezone support.
+  **Rationale:** This is an necessary compromise for broad system time zone support.
   Other libraries (and Python's own `zoneinfo`) have similar limitations.
 
 - The `repr()` of all classes now includes quotes: e.g. `Date("2023-10-05")`.
@@ -386,14 +654,14 @@ migration away from `SystemDateTime`.
 
 **Fixed**
 
-- Resolved a memory leak in the Rust extension where timezone objects that
+- Resolved a memory leak in the Rust extension where time zone objects that
   were no longer in use were not properly evicted from the cache.
 - Fixed a rare bug in determining the UTC offset for times far in the future
 - Fixed `PlainDateTime` constructor raising `TypeError` instead of
   `ValueError` when passed invalid parameters.
 - TZ IDs starting with a `./` are now properly rejected. Other path traversal
   attempts were already handled correctly.
-- More robust timezone refcounting in the Rust extension, preventing crashes
+- More robust time zone refcounting in the Rust extension, preventing crashes
   in rare cases (#270)
 - Panics in Rust extension no longer crash the interpreter, raise `RuntimeError` instead
 
@@ -471,7 +739,7 @@ the groundwork for the eventual 1.0 release.
 
 **Improved**
 
-- Timezone operations in the Rust extension are now a lot faster (5-8x),
+- Time zone operations in the Rust extension are now a lot faster (5-8x),
   due to a new implementation replacing the use of the standard library
   `zoneinfo` module. (#202)
 - The `parse_common_iso()` methods support a wider range of ISO 8601
@@ -506,7 +774,7 @@ the groundwork for the eventual 1.0 release.
   compatible, making this method unnecessary.
   Strict RFC 3339 parsing can still be done with `strptime`, if desired
 
-- Passing invalid timezone names now raise a
+- Passing invalid time zone names now raise a
   `whenever.TimeZoneNotFoundError` (subclass of `ValueError`) instead of
   `zoneinfo.ZoneInfoNotFoundError` (subclass of `KeyError`).
 
@@ -602,7 +870,7 @@ change (see below).
 
 ## 0.6.16 (2024-12-22)
 
-- Fix bug in `ZonedDateTime` `repr()` that would mangle some timezone
+- Fix bug in `ZonedDateTime` `repr()` that would mangle some time zone
   names
 
 - Make `disambiguate` argument optional, defaulting to `"compatible"`.
@@ -882,8 +1150,8 @@ possible into this release, to avoid having to do them in the future.
   naive datetimes, and the new name is more explicit.
 
 - `LocalSystemDateTime` no longer adjusts automatically to changes in
-  the system timezone. Now, `LocalSystemDateTime` reflects the system
-  timezone at the moment of instantiation. It can be updated explicitly.
+  the system time zone. Now, `LocalSystemDateTime` reflects the system
+  time zone at the moment of instantiation. It can be updated explicitly.
 
   **Rationale**: The old behavior was dependent on too many assumptions,
   and behaved unintuitively in some cases. It also made the class

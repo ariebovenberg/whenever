@@ -3,6 +3,7 @@ use super::{
     scalar::{DeltaDays, DeltaMonths, EpochSecs, Month, UnixDays, Weekday, Year},
     shift::CalendarShift,
     time::Time,
+    units::DAYS_PER_WEEK,
 };
 use crate::common::{
     fmt::{self, Chunk},
@@ -61,6 +62,13 @@ impl Date {
     }
 
     /// Find the nth weekday in a month.
+    /// How often a weekday occurs in a month: four or five times.
+    pub(crate) fn weekday_count_in_month(year: Year, month: Month, target_dow: Weekday) -> u8 {
+        let first_dow = Date::first_of_month(year, month).day_of_week() as i32;
+        let first = 1 + (target_dow as i32 - first_dow).rem_euclid(DAYS_PER_WEEK);
+        ((year.days_in_month(month) as i32 - first) / DAYS_PER_WEEK + 1) as u8
+    }
+
     pub(crate) fn nth_weekday_in_month(
         year: Year,
         month: Month,
@@ -71,13 +79,13 @@ impl Date {
         let target_dow = target_dow as i32;
         let day = if n > 0 {
             let first_dow = Date::first_of_month(year, month).day_of_week() as i32;
-            let offset = (target_dow - first_dow).rem_euclid(7);
-            1 + offset + (n - 1) * 7
+            let offset = (target_dow - first_dow).rem_euclid(DAYS_PER_WEEK);
+            1 + offset + (n - 1) * DAYS_PER_WEEK
         } else {
             let dim = year.days_in_month(month) as i32;
             let last_dow = Date::last_of_month(year, month).day_of_week() as i32;
-            let offset = (last_dow - target_dow).rem_euclid(7);
-            dim - offset + (n + 1) * 7
+            let offset = (last_dow - target_dow).rem_euclid(DAYS_PER_WEEK);
+            dim - offset + (n + 1) * DAYS_PER_WEEK
         };
         let dim = year.days_in_month(month) as i32;
         (day >= 1 && day <= dim).then_some(Date {
@@ -121,13 +129,13 @@ impl Date {
     }
 
     pub(crate) fn end_of_week_mon(self) -> Option<Date> {
-        let days_fwd = 7 - self.unix_days().day_of_week().iso() as i32;
+        let days_fwd = DAYS_PER_WEEK - self.unix_days().day_of_week().iso() as i32;
         self.shift_days(DeltaDays::new(days_fwd).unwrap())
     }
 
     pub(crate) fn end_of_week_sun(self) -> Option<Date> {
         let dow = self.unix_days().day_of_week().iso() as i32;
-        let days_fwd = (6 - dow).rem_euclid(7);
+        let days_fwd = (6 - dow).rem_euclid(DAYS_PER_WEEK);
         self.shift_days(DeltaDays::new(days_fwd).unwrap())
     }
 
@@ -239,14 +247,14 @@ impl Date {
             } else {
                 365
             };
-            let week = (nearest_thursday_doy + prev_year_days - 1) / 7 + 1;
+            let week = (nearest_thursday_doy + prev_year_days - 1) / DAYS_PER_WEEK + 1;
             (iso_year, week as u8)
         } else {
             let year_days = if self.year.is_leap() { 366 } else { 365 };
             if nearest_thursday_doy > year_days {
                 (iso_year + 1, 1)
             } else {
-                let week = (nearest_thursday_doy - 1) / 7 + 1;
+                let week = (nearest_thursday_doy - 1) / DAYS_PER_WEEK + 1;
                 (iso_year, week as u8)
             }
         }
@@ -258,7 +266,7 @@ impl Date {
     }
 
     fn start_of_week_sun(self) -> Option<Date> {
-        let dow = self.unix_days().day_of_week().iso() % 7;
+        let dow = self.unix_days().day_of_week().iso() % DAYS_PER_WEEK as u8;
         self.shift_days(DeltaDays::new_unchecked(-(dow as i32)))
     }
 

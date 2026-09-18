@@ -1,41 +1,27 @@
 //! Functionality for Python's int and float types
-use super::{base::*, exc::*, refs::*};
+use super::{base::*, exc::*, refs::*, typed::*};
 use core::mem;
 use pyo3_ffi::*;
 
 /// Whether CPython's native `l` integer parser writes a 64-bit value on this platform.
 pub(crate) const IS_LP64: bool = cfg!(all(target_pointer_width = "64", not(windows)));
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PyInt {
-    obj: PyObj,
-}
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct IntTag;
 
-impl PyBase for PyInt {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyInt {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyInt {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+impl TypeTag for IntTag {
+    fn check_exact(obj: PyObj) -> bool {
         unsafe { PyLong_CheckExact(obj.as_ptr()) != 0 }
     }
 
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn check(obj: PyObj) -> bool {
         unsafe { PyLong_Check(obj.as_ptr()) != 0 }
     }
 }
 
-impl PyInt {
+pub(crate) type PyInt = Typed<IntTag>;
+
+impl Typed<IntTag> {
     pub(crate) fn to_i64(self) -> PyResult<i64> {
         // PyLong_AsLong is measurably faster on LP64, where its result is already 64 bits.
         let value = if IS_LP64 {
@@ -92,54 +78,35 @@ impl PyInt {
 }
 
 impl PyObj {
-    pub(crate) fn expect_bool(self, name: &str) -> PyResult<bool> {
-        if self.is_true() {
-            Ok(true)
-        } else if self.is_false() {
-            Ok(false)
-        } else {
-            raise_type_err(format!("{name} must be a boolean"))
+    /// Read an integer through the index protocol (`__index__`), as
+    /// CPython's own argument parser does. A `bool` passes; a `float` does not.
+    pub(crate) fn expect_int(self, name: &str) -> PyResult<Owned<PyInt>> {
+        if unsafe { PyIndex_Check(self.as_ptr()) } == 0 {
+            raise_type_err(format!("{name} must be an integer"))?
         }
-    }
-
-    pub(crate) fn expect_int(self, name: &str) -> PyResult<PyInt> {
-        match self.cast_allow_subclass::<PyInt>() {
-            Some(i) => Ok(i),
-            None => raise_type_err(format!("{name} must be an integer")),
-        }
+        // SAFETY: PyNumber_Index returns a new reference to an int on success
+        unsafe { PyNumber_Index(self.as_ptr()) }
+            .own()
+            .map(|obj| unsafe { obj.cast_unchecked::<PyInt>() })
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PyFloat {
-    obj: PyObj,
-}
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FloatTag;
 
-impl PyBase for PyFloat {
-    fn as_py_obj(&self) -> PyObj {
-        self.obj
-    }
-}
-
-impl FromPy for PyFloat {
-    unsafe fn from_ptr_unchecked(ptr: *mut PyObject) -> Self {
-        Self {
-            obj: unsafe { PyObj::from_ptr_unchecked(ptr) },
-        }
-    }
-}
-
-impl PyStaticType for PyFloat {
-    fn isinstance_exact(obj: impl PyBase) -> bool {
+impl TypeTag for FloatTag {
+    fn check_exact(obj: PyObj) -> bool {
         unsafe { PyFloat_CheckExact(obj.as_ptr()) != 0 }
     }
 
-    fn isinstance(obj: impl PyBase) -> bool {
+    fn check(obj: PyObj) -> bool {
         unsafe { PyFloat_Check(obj.as_ptr()) != 0 }
     }
 }
 
-impl PyFloat {
+pub(crate) type PyFloat = Typed<FloatTag>;
+
+impl Typed<FloatTag> {
     pub(crate) fn to_f64(self) -> PyResult<f64> {
         match unsafe { PyFloat_AsDouble(self.as_ptr()) } {
             x if x != -1.0 || unsafe { PyErr_Occurred() }.is_null() => Ok(x),

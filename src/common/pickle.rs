@@ -10,7 +10,7 @@
 //! | Instant | `i64 epoch seconds, u32 nanos` | 12 |
 //! | TimeDelta | `i64 seconds, u32 nanos` | 12 |
 //! | OffsetDateTime | PlainDateTime + `i32 offset seconds` | 15 |
-//! | ZonedDateTime | OffsetDateTime + separate timezone ID | 15 + ID |
+//! | ZonedDateTime | OffsetDateTime + separate time zone ID | 15 + ID |
 
 use crate::domain::{
     date::Date,
@@ -20,6 +20,7 @@ use crate::domain::{
     scalar::{EpochSecs, Month, Offset, SubSecNanos, Year},
     time::Time,
     time_delta::TimeDelta,
+    units::{NS_PER_SECOND, S_PER_DAY},
 };
 
 pub(crate) const DATE_LEN: usize = 4;
@@ -94,7 +95,7 @@ pub(crate) fn decode_instant(data: &[u8]) -> Option<Instant> {
 pub(crate) fn decode_pre_0_8_instant(data: &[u8]) -> Option<Instant> {
     let data: &[u8; INSTANT_LEN] = data.try_into().ok()?;
     let legacy_epoch = i64::from_le_bytes(data[..8].try_into().unwrap());
-    let epoch = legacy_epoch.checked_add(EpochSecs::MIN.get() - 86_400)?;
+    let epoch = legacy_epoch.checked_add(EpochSecs::MIN.get() - i64::from(S_PER_DAY))?;
     Some(Instant {
         epoch: EpochSecs::new(epoch)?,
         subsec: decode_subsec(&data[8..])?,
@@ -112,7 +113,7 @@ pub(crate) fn decode_time_delta(data: &[u8]) -> Option<TimeDelta> {
     let data: &[u8; TIME_DELTA_LEN] = data.try_into().ok()?;
     let secs = i64::from_le_bytes(data[..8].try_into().unwrap());
     let subsec = decode_subsec(&data[8..])?;
-    TimeDelta::from_nanos(secs as i128 * 1_000_000_000 + subsec.get() as i128)
+    TimeDelta::from_nanos(secs as i128 * NS_PER_SECOND as i128 + subsec.get() as i128)
 }
 
 pub(crate) fn encode_offset(value: OffsetDateTime) -> [u8; OFFSET_DATETIME_LEN] {

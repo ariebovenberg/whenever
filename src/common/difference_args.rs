@@ -17,10 +17,18 @@ impl CalendarUnit {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
         TotalUnit::match_py(v, state)
             .and_then(|unit| unit.try_into().ok())
-            .ok_or_else_value_err(|| {
-                format!("Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days'")
-            })
+            .ok_or_else_value_err(|| format!("invalid unit: {v}"))
     }
+}
+
+fn is_bytes(v: PyObj) -> bool {
+    // SAFETY: a type check on a valid object
+    unsafe { pyo3_ffi::PyBytes_Check(v.as_ptr()) != 0 }
+}
+
+fn is_set(v: PyObj) -> bool {
+    // SAFETY: a type check on a valid object
+    unsafe { pyo3_ffi::PyAnySet_Check(v.as_ptr()) != 0 }
 }
 
 fn parse_ordered_units<U, F, G>(
@@ -34,8 +42,11 @@ where
     F: FnMut(PyObj) -> PyResult<U>,
     G: FnMut(U),
 {
-    if PyStr::isinstance(v) {
+    if PyStr::isinstance(v) || is_bytes(v) {
         raise_type_err("units must be a sequence of strings, not a single string")?;
+    }
+    if is_set(v) {
+        raise_type_err("units must be a sequence of strings, not a set")?;
     }
     let mut prev = None;
     let mut empty = true;
@@ -64,7 +75,7 @@ impl CalendarUnitSet {
         let mut units = Self::EMPTY;
         parse_ordered_units(
             v,
-            "units cannot be empty",
+            "units must not be empty",
             |item| CalendarUnit::from_py(item, state),
             |unit| units.insert(unit),
         )?;
@@ -76,23 +87,20 @@ impl DifferenceUnit {
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
         TotalUnit::match_py(v, state)
             .and_then(|unit| unit.try_into().ok())
-            .ok_or_else_value_err(|| format!(
-                "Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds', 'nanoseconds'"
-            ))
+            .ok_or_else_value_err(|| format!("invalid unit: {v}"))
     }
 }
 
 impl ExactUnit {
     pub(crate) fn parse_py_number(self, v: PyObj) -> PyResult<TimeDelta> {
-        if let Some(i) = v.cast_allow_subclass::<PyInt>() {
+        if self == Self::Nanoseconds {
+            self.parse_py_int(*v.expect_int("nanoseconds")?)
+        } else if let Some(i) = v.cast_allow_subclass::<PyInt>() {
             self.parse_py_int(i)
         } else if let Some(f) = v.cast_allow_subclass::<PyFloat>() {
-            if self == Self::Nanoseconds {
-                raise_value_err("nanoseconds must be an integer, not a float")?;
-            }
             self.parse_py_float(f)
         } else {
-            raise_value_err(format!("{} must be an integer or float", self.name()))
+            raise_type_err(format!("{} must be an integer or float", self.name()))
         }
     }
 
@@ -115,7 +123,7 @@ impl DifferenceUnitSet {
         let mut units = Self::EMPTY;
         parse_ordered_units(
             v,
-            "at least one unit must be provided",
+            "units must not be empty",
             |item| DifferenceUnit::from_py(item, state),
             |unit| units.insert(unit),
         )?;
@@ -131,30 +139,28 @@ impl TotalUnit {
         find_interned(
             v,
             &[
-                (*state.str_years, Self::Years),
-                (*state.str_months, Self::Months),
-                (*state.str_weeks, Self::Weeks),
-                (*state.str_days, Self::Days),
-                (*state.str_hours, Self::Hours),
-                (*state.str_minutes, Self::Minutes),
-                (*state.str_seconds, Self::Seconds),
-                (*state.str_milliseconds, Self::Milliseconds),
-                (*state.str_microseconds, Self::Microseconds),
-                (*state.str_nanoseconds, Self::Nanoseconds),
+                (*state.strs.years, Self::Years),
+                (*state.strs.months, Self::Months),
+                (*state.strs.weeks, Self::Weeks),
+                (*state.strs.days, Self::Days),
+                (*state.strs.hours, Self::Hours),
+                (*state.strs.minutes, Self::Minutes),
+                (*state.strs.seconds, Self::Seconds),
+                (*state.strs.milliseconds, Self::Milliseconds),
+                (*state.strs.microseconds, Self::Microseconds),
+                (*state.strs.nanoseconds, Self::Nanoseconds),
             ],
         )
     }
 
     pub(crate) fn from_py(v: PyObj, state: &State) -> PyResult<Self> {
-        Self::match_py(v, state).ok_or_else_value_err(|| format!(
-            "Invalid unit {v}. Unit must be one of 'years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds', 'milliseconds', 'microseconds', 'nanoseconds'"
-        ))
+        Self::match_py(v, state).ok_or_else_value_err(|| format!("invalid unit: {v}"))
     }
 }
 
 #[derive(Copy, Clone)]
 enum Units {
-    One(DifferenceUnit),
+    One(TotalUnit),
     Many(DifferenceUnitSet),
 }
 
@@ -177,20 +183,20 @@ impl DifferenceSpec {
         let mut units = None;
         let mut got_rounding = false;
         handle_kwargs(fname, kwargs, |k, v, eq| {
-            if eq(k, *state.str_total) {
+            if eq(k, *state.strs.total) {
                 if units.is_some() {
                     raise_type_err("cannot specify both 'total' and 'in_units'")?;
                 }
-                units = Some(Units::One(DifferenceUnit::from_py(v, state)?));
-            } else if eq(k, *state.str_in_units) {
+                units = Some(Units::One(TotalUnit::from_py(v, state)?));
+            } else if eq(k, *state.strs.in_units) {
                 if units.is_some() {
                     raise_type_err("cannot specify both 'total' and 'in_units'")?;
                 }
                 units = Some(Units::Many(DifferenceUnitSet::from_py(v, state)?));
-            } else if eq(k, *state.str_round_mode) {
-                mode = round::Mode::from_py_named("round_mode", v, &state.round_mode_strs)?;
+            } else if eq(k, *state.strs.round_mode) {
+                mode = round::Mode::from_py_named("round_mode", v, &state.strs)?;
                 got_rounding = true;
-            } else if eq(k, *state.str_round_increment) {
+            } else if eq(k, *state.strs.round_increment) {
                 increment = DifferenceIncrement::from_py(v)?;
                 got_rounding = true;
             } else {

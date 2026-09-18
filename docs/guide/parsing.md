@@ -3,19 +3,21 @@ myst:
   html_meta:
     description: >-
       Formatting and parsing in whenever: ISO 8601 as the canonical
-      round-trippable format, RFC 2822, custom format patterns, and Pydantic
-      integration.
+      round-trippable format, RFC 2822, patterns, and Pydantic integration.
 ---
 
 # Formatting and parsing
 
 `whenever` reads and writes the standard formats: ISO 8601 as the canonical,
-round-trippable representation, plus RFC 2822 for email and HTTP, and custom
+round-trippable representation, plus RFC 2822 for email and HTTP, and
 patterns for everything else.
 
 ## ISO 8601
 
-All types in *whenever* use ISO8601 as their canonical, round-trippable, string representation.
+All types in *whenever* use ISO 8601 as their canonical string representation.
+This representation is round-trippable except in the uncommon case of a zoned
+datetime backed by a system time zone without a time zone ID (see
+{ref}`systemtime`).
 You can even instantiate objects directly from their ISO 8601 string representation:
 
 ```python
@@ -25,17 +27,16 @@ Instant("2023-12-28 11:00:00Z")
 PlainDateTime("2023-12-28 11:30:00")
 ```
 
-Below are the default string formats you get for calling each type's
-`format_iso()` method:
+Below are the default ISO string formats produced by each type:
 
-| Type                                    | Default string format                          |
+| Type                                    | ISO 8601 string                                |
 |:----------------------------------------|:-----------------------------------------------|
-| {class}`~whenever.Instant`              | `YYYY-MM-DDTHH:MM:SSZ`                       |
-| {class}`~whenever.PlainDateTime`        | `YYYY-MM-DDTHH:MM:SS`                        |
-| {class}`~whenever.ZonedDateTime`        | `YYYY-MM-DDTHH:MM:SS±HH:MM[IANA TZ ID]` [^1] |
-| {class}`~whenever.OffsetDateTime`       | `YYYY-MM-DDTHH:MM:SS±HH:MM`                  |
+| {class}`~whenever.Instant`              | `2023-12-28T11:30:00Z`                         |
+| {class}`~whenever.PlainDateTime`        | `2023-12-28T11:30:00`                          |
+| {class}`~whenever.ZonedDateTime`        | `2023-12-28T11:30:00+01:00[Europe/Paris]` [^1] |
+| {class}`~whenever.OffsetDateTime`       | `2023-12-28T11:30:00+01:00`                    |
 
-[^1]: The timezone ID is not part of the core ISO 8601 standard,
+[^1]: The time zone ID is not part of the core ISO 8601 standard,
       but is part of the RFC 9557 extension.
       This format is commonly used by datetime libraries in other languages as well.
 
@@ -44,44 +45,68 @@ See the {ref}`reference documentation <iso8601>` for more details on formatting 
 
 ## RFC 2822
 
-[RFC 2822](https://datatracker.ietf.org/doc/html/rfc2822.html#section-3.3) is 
-another common format for representing datetimes. 
-It's used in email headers and HTTP headers. The format is:
+[RFC 2822](https://datatracker.ietf.org/doc/html/rfc2822.html#section-3.3) is
+another common format for representing datetimes, used in email headers and
+HTTP headers. It looks like `Tue, 13 Jul 2021 09:45:00 -0900`: a weekday,
+a date, a time, and a numeric offset.
 
-```text
-Weekday, DD Mon YYYY HH:MM:SS ±HHMM
-```
-
-For example: `Tue, 13 Jul 2021 09:45:00 -0900`
-
-Use the methods {meth}`~whenever.OffsetDateTime.format_rfc2822` and
-{meth}`~whenever.OffsetDateTime.parse_rfc2822` to format and parse
-to this format, respectively:
+{meth}`~whenever.OffsetDateTime.format_rfc2822` and
+{meth}`~whenever.OffsetDateTime.parse_rfc2822` convert to and from
+this format:
 
 ```python
->>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=+5)
+>>> d = OffsetDateTime(2023, 12, 28, 11, 30, offset=hours(5))
 >>> d.format_rfc2822()
 'Thu, 28 Dec 2023 11:30:00 +0500'
 >>> OffsetDateTime.parse_rfc2822('Tue, 13 Jul 2021 09:45:00 -0900')
 OffsetDateTime("2021-07-13 09:45:00-09:00")
 ```
 
-## Custom formats
-
-All datetime types support custom format and parse patterns via
-the `format()` and `parse()` methods.
-Patterns use specifiers like `YYYY`, `MM`, `DD`, `hh`, `mm`, `ss`.
+{meth}`~whenever.Instant.format_rfc2822` writes the GMT form, which is also
+the HTTP date (IMF-fixdate, RFC 9110), and
+{meth}`~whenever.Instant.parse_rfc2822` applies the offset and gives the
+UTC instant:
 
 ```python
->>> OffsetDateTime(2024, 3, 15, 14, 30, offset=+2).format(
-...     "EEE, DD MMM YYYY hh:mm:ssxxx"
+>>> Instant.from_utc(2023, 12, 28, 11, 30).format_rfc2822()
+'Thu, 28 Dec 2023 11:30:00 GMT'
+>>> Instant.parse_rfc2822('Tue, 13 Jul 2021 09:45:00 -0900')
+Instant("2021-07-13 18:45:00Z")
+```
+
+Both parsers accept the RFC 2822 zone names `UT` and `GMT` and the North American
+abbreviations `EST` through `PDT`; any other name, including a military
+letter, is read as `+0000`, and comments in folding whitespace are rejected.
+
+{class}`~whenever.ZonedDateTime` has neither method: the format carries a
+numeric offset and no time zone ID, so a parse can never yield a
+`ZonedDateTime`, and formatting one is `to_fixed_offset()` first.
+{class}`~whenever.PlainDateTime` has no offset to write.
+
+RFC 2822 only represents whole seconds and minute-precision offsets.
+Formatting therefore discards nanoseconds and any seconds in the offset; use
+ISO 8601 when those values must round-trip exactly.
+
+## Patterns
+
+{class}`~whenever.Date`, {class}`~whenever.Time`, {class}`~whenever.Instant`,
+{class}`~whenever.OffsetDateTime`, {class}`~whenever.ZonedDateTime`, and
+{class}`~whenever.PlainDateTime` format and parse with patterns via
+their `format()` and `parse()` methods—for example,
+{meth}`~whenever.OffsetDateTime.format` and
+{meth}`~whenever.OffsetDateTime.parse`.
+Patterns use specifiers like `YYYY`, `MM`, `DD`, `HH`, `mm`, `ss`.
+
+```python
+>>> OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(2)).format(
+...     "EEE, DD MMM YYYY HH:mm:ssxxx"
 ... )
 'Fri, 15 Mar 2024 14:30:00+02:00'
->>> Date.parse("15 Mar 2024", format="DD MMM YYYY")
+>>> Date.parse("15 Mar 2024", pattern="DD MMM YYYY")
 Date("2024-03-15")
 >>> ZonedDateTime.parse(
 ...     "2024-03-15 14:30+01:00[Europe/Paris]",
-...     format="YYYY-MM-DD hh:mmxxx'['VV']'",
+...     pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
 ... )
 ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
 ```
@@ -89,22 +114,24 @@ ZonedDateTime("2024-03-15 14:30:00+01:00[Europe/Paris]")
 See the {ref}`pattern format reference <pattern-format>` for the
 full list of specifiers and details.
 
-```{deprecated} 0.10.0
-The ``parse_strptime()`` methods on ``OffsetDateTime`` and ``PlainDateTime``
-are deprecated. Use ``parse()`` with a pattern string instead, or convert
-from a stdlib datetime:
-``OffsetDateTime(datetime.strptime(...))``.
-```
+### Zoned parsing policies
+
+The {class}`~whenever.ZonedDateTime` ISO-string constructor,
+{meth}`~whenever.ZonedDateTime.parse_iso`, and patterned
+{meth}`~whenever.ZonedDateTime.parse` accept `disambiguation=` and
+`offset_mismatch=`. See
+{ref}`resolving-local-times` for the complete decision flow, including
+matching offsets, conflicts, `Z`, repeated and skipped local times, and
+offset precision.
 
 ## Pydantic integration
 
-```{warning}
-Pydantic support is still in beta and may change in the future.
-```
-
-`whenever` types support basic serialization and deserialization
-with [Pydantic](https://docs.pydantic.dev). The behavior is identical to
-the `parse_iso()` and `format_iso()` methods.
+`whenever` types support serialization and deserialization with
+[Pydantic](https://docs.pydantic.dev) 2. Existing instances are preserved;
+strings are validated with each type's `parse_iso()` method and serialized as
+its **ISO 8601 string**. Other input types and invalid strings raise
+Pydantic's `ValidationError`. The JSON schema of every `whenever` field is a
+string.
 
 ```python
 >>> from pydantic import BaseModel
@@ -124,6 +151,5 @@ the `parse_iso()` and `format_iso()` methods.
 
 ```{note}
 
-Whenever's parsing is stricter then Pydantic's default `datetime` parsing
-behavior. More flexible parsing may be added in the future.
+Parsing is ISO 8601 only, stricter than Pydantic's own `datetime` parsing.
 ```

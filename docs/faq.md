@@ -26,7 +26,7 @@ programs---but datetime logic is arithmetic-heavy and often applied in bulk,
 making it a classic case where faster code pays off.
 That's why many core Python components are
 backed by optimized implementations, and why this library offers a Rust
-version for speed alongside a pure-Python version for portability.
+extension for speed alongside a pure-Python backend for portability.
 
 ## Is free-threaded Python supported?
 
@@ -41,7 +41,7 @@ Since you can also express a moment in time using
 {class}`~whenever.ZonedDateTime`, you might
 wonder why {class}`~whenever.Instant` exists.
 The reason it exists is precisely *because* it doesn't include a
-timezone. By using {class}`~whenever.Instant`,
+time zone. By using {class}`~whenever.Instant`,
 you clearly express that you only care about *when* something happened,
 not about the local time.
 
@@ -65,7 +65,7 @@ endpoints, etc).
 ## Why doesn't {class}`~whenever.Instant` have `.year`, `.hour`, etc.?
 
 An instant represents a specific moment in time,
-independent of any calendar system or timezone.
+independent of any calendar system or time zone.
 Although its debug representation uses UTC,
 that's just a convenient way to display it—it doesn't
 mean the instant *is* a UTC datetime.
@@ -82,69 +82,53 @@ If you need to access calendar fields, convert to a datetime type first:
 ```python
 >>> now.to_tz("Europe/Amsterdam").year
 2026
->>> now.to_fixed_offset(0).hour  # only if you truly need UTC fields
+>>> now.to_fixed_offset().hour  # only if you truly need UTC fields
 5
+```
+
+The same reasoning applies to construction: {meth}`~whenever.Instant.from_utc`
+is the field constructor of {class}`~whenever.Instant`, named for the input it
+takes. There is no `Instant(2020, 1, 1)`, because it would silently mean UTC,
+the one reading the other exact types make you state with `offset=` or `tz=`.
+
+(faq-no-plain-now)=
+## Why is there no `PlainDateTime.now()` or `Time.now()`?
+
+A clock factory takes exactly what its type needs to localize the clock, and
+nothing it would discard: {meth}`Instant.now() <whenever.Instant.now>` takes
+nothing, {meth}`ZonedDateTime.now(tz) <whenever.ZonedDateTime.now>` a time
+zone, {meth}`OffsetDateTime.now(offset) <whenever.OffsetDateTime.now>` an
+offset, and {meth}`Date.today(tz) <whenever.Date.today>` a time zone.
+A `PlainDateTime.now(tz)` would take a time zone only to throw it away.
+Spell the discarding out instead:
+
+```python
+>>> ZonedDateTime.now("Europe/Amsterdam").to_plain()
+PlainDateTime("2026-01-23 06:30:15")
+>>> ZonedDateTime.now("Europe/Amsterdam").time()
+Time("06:30:15")
 ```
 
 (faq-why-offset-dt)=
 ## Why does {class}`~whenever.OffsetDateTime` exist?
 
-Most datetime formats—ISO 8601, RFC 2822, RFC 3339—only carry a fixed
-UTC offset (e.g. `+02:00`), not a full timezone name.
-{class}`~whenever.OffsetDateTime` represents *exactly* what these formats
-contain: a local time pinned to a fixed offset.
-
-This makes it the natural choice for:
-
-- **Parsing and serializing** timestamps from APIs, logs, and databases.
-- **Representing moments in the past**, where the offset was correct
-  at the time of recording and the timezone rules no longer matter.
-- **Simple contexts** where no DST transitions are involved.
-
-The trade-off is that a fixed offset can't track DST.
-If you shift or round an {class}`~whenever.OffsetDateTime`, the
-library preserves the original offset verbatim—which may be wrong
-for future dates if the region's rules have changed.
-That's why these operations emit a
-{class}`~whenever.StaleOffsetWarning`.
-When you need DST-safe arithmetic, convert to
-{class}`~whenever.ZonedDateTime` first.
-
-See {ref}`choosing-a-type` for guidance on which type to use.
+It represents the common interchange case where local fields and a numeric
+offset are available but regional time zone rules are not. See the complete
+{ref}`OffsetDateTime guidance <offset-datetime-guidance>` for why this type is
+necessary and how to avoid stale-offset arithmetic.
 
 (faq-why-3-deltas)=
 ## Why are there three delta types?
 
-Date and time durations have fundamentally different arithmetic rules
-depending on the units involved.
-Rather than papering over this with a single type,
-`whenever` gives each category its own type
-(see {ref}`design`):
+Date and time deltas have fundamentally different arithmetic rules
+depending on whether their units are exact or calendar-based. The three types
+make that distinction explicit: {class}`~whenever.TimeDelta` holds normalized
+exact durations, {class}`~whenever.ItemizedDateDelta` holds calendar
+components, and {class}`~whenever.ItemizedDelta` holds a mix of both (including
+durations preserved from interchange formats).
 
-1. **{class}`~whenever.TimeDelta`** — for exact durations
-   (hours, minutes, seconds, nanoseconds).
-   These normalize automatically: `90 minutes` becomes `1 hour 30 minutes`.
-   They support comparison, mathematical operators, and don't need
-   any context to resolve.
-
-2. **{class}`~whenever.ItemizedDateDelta`** — for pure calendar durations
-   (years, months, weeks, days).
-   These keep their components *itemized*: `1 month` stays `1 month`,
-   and isn't normalized to a number of days.
-   Converting between calendar units requires a reference date
-   (because `1 month` is 28–31 days depending on when you start).
-
-3. **{class}`~whenever.ItemizedDelta`** — for mixed bags of calendar *and*
-   exact units, such as `1 month, 3 hours, 20 minutes`.
-   Useful for display and ISO 8601 round-tripping.
-   Like {class}`~whenever.ItemizedDateDelta`, it keeps components itemized and
-   needs a reference date for conversion.
-
-Having three explicit types prevents subtle bugs like comparing
-`1 month` to `30 days` without context,
-or accidentally normalizing away important calendar semantics.
-
-See {ref}`durations` for the full reference.
+See {ref}`guide-deltas` for how to choose a type and why itemization matters.
+The complete API details are in the {ref}`delta reference <durations>`.
 
 (faq-why-warnings)=
 ## Why warnings instead of errors?
@@ -160,13 +144,13 @@ The warning approach gives you four levels of control:
 1. **Learn by default** — if you're scripting quickly, the warning appears
    in the console and teaches you about the pitfall. If you're in a hurry,
    the library doesn't get in your way and you can fix the issue later.
-2. **Ban project-wide** — in production code, convert warnings to errors
+2. **Ban project-wide** — in application code, convert warnings to errors
    with Python's standard {mod}`warnings` filter:
    ```python
    import warnings
    warnings.filterwarnings("error", category=whenever.PotentialDstBugWarning)
    ```
-3. **Escape hatch** — when the operation is intentional, silence it with
+3. **Call-local escape** — when the operation is intentional, silence it with
    a keyword argument (e.g. ``stale_offset_ok=True``),
    documenting the decision in code.
 4. **Fine-grained** — configure at the module or function level, using
@@ -180,11 +164,11 @@ When converting between types, `whenever` uses two naming conventions:
 - **`to_*`** methods convert between types that already carry enough
   information to determine the result unambiguously.
   For example, {meth}`ZonedDateTime.to_instant`
-  can compute the exact moment because the timezone is known.
+  can compute the exact moment because the time zone is known.
 - **`assume_*`** methods convert from types that *lack* information.
-  The developer must supply the missing piece (a timezone, an offset).
+  The developer must supply the missing piece (a time zone, an offset).
   For example, {meth}`~whenever.PlainDateTime.assume_tz` requires you to
-  specify which timezone the plain datetime is in.
+  specify which time zone the plain datetime is in.
 
 The `assume_*` naming is intentional: it signals that you're making
 an assumption that the library can't verify for you.
@@ -192,13 +176,13 @@ an assumption that the library can't verify for you.
 ## Why the name `PlainDateTime`?
 
 This has been an oft-discussed topic. Several names were considered for
-the concept of a "datetime without a timezone".
+the concept of a "datetime without a time zone".
 
 Each option had its pros and cons.
 
 - Why not `NaiveDateTime`? This name is already used in the standard
   library, which does give it recognition. However, "naive" is a
-  decidedly negative term. While datetimes without a timezone *can* be
+  decidedly negative term. While datetimes without a time zone *can* be
   used in a naive way by developers who don\'t understand the
   implications, they are not inherently wrong to use.
 - Why not `CivilDateTime`? This is the most "technically correct"
@@ -208,10 +192,10 @@ Each option had its pros and cons.
   niche name is a boon to these languages, Python tends to favor more
   common, non-jargon names: "dict" over "hashmap", "list" over
   "array", etc.
-- Why not `LocalDateTime`? This is the name that ISO8601 gives to the
+- Why not `LocalDateTime`? This is the name that ISO 8601 gives to the
   concept, also making it a "technically correct" name. However, the
   term "local" has become overloaded in the Python world where it
-  often refers to the system timezone.
+  often refers to the system time zone.
 
 While `PlainDateTime` is not perfect, it has the following advantages:
 
@@ -237,12 +221,12 @@ Common critiques of `PlainDateTime` are:
 Leap seconds are not fully supported. Taking leap seconds into account
 is a complex and niche feature, which is not needed for the vast majority
 of applications. This decision is consistent with other modern libraries
-(e.g. NodaTime, Temporal) and standards (RFC 5545, Unix time) which do
+(e.g. NodaTime, Temporal) and standards (RFC 5545, the UNIX timestamp convention) which do
 not support leap seconds.
 
 However, *whenever* does accept leap seconds during parsing, normalizing
 them to the previous second (59). This applies to ISO 8601, RFC 2822, and
-[custom format strings](pattern-format).
+[patterns](pattern-format).
 
 (faq-why-not-dropin)=
 ## Why no drop-in replacement for `datetime`?
@@ -273,20 +257,22 @@ directory of the repository.
 Yes! Have a look at [`whenever-sqlalchemy`](https://pypi.org/project/whenever-sqlalchemy/),
 a separate package that provides SQLAlchemy types and utilities for working with `whenever`.
 
-## How can I use the pure-Python version?
+(faq-pure-python)=
+## How can I use the pure-Python backend?
 
 `whenever` is implemented both in Rust and in pure Python. By default,
 the Rust extension is used, as it's faster and more memory-efficient.
-But you can opt out of it if you prefer the pure-Python version, which
+But you can opt out of it if you prefer the pure-Python backend, which
 has a smaller disk footprint and works on all platforms.
 
 ```{note}
-On PyPy and GraalVM, the Python implementation is automatically used. No
+On PyPy and GraalVM, the pure-Python backend loads automatically. No
 need to configure anything.
 ```
 
-To opt out of the Rust extension and use the pure-Python version,
-install from the source distribution with the
+A pure-Python wheel is published alongside the platform wheels, but pip
+prefers the platform wheel when one matches. To select the pure-Python
+backend, install from the source distribution with `--no-binary` and the
 `WHENEVER_NO_BUILD_RUST_EXT` environment variable set.
 
 Installing this way is different depending on your tool of choice:
@@ -337,6 +323,8 @@ You can check if the Rust extension is being used by running:
 python -c "import whenever; print(whenever._EXTENSION_LOADED)"
 ```
 
+This attribute is a diagnostic, not part of the API.
+
 ## What about `dateutil`?
 
 `dateutil` is more of an *extension* to `datetime` than a replacement,
@@ -356,11 +344,11 @@ doesn't wrap it:
 
 1.  Jiff didn't exist when `whenever` was created. Wrapping it was
     only an option after most functionality was already implemented.
-2.  Providing a pure-Python version of `whenever` would require
+2.  Providing a pure-Python backend of `whenever` would require
     re-implementing jiff's logic in Python and keeping them in sync.
 3.  Jiff has a slightly different design philosophy, most notably
     de-emphasizing the difference between offset and zoned datetimes.
-4.  Jiff can't make use of Python's bundled timezone database
+4.  Jiff can't make use of Python's bundled time zone database
     (`tzdata`) if present.
 5.  Writing a Rust library with Python bindings primarily in mind allows
     for some optimizations.
@@ -385,7 +373,7 @@ Date("2024-02-29")
 These operators use the same calendar clamping rules as `add()` and
 `subtract()`. As a result, adding and then subtracting the same delta is not
 always reversible. Itemized deltas also support `+` and `-` with each other;
-these perform field-wise composition and warn when nonzero calendar units are
+these perform component-wise composition and warn when nonzero calendar units are
 involved because applying the combined delta may differ from applying its
 parts sequentially.
 
@@ -394,7 +382,8 @@ example, itemized deltas cannot be multiplied or divided.
 
 The `-` operator between two datetimes always
 returns a {class}`~whenever.TimeDelta`—an exact elapsed duration where
-subtraction is unambiguous.
+subtraction is unambiguous. On {class}`~whenever.PlainDateTime` the
+result is naive arithmetic, and the operator warns.
 If you need a difference in calendar units like years, months, or days,
 use the {meth}`~whenever.ZonedDateTime.since` /
 {meth}`~whenever.ZonedDateTime.until` methods instead:
@@ -405,7 +394,7 @@ use the {meth}`~whenever.ZonedDateTime.since` /
 >>> d2 - d1  # exact elapsed time
 TimeDelta("PT30263h")
 >>> d2.since(d1, in_units=["years", "months", "days"])  # calendar units
-ItemizedDateDelta("P3y5m14d")
+ItemizedDelta("P3y5m14d")
 ```
 
 See {ref}`design` for the full rationale.

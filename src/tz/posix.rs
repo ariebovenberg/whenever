@@ -11,13 +11,14 @@ use crate::{
         local::{LocalMapping, LocalSeconds},
         scalar::*,
         time::Time,
+        units::*,
     },
 };
 use std::num::{NonZeroU8, NonZeroU16};
 
-const DEFAULT_DST: OffsetDelta = OffsetDelta::new_unchecked(3_600);
+const DEFAULT_DST: OffsetDelta = OffsetDelta::new_unchecked(S_PER_HOUR);
 
-/// Result of a timezone metadata query.
+/// Result of a time zone metadata query.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TzMetaResult {
     pub(crate) dst_saving: i32,
@@ -26,7 +27,7 @@ pub(crate) struct TzMetaResult {
 
 // RFC 9636: the transition time may range from -167 to 167 hours! (not just 24)
 pub(crate) type TransitionTime = i32;
-const DEFAULT_RULE_TIME: i32 = 2 * 3_600; // 2 AM
+const DEFAULT_RULE_TIME: i32 = 2 * S_PER_HOUR; // 2 AM
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TzAbbrev {
@@ -161,7 +162,7 @@ impl TzStr {
         }
     }
 
-    /// Timezone metadata: (dst_saving, abbreviation)
+    /// Time zone metadata: (dst_saving, abbreviation)
     pub(crate) fn meta_for_instant(&self, epoch: EpochSecs) -> TzMetaResult {
         match self.dst {
             Some(Dst {
@@ -380,16 +381,16 @@ fn parse_hms(s: &mut Scan, max: i32) -> Option<i32> {
     let mut total = 0;
 
     // parse the hours
-    let hrs = if max > 99 * 3_600 {
+    let hrs = if max > 99 * S_PER_HOUR {
         s.up_to_3_digits()? as i32
     } else {
         s.up_to_2_digits()? as i32
     };
-    total += hrs * 3_600;
+    total += hrs * S_PER_HOUR;
 
     // parse the optional minutes and seconds
     if let Some(true) = s.advance_on(b':') {
-        total += s.digits00_59()? as i32 * 60;
+        total += s.digits00_59()? as i32 * S_PER_MINUTE;
         if let Some(true) = s.advance_on(b':') {
             total += s.digits00_59()? as i32;
         }
@@ -437,7 +438,7 @@ fn parse_rule(scan: &mut Scan) -> Option<(Rule, TransitionTime)> {
     Some((
         rule,
         scan.expect(b'/')
-            .and_then(|_| parse_hms(scan, 167 * 3_600))
+            .and_then(|_| parse_hms(scan, 167 * S_PER_HOUR))
             .unwrap_or(DEFAULT_RULE_TIME),
     ))
 }
@@ -993,7 +994,7 @@ mod tests {
             }),
             std_abbrev: TzAbbrev::EMPTY,
         };
-        // Some timezones have DST end before start
+        // Some time zones have DST end before start
         let tz_inverted = TzStr {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
@@ -1007,7 +1008,7 @@ mod tests {
             }),
             std_abbrev: TzAbbrev::EMPTY,
         };
-        // Some timezones appear to be "always DST", like Africa/Casablanca
+        // Some time zones appear to be "always DST", like Africa/Casablanca
         let tz_always_dst = TzStr {
             std: 7200.try_into().unwrap(),
             dst: Some(Dst {

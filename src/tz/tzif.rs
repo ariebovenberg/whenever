@@ -3,6 +3,7 @@ use crate::{
     common::parse::Scan,
     domain::local::{LocalMapping, LocalSeconds},
     domain::scalar::*,
+    domain::units::*,
     tz::posix::{TzAbbrev, TzMetaResult, TzStr},
 };
 use std::{cmp::Ordering, fmt};
@@ -16,28 +17,28 @@ pub(crate) struct TransitionMeta {
 
 type TransitionData = (Vec<(EpochSecs, Offset)>, Vec<TransitionMeta>);
 
-/// A complete timezone representation, enough to represent a TZif file.
+/// A complete time zone representation, enough to represent a TZif file.
 #[derive(Debug)]
 pub struct TimeZone {
     // The IANA tz ID (e.g. "Europe/Amsterdam"). Not actually parsed from the file,
     // but essential because in our case we almost always associate a tzif file with a tz ID.
-    // Notable exception is the system timezone in some cases.
-    pub(crate) key: Option<String>,
+    // Notable exception is the system time zone in some cases.
+    pub(crate) key: Option<Box<str>>,
     // The following two fields are used to map UTC time to local time and vice versa.
     // For UTC -> local, the transition is unambiguous and simple.
     // Read Vec(X, Y) as "FROM time X onwards (expressed in epoch seconds) the offset is Y".
-    offsets_by_utc: Vec<(EpochSecs, Offset)>,
+    offsets_by_utc: Box<[(EpochSecs, Offset)]>,
     // For local -> UTC, the transition is may be ambiguous and therefore requires extra information.
     // Read Vec<(X, (Y, Z))> as "UNTIL time X (expressed in local epoch seconds) the offset is Y. At this point
     // it shifts by Z.
-    offsets_by_local: Vec<(LocalSeconds, (Offset, OffsetDelta))>,
+    offsets_by_local: Box<[(LocalSeconds, (Offset, OffsetDelta))]>,
     // Invariant: if posix TZ isn't given, there must be at least one entry in each of the above
-    // vectors.
+    // slices.
     end: Option<TzStr>,
-    // Timezone metadata (parallel to offsets_by_utc: same length, same indexing)
-    meta_by_utc: Vec<TransitionMeta>,
+    // Time zone metadata (parallel to offsets_by_utc: same length, same indexing)
+    meta_by_utc: Box<[TransitionMeta]>,
     // NUL-terminated abbreviation strings from TZif
-    abbrev_data: Vec<u8>,
+    abbrev_data: Box<[u8]>,
 }
 
 impl PartialEq for TimeZone {
@@ -124,15 +125,15 @@ impl TimeZone {
     pub(crate) fn parse_posix(s: &str) -> Option<Self> {
         Some(Self {
             key: None,
-            offsets_by_utc: vec![],
-            offsets_by_local: vec![],
+            offsets_by_utc: Box::default(),
+            offsets_by_local: Box::default(),
             end: Some(TzStr::parse(s.as_bytes())?),
-            meta_by_utc: vec![],
-            abbrev_data: vec![],
+            meta_by_utc: Box::default(),
+            abbrev_data: Box::default(),
         })
     }
 
-    /// Get timezone metadata (dst_saving, abbreviation) at the given instant.
+    /// Get time zone metadata (dst_saving, abbreviation) at the given instant.
     pub(crate) fn meta_for_instant(&self, t: EpochSecs) -> TzMetaResult {
         bisect(&self.offsets_by_utc, t)
             .map(|i| {
@@ -152,14 +153,14 @@ impl TimeZone {
             })
     }
 
-    /// The next UTC offset transition strictly after `t`, or None.
+    /// The next transition record strictly after `t`, or None.
     pub(crate) fn next_transition(&self, t: EpochSecs) -> Option<(EpochSecs, Offset)> {
         bisect(&self.offsets_by_utc, t)
             .map(|i| self.offsets_by_utc[i])
             .or_else(|| self.end.and_then(|tz| tz.next_transition(t)))
     }
 
-    /// The previous UTC offset transition strictly before `t`, or None.
+    /// The previous transition record strictly before `t`, or None.
     pub(crate) fn prev_transition(&self, t: EpochSecs) -> Option<(EpochSecs, Offset)> {
         // If past all recorded transitions, check POSIX first
         if let Some(tz) = self.end
@@ -331,12 +332,12 @@ fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult
         return Err(ErrorCause::Body);
     }
     Ok(TimeZone {
-        key: key.map(String::from),
-        offsets_by_local: local_transitions(&offsets_by_utc),
-        offsets_by_utc,
+        key: key.map(Box::from),
+        offsets_by_local: local_transitions(&offsets_by_utc).into_boxed_slice(),
+        offsets_by_utc: offsets_by_utc.into_boxed_slice(),
         end,
-        meta_by_utc,
-        abbrev_data,
+        meta_by_utc: meta_by_utc.into_boxed_slice(),
+        abbrev_data: abbrev_data.into_boxed_slice(),
     })
 }
 
@@ -365,7 +366,11 @@ fn load_transitions(
     types: &[TypeInfo],
     indices: &[u8],
 ) -> Option<TransitionData> {
+    // A record whose type repeats the previous record's changes nothing
+    // observable, so it is dropped: a transition is a change of the offset,
+    // the DST saving, or the abbreviation.
     let first_type = types.first()?;
+    let mut prev_type = first_type;
     let mut offsets = Vec::with_capacity(indices.len() + 1);
     let mut meta = Vec::with_capacity(indices.len() + 1);
 
@@ -392,17 +397,22 @@ fn load_transitions(
 
     for (&idx, &epoch) in indices.iter().zip(transition_times) {
         let typ = types.get(usize::from(idx))?;
+        if typ == prev_type {
+            continue;
+        }
+        prev_type = typ;
         offsets.push((epoch, typ.offset));
 
-        let dst_saving = if typ.isdst {
-            typ.offset.get() - last_std_offset.get()
-        } else {
-            0
-        };
-
-        if !typ.isdst {
+        let dst_saving = if !typ.isdst {
             last_std_offset = typ.offset;
-        }
+            0
+        } else if typ.offset == last_std_offset {
+            // Standard time moved and DST began at the same moment, so the
+            // saving cannot be read off the previous standard offset.
+            S_PER_HOUR
+        } else {
+            typ.offset.get() - last_std_offset.get()
+        };
 
         meta.push(TransitionMeta {
             dst_saving,
@@ -433,6 +443,7 @@ fn parse_posix_tz(s: &mut Scan) -> Option<TzStr> {
     })
 }
 
+#[derive(PartialEq)]
 struct TypeInfo {
     offset: Offset,
     isdst: bool,
@@ -479,7 +490,7 @@ impl fmt::Display for ErrorCause {
 type ParseResult<T> = Result<T, ErrorCause>;
 
 /// Check whether a TZ ID has a valid format (not whether it actually exists though).
-/// Returns `true` for characters that can appear in an IANA timezone ID.
+/// Returns `true` for characters that can appear in an IANA time zone ID.
 pub(crate) fn is_tz_id_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'+' | b'.')
 }
@@ -642,7 +653,7 @@ mod tests {
         const TZ_UTC: &[u8] = include_bytes!("../../tests/tzif/UTC.tzif");
         let tzif = TimeZone::parse_tzif(TZ_UTC, None).unwrap();
         assert_eq!(
-            tzif.offsets_by_utc,
+            tzif.offsets_by_utc.as_ref(),
             &[(EpochSecs::MIN, 0.try_into().unwrap())]
         );
         assert_eq!(tzif.end, TzStr::parse(b"UTC0"));
@@ -662,7 +673,7 @@ mod tests {
         const TZ_FIXED: &[u8] = include_bytes!("../../tests/tzif/GMT-13.tzif");
         let tzif = TimeZone::parse_tzif(TZ_FIXED, None).unwrap();
         assert_eq!(
-            tzif.offsets_by_utc,
+            tzif.offsets_by_utc.as_ref(),
             &[(EpochSecs::MIN, (13 * 3_600).try_into().unwrap())]
         );
         assert_eq!(tzif.end, TzStr::parse(b"<+13>-13"));

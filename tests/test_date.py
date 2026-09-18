@@ -1,38 +1,40 @@
-import pickle
 import re
-from copy import copy, deepcopy
-from datetime import date as py_date, datetime as py_datetime
-from itertools import chain, product
+import warnings
+from datetime import (
+    date as py_date,
+    datetime as py_datetime,
+    timezone as py_timezone,
+)
+from fractions import Fraction
 from typing import Literal
 
 import pytest
 from whenever import (
+    FRIDAY,
+    MONDAY,
+    SATURDAY,
+    SUNDAY,
+    SYSTEM_TZ,
+    THURSDAY,
+    TUESDAY,
+    WEDNESDAY,
     Date,
-    DateDelta,
+    Instant,
     IsoWeekDate,
     ItemizedDateDelta,
     MonthDay,
     PlainDateTime,
     Time,
+    TimeZoneNotFoundError,
     Weekday,
-    WheneverDeprecationWarning,
+    WheneverWarning,
     YearMonth,
+    patch_current_time,
 )
 
-from tests.test_date_delta import make_ddelta
-
-from .common import (
-    AlwaysEqual,
-    AlwaysLarger,
-    AlwaysSmaller,
-    NeverEqual,
-)
+from .common import system_tz, warns_here
 
 MAX_I64 = 1 << 63
-MAX_I32 = 1 << 31
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
 
 
 class TestInit:
@@ -78,6 +80,21 @@ class TestInit:
     def test_invalid_arg_kwargs(self, args, kwargs):
         with pytest.raises(TypeError):
             Date(*args, **kwargs)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{"iso_string": "2021-01-02"}, {"py_date": py_date(2021, 1, 2)}],
+    )
+    def test_alternate_constructors_are_positional_only(self, kwargs):
+        with pytest.raises(TypeError):
+            Date(**kwargs)
+
+    def test_single_argument_wrong_type(self):
+        with pytest.raises(
+            TypeError,
+            match=r"^Date\(\) requires an ISO 8601 string or datetime.date$",
+        ):
+            Date(None)  # type: ignore[call-overload]
 
     def test_not_enough_args(self):
         with pytest.raises(TypeError, match=r"day"):
@@ -145,60 +162,101 @@ class TestInit:
         assert Date("2023-01-02") == Date(2023, 1, 2)
 
 
-def test_year_month():
-    d = Date(2021, 1, 2)
-    assert d.year_month() == YearMonth(2021, 1)
+class TestInitFromPy:
+    def test_init_from_py_date(self):
+        assert Date(py_date(2021, 1, 2)) == Date(2021, 1, 2)
+
+        class CustomDate(py_date):
+            pass
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert Date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
+
+        with pytest.raises(TypeError):
+            Date(20210102)  # type: ignore[call-overload]
+
+    def test_init_from_py_datetime_warns(self):
+        # A datetime is a date subclass whose time is dropped
+        match = (
+            r"^datetime\.datetime contains data that cannot be reliably read "
+            r"through the datetime\.date fields; convert it explicitly$"
+        )
+        with warns_here(WheneverWarning, match=match):
+            assert Date(py_datetime(2021, 1, 2, 3, 4, 5)) == Date(2021, 1, 2)
+        with warns_here(WheneverWarning, match=match):
+            assert Date(
+                py_datetime(2021, 1, 2, 3, 4, 5, tzinfo=py_timezone.utc)
+            ) == Date(2021, 1, 2)
 
 
-def test_month_day():
-    d = Date(2021, 1, 2)
-    assert d.month_day() == MonthDay(1, 2)
+class TestToday:
+    def test_today(self):
+        # NOTE: this may fail if the test is run *exactly* at midnight.
+        # Mocking this out would make things more complicated than it's worth.
+        assert Date.today(SYSTEM_TZ) == Date(py_date.today())
+
+    @pytest.mark.parametrize("bad", [3, None, b"UTC", ["UTC"]])
+    def test_today_non_string_tz(self, bad):
+        with pytest.raises(
+            TypeError, match="^tz must be a string or SYSTEM_TZ$"
+        ):
+            Date.today(bad)
+
+    @pytest.mark.parametrize(
+        "key", ["America/Nowhere", "Europe//Amsterdam", ""]
+    )
+    def test_today_unknown_tz(self, key):
+        with pytest.raises(
+            TimeZoneNotFoundError,
+            match="^" + re.escape(f"time zone ID {key!r} not found") + "$",
+        ):
+            Date.today(key)
+
+    def test_today_differs_from_utc(self):
+        instant = Instant.from_utc(2020, 8, 15, 1)
+        with patch_current_time(instant, keep_ticking=False):
+            assert Date.today("Etc/UTC") == Date(2020, 8, 15)
+            with system_tz("Pacific/Midway"):
+                assert Date.today(SYSTEM_TZ) == Date(2020, 8, 14)
 
 
-def test_to_stdlib():
-    d = Date(2021, 1, 2)
-    assert d.to_stdlib() == py_date(2021, 1, 2)
+class TestAccessors:
+    def test_day_of_week(self):
+        d = Date(2021, 1, 2)
+        assert d.day_of_week() is Weekday.SATURDAY
+        assert Date(2021, 1, 3).day_of_week() is Weekday.SUNDAY
+        assert Date(2021, 1, 4).day_of_week() is Weekday.MONDAY
+        assert Date(2021, 1, 5).day_of_week() is Weekday.TUESDAY
+        assert Date(2021, 1, 6).day_of_week() is Weekday.WEDNESDAY
+        assert Date(2021, 1, 7).day_of_week() is Weekday.THURSDAY
+        assert Date(2021, 1, 8).day_of_week() is Weekday.FRIDAY
+
+    def test_singletons(self):
+        assert Date.MIN == Date(1, 1, 1)
+        assert Date.MAX == Date(9999, 12, 31)
 
 
-def test_today_in_system_tz():
-    d = Date.today_in_system_tz()
-    # NOTE: this may fail if the test is run *exactly* at midnight.
-    # Mocking this out would make things more complicated than it's worth.
-    assert d == Date(py_date.today())
+class TestFormatIso:
+    def test_format_iso(self):
+        d = Date(2021, 1, 2)
+        assert d.format_iso() == "2021-01-02"
+        assert d.format_iso(basic=True) == "20210102"
+        assert Date.parse_iso(d.format_iso(basic=True)) == d
 
+        with pytest.raises(TypeError):
+            d.format_iso(3)  # type: ignore[arg-type, call-arg]
 
-def test_init_from_py_date():
-    assert Date(py_date(2021, 1, 2)) == Date(2021, 1, 2)
-    assert Date(py_datetime(2021, 1, 2, 3, 4, 5)) == Date(2021, 1, 2)
+        with pytest.raises(TypeError):
+            d.format_iso(sep="T")  # type: ignore[call-arg]
 
-    class CustomDate(py_date):
-        pass
+    def test_str(self):
+        d = Date(2021, 1, 2)
+        assert str(d) == "2021-01-02" == d.format_iso()
 
-    assert Date(CustomDate(2021, 1, 2)) == Date(2021, 1, 2)
-
-    with pytest.raises(TypeError):
-        Date(20210102)  # type: ignore[call-overload]
-
-
-def test_format_iso():
-    d = Date(2021, 1, 2)
-    assert d.format_iso() == "2021-01-02"
-    assert d.format_iso(basic=True) == "20210102"
-
-    with pytest.raises(TypeError):
-        d.format_iso(3)  # type: ignore[arg-type, call-arg]
-
-    with pytest.raises(TypeError):
-        d.format_iso(sep="T")  # type: ignore[call-arg]
-
-    for basic in (0, 1, None, ""):
-        with pytest.raises(TypeError, match="basic must be a boolean"):
-            d.format_iso(basic=basic)  # type: ignore[arg-type]
-
-
-def test_str():
-    d = Date(2021, 1, 2)
-    assert str(d) == "2021-01-02"
+    def test_repr(self):
+        d = Date(221, 1, 2)
+        assert repr(d) == 'Date("0221-01-02")'
 
 
 class TestParseIso:
@@ -282,7 +340,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             Date.parse_iso(s)
 
@@ -291,177 +349,86 @@ class TestParseIso:
             Date.parse_iso(20210102)  # type: ignore[arg-type]
 
 
-def test_replace():
-    d = Date(2021, 1, 2)
-    assert d.replace(year=2022) == Date(2022, 1, 2)
-    assert d.replace(month=2) == Date(2021, 2, 2)
-    assert d.replace(day=3) == Date(2021, 1, 3)
-    assert d == Date(2021, 1, 2)  # original is unchanged
+class TestEquality:
+    def test_hash(self):
+        d = Date(2021, 1, 2)
+        assert hash(d) == hash(Date(2021, 1, 2))
+        assert hash(d) != hash(Date(2021, 1, 3))
 
-    with pytest.raises(TypeError):
-        d.replace(3)  # type: ignore[call-arg]
+    def test_eq(self):
+        d = Date(2021, 1, 2)
+        same = Date(2021, 1, 2)
+        different = Date(2021, 1, 3)
 
-    with pytest.raises(TypeError, match="foo"):
-        d.replace(foo=3)  # type: ignore[call-arg]
+        assert d == same
+        assert not d == different
 
-    with pytest.raises(TypeError, match="foo"):
-        d.replace(foo="blabla")  # type: ignore[call-arg]
+        assert not d != same
+        assert d != different
 
-    with pytest.raises(ValueError, match="(date|year)"):
-        d.replace(year=10_000)
-
-
-def test_kwarg_interning_bug_issue_149():
-    d = Date(2021, 1, 2)
-    assert d.replace(**{"day": 4, "y" + (lambda: "ear")(): 2022}) == Date(
-        2022, 1, 4
-    )
+        assert hash(d) == hash(same)
 
 
-def test_at():
-    d = Date(2021, 1, 2)
-    assert d.at(Time(3, 4, 5)) == PlainDateTime(2021, 1, 2, 3, 4, 5)
+class TestComparison:
+    def test_comparison(self):
+        d = Date(2021, 5, 10)
+        same = Date(2021, 5, 10)
+        bigger = Date(2022, 2, 28)
+        smaller = Date(2020, 12, 31)
+
+        assert d <= same
+        assert d <= bigger
+        assert not d <= smaller
+
+        assert not d < same
+        assert d < bigger
+        assert not d < smaller
+
+        assert d >= same
+        assert not d >= bigger
+        assert d >= smaller
+
+        assert not d > same
+        assert not d > bigger
+        assert d > smaller
 
 
-def test_repr():
-    d = Date(221, 1, 2)
-    assert repr(d) == 'Date("0221-01-02")'
+class TestReplace:
+    def test_replace(self):
+        d = Date(2021, 1, 2)
+        assert d.replace(year=2022) == Date(2022, 1, 2)
+        assert d.replace(month=2) == Date(2021, 2, 2)
+        assert d.replace(day=3) == Date(2021, 1, 3)
+        assert d == Date(2021, 1, 2)  # original is unchanged
+        assert d.replace(day=31).replace(month=3) == Date(2021, 3, 31)
+
+        # a result that is not a valid date
+        with pytest.raises(ValueError, match="date|day"):
+            d.replace(day=31).replace(month=4)
+
+        with pytest.raises(ValueError, match="date|day"):
+            d.replace(year=2023, month=2, day=29)
+
+        with pytest.raises(TypeError):
+            d.replace(3)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="foo"):
+            d.replace(foo=3)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="foo"):
+            d.replace(foo="blabla")  # type: ignore[call-arg]
+
+        with pytest.raises(ValueError, match="(date|year)"):
+            d.replace(year=10_000)
+
+    def test_kwarg_interning_bug_issue_149(self):
+        d = Date(2021, 1, 2)
+        assert d.replace(**{"day": 4, "y" + (lambda: "ear")(): 2022}) == Date(
+            2022, 1, 4
+        )
 
 
-def test_hash():
-    d = Date(2021, 1, 2)
-    assert hash(d) == hash(Date(2021, 1, 2))
-    assert hash(d) != hash(Date(2021, 1, 3))
-
-
-def test_eq():
-    d = Date(2021, 1, 2)
-    same = Date(2021, 1, 2)
-    different = Date(2021, 1, 3)
-
-    assert d == same
-    assert not d == different
-    assert not d == NeverEqual()
-    assert d == AlwaysEqual()
-
-    assert not d != same
-    assert d != different
-    assert d != NeverEqual()
-    assert not d != AlwaysEqual()
-    assert d != None  # noqa: E711
-    assert None != d  # noqa: E711
-    assert not d == None  # noqa: E711
-    assert not None == d  # noqa: E711
-
-    assert hash(d) == hash(same)
-
-
-def test_comparison():
-    d = Date(2021, 5, 10)
-    same = Date(2021, 5, 10)
-    bigger = Date(2022, 2, 28)
-    smaller = Date(2020, 12, 31)
-
-    assert d <= same
-    assert d <= bigger
-    assert not d <= smaller
-    assert d <= AlwaysLarger()
-    assert not d <= AlwaysSmaller()
-
-    assert not d < same
-    assert d < bigger
-    assert not d < smaller
-    assert d < AlwaysLarger()
-    assert not d < AlwaysSmaller()
-
-    assert d >= same
-    assert not d >= bigger
-    assert d >= smaller
-    assert not d >= AlwaysLarger()
-    assert d >= AlwaysSmaller()
-
-    assert not d > same
-    assert not d > bigger
-    assert d > smaller
-    assert not d > AlwaysLarger()
-    assert d > AlwaysSmaller()
-
-
-class TestAdd:
-    @pytest.mark.parametrize(
-        "d, kwargs, expected",
-        [
-            (Date(2021, 1, 31), dict(), Date(2021, 1, 31)),
-            (Date(2021, 1, 31), dict(days=1), Date(2021, 2, 1)),
-            (Date(2021, 2, 1), dict(days=-1), Date(2021, 1, 31)),
-            (Date(2021, 2, 28), dict(months=-2), Date(2020, 12, 28)),
-            (Date(2021, 1, 31), dict(years=1), Date(2022, 1, 31)),
-            (Date(2021, 1, 31), dict(months=37), Date(2024, 2, 29)),
-            (Date(2020, 2, 29), dict(years=1), Date(2021, 2, 28)),
-            (Date(2020, 2, 29), dict(years=1, days=1), Date(2021, 3, 1)),
-            (Date(2020, 2, 29), dict(years=1, weeks=2), Date(2021, 3, 14)),
-            (
-                Date(2020, 1, 30),
-                dict(years=1, months=1, days=1),
-                Date(2021, 3, 1),
-            ),
-            (
-                Date(2020, 1, 30),
-                dict(years=1, months=1, weeks=1),
-                Date(2021, 3, 7),
-            ),
-            # this checks that truncation isn't done after years, but after
-            # months *and* years
-            (
-                Date(2020, 2, 29),
-                dict(years=1, months=1),
-                Date(2021, 3, 29),
-            ),
-        ],
-    )
-    def test_valid(self, d, kwargs, expected):
-        assert d.add(**kwargs) == expected
-
-        assert d.add(DateDelta(**kwargs)) == expected
-        assert d + DateDelta(**kwargs) == expected
-
-        if kwargs:  # skip the empty delta case
-            assert d.add(ItemizedDateDelta(**kwargs)) == expected
-
-    def test_operator_deprecation_warning(self):
-
-        d = Date(2021, 1, 31)
-        delta = DateDelta(months=2)
-        with pytest.warns(
-            WheneverDeprecationWarning, match=r"\+ operator.*add"
-        ):
-            assert (d + delta) is not None
-
-    @pytest.mark.parametrize(
-        "d, kwargs",
-        [
-            (Date(2021, 1, 31), dict(years=8000)),
-            (Date(2021, 1, 31), dict(days=8000 * 365)),
-            (Date(2021, 1, 31), dict(years=-3000)),
-            (Date(2021, 1, 31), dict(days=MAX_I64 + 3)),
-            (Date(2021, 1, 31), dict(weeks=-MAX_I64 - 2)),
-            (Date(2021, 1, 31), dict(months=MAX_I64 + 2)),
-            (Date(2021, 1, 31), dict(months=MAX_I32 - 2, years=1)),
-        ],
-    )
-    def test_out_of_range(self, d, kwargs):
-        with pytest.raises((OverflowError, ValueError)):
-            d.add(**kwargs)
-
-        with pytest.raises((OverflowError, ValueError)):
-            d + DateDelta(**kwargs)
-
-        with pytest.raises((OverflowError, ValueError)):
-            d.add(DateDelta(**kwargs))
-
-        with pytest.raises((OverflowError, ValueError)):
-            d.add(ItemizedDateDelta(**kwargs))
-
+class TestShift:
     def test_invalid(self):
         with pytest.raises(TypeError):
             Date(2021, 1, 1) + None  # type: ignore[operator]
@@ -472,91 +439,136 @@ class TestAdd:
         with pytest.raises(TypeError):
             py_date(2020, 1, 1) + Date(2021, 1, 1)  # type: ignore[operator]
 
-    def test_no_mix_arg_kwargs(self):
-        d = Date(2020, 1, 1)
-        with pytest.raises(TypeError):
-            d.add(DateDelta(years=1), months=1)  # type: ignore[call-overload]
-
-        with pytest.raises(TypeError):
-            d.add(ItemizedDateDelta(years=1), months=1)  # type: ignore[call-overload]
-
-
-class TestDaysUntilAndSince:
     @pytest.mark.parametrize(
-        "d1, d2, expected",
+        "call",
         [
-            (Date(2021, 1, 1), Date(2021, 1, 31), 30),
-            (Date(2020, 2, 28), Date(2020, 2, 28), 0),
-            (Date(2020, 2, 28), Date(2020, 3, 1), 2),
-            (Date(2020, 2, 28), Date(2020, 2, 1), -27),
-            (Date(1990, 5, 2), Date(2021, 12, 1), 11536),
-            (Date.MIN, Date.MAX, 3652058),
+            lambda d: d - d,
+            lambda d: d + 1,
+            lambda d: d - 1,
+            lambda d: 1 + d,
         ],
     )
-    def test_days_until_and_since(self, d1, d2, expected):
-        assert d1.days_until(d2) == expected
-        assert d2.days_since(d1) == expected
-        assert d1.days_since(d2) == -expected
-        assert d2.days_until(d1) == -expected
+    def test_rejected_operands(self, call):
+        d = Date(2021, 1, 1)
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            call(d)
 
-    def test_invalid(self):
-        with pytest.raises((TypeError, AttributeError)):
-            Date(2021, 1, 1).days_until(PlainDateTime(2021, 1, 1, 1, 2, 3))  # type: ignore[arg-type]
+    def test_no_arguments(self):
+        d = Date(2021, 1, 1)
+        assert d.add() == d
 
-    def test_deprecated(self):
-        with pytest.warns(
-            WheneverDeprecationWarning, match=r"days_until.*until()"
-        ):
-            assert Date(2021, 1, 1).days_until(Date(2021, 1, 31)) == 30
+    def test_keywords(self):
+        assert Date(2021, 1, 2).add(years=1, months=2, days=3) == Date(
+            2022, 3, 5
+        )
+        assert Date(2021, 1, 2).subtract(weeks=1) == Date(2020, 12, 26)
+        # months and years clamp to the last day of the month
+        assert Date(2024, 1, 31).add(months=1) == Date(2024, 2, 29)
+        assert Date(2020, 2, 29).add(years=1) == Date(2021, 2, 28)
+        # months first, clamped, then days
+        assert Date(2024, 1, 30).add(months=1, days=1) == Date(2024, 3, 1)
 
-        with pytest.warns(
-            WheneverDeprecationWarning, match=r"days_since.*since()"
-        ):
-            assert Date(2021, 1, 1).days_since(Date(2021, 1, 31)) == -30
+    def test_invalid_arguments(self):
+        d = Date(2021, 1, 1)
+        with pytest.raises(TypeError, match="ItemizedDateDelta"):
+            d.add(4)  # type: ignore[call-overload]
+        with pytest.raises(TypeError):
+            d.add(ItemizedDateDelta(days=1), days=1)  # type: ignore[call-overload]
 
-
-_EXAMPLE_DATES = [
-    *chain.from_iterable(
+    @pytest.mark.parametrize(
+        ("call", "message"),
         [
-            Date(y, 1, 1),
-            Date(y, 1, 2),
-            Date(y, 1, 4),
-            Date(y, 1, 10),
-            Date(y, 1, 28),
-            Date(y, 1, 29),
-            Date(y, 1, 30),
-            Date(y, 1, 31),
-            Date(y, 2, 1),
-            Date(y, 2, 26),
-            Date(y, 2, 27),
-            Date(y, 2, 28),
-            Date(y, 3, 1),
-            Date(y, 3, 2),
-            Date(y, 3, 31),
-            Date(y, 4, 1),
-            Date(y, 4, 2),
-            Date(y, 4, 15),
-            Date(y, 4, 30),
-            Date(y, 5, 1),
-            Date(y, 5, 31),
-            Date(y, 8, 25),
-            Date(y, 11, 30),
-            Date(y, 12, 1),
-            Date(y, 12, 2),
-            Date(y, 12, 27),
-            Date(y, 12, 28),
-            Date(y, 12, 29),
-            Date(y, 12, 30),
-            Date(y, 12, 31),
-        ]
-        for y in (2020, 2021, 2022, 2023, 2024)
-    ),
-    Date(2024, 2, 29),
-    Date(2020, 2, 29),
-]
+            (
+                lambda d: d.add(4),
+                "add() argument must be an ItemizedDateDelta",
+            ),
+            (
+                lambda d: d.add(ItemizedDateDelta(days=1), days=1),
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda d: d.add(
+                    ItemizedDateDelta(days=1), ItemizedDateDelta(days=1)
+                ),
+                "add() takes at most one positional argument (2 given)",
+            ),
+            (
+                lambda d: d.add(hours=1),
+                "add() got an unexpected keyword argument 'hours'",
+            ),
+            (lambda d: d.subtract(weeks=1.5), "weeks must be an integer"),
+            (lambda d: d.add(days=float("nan")), "days must be an integer"),
+            (lambda d: d.add(years="1"), "years must be an integer"),
+            (lambda d: d.add(months=None), "months must be an integer"),
+        ],
+    )
+    def test_rejections(self, call, message):
+        d = Date(2021, 1, 1)
+        with pytest.raises(TypeError, match="^" + re.escape(message) + "$"):
+            call(d)
 
 
-class TestSinceAndUntil:
+class TestDifference:
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            (
+                {"in_units": ["days"], "round_mode": "bad"},
+                "invalid round_mode: 'bad'",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": 0},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": -1},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {
+                    "in_units": ["days"],
+                    "round_increment": -1,
+                    "round_mode": "ceil",
+                },
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["months"], "round_increment": 10**9},
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": 1.5},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": "1"},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": None},
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": Fraction(1, 2)},
+                "round_increment must be an integer",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["since", "until"])
+    def test_invalid_rounding(self, method, kwargs, message):
+        d1 = Date(2021, 1, 1)
+        d2 = Date(2020, 1, 1)
+        with pytest.raises(
+            (TypeError, ValueError), match="^" + re.escape(message) + "$"
+        ):
+            getattr(d1, method)(d2, **kwargs)
+
+    def test_units_may_be_any_iterable(self):
+        assert Date(2021, 1, 1).since(
+            Date(2020, 1, 1),
+            in_units=iter(["days"]),  # type: ignore[call-overload]
+        ) == ItemizedDateDelta(days=366)
+
     @pytest.mark.parametrize(
         "d1, d2, unit, expected",
         [
@@ -806,14 +818,12 @@ class TestSinceAndUntil:
             d.since(Date(2020, 1, 1), total="foos")  # type: ignore[call-overload]
 
         # empty units list
-        with pytest.raises(
-            ValueError, match="units cannot be empty|[Aa]t least one"
-        ):
+        with pytest.raises(ValueError, match="^units must not be empty$"):
             d.since(Date(2020, 1, 1), in_units=())
 
         # neither total nor in_units specified
         with pytest.raises(
-            TypeError, match="Must specify|total.*or.*in_units"
+            TypeError, match="^must specify either 'total' or 'in_units'$"
         ):
             d.since(Date(2020, 1, 1))  # type: ignore[call-overload]
 
@@ -841,7 +851,7 @@ class TestSinceAndUntil:
             d.since(Date(2020, 1, 1), total="years", round_increment=1)  # type: ignore[call-overload]
 
         # round_mode is still valid with in_units
-        with pytest.raises(ValueError, match="round.*mode.*foobar"):
+        with pytest.raises(ValueError, match="invalid (round_)?mode.*foobar"):
             d.since(Date(2020, 1, 1), in_units=["years"], round_mode="foobar")  # type: ignore[call-overload]
 
     # `until` behaves very similarly to `since`,
@@ -925,285 +935,129 @@ class TestSinceAndUntil:
             )
 
 
-class TestSubtract:
+class TestStartOf:
     @pytest.mark.parametrize(
-        "d, kwargs, expected",
+        "d, unit, expected",
         [
-            (Date(2021, 1, 31), dict(), Date(2021, 1, 31)),
-            (Date(2021, 1, 31), dict(months=0), Date(2021, 1, 31)),
-            (Date(2021, 1, 31), dict(days=1), Date(2021, 1, 30)),
-            (Date(2021, 2, 1), dict(days=-1), Date(2021, 2, 2)),
-            (Date(2021, 2, 28), dict(months=2), Date(2020, 12, 28)),
-            (Date(2021, 1, 31), dict(years=1), Date(2020, 1, 31)),
-            (Date(2021, 1, 31), dict(months=37), Date(2017, 12, 31)),
-            (Date(2020, 2, 29), dict(years=1), Date(2019, 2, 28)),
-            (Date(2020, 2, 29), dict(years=1, days=1), Date(2019, 2, 27)),
-            (
-                Date(2020, 1, 30),
-                dict(years=1, months=1, days=1),
-                Date(2018, 12, 29),
-            ),
-            (
-                Date(2020, 1, 30),
-                dict(years=1, months=1, weeks=1),
-                Date(2018, 12, 23),
-            ),
+            (Date(2024, 8, 15), "year", Date(2024, 1, 1)),
+            (Date(2024, 1, 1), "year", Date(2024, 1, 1)),  # already there
+            (Date(2024, 8, 15), "month", Date(2024, 8, 1)),
+            (Date(2024, 8, 1), "month", Date(2024, 8, 1)),  # already there
+            (Date(2024, 12, 25), "month", Date(2024, 12, 1)),
+            # a week that crosses a month: Fri Mar 1 -> Mon Feb 26;
+            # Mon Jan 1 -> Sun Dec 31
+            (Date(2024, 3, 1), "week_mon", Date(2024, 2, 26)),
+            (Date(2024, 1, 1), "week_sun", Date(2023, 12, 31)),
         ],
     )
-    def test_valid_delta(self, d, kwargs, expected):
-        assert d.subtract(**kwargs) == expected
-        assert d - DateDelta(**kwargs) == expected
-        assert d.subtract(DateDelta(**kwargs)) == expected
+    def test_values(self, d, unit, expected):
+        assert d.start_of(unit) == expected
 
-        if kwargs:  # skip the zero-delta case
-            assert d.subtract(ItemizedDateDelta(**kwargs)) == expected
+    # a Date has nothing below a day
+    @pytest.mark.parametrize("unit", ["day", "invalid", None, 5])
+    def test_invalid_unit(self, unit):
+        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
+            Date(2024, 8, 15).start_of(unit)
 
-    def test_operator_is_deprecated(self):
-        d = Date(2021, 1, 1)
-        delta = DateDelta(days=1)
-        with pytest.warns(
-            WheneverDeprecationWarning, match="-.*operator.*subtract"
+    def test_week_value_error(self):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
         ):
-            d - delta
+            Date(2024, 8, 15).start_of("week")  # type: ignore[arg-type]
 
-        with pytest.warns(
-            WheneverDeprecationWarning, match="-.*operator.*since"
+    # Monday 2024-08-12 through Sunday 2024-08-18
+    @pytest.mark.parametrize("day", range(12, 19))
+    def test_week_mon(self, day):
+        assert Date(2024, 8, day).start_of("week_mon") == Date(2024, 8, 12)
+
+    # Sunday 2024-08-11 through Saturday 2024-08-17
+    @pytest.mark.parametrize("day", range(11, 18))
+    def test_week_sun(self, day):
+        assert Date(2024, 8, day).start_of("week_sun") == Date(2024, 8, 11)
+
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        assert Date.MIN.start_of("week_mon") == Date.MIN
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
         ):
-            d - d
+            Date.MIN.start_of("week_sun")
+        assert Date.MAX.start_of("week_mon") == Date(9999, 12, 27)
+        assert Date.MAX.start_of("week_sun") == Date(9999, 12, 26)
 
+
+class TestEndOf:
     @pytest.mark.parametrize(
-        "kwargs",
+        ("unit", "next_start"),
         [
-            {"years": 3000},
-            {"days": 3000 * 365},
-            {"years": -8000},
-            {"days": MAX_I64 + 3},
-            {"weeks": -MAX_I64 - 2},
-            {"months": MAX_I64 + 2},
+            ("year", Date(2025, 1, 1)),
+            ("month", Date(2024, 9, 1)),
+            ("week_mon", Date(2024, 8, 19)),
+            ("week_sun", Date(2024, 8, 18)),
         ],
     )
-    def test_delta_out_of_bounds(self, kwargs):
-        with pytest.raises((OverflowError, ValueError)):
-            Date(2021, 1, 1) - DateDelta(**kwargs)
-        with pytest.raises((OverflowError, ValueError)):
-            Date(2021, 1, 1).subtract(**kwargs)
-        with pytest.raises((OverflowError, ValueError)):
-            Date(2021, 1, 1).subtract(DateDelta(**kwargs))
-
-        with pytest.raises((OverflowError, ValueError)):
-            Date(2021, 1, 1).subtract(ItemizedDateDelta(**kwargs))
+    def test_adjacent_to_next_start(self, unit, next_start):
+        date = Date(2024, 8, 15)
+        assert date.end_of(unit).add(days=1) == next_start
 
     @pytest.mark.parametrize(
-        "d1, d2, expected",
+        "d, unit, expected",
         [
-            (Date(2021, 1, 31), Date(2021, 1, 1), make_ddelta(days=30)),
-            (Date(2021, 1, 1), Date(2021, 1, 31), -make_ddelta(days=30)),
-            (Date(2021, 1, 20), Date(2021, 1, 11), make_ddelta(days=9)),
-            (Date(2021, 2, 28), Date(2021, 2, 28), make_ddelta(days=0)),
-            (Date(2021, 2, 28), Date(2021, 2, 27), make_ddelta(days=1)),
-            (Date(2021, 2, 28), Date(2021, 2, 1), make_ddelta(days=27)),
+            (Date(2024, 8, 15), "year", Date(2024, 12, 31)),
+            (Date(2024, 12, 31), "year", Date(2024, 12, 31)),  # already there
+            (Date(2024, 8, 15), "month", Date(2024, 8, 31)),  # 31 days
+            (Date(2024, 6, 10), "month", Date(2024, 6, 30)),  # 30 days
+            (Date(2024, 2, 10), "month", Date(2024, 2, 29)),  # leap year
+            (Date(2023, 2, 10), "month", Date(2023, 2, 28)),
+            (Date(2024, 8, 31), "month", Date(2024, 8, 31)),  # already there
+            # a week that crosses a month: Mon Jul 29 -> Sun Aug 4;
+            # Sun Dec 29 -> Sat Jan 4
+            (Date(2024, 7, 29), "week_mon", Date(2024, 8, 4)),
+            (Date(2024, 12, 29), "week_sun", Date(2025, 1, 4)),
         ],
     )
-    def test_days(self, d1, d2, expected):
-        assert d1 - d2 == expected
+    def test_values(self, d, unit, expected):
+        assert d.end_of(unit) == expected
 
-    @pytest.mark.parametrize(
-        "d1, d2, delta",
-        [
-            (
-                Date(2021, 2, 1),
-                Date(2020, 1, 29),
-                make_ddelta(years=1, days=3),
-            ),
-            (Date(2021, 1, 31), Date(2020, 12, 31), make_ddelta(months=1)),
-            (Date(2020, 12, 31), Date(2021, 1, 31), make_ddelta(months=-1)),
-            (
-                Date(2021, 1, 20),
-                Date(2020, 12, 19),
-                make_ddelta(months=1, days=1),
-            ),
-            (Date(2024, 2, 28), Date(2024, 2, 29), -make_ddelta(days=1)),
-            (Date(2024, 2, 29), Date(2024, 2, 28), make_ddelta(days=1)),
-            (
-                Date(2024, 2, 29),
-                Date(2023, 3, 1),
-                make_ddelta(months=11, days=28),
-            ),
-            (
-                Date(2024, 2, 29),
-                Date(2023, 3, 2),
-                make_ddelta(months=11, days=27),
-            ),
-            (
-                Date(2023, 3, 2),
-                Date(2024, 2, 29),
-                -make_ddelta(months=11, days=27),
-            ),
-            (Date(2024, 1, 31), Date(2023, 1, 31), make_ddelta(years=1)),
-            (
-                Date(2023, 1, 31),
-                Date(2024, 2, 29),
-                -make_ddelta(years=1, days=28),
-            ),
-            (
-                Date(2023, 1, 30),
-                Date(2024, 2, 29),
-                -make_ddelta(years=1, days=29),
-            ),
-            (
-                Date(2022, 12, 30),
-                Date(2024, 2, 29),
-                -make_ddelta(years=1, months=1, days=30),
-            ),
-            (
-                Date(2024, 2, 29),
-                Date(2023, 1, 31),
-                make_ddelta(years=1, months=1),
-            ),
-            (
-                Date(2024, 2, 29),
-                Date(2023, 2, 28),
-                make_ddelta(years=1, days=1),
-            ),
-            (Date(2023, 2, 28), Date(2024, 2, 29), -make_ddelta(years=1)),
-            (Date(2023, 2, 28), Date(2024, 2, 28), -make_ddelta(years=1)),
-            (Date(2025, 2, 28), Date(2024, 2, 29), make_ddelta(years=1)),
-            (
-                Date(2024, 2, 29),
-                Date(2025, 2, 28),
-                -make_ddelta(months=11, days=28),
-            ),
-            (
-                Date(2023, 2, 28),
-                Date(2024, 2, 29),
-                make_ddelta(years=-1),
-            ),
-        ],
-    )
-    def test_months_and_years(self, d1, d2, delta):
-        assert d1 - d2 == delta
-        assert d2 + delta == d1
+    @pytest.mark.parametrize("unit", ["day", "hour", None, 5])
+    def test_invalid_unit(self, unit):
+        with pytest.raises(ValueError, match=f"^invalid unit: {unit!r}$"):
+            Date(2024, 8, 15).end_of(unit)
 
-    def test_invalid_type(self):
-        with pytest.raises(TypeError, match="unsupported operand"):
-            Date(2021, 1, 1) - 1  # type: ignore[operator]
-        with pytest.raises(TypeError, match="unsupported operand"):
-            Date(2021, 1, 1) - "2021-01-01"  # type: ignore[operator]
+    def test_week_value_error(self):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
+            Date(2024, 8, 15).end_of("week")  # type: ignore[arg-type]
 
-        with pytest.raises(TypeError):
-            None - Date(2021, 1, 1)  # type: ignore[operator]
+    # Monday 2024-08-12 through Sunday 2024-08-18
+    @pytest.mark.parametrize("day", range(12, 19))
+    def test_week_mon(self, day):
+        assert Date(2024, 8, day).end_of("week_mon") == Date(2024, 8, 18)
 
-        with pytest.raises(TypeError):
-            3 - Date(2021, 1, 1)  # type: ignore[operator]
+    # Sunday 2024-08-11 through Saturday 2024-08-17
+    @pytest.mark.parametrize("day", range(11, 18))
+    def test_week_sun(self, day):
+        assert Date(2024, 8, day).end_of("week_sun") == Date(2024, 8, 17)
 
-        with pytest.raises(TypeError):
-            DateDelta() - Date(2021, 1, 1)  # type: ignore[operator]
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        assert Date.MIN.end_of("week_mon") == Date(1, 1, 7)
+        assert Date.MIN.end_of("week_sun") == Date(1, 1, 6)
+        assert Date.MAX.end_of("year") == Date.MAX
+        assert Date.MAX.end_of("month") == Date.MAX
 
-        with pytest.raises(TypeError):
-            Date(2021, 1, 1) - PlainDateTime(2020, 3, 2)  # type: ignore[operator]
-
-        with pytest.raises(TypeError):
-            PlainDateTime(2021, 1, 1) - Date(2020, 3, 2)  # type: ignore[operator]
-
-    def test_fuzzing(self):
-        for d1, d2 in product(_EXAMPLE_DATES, _EXAMPLE_DATES):
-            delta = d1 - d2
-            assert d2 + delta == d1
+    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
+    def test_max_week_out_of_range(self, unit):
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            Date.MAX.end_of(unit)
 
 
-def test_day_of_week():
-    d = Date(2021, 1, 2)
-    assert d.day_of_week() is Weekday.SATURDAY
-    assert Date(2021, 1, 3).day_of_week() is Weekday.SUNDAY
-    assert Date(2021, 1, 4).day_of_week() is Weekday.MONDAY
-    assert Date(2021, 1, 5).day_of_week() is Weekday.TUESDAY
-    assert Date(2021, 1, 6).day_of_week() is Weekday.WEDNESDAY
-    assert Date(2021, 1, 7).day_of_week() is Weekday.THURSDAY
-    assert Date(2021, 1, 8).day_of_week() is Weekday.FRIDAY
-
-    # test that days can be imported directly from the module too
-    from whenever import (
-        FRIDAY,
-        MONDAY,
-        SATURDAY,
-        SUNDAY,
-        THURSDAY,
-        TUESDAY,
-        WEDNESDAY,
-    )
-
-    assert Date(1915, 7, 19).day_of_week() is MONDAY
-    assert Date(1915, 7, 20).day_of_week() is TUESDAY
-    assert Date(1915, 7, 21).day_of_week() is WEDNESDAY
-    assert Date(1915, 7, 22).day_of_week() is THURSDAY
-    assert Date(1915, 7, 23).day_of_week() is FRIDAY
-    assert Date(1915, 7, 24).day_of_week() is SATURDAY
-    assert Date(1915, 7, 25).day_of_week() is SUNDAY
-
-    assert pickle.loads(pickle.dumps(SATURDAY)) is SATURDAY
-
-
-def test_pickling():
-    d = Date(2021, 1, 2)
-    dumped = pickle.dumps(d)
-    assert len(dumped) < len(pickle.dumps(d.to_stdlib())) + 10
-    assert pickle.loads(dumped) == d
-
-
-def test_unpickle_compatibility():
-    dumped = (
-        b"\x80\x04\x95'\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
-        b"kl_date\x94\x93\x94C\x04\xe5\x07\x01\x02\x94\x85\x94R\x94."
-    )
-    assert pickle.loads(dumped) == Date(2021, 1, 2)
-
-
-def test_copy():
-    d = Date(2021, 1, 2)
-    assert copy(d) is d
-    assert deepcopy(d) is d
-
-
-def test_singletons():
-    assert Date.MIN == Date(1, 1, 1)
-    assert Date.MAX == Date(9999, 12, 31)
-
-
-class TestDeprecations:
-    def test_py_date(self):
-        d = Date(2021, 1, 2)
-        with pytest.warns(WheneverDeprecationWarning):
-            result = d.py_date()
-        assert result == py_date(2021, 1, 2)
-
-    def test_from_py_date(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = Date.from_py_date(py_date(2021, 1, 2))
-        assert result == Date(2021, 1, 2)
-
-    def test_from_py_date_wrong_type(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            with pytest.raises(TypeError):
-                Date.from_py_date(42)  # type: ignore[arg-type]
-
-
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class SubclassDate(Date):  # type: ignore[misc]
-            pass
-
-
-MONDAY = Weekday.MONDAY
-TUESDAY = Weekday.TUESDAY
-WEDNESDAY = Weekday.WEDNESDAY
-THURSDAY = Weekday.THURSDAY
-FRIDAY = Weekday.FRIDAY
-SATURDAY = Weekday.SATURDAY
-SUNDAY = Weekday.SUNDAY
-
-
-class TestDayOfYear:
+class TestCalendarProperties:
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1216,26 +1070,17 @@ class TestDayOfYear:
             (Date(2024, 3, 1), 61),
             (Date(2023, 12, 31), 365),
             (Date(2024, 12, 31), 366),
+            # first and last day of a leap year
+            (Date(2000, 1, 1), 1),
+            (Date(2000, 12, 31), 366),
+            # 1900 is not a leap year (divisible by 100 but not 400)
+            (Date(1900, 12, 31), 365),
+            (Date(1900, 3, 1), 60),
         ],
     )
-    def test_values(self, d, expected):
+    def test_day_of_year(self, d, expected):
         assert d.day_of_year() == expected
 
-    def test_first_and_last_day(self):
-        assert Date(2000, 1, 1).day_of_year() == 1
-        assert Date(2000, 12, 31).day_of_year() == 366  # leap year
-
-    def test_century_year(self):
-        # 1900 is not a leap year (div by 100 but not 400)
-        assert Date(1900, 12, 31).day_of_year() == 365
-        assert Date(1900, 3, 1).day_of_year() == 60
-
-    def test_not_callable_with_args(self):
-        with pytest.raises(TypeError):
-            Date(2024, 1, 1).day_of_year(1)  # type: ignore[call-arg]
-
-
-class TestDaysInMonth:
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1254,15 +1099,9 @@ class TestDaysInMonth:
             (Date(2023, 12, 15), 31),
         ],
     )
-    def test_values(self, d, expected):
+    def test_days_in_month(self, d, expected):
         assert d.days_in_month() == expected
 
-    def test_not_callable_with_args(self):
-        with pytest.raises(TypeError):
-            Date(2024, 1, 1).days_in_month(1)  # type: ignore[call-arg]
-
-
-class TestDaysInYear:
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1272,11 +1111,9 @@ class TestDaysInYear:
             (Date(1900, 6, 15), 365),
         ],
     )
-    def test_values(self, d, expected):
+    def test_days_in_year(self, d, expected):
         assert d.days_in_year() == expected
 
-
-class TestInLeapYear:
     @pytest.mark.parametrize(
         "d, expected",
         [
@@ -1287,8 +1124,68 @@ class TestInLeapYear:
             (Date(2100, 6, 15), False),
         ],
     )
-    def test_values(self, d, expected):
+    def test_in_leap_year(self, d, expected):
         assert d.in_leap_year() is expected
+
+    @pytest.mark.parametrize("method", ["day_of_year", "days_in_month"])
+    def test_not_callable_with_args(self, method):
+        with pytest.raises(TypeError):
+            getattr(Date(2024, 1, 1), method)(1)
+
+
+class TestConversion:
+    def test_year_month(self):
+        d = Date(2021, 1, 2)
+        assert d.year_month() == YearMonth(2021, 1)
+
+    def test_month_day(self):
+        d = Date(2021, 1, 2)
+        assert d.month_day() == MonthDay(1, 2)
+
+    def test_to_stdlib(self):
+        d = Date(2021, 1, 2)
+        assert d.to_stdlib() == py_date(2021, 1, 2)
+
+    def test_at(self):
+        d = Date(2021, 1, 2)
+        assert d.at(Time(3, 4, 5, nanosecond=6_000)) == PlainDateTime(
+            2021, 1, 2, 3, 4, 5, nanosecond=6_000
+        )
+
+    def test_iso_week_date(self):
+        assert Date(2024, 1, 1).iso_week_date() == IsoWeekDate(2024, 1, MONDAY)
+
+    def test_iso_week_date_year_boundary_forward(self):
+        # Dec 30, 2024 belongs to ISO 2025-W01
+        iwd = Date(2024, 12, 30).iso_week_date()
+        assert iwd.year == 2025
+        assert iwd.week == 1
+
+    def test_iso_week_date_year_boundary_backward(self):
+        # Jan 1, 2016 belongs to ISO 2015-W53
+        iwd = Date(2016, 1, 1).iso_week_date()
+        assert iwd.year == 2015
+        assert iwd.week == 53
+
+    def test_iso_week_date_mid_year(self):
+        iwd = Date(2024, 7, 4).iso_week_date()
+        assert iwd.year == 2024
+        assert iwd.week == 27
+        assert iwd.weekday == THURSDAY
+
+    @pytest.mark.parametrize(
+        "d",
+        [
+            Date(2024, 1, 1),
+            Date(2024, 6, 15),
+            Date(2024, 12, 31),
+            Date(2023, 1, 1),
+            Date(2023, 12, 31),
+            Date(2020, 2, 29),
+        ],
+    )
+    def test_iso_week_date_round_trip(self, d):
+        assert d.iso_week_date().date() == d
 
 
 class TestNextDay:
@@ -1307,7 +1204,7 @@ class TestNextDay:
         assert d.next_day() == expected
 
     def test_at_max(self):
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             Date.MAX.next_day()
 
 
@@ -1327,7 +1224,7 @@ class TestPrevDay:
         assert d.prev_day() == expected
 
     def test_at_min(self):
-        with pytest.raises((ValueError, OverflowError)):
+        with pytest.raises(ValueError):
             Date.MIN.prev_day()
 
 
@@ -1372,21 +1269,46 @@ class TestNthWeekdayOfMonth:
     def test_fifth_positive_when_not_exists(self):
         # February 2023 (non-leap) starts on Wednesday
         # Only 4 Wednesdays: 1, 8, 15, 22
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"^n=5 is out of range: Weekday\.WEDNESDAY occurs 4 times "
+            r"in 2023-02$",
+        ):
             Date(2023, 2, 1).nth_weekday_of_month(5, WEDNESDAY)
 
     def test_fifth_negative_when_not_exists(self):
         # February 2023 (non-leap) starts on Wednesday
         # Only 4 Fridays: 3, 10, 17, 24
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError,
+            match=r"^n=-5 is out of range: Weekday\.FRIDAY occurs 4 times "
+            r"in 2023-02$",
+        ):
             Date(2023, 2, 1).nth_weekday_of_month(-5, FRIDAY)
 
     def test_n_out_of_range(self):
-        with pytest.raises(ValueError, match="n must be between -5 and 5"):
+        with pytest.raises(
+            ValueError,
+            match=r"^n=6 is out of range: Weekday\.MONDAY occurs 5 times "
+            r"in 2024-12$",
+        ):
             Date(2024, 12, 1).nth_weekday_of_month(6, MONDAY)
 
-        with pytest.raises(ValueError, match="n must be between -5 and 5"):
+        with pytest.raises(
+            ValueError,
+            match=r"^n=-6 is out of range: Weekday\.MONDAY occurs 5 times "
+            r"in 2024-12$",
+        ):
             Date(2024, 12, 1).nth_weekday_of_month(-6, MONDAY)
+
+    def test_n_type(self):
+        # a bool is an int; a float is not, even when integral
+        d = Date(2024, 12, 1)
+        assert d.nth_weekday_of_month(True, MONDAY) == d.nth_weekday_of_month(
+            1, MONDAY
+        )
+        with pytest.raises(TypeError, match="n must be an integer"):
+            d.nth_weekday_of_month(1.0, MONDAY)  # type: ignore[arg-type]
 
 
 class TestNthWeekday:
@@ -1428,12 +1350,33 @@ class TestNthWeekday:
         with pytest.raises(ValueError, match="n must not be 0"):
             Date(2024, 8, 15).nth_weekday(0, MONDAY)
 
-    def test_n_too_large(self):
-        with pytest.raises(ValueError):
+    def test_out_of_range(self):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             Date(2024, 12, 25).nth_weekday(521_723, FRIDAY)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
             Date(2024, 12, 25).nth_weekday(-521_723, FRIDAY)
+
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            Date.MAX.nth_weekday(1, FRIDAY)
+
+        with pytest.raises(
+            ValueError, match="value or calculation out of range"
+        ):
+            Date.MIN.nth_weekday(-1, FRIDAY)
+
+    def test_n_type(self):
+        # a bool is an int; a float is not, even when integral
+        d = Date(2024, 12, 25)
+        assert d.nth_weekday(True, MONDAY) == d.nth_weekday(1, MONDAY)
+        with pytest.raises(TypeError, match="n must be an integer"):
+            d.nth_weekday(1.5, MONDAY)  # type: ignore[arg-type]
 
     def test_same_weekday_as_date(self):
         # 2024-12-25 is a Wednesday. n=1 should return NEXT Wednesday, not self
@@ -1444,213 +1387,3 @@ class TestNthWeekday:
         assert Date(2024, 12, 25).nth_weekday(-1, WEDNESDAY) == Date(
             2024, 12, 18
         )
-
-
-class TestIsoWeekDateConversion:
-    def test_basic(self):
-        assert Date(2024, 1, 1).iso_week_date() == IsoWeekDate(2024, 1, MONDAY)
-
-    def test_year_boundary_forward(self):
-        # Dec 30, 2024 belongs to ISO 2025-W01
-        iwd = Date(2024, 12, 30).iso_week_date()
-        assert iwd.year == 2025
-        assert iwd.week == 1
-
-    def test_year_boundary_backward(self):
-        # Jan 1, 2016 belongs to ISO 2015-W53
-        iwd = Date(2016, 1, 1).iso_week_date()
-        assert iwd.year == 2015
-        assert iwd.week == 53
-
-    def test_mid_year(self):
-        iwd = Date(2024, 7, 4).iso_week_date()
-        assert iwd.year == 2024
-        assert iwd.week == 27
-        assert iwd.weekday == THURSDAY
-
-    def test_roundtrip_many_dates(self):
-        # Verify round-trip for several important dates
-        for d in [
-            Date(2024, 1, 1),
-            Date(2024, 6, 15),
-            Date(2024, 12, 31),
-            Date(2023, 1, 1),
-            Date(2023, 12, 31),
-            Date(2020, 2, 29),
-        ]:
-            assert d.iso_week_date().date() == d
-
-
-class TestStartOf:
-    def test_year(self):
-        assert Date(2024, 8, 15).start_of("year") == Date(2024, 1, 1)
-
-    def test_year_already_jan1(self):
-        assert Date(2024, 1, 1).start_of("year") == Date(2024, 1, 1)
-
-    def test_month(self):
-        assert Date(2024, 8, 15).start_of("month") == Date(2024, 8, 1)
-
-    def test_month_already_first(self):
-        assert Date(2024, 8, 1).start_of("month") == Date(2024, 8, 1)
-
-    def test_month_december(self):
-        assert Date(2024, 12, 25).start_of("month") == Date(2024, 12, 1)
-
-    def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid"):
-            Date(2024, 8, 15).start_of("day")  # type: ignore[arg-type]
-
-    def test_invalid_unit_arbitrary(self):
-        with pytest.raises(ValueError, match="Invalid"):
-            Date(2024, 8, 15).start_of("invalid")  # type: ignore[arg-type]
-
-    def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
-            Date(2024, 8, 15).start_of("week")  # type: ignore[arg-type]
-
-    @pytest.mark.parametrize(
-        "date, expected",
-        [
-            # Thursday -> preceding Monday
-            (Date(2024, 8, 15), Date(2024, 8, 12)),
-            # Monday itself
-            (Date(2024, 8, 12), Date(2024, 8, 12)),
-            # Sunday -> preceding Monday
-            (Date(2024, 8, 18), Date(2024, 8, 12)),
-            # Saturday -> preceding Monday
-            (Date(2024, 8, 17), Date(2024, 8, 12)),
-            # Tuesday
-            (Date(2024, 8, 13), Date(2024, 8, 12)),
-            # Crosses month boundary: Fri Mar 1 -> Mon Feb 26
-            (Date(2024, 3, 1), Date(2024, 2, 26)),
-        ],
-    )
-    def test_week_mon(self, date, expected):
-        assert date.start_of("week_mon") == expected
-
-    @pytest.mark.parametrize(
-        "date, expected",
-        [
-            # Thursday -> preceding Sunday
-            (Date(2024, 8, 15), Date(2024, 8, 11)),
-            # Sunday itself
-            (Date(2024, 8, 11), Date(2024, 8, 11)),
-            # Saturday -> preceding Sunday
-            (Date(2024, 8, 17), Date(2024, 8, 11)),
-            # Monday
-            (Date(2024, 8, 12), Date(2024, 8, 11)),
-            # Crosses month boundary: Mon Jan 1 -> Sun Dec 31
-            (Date(2024, 1, 1), Date(2023, 12, 31)),
-        ],
-    )
-    def test_week_sun(self, date, expected):
-        assert date.start_of("week_sun") == expected
-
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        # MIN/MAX may error (overflow) but must not crash
-        try:
-            Date.MIN.start_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            Date.MAX.start_of(unit)
-        except (ValueError, OverflowError):
-            pass
-
-
-class TestEndOf:
-    @pytest.mark.parametrize(
-        ("unit", "next_start"),
-        [
-            ("year", Date(2025, 1, 1)),
-            ("month", Date(2024, 9, 1)),
-            ("week_mon", Date(2024, 8, 19)),
-            ("week_sun", Date(2024, 8, 18)),
-        ],
-    )
-    def test_adjacent_to_next_start(self, unit, next_start):
-        date = Date(2024, 8, 15)
-        assert date.end_of(unit).add(days=1) == next_start
-
-    def test_year(self):
-        assert Date(2024, 8, 15).end_of("year") == Date(2024, 12, 31)
-
-    def test_year_already_dec31(self):
-        assert Date(2024, 12, 31).end_of("year") == Date(2024, 12, 31)
-
-    def test_month_31_days(self):
-        assert Date(2024, 8, 15).end_of("month") == Date(2024, 8, 31)
-
-    def test_month_30_days(self):
-        assert Date(2024, 6, 10).end_of("month") == Date(2024, 6, 30)
-
-    def test_month_feb_leap_year(self):
-        assert Date(2024, 2, 10).end_of("month") == Date(2024, 2, 29)
-
-    def test_month_feb_non_leap_year(self):
-        assert Date(2023, 2, 10).end_of("month") == Date(2023, 2, 28)
-
-    def test_month_already_last_day(self):
-        assert Date(2024, 8, 31).end_of("month") == Date(2024, 8, 31)
-
-    def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid"):
-            Date(2024, 8, 15).end_of("day")  # type: ignore[arg-type]
-
-    def test_invalid_unit_arbitrary(self):
-        with pytest.raises(ValueError, match="Invalid"):
-            Date(2024, 8, 15).end_of("hour")  # type: ignore[arg-type]
-
-    def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
-            Date(2024, 8, 15).end_of("week")  # type: ignore[arg-type]
-
-    @pytest.mark.parametrize(
-        "date, expected",
-        [
-            # Thursday -> following Sunday
-            (Date(2024, 8, 15), Date(2024, 8, 18)),
-            # Sunday itself (already end of week)
-            (Date(2024, 8, 18), Date(2024, 8, 18)),
-            # Monday -> following Sunday
-            (Date(2024, 8, 12), Date(2024, 8, 18)),
-            # Saturday -> following Sunday
-            (Date(2024, 8, 17), Date(2024, 8, 18)),
-            # Crosses month boundary: Mon Jul 29 -> Sun Aug 4
-            (Date(2024, 7, 29), Date(2024, 8, 4)),
-        ],
-    )
-    def test_week_mon(self, date, expected):
-        assert date.end_of("week_mon") == expected
-
-    @pytest.mark.parametrize(
-        "date, expected",
-        [
-            # Thursday -> following Saturday
-            (Date(2024, 8, 15), Date(2024, 8, 17)),
-            # Saturday itself (already end of week)
-            (Date(2024, 8, 17), Date(2024, 8, 17)),
-            # Sunday -> following Saturday
-            (Date(2024, 8, 11), Date(2024, 8, 17)),
-            # Friday
-            (Date(2024, 8, 16), Date(2024, 8, 17)),
-            # Crosses month boundary: Sun Dec 29 -> Sat Jan 4
-            (Date(2024, 12, 29), Date(2025, 1, 4)),
-        ],
-    )
-    def test_week_sun(self, date, expected):
-        assert date.end_of("week_sun") == expected
-
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        # MIN/MAX may error (overflow) but must not crash
-        try:
-            Date.MIN.end_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            Date.MAX.end_of(unit)
-        except (ValueError, OverflowError):
-            pass

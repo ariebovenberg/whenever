@@ -2,8 +2,8 @@
 myst:
   html_meta:
     description: >-
-      API reference for Date, Time, YearMonth, MonthDay, and IsoWeekDate, and how
-      they combine into datetimes.
+      API reference for Date, Time, YearMonth, MonthDay, and IsoWeekDate: how
+      they combine into datetimes and how a Date finds nearby dates.
 ---
 
 (partial-api)=
@@ -24,9 +24,9 @@ myst:
    isoweekdate
 ```
 
-This section describes the "smaller" date & time types provided by
-`whenever`: {class}`Date`, {class}`Time`, {class}`YearMonth`, {class}`MonthDay`,
-and {class}`IsoWeekDate`.
+This section describes the **partial types**: the types that hold part of
+a datetime. They are {class}`Date`, {class}`Time`, {class}`YearMonth`,
+{class}`MonthDay`, and {class}`IsoWeekDate`.
 
 ## Overview
 
@@ -51,22 +51,38 @@ Date("2023-02-28")
 ItemizedDateDelta("P3m16d")
 ```
 
-You can combine a {class}`Date` with a {class}`Time` to get a {class}`PlainDateTime`:
+You can combine a {class}`Date` with a {class}`Time` to get a {class}`PlainDateTime`,
+from either side:
 
 ```python
 >>> Date(2023, 6, 15).at(Time(9, 0))
-PlainDateTime("2023-06-15T09:00:00")
+PlainDateTime("2023-06-15 09:00:00")
+>>> Time(9, 0).on(Date(2023, 6, 15))
+PlainDateTime("2023-06-15 09:00:00")
 ```
+
+A {class}`Date` also finds dates near it:
+
+- {meth}`~Date.next_day` and {meth}`~Date.prev_day` step one day.
+- {meth}`~Date.nth_weekday` finds the n-th occurrence of a weekday from the
+  date, exclusive of the date itself; negative `n` searches backward.
+- {meth}`~Date.nth_weekday_of_month` finds the n-th occurrence of a weekday
+  in the date's month; negative `n` counts from the end.
+- {meth}`~Date.start_of` and {meth}`~Date.end_of` give the first and last
+  day of the date's year, month, or week; see {ref}`rounding`.
 
 ## Time
 
-{class}`Time` represents a time of day, independent of any date or timezone.
+{class}`Time` represents a time of day, independent of any date or time zone.
 Sub-second precision is supported down to nanoseconds.
 
 ```python
 >>> Time(14, 30, nanosecond=500_000_000)
 Time("14:30:00.5")
 ```
+
+{meth}`~Time.round` rounds to a unit from an hour down to a nanosecond,
+wrapping past midnight when it rounds up; see {ref}`rounding`.
 
 ## YearMonth and MonthDay
 
@@ -76,6 +92,33 @@ partial date specifications (e.g. a birthday or an annual deadline):
 ```python
 >>> YearMonth(2024, 3).on_day(22)
 Date("2024-03-22")
+>>> YearMonth(2024, 3).add(months=10)
+YearMonth("2025-01")
 >>> MonthDay(2, 29).in_year(2024)
 Date("2024-02-29")
+>>> MonthDay(2, 29).is_leap_day()
+True
+```
+
+{meth}`YearMonth.add` and {meth}`~YearMonth.subtract` take `years` and
+`months` as keywords. An {class}`ItemizedDateDelta` is a mapping, so it
+unpacks into them; a delta carrying `weeks` or `days` raises `TypeError`,
+since a year-month has no day to shift:
+
+```python
+>>> delta = ItemizedDateDelta(years=1, months=2)
+>>> YearMonth(2024, 3).add(**delta)
+YearMonth("2025-05")
+```
+
+## IsoWeekDate
+
+{class}`IsoWeekDate` is a date in the ISO 8601 week date system.
+{meth}`Date.iso_week_date` and {meth}`IsoWeekDate.date` are a round trip:
+
+```python
+>>> Date(2024, 12, 30).iso_week_date()
+IsoWeekDate("2025-W01-1")
+>>> IsoWeekDate(2025, 1, Weekday.MONDAY).date()
+Date("2024-12-30")
 ```

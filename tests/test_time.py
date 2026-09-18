@@ -1,10 +1,10 @@
-import pickle
 import re
 from datetime import (
     time as py_time,
-    timedelta as py_timedelta,
     timezone as py_timezone,
 )
+from fractions import Fraction
+from typing import cast
 
 import pytest
 from whenever import (
@@ -12,14 +12,9 @@ from whenever import (
     PlainDateTime,
     Time,
     TimeDelta,
-    WheneverDeprecationWarning,
 )
 
-from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
-
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
+from .common import Idx
 
 
 class TestInit:
@@ -38,6 +33,18 @@ class TestInit:
     def test_defaults(self):
         assert Time() == Time(0, 0, 0, nanosecond=0)
 
+    @pytest.mark.parametrize(
+        "args, kwargs",
+        [
+            ((1, 2, 3, 4), {}),  # nanosecond is keyword-only
+            ((), {"iso_string": "01:02:03"}),
+            ((), {"py_time": py_time(1, 2, 3)}),
+        ],
+    )
+    def test_parameter_kinds(self, args, kwargs):
+        with pytest.raises(TypeError):
+            Time(*args, **kwargs)
+
     def test_out_of_range(self):
         with pytest.raises(ValueError):
             Time(24, 0, 0, nanosecond=0)
@@ -47,6 +54,13 @@ class TestInit:
             Time(0, 0, 60, nanosecond=0)
         with pytest.raises(ValueError):
             Time(0, 0, 0, nanosecond=1_000_000_000)
+
+    def test_single_argument_wrong_type(self):
+        with pytest.raises(
+            TypeError,
+            match=r"^Time\(\) requires an ISO 8601 string or datetime.time$",
+        ):
+            Time(b"x")  # type: ignore[call-overload]
 
     def test_iso(self):
         assert Time("01:02:03.000004") == Time(1, 2, 3, nanosecond=4_000)
@@ -59,6 +73,39 @@ class TestInit:
         )
         # Basic format
         assert Time("010260") == Time(1, 2, 59)
+
+
+class TestInitFromPy:
+    def test_valid(self):
+        assert Time(py_time(1, 2, 3, 4)) == Time(1, 2, 3, nanosecond=4_000)
+
+    def test_tzinfo(self):
+        with pytest.raises(
+            ValueError,
+            match=r"^time must be naive, got tzinfo=datetime\.timezone\.utc$",
+        ):
+            Time(py_time(1, tzinfo=py_timezone.utc))
+
+    def test_fold_ignored(self):
+        assert Time(py_time(1, 2, 3, 4, fold=1)) == Time(
+            1, 2, 3, nanosecond=4_000
+        )
+
+    def test_subclass(self):
+        class SubclassTime(py_time):
+            pass
+
+        assert Time(SubclassTime(1, 2, 3, 4)) == Time(
+            1, 2, 3, nanosecond=4_000
+        )
+
+
+class TestAccessors:
+    def test_constants(self):
+        assert Time.MIN == Time()
+        assert Time.MIDNIGHT == Time()
+        assert Time.NOON == Time(12)
+        assert Time.MAX == Time(23, 59, 59, nanosecond=999_999_999)
 
 
 class TestFormatIso:
@@ -108,14 +155,25 @@ class TestFormatIso:
                 {"unit": "auto", "basic": True},
                 "000000",
             ),
+            (Time(23, 12, 9), {"unit": "hour"}, "23"),
         ],
     )
     def test_with_kwargs(self, t, kwargs, expect):
         assert t.format_iso(**kwargs) == expect
 
+    @pytest.mark.parametrize(
+        "t, kwargs",
+        [
+            (Time(1, 2, 3, nanosecond=40_000_000), {"basic": True}),
+            (Time(23), {"unit": "hour"}),
+        ],
+    )
+    def test_round_trip(self, t, kwargs):
+        assert Time.parse_iso(t.format_iso(**kwargs)) == t
+
     def test_invalid(self):
         t = Time(1, 2, 3, nanosecond=40_000_000)
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
+        with pytest.raises(ValueError, match="invalid unit: 'foo'"):
             t.format_iso(unit="foo")  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="unit"):
@@ -124,39 +182,9 @@ class TestFormatIso:
         with pytest.raises(TypeError, match="sep"):
             t.format_iso(sep="T")  # type: ignore[call-arg]
 
-        for basic in (0, 1, None, ""):
-            with pytest.raises(TypeError, match="basic must be a boolean"):
-                t.format_iso(basic=basic)  # type: ignore[arg-type]
-
-
-def test_to_stdlib():
-    t = Time(1, 2, 3, nanosecond=4_000_000)
-    assert t.to_stdlib() == py_time(1, 2, 3, 4_000)
-    # truncation
-    assert Time(nanosecond=999).to_stdlib() == py_time(0)
-
-
-def test_repr():
-    t = Time(1, 2, 3, nanosecond=40_000_000)
-    assert repr(t) == 'Time("01:02:03.04")'
-
-
-def test_replace():
-    t = Time(1, 2, 3, nanosecond=4_000)
-    assert t.replace() == t
-    assert t.replace(hour=5) == Time(5, 2, 3, nanosecond=4_000)
-    assert t.replace(minute=5) == Time(1, 5, 3, nanosecond=4_000)
-    assert t.replace(second=5) == Time(1, 2, 5, nanosecond=4_000)
-    assert t.replace(nanosecond=5) == Time(1, 2, 3, nanosecond=5)
-
-    with pytest.raises(ValueError):
-        t.replace(hour=24)
-
-    with pytest.raises(TypeError):
-        t.replace(tzinfo=None)  # type: ignore[call-arg]
-
-    with pytest.raises(TypeError):
-        t.replace(fold=0)  # type: ignore[call-arg]
+    def test_repr(self):
+        t = Time(1, 2, 3, nanosecond=40_000_000)
+        assert repr(t) == 'Time("01:02:03.04")'
 
 
 class TestParseIso:
@@ -267,121 +295,78 @@ class TestParseIso:
     def test_invalid(self, input):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(input)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(input)) + "$",
         ):
             Time.parse_iso(input)
 
 
-def test_eq():
-    t = Time(1, 2, 3, nanosecond=4_000)
-    same = Time(1, 2, 3, nanosecond=4_000)
-    different = Time(1, 2, 3, nanosecond=5_000)
+class TestEquality:
+    def test_eq(self):
+        t = Time(1, 2, 3, nanosecond=4_000)
+        same = Time(1, 2, 3, nanosecond=4_000)
+        different = Time(1, 2, 3, nanosecond=5_000)
 
-    assert t == same
-    assert not t == different
-    assert not t == NeverEqual()
-    assert t == AlwaysEqual()
+        assert t == same
+        assert not t == different
 
-    assert not t != same
-    assert t != different
-    assert t != NeverEqual()
-    assert not t != AlwaysEqual()
+        assert not t != same
+        assert t != different
 
-    assert hash(t) == hash(same)
-    assert hash(t) != hash(different)
+        assert hash(t) == hash(same)
+        assert hash(t) != hash(different)
 
 
-class TestInitFromPy:
-    def test_valid(self):
-        assert Time(py_time(1, 2, 3, 4)) == Time(1, 2, 3, nanosecond=4_000)
+class TestComparison:
+    def test_comparison(self):
+        t = Time(1, 2, 3, nanosecond=4_000)
+        same = Time(1, 2, 3, nanosecond=4_000)
+        bigger1 = Time(2, 2, 3, nanosecond=4_000)
+        bigger2 = Time(1, 2, 3, nanosecond=4_001)
+        smaller1 = Time(1, 2, 3, nanosecond=3_999)
+        smaller2 = Time(1, 2, 2, nanosecond=999_999_999)
 
-    def test_tzinfo(self):
-        assert Time(
-            py_time(
-                1, 2, 3, 4, tzinfo=py_timezone(py_timedelta(hours=1)), fold=1
-            )
-        ) == Time(1, 2, 3, nanosecond=4_000)
+        assert t <= same
+        assert t <= bigger1
+        assert t <= bigger2
+        assert not t <= smaller1
+        assert not t <= smaller2
 
-    def test_fold_ignored(self):
-        assert Time(py_time(1, 2, 3, 4, fold=1)) == Time(
-            1, 2, 3, nanosecond=4_000
-        )
+        assert not t < same
+        assert t < bigger1
+        assert t < bigger2
+        assert not t < smaller1
+        assert not t < smaller2
 
-    def test_subclass(self):
-        class SubclassTime(py_time):
-            pass
+        assert t >= same
+        assert not t >= bigger1
+        assert not t >= bigger2
+        assert t >= smaller1
+        assert t >= smaller2
 
-        assert Time(SubclassTime(1, 2, 3, 4)) == Time(
-            1, 2, 3, nanosecond=4_000
-        )
-
-
-class TestDeprecations:
-    def test_py_time(self):
-        t = Time(1, 2, 3, nanosecond=4_000_000)
-        with pytest.warns(WheneverDeprecationWarning):
-            result = t.py_time()
-        assert result == py_time(1, 2, 3, 4_000)
-
-    def test_from_py_time(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = Time.from_py_time(py_time(1, 2, 3, 4))
-        assert result == Time(1, 2, 3, nanosecond=4_000)
+        assert not t > same
+        assert not t > bigger1
+        assert not t > bigger2
+        assert t > smaller1
+        assert t > smaller2
 
 
-def test_comparison():
-    t = Time(1, 2, 3, nanosecond=4_000)
-    same = Time(1, 2, 3, nanosecond=4_000)
-    bigger1 = Time(2, 2, 3, nanosecond=4_000)
-    bigger2 = Time(1, 2, 3, nanosecond=4_001)
-    smaller1 = Time(1, 2, 3, nanosecond=3_999)
-    smaller2 = Time(1, 2, 2, nanosecond=999_999_999)
+class TestReplace:
+    def test_replace(self):
+        t = Time(1, 2, 3, nanosecond=4_000)
+        assert t.replace() == t
+        assert t.replace(hour=5) == Time(5, 2, 3, nanosecond=4_000)
+        assert t.replace(minute=5) == Time(1, 5, 3, nanosecond=4_000)
+        assert t.replace(second=5) == Time(1, 2, 5, nanosecond=4_000)
+        assert t.replace(nanosecond=5) == Time(1, 2, 3, nanosecond=5)
 
-    assert t <= same
-    assert t <= bigger1
-    assert t <= bigger2
-    assert not t <= smaller1
-    assert not t <= smaller2
-    assert t <= AlwaysLarger()
-    assert not t <= AlwaysSmaller()
+        with pytest.raises(ValueError):
+            t.replace(hour=24)
 
-    assert not t < same
-    assert t < bigger1
-    assert t < bigger2
-    assert not t < smaller1
-    assert not t < smaller2
-    assert t < AlwaysLarger()
-    assert not t < AlwaysSmaller()
+        with pytest.raises(TypeError):
+            t.replace(tzinfo=None)  # type: ignore[call-arg]
 
-    assert t >= same
-    assert not t >= bigger1
-    assert not t >= bigger2
-    assert t >= smaller1
-    assert t >= smaller2
-    assert not t >= AlwaysLarger()
-    assert t >= AlwaysSmaller()
-
-    assert not t > same
-    assert not t > bigger1
-    assert not t > bigger2
-    assert t > smaller1
-    assert t > smaller2
-    assert not t > AlwaysLarger()
-    assert t > AlwaysSmaller()
-
-
-def test_constants():
-    assert Time.MIN == Time()
-    assert Time.MIDNIGHT == Time()
-    assert Time.NOON == Time(12)
-    assert Time.MAX == Time(23, 59, 59, nanosecond=999_999_999)
-
-
-def test_on():
-    t = Time(1, 2, 3, nanosecond=4_000)
-    assert t.on(Date(2021, 1, 2)) == PlainDateTime(
-        2021, 1, 2, 1, 2, 3, nanosecond=4_000
-    )
+        with pytest.raises(TypeError):
+            t.replace(fold=0)  # type: ignore[call-arg]
 
 
 class TestRound:
@@ -558,37 +543,12 @@ class TestRound:
         assert Time(1, 2, 3, nanosecond=500_000_000).round() == Time(1, 2, 4)
         assert Time(1, 2, 8, nanosecond=500_000_000).round() == Time(1, 2, 8)
 
-    def test_invalid_mode(self):
-        t = Time(1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
-            t.round("second", mode="foo")  # type: ignore[call-overload]
-
-    @pytest.mark.parametrize(
-        "unit, increment",
-        [
-            ("minute", 7),
-            ("second", 14),
-            ("millisecond", 17),
-            ("millisecond", 2001),
-            ("hour", 48),
-            ("hour", 20),
-            ("hour", (1 << 63) - 1),
-        ],
-    )
-    def test_invalid_increment(self, unit, increment):
-        t = Time(1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="[Ii]ncrement"):
-            t.round(unit, increment=increment)
-
-    def test_invalid_unit(self):
-        t = Time(1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
-            t.round("foo")  # type: ignore[call-overload]
-
-    def test_no_day_unit(self):
-        t = Time(1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="day"):
-            t.round("day")  # type: ignore[call-overload]
+    def test_increment_read_through_index(self):
+        t = Time(12, 39, 59)
+        assert t.round("minute", increment=True) == t.round("minute")
+        assert t.round("minute", increment=cast(int, Idx())) == t.round(
+            "minute", increment=5
+        )
 
     def test_round_by_timedelta(self):
         t = Time(12, 39, 59)
@@ -600,40 +560,112 @@ class TestRound:
         assert Time(12, 30).round(TimeDelta(hours=1)) == Time(12)
         assert Time(13, 30).round(TimeDelta(hours=1)) == Time(14)
 
-    def test_round_by_timedelta_invalid_not_divides_day(self):
-        with pytest.raises(ValueError, match="24.hour"):
-            Time(12, 0).round(TimeDelta(hours=7))
-
-    def test_round_by_timedelta_negative(self):
-        with pytest.raises(ValueError, match="positive"):
-            Time(12, 0).round(TimeDelta(hours=-1))
-
-    def test_round_by_timedelta_zero(self):
-        with pytest.raises(ValueError, match="positive"):
-            Time(12, 0).round(TimeDelta())
-
-    def test_round_by_timedelta_with_increment(self):
-        with pytest.raises(TypeError):
-            Time(12, 0).round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
-
-
-def test_pickling():
-    t = Time(1, 2, 3, nanosecond=4_000)
-    dumped = pickle.dumps(t)
-    assert len(dumped) < len(pickle.dumps(t.to_stdlib())) + 10
-    assert pickle.loads(dumped) == t
-
-
-def test_compatible_unpickle():
-    dumped = (
-        b"\x80\x04\x95*\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
-        b"kl_time\x94\x93\x94C\x07\x01\x02\x03\xa0\x0f\x00\x00\x94\x85\x94R\x94."
+    @pytest.mark.parametrize(
+        "t, unit, kwargs, exc, message",
+        [
+            # a value already on the increment validates the mode too
+            *(
+                (t, "second", {"mode": m}, ValueError, f"invalid mode: {m!r}")
+                for t in (Time(1, 2, 3, nanosecond=4_000), Time(1, 2, 3))
+                for m in ("foo", "TRUNC", None, 3)
+            ),
+            *(
+                (
+                    Time(1, 2, 3, nanosecond=4_000),
+                    u,
+                    {"increment": i},
+                    ValueError,
+                    "increment must divide a 24-hour day evenly",
+                )
+                for u, i in (
+                    ("minute", 7),
+                    ("second", 14),
+                    ("millisecond", 17),
+                    ("millisecond", 2001),
+                    ("hour", 48),
+                    ("hour", 20),
+                    ("hour", (1 << 63) - 1),
+                    ("second", 1 << 62),
+                )
+            ),
+            *(
+                (
+                    Time(1, 2, 3),
+                    "second",
+                    {"increment": i},
+                    ValueError,
+                    "increment must be a positive integer",
+                )
+                for i in (0, -1)
+            ),
+            *(
+                (
+                    Time(1, 2, 3),
+                    "second",
+                    {"increment": i},
+                    TypeError,
+                    "increment must be an integer",
+                )
+                for i in (1.5, float("nan"), "5", Fraction(3, 2))
+            ),
+            # 'day' has nothing below it on a Time; 'week' has no fixed
+            # increment
+            *(
+                (
+                    Time(1, 2, 3, nanosecond=4_000),
+                    u,
+                    {},
+                    ValueError,
+                    f"invalid unit: {u!r}",
+                )
+                for u in ("foo", "day", "week", "minutes", None, 5)
+            ),
+            *(
+                (
+                    Time(12, 0),
+                    u,
+                    {},
+                    ValueError,
+                    "unit must divide a 24-hour day evenly",
+                )
+                for u in (TimeDelta(hours=7), TimeDelta(hours=25))
+            ),
+            *(
+                (
+                    Time(12, 0),
+                    u,
+                    {},
+                    ValueError,
+                    "unit must be a positive TimeDelta",
+                )
+                for u in (TimeDelta(hours=-1), TimeDelta.ZERO)
+            ),
+            *(
+                (
+                    Time(12, 0),
+                    TimeDelta(hours=1),
+                    {"increment": i},
+                    TypeError,
+                    "cannot specify an increment with a TimeDelta argument",
+                )
+                for i in (1, 2)
+            ),
+        ],
     )
-    assert pickle.loads(dumped) == Time(1, 2, 3, nanosecond=4_000)
+    def test_rejections(self, t, unit, kwargs, exc, message):
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
+            t.round(unit, **kwargs)
 
 
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
+class TestConversion:
+    def test_to_stdlib(self):
+        t = Time(1, 2, 3, nanosecond=4_000_000)
+        assert t.to_stdlib() == py_time(1, 2, 3, 4_000)
+        # truncation
+        assert Time(nanosecond=999).to_stdlib() == py_time(0)
 
-        class SubclassTime(Time):  # type: ignore[misc]
-            pass
+    def test_on(self):
+        t = Time(1, 2, 3, nanosecond=4_000)
+        assert t.on(Date(2021, 1, 2)) == PlainDateTime(
+            2021, 1, 2, 1, 2, 3, nanosecond=4_000
+        )

@@ -1,0 +1,57 @@
+# Findings that name a limit of stubtest, never a defect. Anything else
+# stubtest reports is a stub or a runtime bug. A line is kept while at least
+# one backend needs it: CI checks the pure-Python backend and a built checkout
+# checks the Rust extension, so `make typecheck` ignores unused lines.
+
+# The private submodules are not part of the stub.
+whenever\._.*
+
+# Literal aliases are not unions (stubtest wants a Union for a TypeAlias).
+whenever\.DateDeltaUnitStr
+whenever\.DeltaTotalUnitStr
+whenever\.DeltaUnitStr
+whenever\.DisambiguateStr
+whenever\.DisambiguationStr
+whenever\.ExactDeltaUnitStr
+whenever\.OffsetMismatchStr
+whenever\.RoundModeStr
+whenever\.TimestampUnitStr
+
+# The constructors dispatch on their arguments. The stub spells them as
+# overloads of `__init__`; the runtime is a `*args` dispatcher that wraps
+# the field constructor (pure Python) or a `__new__` without a text
+# signature (Rust), and stubtest asks for stubs written for `__new__`
+# instead.
+whenever\.Date\.__init__
+whenever\.YearMonth\.__init__
+whenever\.MonthDay\.__init__
+whenever\.IsoWeekDate\.__init__
+whenever\.Time\.__init__
+whenever\.TimeDelta\.__init__
+whenever\.ItemizedDelta\.__init__
+whenever\.ItemizedDateDelta\.__init__
+whenever\.Instant\.__init__
+whenever\.OffsetDateTime\.__init__
+whenever\.ZonedDateTime\.__init__
+whenever\.PlainDateTime\.__init__
+
+# Protocol hooks the runtime implements and the stub omits on purpose: the
+# copy protocol and pydantic call them, users do not. On pure Python they are
+# inherited from `_Base`, which stubtest does not walk.
+whenever\..*\.__copy__
+whenever\..*\.__deepcopy__
+whenever\..*\.__get_pydantic_core_schema__
+
+# The 0.11 deprecation shims absorb their old keyword (`format=`,
+# `disambiguate=`, `tz=`) through a catch-all that the Rust text signatures
+# do not list. Remove with the shims in 1.0.
+whenever\..*\.parse
+whenever\.PlainDateTime\.assume_tz
+whenever\.ZonedDateTime\.add
+whenever\.ZonedDateTime\.format_iso
+whenever\.ZonedDateTime\.from_system_tz
+whenever\.ZonedDateTime\.parse_iso
+whenever\.ZonedDateTime\.replace
+whenever\.ZonedDateTime\.replace_date
+whenever\.ZonedDateTime\.replace_time
+whenever\.ZonedDateTime\.subtract

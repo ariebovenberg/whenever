@@ -16,7 +16,6 @@ DEFAULT_PYTEST_ARGS := -q --tb=short
 DEFAULT_CARGO_ARGS := --quiet --message-format=short
 MYPY_ARGS := --no-error-summary
 RUFF_ARGS := --quiet
-SLOTSCHECK_ARGS :=
 SPHINXOPTS ?= -q
 BUILD_ARGS := -q
 RUST_BUILD_ARGS := --qbuild
@@ -28,7 +27,6 @@ DEFAULT_PYTEST_ARGS := -s
 DEFAULT_CARGO_ARGS :=
 MYPY_ARGS :=
 RUFF_ARGS :=
-SLOTSCHECK_ARGS := -v
 SPHINXOPTS ?=
 BUILD_ARGS :=
 RUST_BUILD_ARGS :=
@@ -45,11 +43,20 @@ BENCH_PYTEST_ARGS ?= $(DEFAULT_BENCH_PYTEST_ARGS)
 .PHONY: typecheck
 typecheck:
 	uv $(UV_ARGS) run mypy $(MYPY_ARGS) pysrc/ tests/
+	# checks the stub against whichever backend is installed
+	uv $(UV_ARGS) run python -m mypy.stubtest whenever \
+		--mypy-config-file tests/stubtest_mypy.ini \
+		--allowlist tests/stubtest_allowlist.txt \
+		--ignore-unused-allowlist
 
 .PHONY: sync-docstrings
 sync-docstrings:
 	# --no-sync prevents rust rebuild, which fails on empty docstrings.rs
 	uv $(UV_ARGS) run --no-sync python scripts/generate_docstrings.py > src/docstrings.rs
+
+.PHONY: check-examples
+check-examples:
+	uv $(UV_ARGS) run --no-sync python scripts/check_docstring_examples.py
 
 .PHONY: check-docstrings
 check-docstrings:
@@ -60,8 +67,8 @@ check-docstrings:
 
 .PHONY: fix
 fix:
-	uv $(UV_ARGS) run --no-sync ruff check $(RUFF_ARGS) --select I --fix src/ tests/ scripts/
-	uv $(UV_ARGS) run --no-sync ruff format $(RUFF_ARGS) src/ tests/ scripts/
+	uv $(UV_ARGS) run --no-sync ruff check $(RUFF_ARGS) --select I --fix pysrc/ tests/ scripts/
+	uv $(UV_ARGS) run --no-sync ruff format $(RUFF_ARGS) pysrc/ tests/ scripts/
 	cargo fmt
 
 .PHONY: docs
@@ -101,11 +108,9 @@ test: test-py test-rs
 .PHONY: ci-lint
 ci-lint: check-readme check-docstrings check-llms-summaries
 	uv $(UV_ARGS) lock --check
-	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) src/ tests/ scripts/
-	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check src/ tests/ scripts/
+	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) pysrc/ tests/ scripts/
+	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check pysrc/ tests/ scripts/
 	cargo fmt -- --check
-	# hash seed to ensure deterministic import order by slotscheck
-	uv $(UV_ARGS) run env PYTHONPATH=pysrc/ PYTHONHASHSEED=3 slotscheck $(SLOTSCHECK_ARGS) pysrc
 	cargo clippy $(CLIPPY_ARGS) --all-targets --all-features -- -D warnings
 
 .PHONY: clean-ext

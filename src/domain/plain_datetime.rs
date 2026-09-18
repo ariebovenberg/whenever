@@ -1,10 +1,11 @@
 use super::{
     date::{Date, DateBoundaryUnit},
     instant::Instant,
-    scalar::{DeltaDays, DeltaMonths, Month, OffsetDelta, S_PER_DAY, Year},
+    scalar::{DeltaDays, DeltaMonths, Month, OffsetDelta, Year},
     shift::DateTimeShift,
     time::{Time, TimeBoundaryUnit},
     time_delta::TimeDelta,
+    units::S_PER_DAY,
 };
 use crate::common::parse::Scan;
 

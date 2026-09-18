@@ -3,7 +3,7 @@ hide-toc: true
 myst:
   html_meta:
     description: >-
-      Why the standard library's implicit conversion to the system timezone makes
+      Why the standard library's implicit conversion to the system time zone makes
       code depend on machine configuration, and represents the result as a fixed
       offset.
 ---
@@ -22,9 +22,9 @@ For example, you may be surprised to learn that the output of these lines
 depend on the system time zone:
 
 ```python
->>> datetime.fromtimestamp(t)  # returns a naive datetime in system tz
->>> my_datetime.astimezone(None)  # converts to system tz if no tz is given
->>> date.today()  # returns a date in the system tz
+>>> datetime.fromtimestamp(t)  # returns a naive datetime in the system time zone
+>>> my_datetime.astimezone(None)  # converts to the system time zone if none is given
+>>> date.today()  # returns a date in the system time zone
 ```
 
 This implicit behavior makes it hard to see when code is depending on the system configuration.
@@ -39,12 +39,12 @@ That means the resulting datetime is not safe for arithmetic across DST transiti
 Whenever makes converting to the system time zone an explicit operation,
 and never assumes this intention implicitly.
 
-This is the case when converting from a naive datetime:
+This is the case when giving a `PlainDateTime` a time zone:
 
 ```python
 >>> from whenever import PlainDateTime
 >>> dt = PlainDateTime(2024, 3, 10, 15, 0, 0)
->>> dt.assume_system_tz()
+>>> dt.assume_tz(SYSTEM_TZ)
 ZonedDateTime("2024-03-10 15:00:00-05:00[America/New_York]")
 ```
 
@@ -52,7 +52,7 @@ or when converting from a moment in time:
 
 ```python
 >>> now = Instant.now()
->>> now.to_system_tz()
+>>> now.to_tz(SYSTEM_TZ)
 ZonedDateTime("2024-03-10 10:30:00-05:00[America/New_York]")
 ```
 
