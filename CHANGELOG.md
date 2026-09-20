@@ -5,9 +5,7 @@
 This release is intended as a soft 1.0 release: it establishes the planned
 1.0 API while retaining compatibility shims for newly deprecated interfaces.
 Unless significant issues arise, this API will become 1.0 after those
-deprecated interfaces are removed. Scheduled for 1.0 as well: `Instant`
-pickles written before 0.8.0 stop loading, while pickles written by 0.8.0 or
-later of a type 1.0 still has keep loading.
+deprecated interfaces are removed.
 
 **Breaking changes**
 
@@ -16,26 +14,9 @@ later of a type 1.0 still has keep loading.
   library conversion methods, `TimeDelta.in_*()` convenience methods,
   `Date.days_since()` and `Date.days_until()`, deprecated `Date` operators,
   `parse_strptime()`, `ZonedDateTime.start_of_day()`, `ignore_dst`, and
-  `ImplicitlyIgnoringDST`. Pickles of `DateDelta` and `DateTimeDelta` no
-  longer load; pickles of every other type written by 0.8.0 or later keep
-  loading.
+  `ImplicitlyIgnoringDST`.
 
   See the 0.10.0 entry below for migration instructions.
-
-- Resolving a repeated or skipped local time without an explicit
-  `disambiguation=` policy now emits `ImplicitDisambiguationWarning`. The
-  `"compatible"` default still applies, so the result is unchanged; the
-  warning fires on calls that ran silently in 0.10.5: the `ZonedDateTime`
-  constructor, `assume_tz()`, and `parse_iso()` without an offset for a
-  repeated or skipped local time, and `replace*()`, calendar-unit
-  `add()`/`subtract()`, and `+`/`-` when the result lands in a skipped
-  time. `to_tz()`, exact-unit arithmetic, `round()`, pickling, and standard
-  library conversion never warn. Passing `disambiguation="compatible"`
-  keeps the old result silently.
-
-  **Rationale**: an unstated policy silently picks one of two instants, or
-  invents one, which is the class of DST bug this library exists to flag.
-  Stating the policy makes the choice visible where it is made.
 
 - Timestamp APIs are consolidated around a `unit=` argument.
   `Instant.from_timestamp(..., unit=)` and exact-time `.timestamp(unit=)`
@@ -49,12 +30,11 @@ later of a type 1.0 still has keep loading.
   while `Instant` is the natural type for constructing an exact time from a
   timestamp.
 
-- The convenience methods specific to the system time zone are deprecated:
-  `to_system_tz()`, `assume_system_tz()`, `Date.today_in_system_tz()`,
-  `ZonedDateTime.now_in_system_tz()`, and `ZonedDateTime.from_system_tz()`.
-  `SYSTEM_TZ` is now a public sentinel accepted wherever a named time zone is
-  accepted, including `Date.today()`, `ZonedDateTime`, `now()`, `to_tz()`,
-  and `assume_tz()`.
+- The system timezone is now accepted everywhere a named timezone (i.e. `tz=`)
+  is accepted, using the new `SYSTEM_TZ` sentinel (PEP661). The methods specific to the
+  system time zone are deprecated: `to_system_tz()`, `assume_system_tz()`,
+  `Date.today_in_system_tz()`, `ZonedDateTime.now_in_system_tz()`, and
+  `ZonedDateTime.from_system_tz()`.
 
   **Rationale**: one sentinel lets the regular time zone APIs cover the system
   time zone without duplicating every operation. It also makes call-time
@@ -62,16 +42,15 @@ later of a type 1.0 still has keep loading.
   pattern recently standardized by [PEP 661](https://peps.python.org/pep-0661/).
 
 - Several public names are clarified, and the old spellings are deprecated.
-  The migration table at the end of this entry lists every pair.
+  See the migration table at the end of this entry.
 
   **Rationale**: the new names describe their concepts more precisely and
   use one vocabulary across the API. The `tz_id_display=` values say what
   the call does: `"required"` can raise, `"if_available"` says when the ID
   is written, and `"omit"` says what happens instead; `"always"`, `"auto"`,
   and `"never"` each needed the docstring to say which of those it meant.
-  `TZPATH` was a module attribute that `from whenever import TZPATH` froze
-  at import time, so a later `reset_tzpath()` was invisible to it;
-  `get_tzpath()` reads the current path on every call.
+  `TZPATH` was a module attribute that was loaded on access.
+  Its replacement, `get_tzpath()` is more explicit about this.
 
 - Patterns use `H`/`HH` for the 24-hour clock; `h`/`hh` are deprecated.
   Optional seconds are a bracketed tail after `mm`: `[:ss]`, `[:ss.fff]`,
@@ -90,7 +69,7 @@ later of a type 1.0 still has keep loading.
 
   **Rationale**: an offset with seconds cannot be written in a pattern
   without them, and rounding to the nearest minute is what Temporal does
-  in the same case.
+  too.
 
 - Fixed-offset arguments passed as bare integers signifying hours are
   deprecated. Use `TimeDelta` or a factory like `hours()` instead.
@@ -103,16 +82,28 @@ later of a type 1.0 still has keep loading.
   produce a different offset, the local representation is updated and a
   `PickleOffsetMismatchWarning` is emitted.
 
-  **Rationale**: time zone databases change. Preserving the instant avoids
-  silently changing when the stored event occurred while still reconciling
-  its local representation with the current rules.
+  **Rationale**: time zone databases change. Preserving the instant
+  is a decent default, since unpickling cannot take parameters.
+  The warning still ensures it doesn't pass silently.
+  The door is still left open for a policy choice using `ContextVar`.
+
+- Resolving a repeated or skipped local time without an explicit
+  `disambiguation=` policy now emits `ImplicitDisambiguationWarning`. The
+  `"compatible"` default still applies, so the result is unchanged;
+  If your warning filter is set to `error`, you may encounter errors
+  during operations that construct `ZonedDateTime`.
+  Passing `disambiguation="compatible"` silences the warning.
+
+  **Rationale**: an unstated disambiguation silently picks one of two instants.
+  Choosing a rational default is OK, but the user should be alerted
+  to make this explicit.
+
 
 **Added and improved**
 
 - Time zone IDs are matched case-insensitively in ASCII letters. The
   database spelling is used in attributes, representations, ISO output, and
   pickles, and aliases such as `US/Eastern` are preserved.
-  `clear_tzcache(only_keys=)` matches IDs the same way.
 - Added `offset_mismatch=` to `ZonedDateTime` parsing. A numeric offset is
   matched at its written precision, while `Z` always identifies an exact UTC
   instant. `OffsetDateTime.assume_tz()` supports the same policy and uses
@@ -171,7 +162,7 @@ later of a type 1.0 still has keep loading.
 - A type checker now accepts `Date + ItemizedDateDelta`, and rejects
   `disambiguation=` on the forms of `ZonedDateTime.add()`/`subtract()` that
   take exact units only, since those cannot land on a repeated or skipped
-  local time. The operand of `since()`/`until()` is named `other`.
+  local time.
 - Argument validation is tightened. `format_iso(basic=...)` reads its flag
   by truthiness like every other flag, so a non-`bool` no longer raises.
   `"week"` is a valid unit only on `TimeDelta.round()`, where a week has a
@@ -193,11 +184,7 @@ later of a type 1.0 still has keep loading.
   family, arithmetic, rounding, the pattern engine, time zone IDs, the
   search path, and pydantic validation. An out-of-range result is a
   `ValueError` on both, where the pure-Python backend leaked
-  `OverflowError`, `OSError`, or another standard library exception, for
-  example from `Instant.from_timestamp()` far outside `Instant.MIN..MAX`.
-  `TimeDelta(hours="1")` no longer hangs the pure-Python backend, and
-  `str()` of a `ZonedDateTime` without a time zone ID no longer raises
-  there.
+  `OverflowError`, `OSError` in some cases.
 - Warnings point at the caller, where several pointed at internal frames,
   and a call that rejects an argument no longer warns before it raises.
 - `help()` on a Rust extension method that takes keyword arguments, such as
