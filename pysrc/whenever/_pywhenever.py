@@ -44,6 +44,7 @@ from ._common import (
     DAYS_NOT_ALWAYS_24H_MSG,
     DUMMY_LEAP_YEAR,
     EPOCH_ORDINAL,
+    NS_PER_DAY,
     OFFSET_DATETIME_DOCS_MSG,
     OFFSET_SHIFT_STALE_MSG,
     # The Rust extension takes its copy of the two reference messages from
@@ -96,7 +97,6 @@ from ._math import (
     NS_PER_UNIT_PLURAL,
     TOTAL_UNITS,
     Sign,
-    custom_round,
     date_diff,
     days_in_month,
     exact_units_to_nanos,
@@ -107,6 +107,7 @@ from ._math import (
     resolve_date_rounding,
     resolve_leap_day,
     resolve_rounding,
+    rounds_up,
     unit_index,
 )
 from ._parse import (
@@ -1663,32 +1664,22 @@ class Time(_Base):
         if unit == "day":
             raise invalid("unit", unit)
         return self._round_unchecked(
-            _round_increment_ns(unit, increment, False),
-            mode,
-            86_400_000_000_000,
+            _round_increment_ns(unit, increment, False), mode
         )[0]
 
     def _round_unchecked(
-        self,
-        increment_ns: int,
-        mode: str,
-        day_in_ns: int,
+        self, increment_ns: int, mode: str
     ) -> tuple[Time, int]:  # the time, and whether the result is "next day"
 
         quotient, remainder_ns = divmod(
             self._to_ns_since_midnight(), increment_ns
         )
-        floor = quotient * increment_ns
-        if mode not in ("floor", "trunc"):
-            floor = custom_round(
-                floor,
-                remainder_ns,
-                increment_ns,
-                mode,
-                increment_ns,
-                1,
-            )
-        next_day, ns_since_midnight = divmod(floor, day_in_ns)
+        quotient += rounds_up(
+            mode, remainder_ns, increment_ns, quotient % 2 == 1, 1
+        )
+        next_day, ns_since_midnight = divmod(
+            quotient * increment_ns, NS_PER_DAY
+        )
         return self._from_ns_since_midnight(ns_since_midnight), next_day
 
     @classmethod
@@ -1785,8 +1776,7 @@ def _round_float_nanos(value: float, /) -> int:
 
 def _div_round_half_even(n: int, d: int, /) -> int:
     quotient, remainder = divmod(abs(n), abs(d))
-    if 2 * remainder > abs(d) or (2 * remainder == abs(d) and quotient % 2):
-        quotient += 1
+    quotient += rounds_up("half_even", remainder, abs(d), quotient % 2 == 1, 1)
     return -quotient if (n < 0) != (d < 0) else quotient
 
 
@@ -2344,16 +2334,10 @@ class TimeDelta(_Base):
         quotient, remainder_ns = divmod(abs(self._total_ns), increment_ns)
         sign: Literal[1, -1] = 1 if self._total_ns >= 0 else -1
 
+        quotient += rounds_up(
+            mode, remainder_ns, increment_ns, quotient % 2 == 1, sign
+        )
         abs_result = quotient * increment_ns
-        if mode != "trunc":
-            abs_result = custom_round(
-                abs_result,
-                remainder_ns,
-                increment_ns,
-                mode,
-                increment_ns,
-                sign,
-            )
 
         if abs_result > _MAX_DELTA_NANOS:
             raise ValueError(RANGE_MSG)
@@ -3694,11 +3678,7 @@ class Instant(_ExactTime):
             raise ValueError(CANNOT_ROUND_DAY_MSG)
         rounded_time, next_day = Time._from_py_unchecked(
             self._py_dt.time(), self._nanos
-        )._round_unchecked(
-            _round_increment_ns(unit, increment, False),
-            mode,
-            86_400_000_000_000,
-        )
+        )._round_unchecked(_round_increment_ns(unit, increment, False), mode)
         try:
             rounded_date = self._py_dt.date() + _timedelta(days=next_day)
         except OverflowError:
@@ -4657,9 +4637,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         result = (
             self.to_plain()
             ._round_unchecked(
-                _round_increment_ns(unit, increment, False),
-                mode,
-                86_400_000_000_000,
+                _round_increment_ns(unit, increment, False), mode
             )
             .assume_fixed_offset(self.offset)
         )
@@ -6404,9 +6382,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         if unit == "day":
             return self._round_day(mode)
 
-        rounded_local = self.to_plain()._round_unchecked(
-            increment_ns, mode, 86_400_000_000_000
-        )
+        rounded_local = self.to_plain()._round_unchecked(increment_ns, mode)
         return self._from_py_unchecked(
             self._resolve_derived_local(
                 rounded_local._py_dt,
@@ -6421,13 +6397,14 @@ class ZonedDateTime(_ExactAndLocalTime):
         # elapsed since the start of the day over the day's own length.
         start = self.start_of("day")
         day_ns = self.day_length()._total_ns
-        quotient, remainder_ns = divmod((self - start)._total_ns, day_ns)
-        rounded_ns = quotient * day_ns
-        if mode != "trunc":
-            rounded_ns = custom_round(
-                rounded_ns, remainder_ns, day_ns, mode, day_ns, 1
-            )
-        return start + TimeDelta(nanoseconds=rounded_ns)
+        elapsed_ns = (self - start)._total_ns
+        assert 0 <= elapsed_ns < day_ns
+        # The start of the day is the even multiple
+        return (
+            start + TimeDelta(nanoseconds=day_ns)
+            if rounds_up(mode, elapsed_ns, day_ns, False, 1)
+            else start
+        )
 
     def to_stdlib(self) -> _datetime:
         """Convert to a standard library :class:`~datetime.datetime`
@@ -7489,16 +7466,12 @@ class PlainDateTime(_LocalTime):
         PlainDateTime("2020-08-15 23:30:00")
         """
         return self._round_unchecked(
-            _round_increment_ns(unit, increment, False),
-            mode,
-            86_400_000_000_000,
+            _round_increment_ns(unit, increment, False), mode
         )
 
-    def _round_unchecked(
-        self, increment_ns: int, mode: str, day_ns: int
-    ) -> PlainDateTime:
+    def _round_unchecked(self, increment_ns: int, mode: str) -> PlainDateTime:
         rounded_time, next_day = self.time()._round_unchecked(
-            increment_ns, mode, day_ns
+            increment_ns, mode
         )
         return self.date()._add_days(next_day).at(rounded_time)
 
@@ -7991,15 +7964,13 @@ def _date_difference(
         smallest_unit = units[-1]
         trunc_date = resolve_leap_day(trunc)
         expand_date = resolve_leap_day(expand)
-        rounded = custom_round(
-            results[smallest_unit],
+        if rounds_up(
+            round_mode,
             abs((a - trunc_date).days),
             abs((expand_date - trunc_date).days),
-            round_mode,
-            round_increment,
+            results[smallest_unit] // round_increment % 2 == 1,
             sign,
-        )
-        if rounded != results[smallest_unit]:
+        ):
             # Rounded up: the larger units take the carry, and the
             # smallest stays a multiple of the increment
             return _date_difference(
@@ -8134,15 +8105,13 @@ def _plain_difference_in_units(
             + expand._nanos
             - trunc._nanos
         )
-        rounded = custom_round(
-            result[smallest_unit],
+        if rounds_up(
+            round_mode,
             abs(self_ns),
             abs(expand_ns),
-            round_mode,
-            round_increment,
+            result[smallest_unit] // round_increment % 2 == 1,
             sign,
-        )
-        if rounded != result[smallest_unit]:
+        ):
             rounded_up = expand
 
     if rounded_up is not None:
@@ -8324,15 +8293,13 @@ def _zoned_difference_in_units(
                 rounded_up = endpoint
     # Round is expensive, so only do it if needed
     elif round_mode != "trunc":
-        rounded = custom_round(
-            result[smallest_unit],
+        if rounds_up(
+            round_mode,
             abs((a - trunc)._total_ns),
             abs((expand - trunc)._total_ns),
-            round_mode,
-            round_increment,
+            result[smallest_unit] // round_increment % 2 == 1,
             sign,
-        )
-        if rounded != result[smallest_unit]:
+        ):
             rounded_up = expand
 
     if rounded_up is not None:

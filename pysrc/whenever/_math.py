@@ -410,63 +410,45 @@ def exact_units_to_nanos(
 Sign = Literal[1, 0, -1]
 
 
-# This rounding function has a bit of a strange signature, due to the fact
-# that it needs to run with calendar units. For example, it needs to be able
-# to round *months* using the difference in *days* to determine whether
-# to round up or down.
-# Hopefully you won't have to come back to this function to make changes.
-# If necessary, read the tests and usage in the main code to understand how this function is used.
-def custom_round(
-    trunc_value: int,
-    remainder: int,
-    expanded: int,
+# What floor and ceil mean for a magnitude under a negative sign
+_NEGATED_MODES = {
+    "floor": "expand",
+    "ceil": "trunc",
+    "half_floor": "half_expand",
+    "half_ceil": "half_trunc",
+}
+
+
+def rounds_up(
     mode: str,
-    increment: int,
+    remainder: int,
+    span: int,
+    quotient_odd: bool,
     sign: Literal[1, -1],
-) -> int:
-    do_expand = False  # 'expand' means round away from 0
+) -> bool:
+    """Whether a magnitude steps away from zero, to the next multiple.
 
-    # Some internal sanity checks (Should not be triggered by user input, since the main code should guarantee these)
-    assert mode != "trunc"  # should be handled by caller
-
-    # All values are absolute values, and the sign is handled separately.
-    assert expanded > 0
-    assert remainder >= 0
-    assert trunc_value >= 0
-
-    # Rounding should always be done to a different value
-    assert increment > 0
-    assert expanded != remainder
-
+    Every rounding in the library is this decision plus the caller's own
+    arithmetic. ``remainder`` is how far the magnitude lies past the multiple
+    below it, and ``span`` the distance to the next one. They need not be in
+    the unit that is rounded: months round by the days between two dates.
+    ``quotient_odd`` is the parity of the multiple below, for a tie.
+    """
+    assert 0 <= remainder < span
+    if sign < 0:
+        mode = _NEGATED_MODES.get(mode, mode)
     match mode:
+        case "trunc" | "floor":
+            return False
+        case "expand" | "ceil":
+            return remainder > 0
+        case "half_trunc" | "half_floor":
+            return remainder * 2 > span
+        case "half_expand" | "half_ceil":
+            return remainder * 2 >= span
         case "half_even":
-            do_expand = remainder * 2 > expanded or (
-                remainder * 2 == expanded
-                and (trunc_value // increment) % 2 == 1
+            return remainder * 2 > span or (
+                remainder * 2 == span and quotient_odd
             )
-        case "expand":
-            do_expand = remainder > 0
-        case "ceil":
-            do_expand = remainder * sign > 0
-        case "floor":
-            do_expand = remainder * sign < 0
-        case "half_ceil":
-            do_expand = (
-                remainder * 2 >= expanded
-                if sign > 0
-                else remainder * 2 > expanded
-            )
-        case "half_floor":
-            do_expand = (
-                remainder * 2 > expanded
-                if sign > 0
-                else remainder * 2 >= expanded
-            )
-        case "half_trunc":
-            do_expand = remainder * 2 > expanded
-        case "half_expand":
-            do_expand = remainder * 2 >= expanded
         case _:
             raise invalid("mode", mode)
-
-    return trunc_value + (increment * do_expand)

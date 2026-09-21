@@ -480,7 +480,7 @@ pub(crate) fn date_since_iddelta(
         a,
         trunc.into(),
         expand.into(),
-        round_mode.to_abs_trunc(neg),
+        round_mode.to_abs(neg),
         round_increment,
         neg,
     ) {

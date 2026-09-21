@@ -138,18 +138,12 @@ impl Time {
         let total_nanos = self.total_nanos();
         let quotient = total_nanos / increment;
         let remainder = total_nanos % increment;
-        // Compare against the half without dividing, so an odd increment isn't truncated.
         // A time of day is never negative: trunc is floor, expand is ceil.
-        let round_up = match mode {
-            round::Mode::Floor | round::Mode::Trunc => false,
-            round::Mode::Ceil | round::Mode::Expand => remainder > 0,
-            round::Mode::HalfFloor | round::Mode::HalfTrunc => remainder > increment - remainder,
-            round::Mode::HalfCeil | round::Mode::HalfExpand => remainder >= increment - remainder,
-            round::Mode::HalfEven => {
-                remainder > increment - remainder
-                    || (remainder == increment - remainder && !quotient.is_multiple_of(2))
-            }
-        };
+        let round_up = mode.to_abs(false).rounds_up(
+            remainder > 0,
+            remainder.cmp(&(increment - remainder)),
+            !quotient.is_multiple_of(2),
+        );
         let ns_since_midnight = (quotient + round_up as u64) * increment;
         (
             Self::from_total_nanos_unchecked(ns_since_midnight % NS_PER_DAY),

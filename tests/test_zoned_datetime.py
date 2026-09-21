@@ -4034,6 +4034,15 @@ class TestSince:
         b = ZonedDateTime(2023, 2, 14, tz="Asia/Tokyo")
         assert a.since(b, in_units=iter(["hours"])) == ItemizedDelta(hours=24)  # type: ignore[call-overload]
 
+    @pytest.mark.parametrize("day, expect", [(2, 2), (3, 2), (4, 4)])
+    def test_half_even_tie_goes_by_the_parity_of_the_count(self, day, expect):
+        # 1.5, 2.5, and 3.5 days
+        assert ZonedDateTime(2024, 1, 1, tz="Asia/Tokyo").until(
+            ZonedDateTime(2024, 1, day, 12, tz="Asia/Tokyo"),
+            in_units=["days"],
+            round_mode="half_even",
+        ) == ItemizedDelta(days=expect)
+
     @pytest.mark.parametrize(
         "a, b, mode, expect",
         [

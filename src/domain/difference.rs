@@ -824,19 +824,13 @@ fn round(
     increment: CalendarIncrement,
     negate: bool,
 ) -> i32 {
-    let do_expand = match mode {
-        round::AbsMode::Trunc => unreachable!("trunc should be handled by caller"),
-        round::AbsMode::Expand => has_remainder,
-        round::AbsMode::HalfEven => {
-            half_cmp == Ordering::Greater
-                || (half_cmp == Ordering::Equal
-                    && !(trunc_value / increment.get())
-                        .unsigned_abs()
-                        .is_multiple_of(2))
-        }
-        round::AbsMode::HalfTrunc => half_cmp == Ordering::Greater,
-        round::AbsMode::HalfExpand => half_cmp != Ordering::Less,
-    };
+    let do_expand = mode.rounds_up(
+        has_remainder,
+        half_cmp,
+        !(trunc_value / increment.get())
+            .unsigned_abs()
+            .is_multiple_of(2),
+    );
 
     trunc_value
         + if do_expand {

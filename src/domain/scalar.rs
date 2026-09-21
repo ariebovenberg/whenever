@@ -1,5 +1,4 @@
 //! Checked arithmetic for scalar date and time concepts
-use super::round;
 use super::units::*;
 use super::{date::Date, plain_datetime::PlainDateTime, time::Time};
 use crate::common::fmt::{self, Sink, format_2_digits};
@@ -684,11 +683,6 @@ impl DeltaSeconds {
         self.0
     }
 
-    pub(crate) fn add(self, d: DeltaSeconds) -> Option<Self> {
-        // Safety: both values well within i64::MIN/MAX
-        Self::new(self.0 + d.get())
-    }
-
     /// Get the absolute value of the delta in hours, minutes, and seconds
     pub(crate) fn abs_hms(self) -> (i64, u8, u8) {
         let secs = self.0.abs();
@@ -800,41 +794,6 @@ impl SubSecNanos {
             // Safety: No range check since we're dealing with at most 1 second here
             DeltaSeconds::new_unchecked(sum.div_euclid(NS_PER_SECOND as i32) as _),
             SubSecNanos::from_remainder(sum),
-        )
-    }
-
-    /// Round the subsecond part of a value whose whole seconds are odd or even.
-    pub(crate) fn round(
-        self,
-        increment: u32,
-        mode: round::AbsMode,
-        secs_odd: bool,
-    ) -> (DeltaSeconds, Self) {
-        debug_assert!(increment > 0);
-        debug_assert!(increment < NS_PER_SECOND);
-        debug_assert!(NS_PER_SECOND.is_multiple_of(increment));
-        let tot = self.as_u32();
-        let quotient = tot / increment;
-        let remainder = tot % increment;
-        // Compare against the half without dividing, so an odd increment isn't truncated.
-        let round_up = match mode {
-            round::AbsMode::Trunc => false,
-            round::AbsMode::Expand => remainder > 0,
-            round::AbsMode::HalfTrunc => remainder > increment - remainder,
-            round::AbsMode::HalfExpand => remainder >= increment - remainder,
-            round::AbsMode::HalfEven => {
-                // The tie goes by the parity of the whole value's quotient,
-                // to which each odd second adds an odd number of increments
-                // when the increment fits an odd number of times in a second.
-                let odd = !quotient.is_multiple_of(2)
-                    ^ (secs_odd && !(NS_PER_SECOND / increment).is_multiple_of(2));
-                remainder > increment - remainder || (remainder == increment - remainder && odd)
-            }
-        };
-        let rounded = (quotient + round_up as u32) * increment;
-        (
-            DeltaSeconds::new_unchecked((rounded / NS_PER_SECOND).into()),
-            SubSecNanos::from_remainder(rounded),
         )
     }
 

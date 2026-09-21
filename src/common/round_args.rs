@@ -3,7 +3,6 @@ use std::num::{NonZero, NonZeroU64, NonZeroU128};
 
 use crate::{
     docstrings as doc,
-    domain::scalar::SubSecNanos,
     domain::time_delta::DeltaIncrement,
     domain::units::{
         NS_PER_DAY, NS_PER_HOUR, NS_PER_MICROSECOND, NS_PER_MILLISECOND, NS_PER_MINUTE,
@@ -226,10 +225,7 @@ impl DeltaArgs {
             Ok(true)
         })?;
         let increment = match opt_arg {
-            None => DeltaIncrement {
-                secs: 1,
-                subsec: SubSecNanos::MIN,
-            },
+            None => DeltaIncrement::SECOND,
             Some(arg) => {
                 if let Some(delta) = arg.extract(*state.time_delta_type) {
                     if increment_kwarg.is_some() {
@@ -238,10 +234,8 @@ impl DeltaArgs {
                     if delta.is_negative() || delta.is_zero() {
                         raise_value_err(UNIT_POSITIVE_MSG)?;
                     }
-                    DeltaIncrement {
-                        secs: delta.secs.get() as u64,
-                        subsec: delta.subsec,
-                    }
+                    // SAFETY: a positive TimeDelta is within an increment's range
+                    DeltaIncrement::from_nanos(delta.total_nanos() as u128).unwrap()
                 } else {
                     let unit = RoundUnit::from_py(arg, state, true)?;
                     if matches!(unit, RoundUnit::Day | RoundUnit::Week) && !suppress_24h_warning {

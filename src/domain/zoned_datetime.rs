@@ -107,15 +107,12 @@ impl ZonedDateTime {
             .to_instant()
             .diff(day_start.to_instant())
             .total_nanos() as u64;
-        let expand = match mode {
-            round::Mode::Floor | round::Mode::Trunc => false,
-            round::Mode::Ceil | round::Mode::Expand => elapsed_ns > 0,
-            round::Mode::HalfCeil | round::Mode::HalfExpand => elapsed_ns * 2 >= day_ns,
-            // A tie rounds to the even multiple, which is the start of the day.
-            round::Mode::HalfFloor | round::Mode::HalfTrunc | round::Mode::HalfEven => {
-                elapsed_ns * 2 > day_ns
-            }
-        };
+        // The start of the day is the even multiple
+        let expand = mode.to_abs(false).rounds_up(
+            elapsed_ns > 0,
+            elapsed_ns.cmp(&(day_ns - elapsed_ns)),
+            false,
+        );
         Some(if expand { next_day_start } else { day_start })
     }
 }
@@ -319,18 +316,14 @@ pub(crate) fn zoned_since_in_units(
                 a_inst,
                 trunc,
                 expand.to_instant(),
-                round_mode.to_abs_trunc(negative),
+                round_mode.to_abs(negative),
                 round_increment.to_calendar()?,
                 negative,
             )
             .then_some(expand)
     } else {
         let diff = a_inst.diff(trunc);
-        let rounded = diff.round_to_unit(
-            exact_units.smallest(),
-            round_increment,
-            round_mode.to_abs_euclid(negative),
-        )?;
+        let rounded = diff.round_to_unit(exact_units.smallest(), round_increment, round_mode)?;
         if calendar_units.is_empty() || rounded.abs() <= diff.abs() {
             let mut result = rounded.itemize(exact_units)?;
             result.fill_calendar_units(ddelta);

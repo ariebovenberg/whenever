@@ -1438,6 +1438,16 @@ class TestSince:
         assert result_ceil == ItemizedDelta(years=1, months=1)
 
     @suppress(NaiveArithmeticWarning)
+    @pytest.mark.parametrize("day, expect", [(2, 2), (3, 2), (4, 4)])
+    def test_half_even_tie_goes_by_the_parity_of_the_count(self, day, expect):
+        # 1.5, 2.5, and 3.5 days
+        assert PlainDateTime(2024, 1, 1).until(
+            PlainDateTime(2024, 1, day, 12),
+            in_units=["days"],
+            round_mode="half_even",
+        ) == ItemizedDelta(days=expect)
+
+    @suppress(NaiveArithmeticWarning)
     def test_rounding_up_carries_into_larger_units(self):
         assert PlainDateTime(2024, 1, 1).until(
             PlainDateTime(2024, 3, 1, 23, 30),

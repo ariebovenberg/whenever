@@ -987,13 +987,12 @@ fn offset_since(
                     // Different offsets, exact units only: compute via TimeDelta
                     let (a, b) = if flip { (other, slf) } else { (slf, other) };
                     let diff = a.to_instant().diff(b.to_instant());
-                    let abs_mode = mode.to_abs_euclid(diff.is_negative());
                     let result = diff
                         .in_exact_units(
                             // SAFETY: we've already checked there are only exact units
                             units.to_exact_assuming_24h_days().unwrap(),
                             increment,
-                            abs_mode,
+                            mode,
                         )
                         .ok_or_range_err()?;
                     result.to_obj(state)

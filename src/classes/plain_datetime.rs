@@ -799,18 +799,14 @@ fn plain_since_in_units(
                 a.assume_utc(),
                 trunc_dt.assume_utc(),
                 expand_dt.assume_utc(),
-                round_mode.to_abs_trunc(neg),
+                round_mode.to_abs(neg),
                 round_increment.to_calendar()?,
                 neg,
             )
             .then_some(expand_dt)
     } else {
         let diff = a.diff(trunc_dt);
-        let rounded = diff.round_to_unit(
-            exact_units.smallest(),
-            round_increment,
-            round_mode.to_abs_euclid(neg),
-        )?;
+        let rounded = diff.round_to_unit(exact_units.smallest(), round_increment, round_mode)?;
         if calendar_units.is_empty() || rounded.abs() <= diff.abs() {
             let mut result = rounded.itemize(exact_units)?;
             result.fill_calendar_units(calendar_results);

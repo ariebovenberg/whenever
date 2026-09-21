@@ -570,9 +570,7 @@ fn round(
     kwargs: &mut IterKwargs,
 ) -> PyReturn {
     let round::DeltaArgs { increment, mode } = round::DeltaArgs::parse(args, kwargs, cls.state())?;
-    slf.round(increment, mode.to_abs_euclid(slf.is_negative()))
-        .ok_or_range_err()?
-        .to_obj(cls)
+    slf.round(increment, mode).ok_or_range_err()?.to_obj(cls)
 }
 
 fn add(
@@ -711,7 +709,7 @@ fn in_units(
                 1,
             )?;
         }
-        slf.in_exact_units(exact, increment, mode.to_abs_euclid(neg))
+        slf.in_exact_units(exact, increment, mode)
             .ok_or_range_err()?
             .to_obj(state)
     }
@@ -854,7 +852,7 @@ pub(crate) static SPEC: PyDefCell<PyType_Spec> =
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{round::AbsMode, time_delta::DeltaIncrement};
+    use crate::domain::time_delta::DeltaIncrement;
 
     fn td(secs: i64, nanos: i32) -> TimeDelta {
         TimeDelta {
@@ -868,10 +866,7 @@ mod tests {
     }
 
     fn inc(secs: u64, nanos: i32) -> DeltaIncrement {
-        DeltaIncrement {
-            secs,
-            subsec: SubSecNanos::new_unchecked(nanos),
-        }
+        DeltaIncrement::from_nanos(secs as u128 * 1_000_000_000 + nanos as u128).unwrap()
     }
 
     fn sec() -> DeltaIncrement {
@@ -882,17 +877,13 @@ mod tests {
         inc(10, 0)
     }
 
-    fn abs(mode: round::Mode, negative: bool) -> AbsMode {
-        mode.to_abs_euclid(negative)
-    }
-
     // --- Sub-second rounding (increment < 1s) ---
 
     #[test]
     fn round_subsec_floor() {
         // 1.7s → floor to 1s
         assert_eq!(
-            td(1, 700_000_000).round(sec(), abs(round::Mode::Floor, false)),
+            td(1, 700_000_000).round(sec(), round::Mode::Floor),
             Some(td_secs(1))
         );
     }
@@ -901,7 +892,7 @@ mod tests {
     fn round_subsec_ceil() {
         // 1.7s → ceil to 2s
         assert_eq!(
-            td(1, 700_000_000).round(sec(), abs(round::Mode::Ceil, false)),
+            td(1, 700_000_000).round(sec(), round::Mode::Ceil),
             Some(td_secs(2))
         );
     }
@@ -910,7 +901,7 @@ mod tests {
     fn round_subsec_trunc_positive() {
         // 1.7s → trunc (towards 0) = 1s
         assert_eq!(
-            td(1, 700_000_000).round(sec(), abs(round::Mode::Trunc, false)),
+            td(1, 700_000_000).round(sec(), round::Mode::Trunc),
             Some(td_secs(1))
         );
     }
@@ -919,7 +910,7 @@ mod tests {
     fn round_subsec_trunc_negative() {
         // -1.3s (secs=-2, subsec=700_000_000) → trunc (towards 0) = -1s
         assert_eq!(
-            td(-2, 700_000_000).round(sec(), abs(round::Mode::Trunc, true)),
+            td(-2, 700_000_000).round(sec(), round::Mode::Trunc),
             Some(td_secs(-1))
         );
     }
@@ -928,7 +919,7 @@ mod tests {
     fn round_subsec_expand_positive() {
         // 1.7s → expand (away from 0) = 2s
         assert_eq!(
-            td(1, 700_000_000).round(sec(), abs(round::Mode::Expand, false)),
+            td(1, 700_000_000).round(sec(), round::Mode::Expand),
             Some(td_secs(2))
         );
     }
@@ -937,7 +928,7 @@ mod tests {
     fn round_subsec_expand_negative() {
         // -1.3s → expand (away from 0) = -2s
         assert_eq!(
-            td(-2, 700_000_000).round(sec(), abs(round::Mode::Expand, true)),
+            td(-2, 700_000_000).round(sec(), round::Mode::Expand),
             Some(td_secs(-2))
         );
     }
@@ -948,12 +939,12 @@ mod tests {
     fn round_subsec_half_even_tie() {
         // 1.5s → half_even: quotient=1 (odd), round up to 2
         assert_eq!(
-            td(1, 500_000_000).round(sec(), abs(round::Mode::HalfEven, false)),
+            td(1, 500_000_000).round(sec(), round::Mode::HalfEven),
             Some(td_secs(2))
         );
         // 2.5s → half_even: quotient=2 (even), round down to 2
         assert_eq!(
-            td(2, 500_000_000).round(sec(), abs(round::Mode::HalfEven, false)),
+            td(2, 500_000_000).round(sec(), round::Mode::HalfEven),
             Some(td_secs(2))
         );
     }
@@ -962,12 +953,12 @@ mod tests {
     fn round_subsec_half_ceil_tie() {
         // 1.5s → half_ceil: round up (towards +∞) = 2s
         assert_eq!(
-            td(1, 500_000_000).round(sec(), abs(round::Mode::HalfCeil, false)),
+            td(1, 500_000_000).round(sec(), round::Mode::HalfCeil),
             Some(td_secs(2))
         );
         // -1.5s (secs=-2, subsec=500_000_000) → half_ceil: round up (towards +∞) = -1s
         assert_eq!(
-            td(-2, 500_000_000).round(sec(), abs(round::Mode::HalfCeil, true)),
+            td(-2, 500_000_000).round(sec(), round::Mode::HalfCeil),
             Some(td_secs(-1))
         );
     }
@@ -976,12 +967,12 @@ mod tests {
     fn round_subsec_half_floor_tie() {
         // 1.5s → half_floor: round down = 1s
         assert_eq!(
-            td(1, 500_000_000).round(sec(), abs(round::Mode::HalfFloor, false)),
+            td(1, 500_000_000).round(sec(), round::Mode::HalfFloor),
             Some(td_secs(1))
         );
         // -1.5s → half_floor: round down (towards -∞) = -2s
         assert_eq!(
-            td(-2, 500_000_000).round(sec(), abs(round::Mode::HalfFloor, true)),
+            td(-2, 500_000_000).round(sec(), round::Mode::HalfFloor),
             Some(td_secs(-2))
         );
     }
@@ -990,12 +981,12 @@ mod tests {
     fn round_subsec_half_trunc_tie() {
         // 1.5s → half_trunc: ties towards 0 = 1s
         assert_eq!(
-            td(1, 500_000_000).round(sec(), abs(round::Mode::HalfTrunc, false)),
+            td(1, 500_000_000).round(sec(), round::Mode::HalfTrunc),
             Some(td_secs(1))
         );
         // -1.5s → half_trunc: ties towards 0 = -1s
         assert_eq!(
-            td(-2, 500_000_000).round(sec(), abs(round::Mode::HalfTrunc, true)),
+            td(-2, 500_000_000).round(sec(), round::Mode::HalfTrunc),
             Some(td_secs(-1))
         );
     }
@@ -1004,12 +995,12 @@ mod tests {
     fn round_subsec_half_expand_tie() {
         // 1.5s → half_expand: ties away from 0 = 2s
         assert_eq!(
-            td(1, 500_000_000).round(sec(), abs(round::Mode::HalfExpand, false)),
+            td(1, 500_000_000).round(sec(), round::Mode::HalfExpand),
             Some(td_secs(2))
         );
         // -1.5s → half_expand: ties away from 0 = -2s
         assert_eq!(
-            td(-2, 500_000_000).round(sec(), abs(round::Mode::HalfExpand, true)),
+            td(-2, 500_000_000).round(sec(), round::Mode::HalfExpand),
             Some(td_secs(-2))
         );
     }
@@ -1020,7 +1011,7 @@ mod tests {
     fn round_wholesec_trunc_positive() {
         // 45s → trunc to 10s = 40s
         assert_eq!(
-            td_secs(45).round(ten_sec(), abs(round::Mode::Trunc, false)),
+            td_secs(45).round(ten_sec(), round::Mode::Trunc),
             Some(td_secs(40))
         );
     }
@@ -1029,7 +1020,7 @@ mod tests {
     fn round_wholesec_trunc_negative() {
         // -45s → trunc to 10s = -40s (towards zero)
         assert_eq!(
-            td_secs(-45).round(ten_sec(), abs(round::Mode::Trunc, true)),
+            td_secs(-45).round(ten_sec(), round::Mode::Trunc),
             Some(td_secs(-40))
         );
     }
@@ -1038,7 +1029,7 @@ mod tests {
     fn round_wholesec_expand_positive() {
         // 41s → expand to 10s = 50s
         assert_eq!(
-            td_secs(41).round(ten_sec(), abs(round::Mode::Expand, false)),
+            td_secs(41).round(ten_sec(), round::Mode::Expand),
             Some(td_secs(50))
         );
     }
@@ -1047,7 +1038,7 @@ mod tests {
     fn round_wholesec_expand_negative() {
         // -41s → expand to 10s = -50s (away from zero)
         assert_eq!(
-            td_secs(-41).round(ten_sec(), abs(round::Mode::Expand, true)),
+            td_secs(-41).round(ten_sec(), round::Mode::Expand),
             Some(td_secs(-50))
         );
     }
@@ -1056,12 +1047,12 @@ mod tests {
     fn round_wholesec_half_trunc_tie() {
         // 45s → half_trunc to 10s = 40s (tie towards zero)
         assert_eq!(
-            td_secs(45).round(ten_sec(), abs(round::Mode::HalfTrunc, false)),
+            td_secs(45).round(ten_sec(), round::Mode::HalfTrunc),
             Some(td_secs(40))
         );
         // -45s → half_trunc to 10s = -40s
         assert_eq!(
-            td_secs(-45).round(ten_sec(), abs(round::Mode::HalfTrunc, true)),
+            td_secs(-45).round(ten_sec(), round::Mode::HalfTrunc),
             Some(td_secs(-40))
         );
     }
@@ -1070,12 +1061,12 @@ mod tests {
     fn round_wholesec_half_expand_tie() {
         // 45s → half_expand to 10s = 50s (tie away from zero)
         assert_eq!(
-            td_secs(45).round(ten_sec(), abs(round::Mode::HalfExpand, false)),
+            td_secs(45).round(ten_sec(), round::Mode::HalfExpand),
             Some(td_secs(50))
         );
         // -45s → half_expand to 10s = -50s
         assert_eq!(
-            td_secs(-45).round(ten_sec(), abs(round::Mode::HalfExpand, true)),
+            td_secs(-45).round(ten_sec(), round::Mode::HalfExpand),
             Some(td_secs(-50))
         );
     }
@@ -1094,10 +1085,7 @@ mod tests {
             round::Mode::HalfTrunc,
             round::Mode::HalfExpand,
         ] {
-            assert_eq!(
-                td_secs(0).round(sec(), mode.to_abs_euclid(false)),
-                Some(td_secs(0))
-            );
+            assert_eq!(td_secs(0).round(sec(), mode), Some(td_secs(0)));
         }
     }
 
@@ -1115,14 +1103,8 @@ mod tests {
             round::Mode::HalfTrunc,
             round::Mode::HalfExpand,
         ] {
-            assert_eq!(
-                td_secs(30).round(ten_sec(), mode.to_abs_euclid(false)),
-                Some(td_secs(30))
-            );
-            assert_eq!(
-                td_secs(-30).round(ten_sec(), mode.to_abs_euclid(true)),
-                Some(td_secs(-30))
-            );
+            assert_eq!(td_secs(30).round(ten_sec(), mode), Some(td_secs(30)));
+            assert_eq!(td_secs(-30).round(ten_sec(), mode), Some(td_secs(-30)));
         }
     }
 
@@ -1132,12 +1114,12 @@ mod tests {
         let large_inc = inc(36_893_488_147, 419_103_232);
         // A value smaller than the increment should round to zero
         assert_eq!(
-            td_secs(3600).round(large_inc, abs(round::Mode::Trunc, false)),
+            td_secs(3600).round(large_inc, round::Mode::Trunc),
             Some(td_secs(0))
         );
         // A value exactly equal to the increment should be unchanged
         assert_eq!(
-            td(36_893_488_147, 419_103_232).round(large_inc, abs(round::Mode::Trunc, false)),
+            td(36_893_488_147, 419_103_232).round(large_inc, round::Mode::Trunc),
             Some(td(36_893_488_147, 419_103_232))
         );
     }
