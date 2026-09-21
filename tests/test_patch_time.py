@@ -1,6 +1,6 @@
 import warnings
 from collections.abc import Callable
-from time import sleep
+from time import sleep, time_ns
 
 import pytest
 from typing_extensions import assert_type
@@ -98,6 +98,11 @@ def test_ticking_time_patch_allows_backward_movement():
 
 def test_ticking_time_patch_past_the_range():
     with patch_current_time(Instant.MAX, keep_ticking=True):
+        # The clock must visibly advance: before Python 3.13, the Windows
+        # clock ticks only every ~16ms, and zero elapsed time is in range.
+        t = time_ns()
+        while time_ns() == t:
+            pass
         with pytest.raises(ValueError, match="out of range"):
             Instant.now()
 
