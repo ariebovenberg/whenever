@@ -1397,6 +1397,13 @@ class TestInUnits:
         if is_exact:
             assert relative_to.add(d) == relative_to.add(expect)
 
+    def test_rounding_up_carries_into_larger_units(self):
+        assert ItemizedDelta(months=11, days=30).in_units(
+            ["years", "months"],
+            relative_to=ZonedDateTime(2024, 6, 1, tz="UTC"),
+            round_mode="ceil",
+        ) == ItemizedDelta(years=1, months=0)
+
 
 class TestInUnitsRelativeToNonZoned:
     """Tests for ItemizedDelta.in_units() with PlainDateTime/OffsetDateTime.

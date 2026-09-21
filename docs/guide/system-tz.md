@@ -80,7 +80,7 @@ These types of time zone definitions can still account for daylight saving time
 (DST) and other time zone changes:
 
 ```python
->>> d = plain.assume_tz(SYSTEM_TZ)
+>>> d = PlainDateTime(2024, 6, 4, hour=12).assume_tz(SYSTEM_TZ)
 ZonedDateTime("2024-06-04 12:00:00+02:00[<system time zone without ID>]")
 >>> # Correct UTC offset after adding 5 months
 >>> d.add(months=5)

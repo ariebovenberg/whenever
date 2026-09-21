@@ -290,7 +290,7 @@ Pass `stale_offset_ok=True` when the fixed offset is intentional:
 >>> d2.since(d1, total="days")                    # calendar units: raises ValueError
 Traceback (most recent call last):
   ...
-ValueError: calendar units require the same offset, got +00:00 and +02:00
+ValueError: calendar units require the same offset, got +02:00 and +00:00
 ```
 
 ```{attention}

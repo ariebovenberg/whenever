@@ -51,6 +51,9 @@ This results in the following modes:
 
 For positive values, the behavior of `ceil` is identical to `expand` and the behavior of `floor` is identical to `trunc`.
 The difference is only visible for negative values.
+A datetime, a {class}`~whenever.Time`, and an {class}`~whenever.Instant` count as positive,
+also before 1970,
+so only a {class}`~whenever.TimeDelta` shows the difference between `trunc` and `floor`.
 
 The default mode is `half_even`, and the default unit is `"second"`,
 so `round()` with no arguments does what Python's own {func}`round` does.

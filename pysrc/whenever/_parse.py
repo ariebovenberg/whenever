@@ -20,6 +20,7 @@ from ._common import (
     round_offset_to_minute,
     tzid_display,
 )
+from ._format import parse_digits
 
 if TYPE_CHECKING:
     from ._tz import SafeTzId, TimeZone
@@ -485,19 +486,15 @@ def parse_rfc2822(s: str) -> _datetime:
         day_raw, month_raw, year_raw, *parts = parts
         if len(day_raw) > 2:
             _rfc2822_err(s)
-        day = int(day_raw)
+        # NOTE: not int(), which also takes a sign, whitespace, and underscores
+        day, _ = parse_digits(day_raw, 0, len(day_raw))
         month = _RFC2822_MONTH_NAMES[month_raw.lower()]
-        if len(year_raw) == 4:
-            year = int(year_raw)
-        elif len(year_raw) == 2:
-            year = int(year_raw)
-            if year < 50:
-                year += 2000
-            else:
-                year += 1900
+        year, _ = parse_digits(year_raw, 0, len(year_raw))
+        if len(year_raw) == 2:
+            year += 2000 if year < 50 else 1900
         elif len(year_raw) == 3:
-            year = int(year_raw) + 1900
-        else:
+            year += 1900
+        elif len(year_raw) != 4:
             _rfc2822_err(s)
         date = _date(year, month, day)
     except (ValueError, KeyError):
@@ -510,15 +507,23 @@ def parse_rfc2822(s: str) -> _datetime:
     try:
         # time components may be separated by whitespace
         *time_parts, offset_raw = parts
+        # ...but not within a number
+        if any(
+            a[-1].isdigit() and b[0].isdigit()
+            for a, b in zip(time_parts, time_parts[1:])
+        ):
+            _rfc2822_err(s)
         time_raw = "".join(time_parts)
         # Normalize leap seconds (60) to 59
+        hour, _ = parse_digits(time_raw, 0, 2)
+        minute, _ = parse_digits(time_raw, 3, 2)
         if len(time_raw) == 5 and time_raw[2] == ":":
-            time = _time(int(time_raw[:2]), int(time_raw[3:]))
+            time = _time(hour, minute)
         elif len(time_raw) == 8 and time_raw[2] == ":" and time_raw[5] == ":":
-            seconds = int(time_raw[6:])
+            seconds, _ = parse_digits(time_raw, 6, 2)
             if seconds == 60:
                 seconds = 59
-            time = _time(int(time_raw[:2]), int(time_raw[3:5]), seconds)
+            time = _time(hour, minute, seconds)
         else:
             _rfc2822_err(s)
     except ValueError:
@@ -528,12 +533,12 @@ def parse_rfc2822(s: str) -> _datetime:
     try:
         if offset_raw.startswith(("+", "-")) and len(offset_raw) == 5:
             sign = 1 if offset_raw[0] == "+" else -1
-            offset_minutes = int(offset_raw[3:5])
+            offset_hours, _ = parse_digits(offset_raw, 1, 2)
+            offset_minutes, _ = parse_digits(offset_raw, 3, 2)
             if offset_minutes > 59:
                 _rfc2822_err(s)
             offset = (
-                _timedelta(hours=int(offset_raw[1:3]), minutes=offset_minutes)
-                * sign
+                _timedelta(hours=offset_hours, minutes=offset_minutes) * sign
             )
         elif offset_raw.isalpha():
             # According to the spec, unknown time zones should

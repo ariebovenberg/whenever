@@ -12,8 +12,8 @@ build:
   os: ubuntu-24.04
   tools:
     python: "3.14"
-    # rust shouldn't be needed as we disable building the extension
-    # in the readthedocs configuration
+    # No Rust: the project's dashboard sets WHENEVER_NO_BUILD_RUST_EXT
+    # (Admin > Environment variables), which this file cannot do
 
 python:
   install:

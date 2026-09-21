@@ -25,7 +25,10 @@ when the boundary they compute falls in a repeated or skipped local time.
   returns an instant after its input. Rounding to a day compares the time
   elapsed since `start_of("day")` with `day_length()`, as Temporal does.
 - For every unit, every instant lies in exactly one interval: the boundaries
-  partition the timeline. A fall-back shorter than the unit that begins on
+  partition the timeline. A day is chosen by the instant, not by the local
+  date: with `S(d)` the start of local date `d`, the day of an instant with
+  local date `d` is `d + 1` when it is at or after `S(d + 1)`, and `d`
+  otherwise. Every calendar unit takes its day from that rule. A fall-back shorter than the unit that begins on
   a boundary of that unit (Colombo, 2006-04-15: 00:30+06:00 back to
   00:00+05:30) would break this if the later occurrence kept its offset,
   since the two occurrences of 00:15 would then start different hours. So
@@ -54,7 +57,9 @@ when the boundary they compute falls in a repeated or skipped local time.
 - In a fold that straddles midnight (Goose Bay, 2010-11-07, 00:01 back to
   23:01), the day interval is not the set of instants with that local date:
   the second occurrence of Nov 6 23:30 lies inside day Nov 7. No choice of
-  midnight avoids this; the earlier one is the convention.
+  midnight avoids this; the earlier one is the convention. Temporal has no
+  answer there: `round()` raises `RangeError` for the second pass, while
+  `startOfDay()` and `hoursInDay` answer for Nov 6.
 - The gap snapping is documented on `start_of()`, `end_of()`, and `round()`
   only; the resolution guide covers the caller-supplied cases.
 - A future policy keyword on these methods is additive, and must keep the

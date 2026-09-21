@@ -322,6 +322,40 @@ class TestTzCache:
             clear_tzcache()
             reset_tzpath(previous)
 
+    @pytest.mark.parametrize(
+        "corrupt",
+        [
+            lambda d: d[:100],
+            lambda d: d[:-40],
+            # inside the 64-bit transition times
+            lambda d: d[:1200],
+            # no types: bytes 1110 to 1113 are the second header's count
+            lambda d: d[:1110] + bytes(4) + d[1114:],
+            # header counts far beyond the file's length
+            lambda d: d[:20] + b"\x7f\xff\xff\xff" * 6,
+            lambda d: d[:20] + b"\xff\xff\xff\xff" * 6 + d[44:],
+            # an offset of years: byte 2795 is the high byte of the third
+            # type record's offset
+            lambda d: d[:2795] + b"\x7f" + d[2796:],
+        ],
+    )
+    def test_corrupt_file_is_not_found(self, tmp_path: Path, corrupt):
+        # EST5EDT is also in tzdata, as a link to New York: a file that is
+        # there but cannot be read must not fall back to it.
+        good = (TEST_DIR / "tzif" / "Amsterdam.tzif").read_bytes()
+        data = corrupt(good)
+        assert data != good
+        (tmp_path / "EST5EDT").write_bytes(data)
+        previous = get_tzpath()
+        reset_tzpath([tmp_path])
+        clear_tzcache()
+        try:
+            with pytest.raises(TimeZoneNotFoundError):
+                ZonedDateTime(2020, 8, 15, 5, 12, tz="EST5EDT")
+        finally:
+            clear_tzcache()
+            reset_tzpath(previous)
+
     @pytest.mark.skipif(_EXTENSION_LOADED, reason="tests the Python cache")
     def test_timezone_directory_cache(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

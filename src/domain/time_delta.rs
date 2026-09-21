@@ -134,7 +134,11 @@ impl TimeDelta {
     pub(crate) fn round(self, increment: DeltaIncrement, abs_mode: round::AbsMode) -> Option<Self> {
         debug_assert!(increment.secs > 0 || increment.subsec.get() > 0);
         if increment.secs == 0 && NS_PER_SECOND.is_multiple_of(increment.subsec.as_u32()) {
-            let (extra_secs, subsec) = self.subsec.round(increment.subsec.as_u32(), abs_mode);
+            let (extra_secs, subsec) = self.subsec.round(
+                increment.subsec.as_u32(),
+                abs_mode,
+                self.secs.get() % 2 != 0,
+            );
             Some(Self {
                 secs: self.secs.add(extra_secs).unwrap(),
                 subsec,
@@ -163,11 +167,7 @@ impl TimeDelta {
                         && !quotient.unsigned_abs().is_multiple_of(2))
             }
         };
-        let result_ns = (quotient + i128::from(round_up)) * increment;
-        Some(Self {
-            secs: DeltaSeconds::new(result_ns.div_euclid(NS_PER_SECOND as i128) as i64)?,
-            subsec: SubSecNanos::new_unchecked(result_ns.rem_euclid(NS_PER_SECOND as i128) as i32),
-        })
+        Self::from_nanos((quotient + i128::from(round_up)) * increment)
     }
 
     pub(crate) fn fmt_iso(self) -> String {
@@ -192,15 +192,28 @@ impl TimeDelta {
         round_increment: difference::DifferenceIncrement,
         round_mode: round::AbsMode,
     ) -> Option<ItemizedDelta> {
+        self.round_to_unit(units.smallest(), round_increment, round_mode)?
+            .itemize(units)
+    }
+
+    pub(crate) fn round_to_unit(
+        self,
+        unit: ExactUnit,
+        round_increment: difference::DifferenceIncrement,
+        round_mode: round::AbsMode,
+    ) -> Option<Self> {
+        let increment = (unit.in_nanos() as u64 as u128)
+            .checked_mul(round_increment.as_i128() as u128)
+            .and_then(DeltaIncrement::from_nanos)?;
+        self.round(increment, round_mode)
+    }
+
+    /// Balance over the given units. Whatever is below the smallest is dropped.
+    pub(crate) fn itemize(self, units: ExactUnitSet) -> Option<ItemizedDelta> {
         debug_assert!(
             !units.contains(ExactUnit::Milliseconds) && !units.contains(ExactUnit::Microseconds)
         );
-        let increment = (units.smallest().in_nanos() as u64 as u128)
-            .checked_mul(round_increment.as_i128() as u128)
-            .and_then(DeltaIncrement::from_nanos)?;
-        let rounded = self.round(increment, round_mode)?;
-
-        let mut remaining = rounded.total_nanos();
+        let mut remaining = self.total_nanos();
         let mut target = ItemizedDelta::UNSET;
         type Setter = fn(&mut ItemizedDelta, i128) -> Option<()>;
         let fields: &[(ExactUnit, Setter)] = &[

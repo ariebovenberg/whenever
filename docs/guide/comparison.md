@@ -45,6 +45,9 @@ True
 True
 ```
 
+mypy's `--strict-equality` flags `==` between two different exact types;
+{ref}`mixing-local-and-exact` has the workarounds.
+
 To also compare what `==` leaves out—here the local datetime and the
 offset—use {meth}`~whenever.ZonedDateTime.strict_eq`. See
 {ref}`strict-equality` below.
@@ -122,6 +125,7 @@ precision (such as MacOS).
 
 Use `.round('microsecond')` to explicitly round values to microsecond precision.
 
+(mixing-local-and-exact)=
 ## Mixing local and exact types
 
 Local and exact types are never equal or comparable to each other.

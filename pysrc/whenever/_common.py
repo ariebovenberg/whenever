@@ -14,6 +14,7 @@ from datetime import (  # noqa: F401
 from functools import lru_cache, partial, wraps
 from math import isfinite as _isfinite
 from operator import index as _index
+from struct import error as _struct_error, unpack as _unpack
 from typing import TYPE_CHECKING, Any, TypeVar, no_type_check
 from warnings import warn
 
@@ -285,6 +286,13 @@ def warn_renamed_keyword(
         f"'{old_name}' is deprecated; use '{new_name}' instead",
         stacklevel=stacklevel + 1,
     )
+
+
+def unpack_pickle(fmt: str, data: bytes, /) -> tuple[Any, ...]:
+    try:
+        return _unpack(fmt, data)
+    except _struct_error:
+        raise ValueError("invalid pickle data") from None
 
 
 def check_no_kwargs(

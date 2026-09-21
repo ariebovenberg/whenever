@@ -244,6 +244,14 @@ VALID_RFC2822 = [
 ]
 
 INVALID_RFC2822 = [
+    # What int() takes and a digit isn't: a sign, or whitespace in a number
+    "Sat, 15 Aug 2020 23:12:09 --900",
+    "Sat, 15 Aug 2020 23:12:09 +09-5",
+    "Sat, 15 Aug +20 23:12:09 +0000",
+    "Sat, +5 Aug 2020 23:12:09 +0000",
+    "Sat, 15 Aug 2020 23:12:+9 +0000",
+    "Sat, 15 Aug 2020 23:12:0\r9 +0000",
+    "Sat, 15 Aug 2020 2 3:12:09 +0000",
     # Invalid time zone/offset
     "Sat, 15 Aug 2020 23:12:09",
     "Sat, 15 Aug 2020 23:12 -",

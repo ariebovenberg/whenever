@@ -131,6 +131,11 @@ struct CacheInner {
 const LRU_CAPACITY: usize = 32;
 
 /// Maps ASCII-lowercase entry names to their spelling on disk.
+/// A TZif file that exists, and either parses or does not.
+type TzifRead = Result<TimeZone, Unreadable>;
+
+struct Unreadable;
+
 type DirectoryIndex = AHashMap<String, String>;
 /// Maps scanned directory paths to their shared spelling indices.
 type DirectoryEntries = AHashMap<PathBuf, Arc<DirectoryIndex>>;
@@ -409,50 +414,50 @@ impl TzStore {
     }
 
     fn load_tzif(&self, key: &NormalizedKey) -> PyResult<Option<TimeZone>> {
-        self.load_tzif_from_tzpath(key)?
-            .map_or_else(|| self.load_tzif_from_tzdata(key), |tz| Ok(Some(tz)))
+        match self.load_tzif_from_tzpath(key)? {
+            // A file that is there but cannot be read is not found. The
+            // tzdata fallback is for an absent file only: it could answer
+            // with another zone's rules (a truncated `EST5EDT` is a link
+            // to New York there).
+            Some(found) => Ok(found.ok()),
+            None => self.load_tzif_from_tzdata(key),
+        }
     }
 
     /// Load a TZif from the TZPATH directory, assuming a benign TZ ID.
     /// Lazily initializes paths from Python if needed.
-    fn load_tzif_from_tzpath(&self, key: &NormalizedKey) -> PyResult<Option<TimeZone>> {
+    fn load_tzif_from_tzpath(&self, key: &NormalizedKey) -> PyResult<Option<TzifRead>> {
         let paths = self.paths.get()?;
-        for base in paths.iter() {
-            if let Some(tz) = self.read_tzif_by_key(base, key) {
-                return Ok(Some(tz));
-            }
-        }
-        Ok(None)
+        Ok(paths
+            .iter()
+            .find_map(|base| self.read_tzif_by_key(base, key)))
     }
 
     /// Load a TZif from the tzdata package, assuming a benign TZ ID.
     fn load_tzif_from_tzdata(&self, key: &NormalizedKey) -> PyResult<Option<TimeZone>> {
         let tzdata_path = self.tzdata_path.get()?;
-        match tzdata_path.as_deref() {
-            Some(base) => Ok(self.read_tzif_by_key(base, key)),
-            None => Ok(None),
-        }
+        Ok(tzdata_path
+            .as_deref()
+            .and_then(|base| self.read_tzif_by_key(base, key)?.ok()))
     }
 
-    fn read_tzif_by_key(&self, base: &Path, key: &NormalizedKey) -> Option<TimeZone> {
+    fn read_tzif_by_key(&self, base: &Path, key: &NormalizedKey) -> Option<TzifRead> {
         let ResolvedPath { path, id, updates } = self.directories.resolve(base, key)?;
-        let timezone = self.read_tzif_at_path(&path, Some(&id));
-        if timezone.is_some() {
+        let timezone = self.read_tzif_at_path(&path, Some(&id))?;
+        if timezone.is_ok() {
             self.directories.publish(updates);
         }
-        timezone
+        Some(timezone)
     }
 
-    /// Read a TZif file from the given path, returning None if it doesn't exist
-    /// or otherwise cannot be read.
-    fn read_tzif_at_path(&self, path: &Path, key: Option<&str>) -> Option<TimeZone> {
-        if path.is_file() {
+    /// Read a TZif file from the given path, returning None if it doesn't exist.
+    fn read_tzif_at_path(&self, path: &Path, key: Option<&str>) -> Option<TzifRead> {
+        path.is_file().then(|| {
             fs::read(path)
                 .ok()
                 .and_then(|d| TimeZone::parse_tzif(&d, key).ok())
-        } else {
-            None
-        }
+                .ok_or(Unreadable)
+        })
     }
 
     /// Determine the current system time zone, returning a strong Arc reference.
@@ -494,6 +499,7 @@ impl TzStore {
                 let path = PathBuf::from(tz_value);
                 let tzif = self
                     .read_tzif_at_path(&path, None)
+                    .and_then(Result::ok)
                     .ok_or_else_raise(self.exc_notfound, || {
                         format!("no time zone found at path {}", py_repr(tz_value))
                     })?;

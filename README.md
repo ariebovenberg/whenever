@@ -147,7 +147,7 @@ ZonedDateTime("2024-07-04 12:36:56+02:00[Europe/Paris]")
 >>> party_invite = PlainDateTime("2023-10-28 22:00")
 >>> party_invite.add(hours=6)
   NaiveArithmeticWarning: Shifting a PlainDateTime by exact time units does not account for time zone transitions [...]
-PlainDateTime("2023-10-29 04:00")
+PlainDateTime("2023-10-29 04:00:00")
 >>> party_starts = party_invite.assume_tz("Europe/Amsterdam")
 ZonedDateTime("2023-10-28 22:00:00+02:00[Europe/Amsterdam]")
 

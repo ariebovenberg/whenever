@@ -1,3 +1,4 @@
+include CHANGELOG.md
 include Cargo.toml
 include Cargo.lock
 include build.rs

@@ -235,9 +235,9 @@ Fixing the issues with the standard library requires a different API.
 Keeping the same API would mean that the same issues would remain. Also,
 inheriting from the standard library would result in brittle code: many
 popular libraries expect `datetime` *exactly*, and [don\'t
-work](https://github.com/sdispater/pendulum/issues/289#issue-371964426)
+work](https://github.com/python-pendulum/pendulum/issues/289#issue-371964426)
 with
-[subclasses](https://github.com/sdispater/pendulum/issues/131#issue-241088629).
+[subclasses](https://github.com/python-pendulum/pendulum/issues/131#issue-241088629).
 
 (faq-production-ready)=
 ## Is it production-ready?
@@ -283,7 +283,7 @@ Installing this way is different depending on your tool of choice:
 # as a one-off command
 WHENEVER_NO_BUILD_RUST_EXT=1 pip install whenever --no-binary whenever
 
-# in requirements.txt
+# in requirements.txt, with WHENEVER_NO_BUILD_RUST_EXT=1 in the environment
 --no-binary whenever
 whenever
 ```
@@ -295,7 +295,8 @@ whenever
 # as a one-off command
 WHENEVER_NO_BUILD_RUST_EXT=1 poetry run pip install --no-binary whenever whenever
 
-# in poetry.toml (not pyproject.toml!)
+# in poetry.toml (not pyproject.toml!),
+# with WHENEVER_NO_BUILD_RUST_EXT=1 in the environment
 [installer]
 no-binary = ["whenever"]
 ```
@@ -304,9 +305,9 @@ no-binary = ["whenever"]
 
 ```
 # as a one-off command
-uv add whenever --no-binary-package whenever
+WHENEVER_NO_BUILD_RUST_EXT=1 uv add whenever --no-binary-package whenever
 
-# pyproject.toml
+# pyproject.toml, with WHENEVER_NO_BUILD_RUST_EXT=1 in the environment
 [tool.uv]
 no-binary-package = ["whenever"]
 ```
@@ -314,8 +315,11 @@ no-binary-package = ["whenever"]
 See [uv's documentation](https://docs.astral.sh/uv/reference/settings/#no-binary-package) for more information
 
 
-In all cases, the important part is forcing a source install so that the
-Rust extension is not built.
+A source install alone does not select the pure-Python backend:
+it builds the Rust extension when a Rust toolchain is present.
+Only `WHENEVER_NO_BUILD_RUST_EXT` prevents the build.
+The configuration files cannot set it,
+so it must be in the environment of every install.
 
 You can check if the Rust extension is being used by running:
 

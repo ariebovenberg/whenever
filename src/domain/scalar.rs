@@ -266,11 +266,6 @@ impl EpochSecs {
             subsec: nanos,
         }
     }
-
-    pub(crate) fn to_delta(self) -> DeltaSeconds {
-        // Safe: range of DeltaSeconds is large enough to cover all possible differences
-        DeltaSeconds::new_unchecked(self.0)
-    }
 }
 
 /// Number of days since 1970-01-01
@@ -808,7 +803,13 @@ impl SubSecNanos {
         )
     }
 
-    pub(crate) fn round(self, increment: u32, mode: round::AbsMode) -> (DeltaSeconds, Self) {
+    /// Round the subsecond part of a value whose whole seconds are odd or even.
+    pub(crate) fn round(
+        self,
+        increment: u32,
+        mode: round::AbsMode,
+        secs_odd: bool,
+    ) -> (DeltaSeconds, Self) {
         debug_assert!(increment > 0);
         debug_assert!(increment < NS_PER_SECOND);
         debug_assert!(NS_PER_SECOND.is_multiple_of(increment));
@@ -822,8 +823,12 @@ impl SubSecNanos {
             round::AbsMode::HalfTrunc => remainder > increment - remainder,
             round::AbsMode::HalfExpand => remainder >= increment - remainder,
             round::AbsMode::HalfEven => {
-                remainder > increment - remainder
-                    || (remainder == increment - remainder && !quotient.is_multiple_of(2))
+                // The tie goes by the parity of the whole value's quotient,
+                // to which each odd second adds an odd number of increments
+                // when the increment fits an odd number of times in a second.
+                let odd = !quotient.is_multiple_of(2)
+                    ^ (secs_odd && !(NS_PER_SECOND / increment).is_multiple_of(2));
+                remainder > increment - remainder || (remainder == increment - remainder && odd)
             }
         };
         let rounded = (quotient + round_up as u32) * increment;

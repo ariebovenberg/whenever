@@ -63,15 +63,34 @@ impl ZonedDateTime {
         self.to_fixed_offset().with_date_in_tz(date, &self.tz)
     }
 
+    /// The date of the day this value lies in. A day is chosen by the
+    /// instant, not by the local date: past a repeated midnight, the second
+    /// pass of the evening before lies in the day that has already started.
+    pub(crate) fn day(&self) -> Date {
+        let Self { date, ref tz, .. } = *self;
+        match date
+            .tomorrow()
+            .and_then(|d| Some((d, d.at(Time::MIN).resolve_derived(tz, None)?)))
+        {
+            Some((tomorrow, start)) if self.to_instant() >= start.to_instant() => tomorrow,
+            _ => date,
+        }
+    }
+
     /// The start of this value's day and of the next, resolved the way
     /// `start_of("day")` resolves a boundary. `day_length()` and day rounding
     /// both read them from here, so neither can drift from the boundary.
     pub(crate) fn day_bounds(&self) -> Option<(OffsetDateTime, OffsetDateTime)> {
         let Self { date, ref tz, .. } = *self;
-        Some((
-            date.at(Time::MIN).resolve_derived(tz, None)?,
-            date.tomorrow()?.at(Time::MIN).resolve_derived(tz, None)?,
-        ))
+        let start_of = |d: Date| d.at(Time::MIN).resolve_derived(tz, None);
+        let tomorrow = date.tomorrow()?;
+        let bounds = (start_of(date)?, start_of(tomorrow)?);
+        // See `day()`
+        Some(if self.to_instant() >= bounds.1.to_instant() {
+            (bounds.1, start_of(tomorrow.tomorrow()?)?)
+        } else {
+            bounds
+        })
     }
 
     pub(crate) fn round_day(&self, mode: round::Mode) -> Option<OffsetDateTime> {
@@ -291,25 +310,55 @@ pub(crate) fn zoned_since_in_units(
     };
 
     let trunc = b.with_date(trunc_date.into())?.to_instant();
-    let expand = b.with_date(expand_date.into())?.to_instant();
-    let mut result = if exact_units.is_empty() {
-        ddelta.round_by_time(
-            calendar_units.smallest(),
-            a_inst,
-            trunc,
-            expand,
-            round_mode.to_abs_trunc(negative),
-            round_increment.to_calendar()?,
-            negative,
-        );
-        ItemizedDelta::UNSET
+    let expand = b.with_date(expand_date.into())?;
+    // Rounding that moves away from the truncated value ends up here
+    let rounded_up = if exact_units.is_empty() {
+        ddelta
+            .round_by_time(
+                calendar_units.smallest(),
+                a_inst,
+                trunc,
+                expand.to_instant(),
+                round_mode.to_abs_trunc(negative),
+                round_increment.to_calendar()?,
+                negative,
+            )
+            .then_some(expand)
     } else {
-        a_inst.diff(trunc).in_exact_units(
-            exact_units,
+        let diff = a_inst.diff(trunc);
+        let rounded = diff.round_to_unit(
+            exact_units.smallest(),
             round_increment,
             round_mode.to_abs_euclid(negative),
-        )?
+        )?;
+        if calendar_units.is_empty() || rounded.abs() <= diff.abs() {
+            let mut result = rounded.itemize(exact_units)?;
+            result.fill_calendar_units(ddelta);
+            return Some(result);
+        }
+        Some(trunc.shift(rounded)?.to_offset_in(&b.tz)?)
     };
-    result.fill_calendar_units(ddelta);
-    Some(result)
+
+    match rounded_up {
+        // The larger units take the carry, and the smallest stays a multiple
+        // of the increment
+        Some(endpoint) => {
+            let endpoint_inst = endpoint.to_instant();
+            zoned_since_in_units(
+                endpoint,
+                endpoint_inst,
+                b,
+                zoned_target(endpoint.date, endpoint_inst, b, negative)?,
+                units,
+                round::Mode::Trunc,
+                round_increment,
+                negative,
+            )
+        }
+        None => {
+            let mut result = ItemizedDelta::UNSET;
+            result.fill_calendar_units(ddelta);
+            Some(result)
+        }
+    }
 }

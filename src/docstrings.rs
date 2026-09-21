@@ -1871,6 +1871,9 @@ Some time zones have unusual DST rules. For example,
 Europe/Dublin defines its standard time as IST (UTC+1) and uses
 \"negative DST\" in winter. In such cases, this method
 returns a negative value during winter.
+
+The value can differ from ``zoneinfo``'s ``dst()``, which falls back
+to one hour when it cannot pair a DST period with a standard one.
 ";
 pub(crate) const ZONEDDATETIME_END_OF: &CStr = c"\
 The end of the given unit
@@ -2241,8 +2244,9 @@ For ``\"hour\"``, ``\"minute\"``, and ``\"second\"``, a repeated boundary
 keeps the current offset if that offset is still valid; in a
 fall-back shorter than the unit, it is the first occurrence. For
 ``\"day\"``, ``\"week_mon\"``, ``\"week_sun\"``, ``\"month\"``, and
-``\"year\"``, a repeated boundary always takes the earlier occurrence,
-so that every value on the same date shares one boundary.
+``\"year\"``, a repeated boundary always takes the earlier occurrence.
+A value past it lies in the day that has started, also where the
+clock reads the evening before for a second time.
 ";
 pub(crate) const ZONEDDATETIME_STRICT_EQ: &CStr = c"\
 Compare two values, including what ``==`` ignores.

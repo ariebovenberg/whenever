@@ -3395,6 +3395,20 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
             "raise", "keep_instant", "keep_local"
         ] = "raise",
     ) -> ZonedDateTime: ...
+    @overload
+    @classmethod
+    @deprecated("use pattern= and disambiguation= instead")
+    def parse(
+        cls,
+        s: str,
+        /,
+        *,
+        format: str,
+        offset_mismatch: Literal[
+            "raise", "keep_instant", "keep_local"
+        ] = "raise",
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+    ) -> ZonedDateTime: ...
     def __add__(
         self,
         delta: TimeDelta | ItemizedDelta | ItemizedDateDelta,

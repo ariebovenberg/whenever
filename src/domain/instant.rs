@@ -1,8 +1,10 @@
 use super::{
     plain_datetime::PlainDateTime,
+    round,
     scalar::{EpochSecs, Offset, SubSecNanos},
+    time::Time,
     time_delta::TimeDelta,
-    units::{NS_PER_MILLISECOND, NS_PER_SECOND},
+    units::{NS_PER_MILLISECOND, NS_PER_SECOND, S_PER_DAY},
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -14,6 +16,21 @@ pub(crate) struct Instant {
 impl Instant {
     pub(crate) fn to_utc_plain(self) -> PlainDateTime {
         self.epoch.datetime(self.subsec)
+    }
+
+    /// Round to an increment counted from midnight UTC. A point on the
+    /// timeline rounds as a positive number, also before 1970.
+    pub(crate) fn round(self, increment_ns: u64, mode: round::Mode) -> Option<Self> {
+        let secs = self.epoch.get();
+        let time = Time::from_sec_subsec(secs.rem_euclid(S_PER_DAY.into()) as u32, self.subsec);
+        let (rounded, next_day) = time.round(increment_ns, mode);
+        Some(Self {
+            epoch: EpochSecs::new(
+                (secs.div_euclid(S_PER_DAY.into()) + next_day as i64) * i64::from(S_PER_DAY)
+                    + i64::from(rounded.total_seconds()),
+            )?,
+            subsec: rounded.subsec,
+        })
     }
 
     pub(crate) fn diff(self, other: Self) -> TimeDelta {
@@ -37,10 +54,12 @@ impl Instant {
     }
 
     pub(crate) fn from_timestamp_f64(timestamp: f64) -> Option<Self> {
+        // The whole seconds bound the range, so the last second is included
+        let secs = timestamp.floor();
         (EpochSecs::MIN.get() as f64..=EpochSecs::MAX.get() as f64)
-            .contains(&timestamp)
+            .contains(&secs)
             .then(|| Self {
-                epoch: EpochSecs::new_unchecked(timestamp.floor() as i64),
+                epoch: EpochSecs::new_unchecked(secs as i64),
                 subsec: SubSecNanos::from_fract(timestamp),
             })
     }
@@ -68,12 +87,5 @@ impl Instant {
             epoch: self.epoch.shift_by_offset(offset)?,
             subsec: self.subsec,
         })
-    }
-
-    pub(crate) fn to_delta(self) -> TimeDelta {
-        TimeDelta {
-            secs: self.epoch.to_delta(),
-            subsec: self.subsec,
-        }
     }
 }

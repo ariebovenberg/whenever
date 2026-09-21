@@ -837,6 +837,53 @@ class TestDifference:
         with pytest.raises(ValueError, match="duplicate"):
             d.since(Date(2020, 1, 1), in_units=["years", "days", "days"])
 
+    @pytest.mark.parametrize(
+        "a, b, kwargs, expect",
+        [
+            (
+                Date(2024, 1, 1),
+                Date(2024, 12, 25),
+                {"in_units": ["years", "months"], "round_mode": "ceil"},
+                ItemizedDateDelta(years=1, months=0),
+            ),
+            (
+                Date(2023, 6, 29),
+                Date(2024, 5, 28),
+                {
+                    "in_units": ["months", "days"],
+                    "round_mode": "half_floor",
+                    "round_increment": 3,
+                },
+                ItemizedDateDelta(months=11, days=0),
+            ),
+            # 365 of 366 days rounds to 371: past the year, and the
+            # remainder stays a multiple of the increment
+            (
+                Date(2023, 3, 1),
+                Date(2024, 2, 29),
+                {
+                    "in_units": ["years", "days"],
+                    "round_mode": "ceil",
+                    "round_increment": 7,
+                },
+                ItemizedDateDelta(years=1, days=0),
+            ),
+            (
+                Date(2024, 1, 1),
+                Date(2025, 4, 1),
+                {
+                    "in_units": ["years", "months"],
+                    "round_mode": "ceil",
+                    "round_increment": 12,
+                },
+                ItemizedDateDelta(years=2, months=0),
+            ),
+        ],
+    )
+    def test_rounding_up_carries_into_larger_units(self, a, b, kwargs, expect):
+        assert a.until(b, **kwargs) == expect
+        assert b.until(a, **kwargs) == a.since(b, **kwargs)
+
     def test_invalid_round_mode(self):
         d = Date(2021, 1, 1)
         # round_mode and round_increment are not supported with total=

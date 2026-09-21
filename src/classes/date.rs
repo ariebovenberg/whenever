@@ -475,7 +475,7 @@ pub(crate) fn date_since_iddelta(
     let (mut result, trunc, expand) =
         difference::date_diff(a, b, round_increment, units, neg).ok_or_range_err()?;
 
-    result.round_by_days(
+    if result.round_by_days(
         units.smallest(),
         a,
         trunc.into(),
@@ -483,7 +483,12 @@ pub(crate) fn date_since_iddelta(
         round_mode.to_abs_trunc(neg),
         round_increment,
         neg,
-    );
+    ) {
+        // Rounded up: the larger units take the carry, and the smallest
+        // stays a multiple of the increment
+        (result, _, _) = difference::date_diff(expand.into(), b, round_increment, units, neg)
+            .ok_or_range_err()?;
+    }
     Ok(result)
 }
 

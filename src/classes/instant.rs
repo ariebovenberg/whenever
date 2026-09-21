@@ -10,7 +10,7 @@ use crate::{
         offset_datetime::OffsetDateTime,
         plain_datetime::PlainDateTime,
         time::Time,
-        time_delta::{DeltaIncrement, TimeDelta, timedelta_from_kwargs},
+        time_delta::{TimeDelta, timedelta_from_kwargs},
     },
     common::{
         compat::{
@@ -480,22 +480,11 @@ fn round(cls: PyClass<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterK
     let round::Args {
         increment, mode, ..
     } = round::Args::parse(args, kwargs, cls.state(), round::ArgsContext::Standard)?;
-    let round_increment = match increment {
+    let increment_ns = match increment {
         round::RoundIncrement::Day => raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?,
-        // SAFETY: parse() validates the increment is ≥ 1 ns and fits within a day
-        round::RoundIncrement::Exact(ns) => DeltaIncrement::from_nanos(ns.get() as u128).unwrap(),
+        round::RoundIncrement::Exact(ns) => ns.get(),
     };
-    let TimeDelta { secs, subsec } = slf
-        .to_delta()
-        .round(round_increment, mode.to_abs_euclid(slf.epoch.get() < 0))
-        // SAFETY: TimeDelta has higher range than Instant,
-        // so rounding cannot result in out-of-range
-        .unwrap();
-    Instant {
-        epoch: EpochSecs::new(secs.get()).ok_or_range_err()?,
-        subsec,
-    }
-    .to_obj(cls)
+    slf.round(increment_ns, mode).ok_or_range_err()?.to_obj(cls)
 }
 
 fn format(cls: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {

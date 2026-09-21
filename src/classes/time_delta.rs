@@ -2,7 +2,7 @@ use core::ffi::{CStr, c_int, c_void};
 use pyo3_ffi::*;
 use std::ptr::null_mut as NULL;
 
-pub(crate) use crate::domain::time_delta::{DeltaIncrement, TimeDelta};
+pub(crate) use crate::domain::time_delta::TimeDelta;
 
 use crate::{
     classes::{
@@ -854,7 +854,7 @@ pub(crate) static SPEC: PyDefCell<PyType_Spec> =
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::round::AbsMode;
+    use crate::domain::{round::AbsMode, time_delta::DeltaIncrement};
 
     fn td(secs: i64, nanos: i32) -> TimeDelta {
         TimeDelta {

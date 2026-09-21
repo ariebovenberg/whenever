@@ -303,6 +303,8 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
         c"milliseconds",
         c"microseconds",
         c"nanoseconds",
+        c"get_tzpath",
+        c"reset_system_tz",
     ] {
         module.getattr(name)?.setattr(c"__module__", *module_name)?;
     }

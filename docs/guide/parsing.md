@@ -153,3 +153,8 @@ string.
 
 Parsing is ISO 8601 only, stricter than Pydantic's own `datetime` parsing.
 ```
+
+In a union, Pydantic takes the first type that validates, so put the more
+specific type first. `Instant | ZonedDateTime` reads
+`2023-02-23T20:00:00+01:00[Europe/Amsterdam]` as an {class}`~whenever.Instant`,
+which discards the time zone ID; `ZonedDateTime | Instant` keeps it.

@@ -205,12 +205,12 @@ pub(crate) fn bisect<K: Copy + Ord, T>(arr: &[(K, T)], x: K) -> Option<usize> {
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
 struct Header {
     version: u8,
-    isutcnt: i32,
-    isstdcnt: i32,
-    leapcnt: i32,
-    timecnt: i32,
-    typecnt: i32,
-    charcnt: i32,
+    isutcnt: usize,
+    isstdcnt: usize,
+    leapcnt: usize,
+    timecnt: usize,
+    typecnt: usize,
+    charcnt: usize,
 }
 
 fn check_magic_bytes(s: &mut Scan) -> bool {
@@ -233,57 +233,58 @@ fn parse_header(s: &mut Scan) -> Option<Header> {
     }
     let version = parse_version(s)?;
     let content = s.take(24)?;
+    // Every entry takes a byte or more, so a count beyond the rest of the
+    // file is corrupt. Checking it here bounds every allocation below.
+    let limit = s.len();
+    let count = |i: usize| {
+        let n = u32::from_be_bytes(content[i * 4..(i + 1) * 4].try_into().unwrap()) as usize;
+        (n <= limit).then_some(n)
+    };
     Some(Header {
         version,
-        isutcnt: i32::from_be_bytes(content[0..4].try_into().unwrap()),
-        isstdcnt: i32::from_be_bytes(content[4..8].try_into().unwrap()),
-        leapcnt: i32::from_be_bytes(content[8..12].try_into().unwrap()),
-        timecnt: i32::from_be_bytes(content[12..16].try_into().unwrap()),
-        typecnt: i32::from_be_bytes(content[16..20].try_into().unwrap()),
-        charcnt: i32::from_be_bytes(content[20..24].try_into().unwrap()),
+        isutcnt: count(0)?,
+        isstdcnt: count(1)?,
+        leapcnt: count(2)?,
+        timecnt: count(3)?,
+        typecnt: count(4)?,
+        charcnt: count(5)?,
     })
 }
 
 fn parse_v2_transitions(header: Header, s: &mut Scan) -> Option<Vec<EpochSecs>> {
-    let mut result = Vec::with_capacity(header.timecnt as usize);
+    let mut result = Vec::with_capacity(header.timecnt);
     const I64_SIZE: usize = std::mem::size_of::<i64>();
-    let values = s.take(header.timecnt as usize * I64_SIZE)?;
+    let values = s.take(header.timecnt * I64_SIZE)?;
     // NOTE: we assume the values are sorted
     for i in 0..header.timecnt {
         // NOTE: we clamp any values that are out of range.
         // This will still generate correct results within our supported range.
         result.push(EpochSecs::clamp(i64::from_be_bytes(
-            values[i as usize * I64_SIZE..(i + 1) as usize * I64_SIZE]
-                .try_into()
-                .unwrap(),
+            values[i * I64_SIZE..(i + 1) * I64_SIZE].try_into().unwrap(),
         )));
     }
     Some(result)
 }
 
 fn parse_v1_transitions(header: Header, s: &mut Scan) -> Option<Vec<EpochSecs>> {
-    let mut result = Vec::with_capacity(header.timecnt as usize);
+    let mut result = Vec::with_capacity(header.timecnt);
     const I32_SIZE: usize = std::mem::size_of::<i32>();
-    let values = s.take(header.timecnt as usize * I32_SIZE)?;
+    let values = s.take(header.timecnt * I32_SIZE)?;
     // NOTE: we assume the values are sorted
     for i in 0..header.timecnt {
         // Safe: i32 is always in range of EpochSecs
         result.push(EpochSecs::from_i32(i32::from_be_bytes(
-            values[i as usize * I32_SIZE..(i + 1) as usize * I32_SIZE]
-                .try_into()
-                .unwrap(),
+            values[i * I32_SIZE..(i + 1) * I32_SIZE].try_into().unwrap(),
         )));
     }
     Some(result)
 }
 
 fn parse_offset_indices(header: Header, s: &mut Scan) -> Option<Vec<u8>> {
-    let mut result = Vec::with_capacity(header.timecnt as usize);
-    let values = s.take(header.timecnt as usize)?;
+    let mut result = Vec::with_capacity(header.timecnt);
+    let values = s.take(header.timecnt)?;
     for i in 0..header.timecnt {
-        result.push(u8::from_be_bytes(
-            values[i as usize..(i + 1) as usize].try_into().unwrap(),
-        ));
+        result.push(u8::from_be_bytes(values[i..i + 1].try_into().unwrap()));
     }
     Some(result)
 }
@@ -291,12 +292,12 @@ fn parse_offset_indices(header: Header, s: &mut Scan) -> Option<Vec<u8>> {
 fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult<TimeZone> {
     let (transition_times, header) = if header.version >= 2 {
         s.take(
-            (header.timecnt * 5
+            header.timecnt * 5
                 + header.typecnt * 6
                 + header.charcnt
                 + header.leapcnt * 8
                 + header.isstdcnt
-                + header.isutcnt) as _,
+                + header.isutcnt,
         )
         .ok_or(ErrorCause::Body)?;
         // This "second" header is not the same as the first one
@@ -313,15 +314,18 @@ fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult
         )
     };
     let offset_indices = parse_offset_indices(header, s).ok_or(ErrorCause::Body)?;
-    debug_assert!(header.typecnt > 0 && header.typecnt < 1_000);
+    // A transition names its type by one byte
+    if header.typecnt == 0 || header.typecnt > 256 {
+        return Err(ErrorCause::Body);
+    }
     let (types, abbrev_data) =
-        parse_type_info(header.typecnt as usize, header.charcnt, s).ok_or(ErrorCause::Body)?;
+        parse_type_info(header.typecnt, header.charcnt, s).ok_or(ErrorCause::Body)?;
     let (offsets_by_utc, meta_by_utc) =
         load_transitions(&transition_times, &types, &offset_indices).ok_or(ErrorCause::Body)?;
 
     let end = if header.version >= 2 {
         // Skip unused metadata and newline before tz string
-        s.take((header.isutcnt + header.isstdcnt + header.leapcnt * 12 + 1) as usize)
+        s.take(header.isutcnt + header.isstdcnt + header.leapcnt * 12 + 1)
             .ok_or(ErrorCause::Body)?;
         Some(parse_posix_tz(s).ok_or(ErrorCause::TzString)?)
     } else {
@@ -450,7 +454,11 @@ struct TypeInfo {
     abbrev_idx: u8,
 }
 
-fn parse_type_info(typecnt: usize, charcnt: i32, s: &mut Scan) -> Option<(Vec<TypeInfo>, Vec<u8>)> {
+fn parse_type_info(
+    typecnt: usize,
+    charcnt: usize,
+    s: &mut Scan,
+) -> Option<(Vec<TypeInfo>, Vec<u8>)> {
     let mut types = Vec::with_capacity(typecnt);
     let values = s.take(typecnt * 6)?;
     for i in 0..typecnt {
@@ -466,7 +474,7 @@ fn parse_type_info(typecnt: usize, charcnt: i32, s: &mut Scan) -> Option<(Vec<Ty
             abbrev_idx,
         });
     }
-    let abbrev_data = s.take(charcnt as usize)?.to_vec();
+    let abbrev_data = s.take(charcnt)?.to_vec();
     Some((types, abbrev_data))
 }
 

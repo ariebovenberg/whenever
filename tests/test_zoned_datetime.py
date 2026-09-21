@@ -4035,6 +4035,35 @@ class TestSince:
         assert a.since(b, in_units=iter(["hours"])) == ItemizedDelta(hours=24)  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
+        "a, b, mode, expect",
+        [
+            (
+                ZonedDateTime(2024, 1, 1, tz="UTC"),
+                ZonedDateTime(2024, 1, 2, 23, 30, tz="UTC"),
+                "ceil",
+                ItemizedDelta(days=2, hours=0),
+            ),
+            # 22.5 hours into a 23-hour day
+            (
+                ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"),
+                ZonedDateTime(2023, 3, 26, 23, 30, tz="Europe/Amsterdam"),
+                "ceil",
+                ItemizedDelta(days=1, hours=0),
+            ),
+            (
+                ZonedDateTime(2023, 3, 26, tz="Europe/Amsterdam"),
+                ZonedDateTime(2023, 3, 26, 23, 30, tz="Europe/Amsterdam"),
+                "floor",
+                ItemizedDelta(days=0, hours=22),
+            ),
+        ],
+    )
+    def test_rounding_up_carries_into_larger_units(self, a, b, mode, expect):
+        assert (
+            a.until(b, in_units=["days", "hours"], round_mode=mode) == expect
+        )
+
+    @pytest.mark.parametrize(
         ("kwargs", "message"),
         [
             ({"in_units": []}, "units must not be empty"),
@@ -5768,6 +5797,16 @@ class TestTransitions:
         if t is not None:
             assert isinstance(t, ZonedDateTime)
 
+    # The second year is past the recorded transitions
+    @pytest.mark.parametrize("year, day", [(2023, 26), (2090, 26)])
+    def test_less_than_a_second_after_a_transition(self, year, day):
+        t = ZonedDateTime(year, 3, day, 3, tz="Europe/Amsterdam")
+        d = t.add(nanoseconds=1)
+        prev = d.prev_transition()
+        assert prev is not None and prev.strict_eq(t)
+        assert prev.next_transition() == d.next_transition()
+        assert t.prev_transition() != t
+
     def test_next_same_offset_london_1968(self):
         # British Standard Time: the offset stays +01:00, but the rules
         # change from summer time to standard time, so it is a transition
@@ -6223,25 +6262,13 @@ class TestDayBoundariesAroundMidnight:
     # midnight of Nov 7 is repeated.
     GOOSE_BAY = "America/Goose_Bay"
 
-    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
-    def test_repeated_midnight_takes_the_earlier_occurrence(
-        self, disambiguation
-    ):
-        # Which occurrence of a repeated time the call starts from must not
-        # change the day it belongs to.
-        d = ZonedDateTime(
-            2010,
-            11,
-            6,
-            23,
-            30,
-            tz=self.GOOSE_BAY,
-            disambiguation=disambiguation,
-        )
+    def test_repeated_midnight_takes_the_earlier_occurrence(self):
+        d = ZonedDateTime(2010, 11, 7, 12, tz=self.GOOSE_BAY)
         assert d.start_of("day").strict_eq(
-            ZonedDateTime(2010, 11, 6, tz=self.GOOSE_BAY)
+            ZonedDateTime(
+                2010, 11, 7, tz=self.GOOSE_BAY, disambiguation="earlier"
+            )
         )
-        assert d.day_length() == hours(24)
 
     @pytest.mark.parametrize("day, expect", [(6, hours(24)), (7, hours(25))])
     def test_day_length_around_a_repeated_midnight(self, day, expect):
@@ -6250,25 +6277,115 @@ class TestDayBoundariesAroundMidnight:
             == expect
         )
 
-    @pytest.mark.parametrize("disambiguation", ["earlier", "later"])
-    def test_repeated_midnight_round_and_end_of_day(self, disambiguation):
-        # Both occurrences belong to day Nov 6, which starts at its earlier
-        # midnight and ends at the earlier midnight of Nov 7. The second
-        # occurrence of 23:30 lies past that end (ADR 0003).
-        d = ZonedDateTime(
-            2010,
-            11,
-            6,
-            23,
-            30,
-            tz=self.GOOSE_BAY,
-            disambiguation=disambiguation,
+    # A day is chosen by the instant, not by the local date: the second pass
+    # of the evening lies in the day that has already started (ADR 0003).
+    # Newfoundland fell back from 00:01 on 1987-10-25, Guam on 1969-01-26.
+    @pytest.mark.parametrize(
+        "second_pass, day_start, next_day_start, length",
+        [
+            (
+                "1987-10-24T23:01:00-03:30[America/St_Johns]",
+                "1987-10-25T00:00:00-02:30[America/St_Johns]",
+                "1987-10-26T00:00:00-03:30[America/St_Johns]",
+                hours(25),
+            ),
+            (
+                "2010-11-06T23:30:00-04:00[America/Goose_Bay]",
+                "2010-11-07T00:00:00-03:00[America/Goose_Bay]",
+                "2010-11-08T00:00:00-04:00[America/Goose_Bay]",
+                hours(25),
+            ),
+            (
+                "1969-01-25T23:59:59+10:00[Pacific/Guam]",
+                "1969-01-26T00:00:00+11:00[Pacific/Guam]",
+                "1969-01-27T00:00:00+10:00[Pacific/Guam]",
+                hours(25),
+            ),
+        ],
+    )
+    def test_second_pass_lies_in_the_day_that_already_started(
+        self, second_pass, day_start, next_day_start, length
+    ):
+        d = ZonedDateTime.parse_iso(second_pass)
+        start = ZonedDateTime.parse_iso(day_start)
+        next_start = ZonedDateTime.parse_iso(next_day_start)
+        assert d.start_of("day").strict_eq(start)
+        assert d.end_of("day").strict_eq(next_start.subtract(nanoseconds=1))
+        assert d.day_length() == length
+        assert d.round("day", mode="floor").strict_eq(start)
+        assert d.round("day", mode="ceil").strict_eq(next_start)
+        assert d.round("day").strict_eq(start)
+
+    @pytest.mark.parametrize("unit", ["day", "month", "year"])
+    def test_second_pass_lies_in_the_year_that_already_started(self, unit):
+        # Phoenix fell back from 00:01 on 1944-01-01
+        d = ZonedDateTime.parse_iso(
+            "1943-12-31T23:30:00-07:00[America/Phoenix]"
         )
-        nov_7 = ZonedDateTime(
-            2010, 11, 7, tz=self.GOOSE_BAY, disambiguation="earlier"
+        new_year = ZonedDateTime.parse_iso(
+            "1944-01-01T00:00:00-06:00[America/Phoenix]"
         )
-        assert d.round("day").strict_eq(nov_7)
-        assert d.end_of("day").strict_eq(nov_7.subtract(nanoseconds=1))
+        assert d.start_of(unit).strict_eq(new_year)
+        assert d.start_of(unit) <= d <= d.end_of(unit)
+
+    @pytest.mark.parametrize(
+        "first_midnight",
+        [
+            "1987-10-25T00:00:00-02:30[America/St_Johns]",
+            "2010-11-07T00:00:00-03:00[America/Goose_Bay]",
+            "1969-01-26T00:00:00+11:00[Pacific/Guam]",
+        ],
+    )
+    def test_boundaries_enclose_both_passes(self, first_midnight):
+        d = ZonedDateTime.parse_iso(first_midnight).subtract(hours=2)
+        for _ in range(60):
+            for u in ("day", "week_mon", "month", "year"):
+                assert d.start_of(u) <= d <= d.end_of(u)
+            assert d.round("day", mode="floor") <= d
+            assert d <= d.round("day", mode="ceil")
+            assert d.round("day", mode="floor").strict_eq(d.start_of("day"))
+            d += minutes(4)
+
+    # These shapes never depended on how the day is chosen
+    @pytest.mark.parametrize(
+        "d, start, ceil, length",
+        [
+            # a skipped midnight: the day starts at 01:00
+            (
+                "2017-10-15T01:30:00-02:00[America/Sao_Paulo]",
+                "2017-10-15T01:00:00-02:00[America/Sao_Paulo]",
+                "2017-10-16T00:00:00-02:00[America/Sao_Paulo]",
+                hours(23),
+            ),
+            (
+                "2017-10-14T23:30:00-03:00[America/Sao_Paulo]",
+                "2017-10-14T00:00:00-03:00[America/Sao_Paulo]",
+                "2017-10-15T01:00:00-02:00[America/Sao_Paulo]",
+                hours(24),
+            ),
+            # a fold that ends at midnight
+            (
+                "2018-02-17T23:30:00-03:00[America/Sao_Paulo]",
+                "2018-02-17T00:00:00-02:00[America/Sao_Paulo]",
+                "2018-02-18T00:00:00-03:00[America/Sao_Paulo]",
+                hours(25),
+            ),
+            # a skipped day
+            (
+                "2011-12-29T20:00:00-10:00[Pacific/Apia]",
+                "2011-12-29T00:00:00-10:00[Pacific/Apia]",
+                "2011-12-31T00:00:00+14:00[Pacific/Apia]",
+                hours(24),
+            ),
+        ],
+    )
+    def test_other_midnight_transitions(self, d, start, ceil, length):
+        d = ZonedDateTime.parse_iso(d)
+        assert d.start_of("day").strict_eq(ZonedDateTime.parse_iso(start))
+        assert d.round("day", mode="ceil").strict_eq(
+            ZonedDateTime.parse_iso(ceil)
+        )
+        assert d.day_length() == length
 
 
 class TestPickle:

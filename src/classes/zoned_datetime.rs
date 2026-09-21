@@ -587,7 +587,8 @@ fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -
     // 2. Other units consume folds under certain conditions, but not always.
     match unit {
         DateTimeBoundaryUnit::Date(_) | DateTimeBoundaryUnit::Day => slf
-            .to_plain()
+            .day()
+            .at(Time::MIN)
             .start_of_unit(unit)
             .ok_or_range_err()?
             .resolve_derived(&slf.tz, None)
@@ -616,7 +617,8 @@ fn end_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> 
     match unit {
         DateTimeBoundaryUnit::Date(_) | DateTimeBoundaryUnit::Day => slf
             // Calculate the start of the next unit, then step back one ns.
-            .to_plain()
+            .day()
+            .at(Time::MIN)
             .next_start_of_unit(unit)
             .ok_or_range_err()?
             .resolve_derived(&slf.tz, None)
@@ -1224,7 +1226,15 @@ fn next_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn
 }
 
 fn prev_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    match slf.tz.prev_transition(slf.to_instant().epoch) {
+    // The search is in whole seconds, strictly before: a value less than a
+    // second past a transition still follows it.
+    let Instant { epoch, subsec } = slf.to_instant();
+    let before = if subsec == SubSecNanos::MIN {
+        epoch
+    } else {
+        epoch.saturating_add_i32(1)
+    };
+    match slf.tz.prev_transition(before) {
         Some((epoch, offset)) => epoch
             .shift_by_offset(offset)
             .ok_or_range_err()?
@@ -1523,15 +1533,14 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
 
     let state = cls.state();
     let mut pattern_arg = RenamedKeyword::default();
-    let mut dis = None;
+    let mut dis_arg = DisambiguationArg::default();
     let mut mismatch = OffsetMismatch::Raise;
     handle_kwargs("parse", kwargs, |k, v, eq| {
         if eq(k, *state.strs.pattern) {
             pattern_arg.set_new(v);
         } else if eq(k, *state.strs.format) {
             pattern_arg.set_old(v);
-        } else if eq(k, *state.strs.disambiguation) {
-            dis = Some(Disambiguation::from_py(v, state)?);
+        } else if dis_arg.handle_kwarg(k, v, eq, state) {
         } else if eq(k, *state.strs.offset_mismatch) {
             mismatch = OffsetMismatch::from_py(v, state)?;
         } else {
@@ -1541,6 +1550,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     })?;
 
     let (fmt_obj, renamed) = pattern_arg.finish("parse", "pattern", "format")?;
+    let (dis, dis_renamed) = dis_arg.finish("parse", state)?;
     let fmt_obj =
         fmt_obj.ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")?;
     let fmt_pystr = fmt_obj
@@ -1596,6 +1606,9 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     pattern.warn(*state.warn_whenever, *state.warn_deprecation)?;
     if renamed {
         warn_deprecated(state, FORMAT_KEYWORD_WARNING, 1)?;
+    }
+    if dis_renamed {
+        warn_disambiguate(state, 1)?;
     }
     Ok(result)
 }

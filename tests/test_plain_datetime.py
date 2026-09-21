@@ -1438,6 +1438,19 @@ class TestSince:
         assert result_ceil == ItemizedDelta(years=1, months=1)
 
     @suppress(NaiveArithmeticWarning)
+    def test_rounding_up_carries_into_larger_units(self):
+        assert PlainDateTime(2024, 1, 1).until(
+            PlainDateTime(2024, 3, 1, 23, 30),
+            in_units=["months", "days", "hours"],
+            round_mode="ceil",
+        ) == ItemizedDelta(months=2, days=1, hours=0)
+        assert PlainDateTime(2027, 4, 30, 2, 0, 25).until(
+            PlainDateTime(1992, 3, 16, 2, 0, 57, nanosecond=112_130_543),
+            in_units=["months", "days", "hours"],
+            round_mode="floor",
+        ) == ItemizedDelta(months=-421, days=-14, hours=0)
+
+    @suppress(NaiveArithmeticWarning)
     def test_single_unit_returns_float(self):
         a = PlainDateTime(2025, 3, 15)
         b = PlainDateTime(2023, 3, 15)

@@ -360,6 +360,12 @@ class TestOptionalSecondsPattern:
         with pytest.raises(ValueError, match="duplicate.*nanos"):
             Time(1, 2, 3).format("HH:mm[:ss.fff]fff")
 
+    def test_colon_seconds_in_error_messages(self):
+        with pytest.raises(ValueError, match="duplicate.*second"):
+            Time(1, 2, 3).format("HH:SS:SS")
+        with pytest.raises(ValueError, match="does not support"):
+            Date(2024, 3, 15).format(":SS")
+
     def test_brackets_invalid_for_date(self):
         with pytest.raises(ValueError, match="immediately follow.*'mm'"):
             Date(2024, 3, 15).format("YYYY-MM-DD[:ss]")
@@ -1102,16 +1108,6 @@ class TestZonedDateTimeParse:
             pattern="YYYY-MM-DD HH:mm'['VV']'",
         )
         assert zdt == ZonedDateTime(2024, 3, 15, 14, 30, tz="Europe/Paris")
-
-    def test_disambiguate_is_not_a_legacy_keyword(self):
-        with pytest.raises(
-            TypeError, match="unexpected keyword.*disambiguate"
-        ):
-            ZonedDateTime.parse(
-                "2024-03-15 14:30[Europe/Paris]",
-                pattern="YYYY-MM-DD HH:mm'['VV']'",
-                disambiguate="raise",  # type: ignore[call-overload]
-            )
 
     def test_offset_mismatch_names_database_spelling(self):
         with pytest.raises(

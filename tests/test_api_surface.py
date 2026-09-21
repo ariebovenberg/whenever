@@ -256,3 +256,11 @@ def test_public_members_have_docstrings():
         for value in SAMPLE_VALUES:
             for attr in public(type(value)):
                 assert getattr(value, attr).__doc__, f"{value!r}.{attr}"
+
+
+def test_functions_report_the_public_module():
+    import whenever
+
+    # Both backends, so help() and pickling agree
+    for name in ("get_tzpath", "reset_system_tz", "hours", "_unpkl_date"):
+        assert getattr(whenever, name).__module__ == "whenever"

@@ -135,6 +135,29 @@ class TestDisambiguateKeyword:
             new()
         )
 
+    def test_parse_as_called_in_0_10(self):
+        with warns_here(WheneverDeprecationWarning) as caught:
+            d = ZonedDateTime.parse(  # type: ignore[deprecated]
+                "2023-10-29 02:30[Europe/Amsterdam]",
+                format="YYYY-MM-DD HH:mm'['VV']'",
+                disambiguate="later",
+            )
+        assert d.strict_eq(
+            ZonedDateTime(
+                2023,
+                10,
+                29,
+                2,
+                30,
+                tz="Europe/Amsterdam",
+                disambiguation="later",
+            )
+        )
+        assert sorted(str(w.message) for w in caught) == [
+            "'disambiguate' is deprecated; use 'disambiguation' instead",
+            "'format' is deprecated; use 'pattern' instead",
+        ]
+
     def test_both_keywords_rejected(self):
         with pytest.raises(TypeError, match="received both 'disambiguation'"):
             ZonedDateTime(  # type: ignore[call-overload]

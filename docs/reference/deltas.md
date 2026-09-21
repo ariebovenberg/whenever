@@ -231,6 +231,13 @@ For example, 150 minutes balanced into hours and minutes:
 (2, 30)
 ```
 
+Rounding applies to the smallest unit and carries into the larger ones:
+23.5 hours rounded up in days and hours is 1 day and 0 hours, never 24 hours.
+
+`"nanoseconds"` is accepted only together with `"seconds"`:
+the component is bounded, so it cannot hold a difference on its own
+(see {ref}`delta-subsecond`).
+
 ```{tip}
 If you need the difference between two datetimes in specific units,
 use {meth}`~ZonedDateTime.since` / {meth}`~ZonedDateTime.until`

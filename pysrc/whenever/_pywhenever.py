@@ -19,7 +19,7 @@ from datetime import (
     timezone as _timezone,
 )
 from operator import index as _index
-from struct import pack, unpack
+from struct import pack
 from time import time_ns as _physical_time_ns
 from types import UnionType
 from typing import (
@@ -76,6 +76,7 @@ from ._common import (
     split_timestamp,
     timestamp_from_parts,
     tzid_display,
+    unpack_pickle,
     warn_deprecated,
     warn_lossy_stdlib_subclass,
     warn_renamed_keyword,
@@ -1201,28 +1202,15 @@ class Date(_Base):
             num = float((self._py_date - trunc_date).days)
             return (trunc_amount + num / denom) * sign
 
-        smallest_unit = units[-1]
         sign = 1 if self >= other else -1
-        results, trunc, expand = date_diff(
+        results = _date_difference(
             self._py_date,
             other._py_date,
-            effective_increment,
             units,
+            effective_round_mode,
+            effective_increment,
             sign,
         )
-
-        # Round is expensive, so only do it if needed
-        if effective_round_mode != "trunc":
-            trunc_date = resolve_leap_day(trunc)
-            results[smallest_unit] = custom_round(
-                results[smallest_unit],
-                abs((self._py_date - trunc_date).days),
-                abs((resolve_leap_day(expand) - trunc_date).days),
-                effective_round_mode,
-                effective_increment,
-                sign,
-            )
-
         return ItemizedDateDelta._from_signed(
             sign if any(results.values()) else 0, **results
         )
@@ -1345,7 +1333,7 @@ class Date(_Base):
 # to the pickling format in the future
 @no_type_check
 def _unpkl_date(data: bytes) -> Date:
-    return Date(*unpack("<HBB", data))
+    return Date(*unpack_pickle("<HBB", data))
 
 
 Date.MIN = Date._from_py_unchecked(_date.min)
@@ -1776,7 +1764,7 @@ class Time(_Base):
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_time(data: bytes) -> Time:
-    *args, nanos = unpack("<BBBI", data)
+    *args, nanos = unpack_pickle("<BBBI", data)
     return Time(*args, nanosecond=nanos)
 
 
@@ -2718,7 +2706,9 @@ class TimeDelta(_Base):
 # to the pickling format in the future
 @no_type_check
 def _unpkl_tdelta(data: bytes) -> TimeDelta:
-    s, ns = unpack("<qI", data)
+    s, ns = unpack_pickle("<qI", data)
+    if ns >= 1_000_000_000:
+        raise ValueError("invalid pickle data")
     return TimeDelta(seconds=s, nanoseconds=ns)
 
 
@@ -3774,7 +3764,7 @@ class Instant(_ExactTime):
 
 # Backwards compatibility for instances pickled before 0.8.0
 def _unpkl_utc(data: bytes) -> Instant:
-    secs, nanos = unpack("<qL", data)
+    secs, nanos = unpack_pickle("<qL", data)
     if nanos >= 1_000_000_000:
         raise ValueError(f"nanosecond out of range: {nanos}")
     return Instant._from_py_unchecked(
@@ -3785,12 +3775,10 @@ def _unpkl_utc(data: bytes) -> Instant:
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_inst(data: bytes) -> Instant:
-    secs, nanos = unpack("<qL", data)
+    secs, nanos = unpack_pickle("<qL", data)
     if nanos >= 1_000_000_000:
         raise ValueError(f"nanosecond out of range: {nanos}")
-    return Instant._from_py_unchecked(
-        _EPOCH_DT + _timedelta(seconds=secs), nanos
-    )
+    return Instant._from_py_unchecked(_from_epoch_utc(secs), nanos)
 
 
 @final
@@ -4858,7 +4846,7 @@ class OffsetDateTime(_ExactAndLocalTime):
 # required by __reduce__.
 # Also, it allows backwards-compatible changes to the pickling format.
 def _unpkl_offset(data: bytes) -> OffsetDateTime:
-    *args, nanos, offset_secs = unpack("<HBBBBBil", data)
+    *args, nanos, offset_secs = unpack_pickle("<HBBBBBil", data)
     return OffsetDateTime(
         *args,
         nanosecond=nanos,
@@ -5327,6 +5315,9 @@ class ZonedDateTime(_ExactAndLocalTime):
             If the offset matches no offset the time zone applies to the
             local time, under ``offset_mismatch="raise"``.
         """
+        disambiguation, disambiguate_renamed = _normalize_disambiguation(
+            disambiguation, kwargs, function_name="parse"
+        )
         pattern, renamed = _normalize_pattern(pattern, kwargs)
         if disambiguation is not UNSET:
             check_disambiguation(disambiguation)
@@ -5405,6 +5396,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         warn_pattern(elements, stacklevel=3)
         if renamed:
             _warn_format(stacklevel=2)
+        if disambiguate_renamed:
+            _warn_disambiguate(stacklevel=2)
         return self
 
     @classmethod
@@ -6115,7 +6108,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> d.prev_transition()
         ZonedDateTime("2023-11-05 01:00:00-05:00[America/New_York]")
         """
-        epoch = int(self._py_dt.timestamp())
+        # The search is in whole seconds, strictly before: a value less than
+        # a second past a transition still follows it.
+        epoch = int(self._py_dt.timestamp()) + (self._nanos > 0)
         if (result := self._tz.prev_transition(epoch)) is None:
             return None
         t, offset = result
@@ -6144,6 +6139,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         Europe/Dublin defines its standard time as IST (UTC+1) and uses
         "negative DST" in winter. In such cases, this method
         returns a negative value during winter.
+
+        The value can differ from ``zoneinfo``'s ``dst()``, which falls back
+        to one hour when it cannot pair a DST period with a standard one.
         """
         dst_saving, _ = self._tz.meta_for_instant(int(self._py_dt.timestamp()))
         return TimeDelta._from_nanos_unchecked(dst_saving * 1_000_000_000)
@@ -6173,18 +6171,29 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam").day_length()
         TimeDelta("PT25h")
         """
-        midnight_naive = _datetime.combine(self._py_dt.date(), _time.min)
+        midnight_naive = self._day_midnight()
         # Both midnights go through the resolver start_of("day") uses, so the
         # length can't drift from the boundaries it measures.
         midnight = self._resolve_derived_local(midnight_naive, None)
-        try:
-            next_midnight_naive = midnight_naive + _timedelta(days=1)
-        except OverflowError:
-            raise ValueError(RANGE_MSG) from None
-        next_midnight = self._resolve_derived_local(next_midnight_naive, None)
+        next_midnight = self._resolve_derived_local(
+            _shift_days(midnight_naive, 1), None
+        )
         result = _object_new(TimeDelta)
         result._init_from_py(next_midnight - midnight)
         return result
+
+    def _day_midnight(self) -> _datetime:
+        """The naive midnight of the day this value lies in. A day is chosen
+        by the instant, not by the local date: past a repeated midnight, the
+        second pass of the evening before lies in the day that has already
+        started."""
+        midnight = _datetime.combine(self._py_dt.date(), _time.min)
+        try:
+            next_midnight = midnight + _timedelta(days=1)
+            next_start = self._resolve_derived_local(next_midnight, None)
+        except (OverflowError, ValueError):
+            return midnight
+        return next_midnight if self._py_dt >= next_start else midnight
 
     def _resolve_derived_local(
         self, naive: _datetime, current: tuple[int, int] | None, /
@@ -6229,7 +6238,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             naive,
             (
                 None
-                if unit in ("year", "month", "week_mon", "week_sun", "day")
+                if unit not in _TIME_UNIT_SECS
                 else (
                     self._current_offset_secs(),
                     _TIME_UNIT_SECS[unit] * 1_000_000_000,
@@ -6295,11 +6304,18 @@ class ZonedDateTime(_ExactAndLocalTime):
         keeps the current offset if that offset is still valid; in a
         fall-back shorter than the unit, it is the first occurrence. For
         ``"day"``, ``"week_mon"``, ``"week_sun"``, ``"month"``, and
-        ``"year"``, a repeated boundary always takes the earlier occurrence,
-        so that every value on the same date shares one boundary.
+        ``"year"``, a repeated boundary always takes the earlier occurrence.
+        A value past it lies in the day that has started, also where the
+        clock reads the evening before for a second time.
         """
-        new_dt = _start_of_dt(self._py_dt, unit)
-        naive = new_dt.replace(tzinfo=None)
+        naive = _start_of_dt(
+            (
+                self._day_midnight()
+                if unit not in _TIME_UNIT_SECS
+                else self._py_dt.replace(tzinfo=None)
+            ),
+            unit,
+        )
         return self._from_py_unchecked(
             self._resolve_for_unit(naive, unit), 0, self._tz
         )
@@ -6328,9 +6344,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         A repeated boundary is whatever the next :meth:`start_of` resolves
         to; in a fall-back shorter than the unit, that is the later offset.
         """
-        if unit in ("year", "month", "week_mon", "week_sun", "day"):
-            new_dt = _start_of_next_dt(self._py_dt, unit)
-            naive = new_dt.replace(tzinfo=None)
+        if unit not in _TIME_UNIT_SECS:
+            naive = _start_of_next_dt(self._day_midnight(), unit)
             return self._from_py_unchecked(
                 self._resolve_for_unit(naive, unit), 0, self._tz
             ).subtract(nanoseconds=1)
@@ -6558,7 +6573,7 @@ class ZonedDateTime(_ExactAndLocalTime):
 # required by __reduce__.
 # Also, it allows backwards-compatible changes to the pickling format.
 def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
-    *args, nanos, offset_secs = unpack("<HBBBBBil", data)
+    *args, nanos, offset_secs = unpack_pickle("<HBBBBBil", data)
     if nanos >= 1_000_000_000:
         raise ValueError(f"nanosecond out of range: {nanos}")
     stored = check_utc_bounds(
@@ -7502,7 +7517,7 @@ class PlainDateTime(_LocalTime):
 # to the pickling format in the future
 @no_type_check
 def _unpkl_local(data: bytes) -> PlainDateTime:
-    *args, nanos = unpack("<HBBBBBi", data)
+    *args, nanos = unpack_pickle("<HBBBBBi", data)
     return PlainDateTime(*args, nanosecond=nanos)
 
 
@@ -7961,6 +7976,38 @@ def _parse_difference_kwargs(
     return None, units, round_mode, round_increment
 
 
+def _date_difference(
+    a: _date,
+    b: _date,
+    units: tuple[DateDeltaUnitStr, ...],
+    round_mode: RoundModeStr,
+    round_increment: int,
+    sign: Literal[1, -1],
+    /,
+) -> dict[DateDeltaUnitStr, int]:
+    results, trunc, expand = date_diff(a, b, round_increment, units, sign)
+    # Round is expensive, so only do it if needed
+    if round_mode != "trunc":
+        smallest_unit = units[-1]
+        trunc_date = resolve_leap_day(trunc)
+        expand_date = resolve_leap_day(expand)
+        rounded = custom_round(
+            results[smallest_unit],
+            abs((a - trunc_date).days),
+            abs((expand_date - trunc_date).days),
+            round_mode,
+            round_increment,
+            sign,
+        )
+        if rounded != results[smallest_unit]:
+            # Rounded up: the larger units take the carry, and the
+            # smallest stays a multiple of the increment
+            return _date_difference(
+                expand_date, b, units, "trunc", round_increment, sign
+            )
+    return results
+
+
 def _plain_since(
     self: PlainDateTime,
     other: PlainDateTime,
@@ -8007,8 +8054,25 @@ def _plain_difference(
     if total is not None:
         # A UTC reference keeps TimeDelta.total() from warning a second time.
         return a._sub(b).total(total, relative_to=b.assume_tz("UTC"))
-    cal_units, exact_units = _split_calendar_and_exact_units(units)
     sign: Literal[1, -1] = 1 if a >= b else -1
+    result = _plain_difference_in_units(
+        a, b, units, round_mode, round_increment, sign
+    )
+    return ItemizedDelta._from_signed(
+        sign if any(result.values()) else 0, **result
+    )
+
+
+def _plain_difference_in_units(
+    a: PlainDateTime,
+    b: PlainDateTime,
+    units: tuple[DeltaUnitStr, ...],
+    round_mode: RoundModeStr,
+    round_increment: int,
+    sign: Literal[1, -1],
+    /,
+) -> dict[DeltaUnitStr, int]:
+    cal_units, exact_units = _split_calendar_and_exact_units(units)
 
     target_date = a.date()._py_date
     # Adjust target_date so the exact remainder has the same sign
@@ -8036,45 +8100,57 @@ def _plain_difference(
 
     smallest_unit = units[-1]
     result = cast(dict[DeltaUnitStr, int], cal_results)
+    # Where rounding ends up when it moves away from the truncated value
+    rounded_up: PlainDateTime | None = None
     if exact_units:
         diff_td = TimeDelta(
             seconds=(a._py_dt - trunc._py_dt).days * 86_400
             + (a._py_dt - trunc._py_dt).seconds,
             nanoseconds=a._nanos - trunc._nanos,
         )
-        result.update(
-            diff_td._in_exact_units(  # type: ignore[arg-type]
-                exact_units,
-                round_increment=round_increment,
-                round_mode=round_mode,
-            )
+        exact_results = diff_td._in_exact_units(
+            exact_units,
+            round_increment=round_increment,
+            round_mode=round_mode,
         )
-    else:
-        if round_mode != "trunc":
-            self_ns = (
-                (a._py_dt - trunc._py_dt).days * 86_400_000_000_000
-                + (a._py_dt - trunc._py_dt).seconds * 1_000_000_000
-                + a._nanos
-                - trunc._nanos
+        result.update(exact_results)  # type: ignore[arg-type]
+        if cal_units and round_mode != "trunc":
+            endpoint = trunc.add(
+                nanoseconds=_exact_total_ns(exact_results, sign),
+                naive_arithmetic_ok=True,
             )
-            expand_ns = (
-                (expand._py_dt - trunc._py_dt).days * 86_400_000_000_000
-                + (expand._py_dt - trunc._py_dt).seconds * 1_000_000_000
-                + expand._nanos
-                - trunc._nanos
-            )
-            result[smallest_unit] = custom_round(
-                result[smallest_unit],
-                abs(self_ns),
-                abs(expand_ns),
-                round_mode,
-                round_increment,
-                sign,
-            )
+            if endpoint != a and (endpoint > a) == (sign == 1):
+                rounded_up = endpoint
+    elif round_mode != "trunc":
+        self_ns = (
+            (a._py_dt - trunc._py_dt).days * 86_400_000_000_000
+            + (a._py_dt - trunc._py_dt).seconds * 1_000_000_000
+            + a._nanos
+            - trunc._nanos
+        )
+        expand_ns = (
+            (expand._py_dt - trunc._py_dt).days * 86_400_000_000_000
+            + (expand._py_dt - trunc._py_dt).seconds * 1_000_000_000
+            + expand._nanos
+            - trunc._nanos
+        )
+        rounded = custom_round(
+            result[smallest_unit],
+            abs(self_ns),
+            abs(expand_ns),
+            round_mode,
+            round_increment,
+            sign,
+        )
+        if rounded != result[smallest_unit]:
+            rounded_up = expand
 
-    return ItemizedDelta._from_signed(
-        sign if any(result.values()) else 0, **result
-    )
+    if rounded_up is not None:
+        # The larger units take the carry
+        return _plain_difference_in_units(
+            rounded_up, b, units, "trunc", round_increment, sign
+        )
+    return result
 
 
 def _offset_since(
@@ -8176,8 +8252,25 @@ def _zoned_since(
     if total is not None:
         return (a - b).total(total, relative_to=b)
 
-    cal_units, exact_units = _split_calendar_and_exact_units(units)
     sign: Literal[1, -1] = 1 if a >= b else -1
+    result = _zoned_difference_in_units(
+        a, b, units, round_mode, round_increment, sign
+    )
+    return ItemizedDelta._from_signed(
+        sign if any(result.values()) else 0, **result
+    )
+
+
+def _zoned_difference_in_units(
+    a: ZonedDateTime,
+    b: ZonedDateTime,
+    units: tuple[DeltaUnitStr, ...],
+    round_mode: RoundModeStr,
+    round_increment: int,
+    sign: Literal[1, -1],
+    /,
+) -> dict[DeltaUnitStr, int]:
+    cal_units, exact_units = _split_calendar_and_exact_units(units)
 
     # Adjust target_date so the exact remainder has the same sign
     # as the overall difference. The while loop handles the rare case
@@ -8214,29 +8307,46 @@ def _zoned_since(
     # Rounding is very different for exact units than calendar units
     smallest_unit = units[-1]
     result = cast(dict[DeltaUnitStr, int], cal_results)
+    # Where rounding ends up when it moves away from the truncated value
+    rounded_up: ZonedDateTime | None = None
     if exact_units:
-        result.update(
-            (a - trunc)._in_exact_units(
-                exact_units,
-                round_increment=round_increment,
-                round_mode=round_mode,
-            )
+        exact_results = (a - trunc)._in_exact_units(
+            exact_units,
+            round_increment=round_increment,
+            round_mode=round_mode,
         )
-    else:
-        # Round is expensive, so only do it if needed
-        if round_mode != "trunc":
-            result[smallest_unit] = custom_round(
-                result[smallest_unit],
-                abs((a - trunc)._total_ns),
-                abs((expand - trunc)._total_ns),
-                round_mode,
-                round_increment,
-                sign,
+        result.update(exact_results)  # type: ignore[arg-type]
+        if cal_units and round_mode != "trunc":
+            endpoint = trunc + TimeDelta._from_nanos_unchecked(
+                _exact_total_ns(exact_results, sign)
             )
+            if endpoint != a and (endpoint > a) == (sign == 1):
+                rounded_up = endpoint
+    # Round is expensive, so only do it if needed
+    elif round_mode != "trunc":
+        rounded = custom_round(
+            result[smallest_unit],
+            abs((a - trunc)._total_ns),
+            abs((expand - trunc)._total_ns),
+            round_mode,
+            round_increment,
+            sign,
+        )
+        if rounded != result[smallest_unit]:
+            rounded_up = expand
 
-    return ItemizedDelta._from_signed(
-        sign if any(result.values()) else 0, **result
-    )
+    if rounded_up is not None:
+        # The larger units take the carry
+        return _zoned_difference_in_units(
+            rounded_up, b, units, "trunc", round_increment, sign
+        )
+    return result
+
+
+def _exact_total_ns(
+    values: Mapping[ExactDeltaUnitStr, int], sign: Sign
+) -> int:
+    return sign * sum(NS_PER_UNIT_PLURAL[u] * v for u, v in values.items())
 
 
 def _split_calendar_and_exact_units(

@@ -70,7 +70,7 @@ _WEEKDAY_ABBR_LOOKUP = {n.lower(): i for i, n in enumerate(_WEEKDAY_ABBR)}
 _WEEKDAY_FULL_LOOKUP = {n.lower(): i for i, n in enumerate(_WEEKDAY_FULL)}
 
 
-def _parse_digits(s: str, pos: int, count: int) -> tuple[int, int]:
+def parse_digits(s: str, pos: int, count: int) -> tuple[int, int]:
     """Parse exactly ``count`` digits from s at pos.
     Returns (value, new_pos).
     """
@@ -297,7 +297,7 @@ class _Year4(_DigitField):
         return f"{v.year:04d}"
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.year, pos = _parse_digits(s, pos, 4)
+        state.year, pos = parse_digits(s, pos, 4)
         return pos
 
 
@@ -320,7 +320,7 @@ class _MonthNum(_DigitField):
         return f"{v.month:02d}"
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.month, pos = _parse_digits(s, pos, 2)
+        state.month, pos = parse_digits(s, pos, 2)
         return pos
 
 
@@ -376,7 +376,7 @@ class _Day(_DigitField):
         return f"{v.day:02d}"
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.day, pos = _parse_digits(s, pos, 2)
+        state.day, pos = parse_digits(s, pos, 2)
         return pos
 
 
@@ -432,7 +432,7 @@ class _Hour24(_DigitField):
         return f"{v.hour:02d}"
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.hour, pos = _parse_digits(s, pos, 2)
+        state.hour, pos = parse_digits(s, pos, 2)
         return pos
 
 
@@ -469,7 +469,7 @@ class _Hour12(_DigitField):
         return f"{h12:02d}"
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.hour, pos = _parse_digits(s, pos, 2)
+        state.hour, pos = parse_digits(s, pos, 2)
         if not (1 <= state.hour <= 12):
             raise ValueError(
                 f"12-hour clock requires hour in 1..12, got {state.hour}"
@@ -504,7 +504,7 @@ class _Minute(_DigitField):
         return f"{v.minute:02d}"
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.minute, pos = _parse_digits(s, pos, 2)
+        state.minute, pos = parse_digits(s, pos, 2)
         return pos
 
 
@@ -530,7 +530,7 @@ class _Second(_DigitField):
         return f"{v.second:02d}"
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        state.second, pos = _parse_digits(s, pos, 2)
+        state.second, pos = parse_digits(s, pos, 2)
         if state.second == 60:
             state.second = 59
         return pos
@@ -563,7 +563,7 @@ class _SecondOpt(_DigitField):
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
         if pos < len(s) and s[pos].isdigit():
-            state.second, pos = _parse_digits(s, pos, 2)
+            state.second, pos = parse_digits(s, pos, 2)
             if state.second == 60:
                 state.second = 59
         else:
@@ -595,13 +595,16 @@ class _ColonSec(_Field):
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
         if pos < len(s) and s[pos] == ":":
             pos += 1  # consume the colon
-            state.second, pos = _parse_digits(s, pos, 2)
+            state.second, pos = parse_digits(s, pos, 2)
             if state.second == 60:
                 state.second = 59
         else:
             state.second = 0
             state.second_absent = True
         return pos
+
+    def __repr__(self) -> str:
+        return ":SS"
 
 
 class _OptionalSeconds(_Field):
@@ -646,14 +649,14 @@ class _OptionalSeconds(_Field):
             state.second_absent = True
             return pos
 
-        state.second, pos = _parse_digits(s, pos + len(self.separator), 2)
+        state.second, pos = parse_digits(s, pos + len(self.separator), 2)
         if state.second == 60:
             state.second = 59
 
         if self.fraction_kind == "exact":
             if pos >= len(s) or s[pos] != ".":
                 raise ValueError(f"expected '.' at position {pos}")
-            value, pos = _parse_digits(s, pos + 1, self.width)
+            value, pos = parse_digits(s, pos + 1, self.width)
             state.nanos = value * (10 ** (9 - self.width))
         elif (
             self.fraction_kind == "trimmed"
@@ -694,7 +697,7 @@ class _FracExact(_DigitField):
         return f"{v.nanos:09d}"[: self.width]
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        val, pos = _parse_digits(s, pos, self.width)
+        val, pos = parse_digits(s, pos, self.width)
         state.nanos = val * (10 ** (9 - self.width))
         return pos
 
@@ -875,18 +878,18 @@ def _parse_offset_value(
         raise ValueError(f"expected offset sign at position {pos}")
     sign = 1 if s[pos] == "+" else -1
     pos += 1
-    oh, pos = _parse_digits(s, pos, 2)
+    oh, pos = parse_digits(s, pos, 2)
     if oh >= 24:
         raise ValueError("offset hours must be 0..23")
     if width == 1:
         return sign * oh * 3600, pos, False, False
     if width in (2, 4):
-        om, pos = _parse_digits(s, pos, 2)
+        om, pos = parse_digits(s, pos, 2)
     else:  # width 3 or 5
         if pos >= len(s) or s[pos] != ":":
             raise ValueError(f"expected ':' at position {pos}")
         pos += 1
-        om, pos = _parse_digits(s, pos, 2)
+        om, pos = parse_digits(s, pos, 2)
     if om >= 60:
         raise ValueError("offset minutes must be 0..59")
     os = 0
@@ -895,10 +898,10 @@ def _parse_offset_value(
         has_colon = width == 5
         if has_colon and pos < len(s) and s[pos] == ":":
             pos += 1
-            os, pos = _parse_digits(s, pos, 2)
+            os, pos = parse_digits(s, pos, 2)
             has_seconds = True
         elif not has_colon and pos < len(s) and s[pos].isdigit():
-            os, pos = _parse_digits(s, pos, 2)
+            os, pos = parse_digits(s, pos, 2)
             has_seconds = True
         if os >= 60:
             raise ValueError("offset seconds must be 0..59")

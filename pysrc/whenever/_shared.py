@@ -11,7 +11,7 @@ from __future__ import annotations
 import enum
 from datetime import date as _date
 from operator import index as _index
-from struct import pack, unpack
+from struct import pack
 from typing import TYPE_CHECKING, Any, ClassVar, no_type_check, overload
 
 from ._common import (
@@ -23,6 +23,7 @@ from ._common import (
     add_alternate_constructors,
     expect_int,
     final,
+    unpack_pickle,
     warn_deprecated,
 )
 from ._math import days_in_month, is_leap
@@ -347,7 +348,7 @@ class YearMonth(_Base):
 # to the pickling format in the future
 @no_type_check
 def _unpkl_ym(data: bytes) -> YearMonth:
-    return YearMonth(*unpack("<HB", data))
+    return YearMonth(*unpack_pickle("<HB", data))
 
 
 YearMonth.MIN = YearMonth._from_py_unchecked(_date.min)
@@ -570,7 +571,7 @@ class MonthDay(_Base):
 # to the pickling format in the future
 @no_type_check
 def _unpkl_md(data: bytes) -> MonthDay:
-    return MonthDay(*unpack("<BB", data))
+    return MonthDay(*unpack_pickle("<BB", data))
 
 
 MonthDay.MIN = MonthDay._from_py_unchecked(
@@ -836,7 +837,7 @@ class IsoWeekDate(_Base):
 
 @no_type_check
 def _unpkl_iwd(data: bytes) -> IsoWeekDate:
-    year, week, day = unpack("<hBB", data)
+    year, week, day = unpack_pickle("<hBB", data)
     return IsoWeekDate(year, week, Weekday(day))
 
 

@@ -119,11 +119,9 @@ impl State {
                     Ok(d) => duration_nanos(d)?,
                     Err(e) => -duration_nanos(e.duration())?,
                 };
-                pin.shift(
-                    TimeDelta::from_nanos(elapsed)
-                        .ok_or_raise(exc_os_error(), "system time out of range")?,
-                )
-                .ok_or_raise(exc_os_error(), "system time out of range")
+                // Out of range because of the pin, not the system clock
+                pin.shift(TimeDelta::from_nanos(elapsed).ok_or_range_err()?)
+                    .ok_or_range_err()
             }
         }
     }

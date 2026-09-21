@@ -96,6 +96,12 @@ def test_ticking_time_patch_allows_backward_movement():
         assert i <= Instant.now() < i.add(seconds=1)
 
 
+def test_ticking_time_patch_past_the_range():
+    with patch_current_time(Instant.MAX, keep_ticking=True):
+        with pytest.raises(ValueError, match="out of range"):
+            Instant.now()
+
+
 def test_time_patch_shift_out_of_range():
     with patch_current_time(Instant.MAX, keep_ticking=False) as p:
         with pytest.raises(ValueError, match="out of range"):

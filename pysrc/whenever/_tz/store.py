@@ -117,7 +117,11 @@ def get_tz(key: str) -> TimeZone:
         # loading the same time zone at the same time, since TimeZone instances
         # are immutable after construction. The last one to write wins.
         tzif, canonical_key, updates = _load_tz(cache_key, key)
-        loaded = TimeZone.parse_tzif(tzif, canonical_key)
+        try:
+            loaded = TimeZone.parse_tzif(tzif, canonical_key)
+        except ValueError:
+            # A file that is there but cannot be read is not found
+            raise TimeZoneNotFoundError._for_key(key) from None
         _publish_tzdir_cache(updates)
         instance = _tzcache_lookup.setdefault(cache_key, loaded)
 

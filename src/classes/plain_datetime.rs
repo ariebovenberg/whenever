@@ -736,26 +736,31 @@ pub(crate) fn plain_since_inner(
 
     let neg = a < b;
 
-    let target_date = match (neg, b.with_date(a.date).cmp(&a)) {
-        (false, Ordering::Greater) => a.date.yesterday(),
-        (true, Ordering::Less) => a.date.tomorrow(),
-        _ => Some(a.date),
-    }
-    .ok_or_range_err()?;
+    let target_date = plain_target(a, b, neg).ok_or_range_err()?;
     match kwargs {
         DifferenceSpec::Total(unit) => plain_since_float(a, b, target_date, unit, neg),
         DifferenceSpec::InUnits {
             units,
             mode,
             increment,
-        } => plain_since_in_units(state, a, b, target_date, units, mode, increment, neg),
+        } => plain_since_in_units(a, b, target_date, units, mode, increment, neg)
+            .ok_or_range_err()?
+            .to_obj(state),
+    }
+}
+
+/// The date of `a`, adjusted so the exact remainder has the sign of the
+/// overall difference.
+fn plain_target(a: PlainDateTime, b: PlainDateTime, neg: bool) -> Option<Date> {
+    match (neg, b.with_date(a.date).cmp(&a)) {
+        (false, Ordering::Greater) => a.date.yesterday(),
+        (true, Ordering::Less) => a.date.tomorrow(),
+        _ => Some(a.date),
     }
 }
 
 #[inline(never)]
-#[allow(clippy::too_many_arguments)]
 fn plain_since_in_units(
-    state: &State,
     a: PlainDateTime,
     b: PlainDateTime,
     target_date: Date,
@@ -763,7 +768,7 @@ fn plain_since_in_units(
     round_mode: round::Mode,
     round_increment: difference::DifferenceIncrement,
     neg: bool,
-) -> PyReturn {
+) -> Option<ItemizedDelta> {
     let smallest_unit = units.smallest();
     let (calendar_units, exact_units) = units.split_calendar_exact();
 
@@ -771,40 +776,67 @@ fn plain_since_in_units(
         (ItemizedDateDelta::UNSET, b.date.into(), a.date.into())
     } else {
         let inc = if smallest_unit.to_exact().is_err() {
-            round_increment.to_calendar().ok_or_range_err()?
+            round_increment.to_calendar()?
         } else {
             CalendarIncrement::MIN
         };
-        difference::date_diff(target_date, b.date, inc, calendar_units, neg).ok_or_range_err()?
+        difference::date_diff(target_date, b.date, inc, calendar_units, neg)?
     };
 
     let trunc_dt = b.with_date(trunc_date.into());
     let expand_dt = b.with_date(expand_date.into());
 
     // If there are no time units, round the calendar units.
-    // Otherwise, calculate the time delta remainder
-    let mut result = if exact_units.is_empty() {
-        calendar_results.round_by_time(
-            calendar_units.smallest(),
-            // This UTC conversion is a bit weird, but it allows us to reuse
-            // the logic since plain and UTC datetimes both have no time zone
-            // adjustments.
-            a.assume_utc(),
-            trunc_dt.assume_utc(),
-            expand_dt.assume_utc(),
-            round_mode.to_abs_trunc(neg),
-            round_increment.to_calendar().ok_or_range_err()?,
-            neg,
-        );
-        ItemizedDelta::UNSET
+    // Otherwise, calculate the time delta remainder.
+    // Either way, rounding that moves away from the truncated value ends up here.
+    let rounded_up = if exact_units.is_empty() {
+        calendar_results
+            .round_by_time(
+                calendar_units.smallest(),
+                // This UTC conversion is a bit weird, but it allows us to reuse
+                // the logic since plain and UTC datetimes both have no time zone
+                // adjustments.
+                a.assume_utc(),
+                trunc_dt.assume_utc(),
+                expand_dt.assume_utc(),
+                round_mode.to_abs_trunc(neg),
+                round_increment.to_calendar()?,
+                neg,
+            )
+            .then_some(expand_dt)
     } else {
-        a.diff(trunc_dt)
-            .in_exact_units(exact_units, round_increment, round_mode.to_abs_euclid(neg))
-            .ok_or_range_err()?
+        let diff = a.diff(trunc_dt);
+        let rounded = diff.round_to_unit(
+            exact_units.smallest(),
+            round_increment,
+            round_mode.to_abs_euclid(neg),
+        )?;
+        if calendar_units.is_empty() || rounded.abs() <= diff.abs() {
+            let mut result = rounded.itemize(exact_units)?;
+            result.fill_calendar_units(calendar_results);
+            return Some(result);
+        }
+        Some(trunc_dt.shift(rounded)?)
     };
 
-    result.fill_calendar_units(calendar_results);
-    result.to_obj(state)
+    match rounded_up {
+        // The larger units take the carry, and the smallest stays a multiple
+        // of the increment
+        Some(endpoint) => plain_since_in_units(
+            endpoint,
+            b,
+            plain_target(endpoint, b, neg)?,
+            units,
+            round::Mode::Trunc,
+            round_increment,
+            neg,
+        ),
+        None => {
+            let mut result = ItemizedDelta::UNSET;
+            result.fill_calendar_units(calendar_results);
+            Some(result)
+        }
+    }
 }
 
 fn round(

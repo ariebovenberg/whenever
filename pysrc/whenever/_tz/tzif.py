@@ -14,7 +14,7 @@ from typing import IO, MutableSequence, Sequence, final
 
 from .._common import EPOCH_SECS_MAX, EPOCH_SECS_MIN
 from .common import Fold, Gap, LocalMapping, Unique
-from .posix import TzStr, epoch_for_date, year_for_epoch
+from .posix import MAX_OFFSET, TzStr, epoch_for_date, year_for_epoch
 
 EpochSecs = int
 Offset = int
@@ -226,8 +226,12 @@ class TimeZone:
     def parse_tzif(cls, data: bytes, key: str | None = None) -> TimeZone:
         """Create a TimeZone from TZif file data"""
         read = BytesIO(data)
-        header = _parse_header(read)
-        return _parse_content(header, read, key)
+        try:
+            header = _parse_header(read)
+            return _parse_content(header, read, key)
+        # A corrupt file fails in many ways; callers get one
+        except (struct.error, LookupError, OverflowError, UnicodeError):
+            raise ValueError("Invalid TZif data") from None
 
 
 def bisect(
@@ -297,6 +301,14 @@ class Header:
         self.charcnt = charcnt
 
 
+def _read_exact(data: IO[bytes], n: int) -> bytes:
+    # read() returns what is left of a truncated file without complaint
+    result = data.read(n)
+    if len(result) != n:
+        raise ValueError("Unexpected end of TZif data")
+    return result
+
+
 def _parse_header(data: IO[bytes]) -> Header:
     """Parse TZif header and return header with new offset"""
     # Check magic bytes
@@ -314,7 +326,7 @@ def _parse_header(data: IO[bytes]) -> Header:
 
     data.read(15)  # Skip reserved bytes
 
-    return Header(version, *struct.unpack(">6i", data.read(24)))
+    return Header(version, *struct.unpack(">6I", data.read(24)))
 
 
 # Pre-compute POSIX DST transitions up to this year so the bisect fast-path
@@ -393,9 +405,9 @@ def _parse_content(
         # Parse v1 transitions (32-bit)
         transition_times = _parse_v1_transitions(header, data)
 
-    offset_indices = list(data.read(header.timecnt))
+    offset_indices = list(_read_exact(data, header.timecnt))
     types = _parse_type_info(header.typecnt, data)
-    abbrev_data = data.read(header.charcnt)
+    abbrev_data = _read_exact(data, header.charcnt)
 
     offsets_by_utc, meta_by_utc = _load_transitions(
         transition_times, types, offset_indices, abbrev_data
@@ -405,7 +417,9 @@ def _parse_content(
     end = None
     if header.version >= 2:
         # Skip unused metadata and newline before tz string
-        data.read(header.isutcnt + header.isstdcnt + header.leapcnt * 12 + 1)
+        _read_exact(
+            data, header.isutcnt + header.isstdcnt + header.leapcnt * 12 + 1
+        )
         # Find the TZ string (until newline or end of data)
         tz_string, *_ = data.read().split(b"\n", 1)
 
@@ -457,12 +471,18 @@ def _parse_type_info(
     typecnt: int, data: IO[bytes]
 ) -> Sequence[tuple[Offset, bool, int]]:
     """Parse type info records: (utoff, isdst, abbrind)"""
-    return [
+    # A transition names its type by one byte
+    if not 0 < typecnt <= 256:
+        raise ValueError("Invalid type count")
+    types = [
         (utoff, isdst != 0, abbrind)
         for utoff, isdst, abbrind in struct.iter_unpack(
-            ">iBB", data.read(6 * typecnt)
+            ">iBB", _read_exact(data, 6 * typecnt)
         )
     ]
+    if any(abs(utoff) >= MAX_OFFSET for utoff, _, _ in types):
+        raise ValueError("Offset out of range")
+    return types
 
 
 def _abbrev_at(abbrev_data: bytes, idx: int) -> str:

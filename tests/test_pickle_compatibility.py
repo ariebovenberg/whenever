@@ -157,6 +157,7 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
             "_unpkl_tdelta",
             (struct.pack("<qI", 9999 * 366 * 24 * 3_600, 1),),
         ),
+        ("_unpkl_tdelta", (struct.pack("<qI", 0, 1_000_000_000),)),
         (
             "_unpkl_offset",
             (struct.pack("<HBBBBBil", 2024, 1, 1, 0, 0, 0, 0, 86_400),),
@@ -195,7 +196,7 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
     ],
 )
 def test_malformed_payload_is_rejected(name: str, args: tuple[object, ...]):
-    with pytest.raises((TypeError, ValueError, OverflowError, struct.error)):
+    with pytest.raises(ValueError):
         getattr(w, name)(*args)
 
 
@@ -219,7 +220,7 @@ def test_wrong_payload_length_is_rejected(
 ):
     unpickle = getattr(w, name)
     for data in (bytes(size - 1), bytes(size + 1)):
-        with pytest.raises((TypeError, ValueError, struct.error)):
+        with pytest.raises(ValueError):
             unpickle(data, *extra)
 
 
@@ -450,6 +451,12 @@ _PICKLES_EARLIER = [
         b"\x80\x04\x95,\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0e_unp"
         b"kl_iddelta\x94\x93\x94(K\x01K\x02K\x03K\x04t\x94R\x94.",
         w.ItemizedDateDelta(years=1, months=2, weeks=3, days=4),
+    ),
+    # absent components, under a negative sign
+    (
+        b"\x80\x04\x954\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\r_unpkl_i"
+        b"delta\x94\x93\x94(NNNNJ\xfb\xff\xff\xffNK\x00J\xf8\xff\xff\xfft\x94R\x94.",
+        w.ItemizedDelta(hours=-5, seconds=0, nanoseconds=-8),
     ),
 ]
 

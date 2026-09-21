@@ -459,6 +459,11 @@ class TestFromTimestamp:
             0
         ) - nanoseconds(2)
 
+        # The last second is in range
+        assert Instant.from_timestamp(253402300799.5) == Instant.from_utc(
+            9999, 12, 31, 23, 59, 59, nanosecond=500_000_000
+        )
+
         with pytest.raises(ValueError, match="out of range"):
             Instant.from_timestamp(9e200)
 

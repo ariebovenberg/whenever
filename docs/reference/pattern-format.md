@@ -220,7 +220,9 @@ same rule applies to specifiers that omit optional digits, such as trimmed
 fractions and the seconds component of `xxxx`/`xxxxx` offsets. `VV` must be
 the final specifier or be followed by a literal delimiter that cannot occur in a
 time zone ID. A dotted trimmed fraction cannot be followed by another
-dot. Ambiguous patterns raise {class}`ValueError` when compiled.
+dot, and when parsing it takes the dot only together with a digit:
+`12:30:05.` does not match `HH:mm:ss.FFF`.
+Ambiguous patterns raise {class}`ValueError` when compiled.
 
 Some types require specific specifiers in the parse pattern:
 
