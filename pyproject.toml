@@ -7,7 +7,7 @@ maintainers = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.11.0b0"
+version = "0.11.0b1"
 license = "MIT"
 description = "Type-safe datetimes for Python that get DST right, in Rust or pure Python"
 requires-python = ">=3.10"
