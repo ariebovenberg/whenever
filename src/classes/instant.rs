@@ -531,6 +531,7 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
         .offset_secs
         .ok_or_value_err("pattern must include an offset specifier (x/X)")?;
     let date = parsed.date()?;
+    parsed.validate_weekday(date)?;
     let time = parsed.time()?;
     // offset is already validated (scalar::Offset) — no range check needed here.
     let result = date

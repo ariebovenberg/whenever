@@ -18,7 +18,6 @@ from datetime import (
     timedelta as _timedelta,
     timezone as _timezone,
 )
-from operator import index as _index
 from struct import pack
 from time import time_ns as _physical_time_ns
 from types import UnionType
@@ -26,6 +25,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
+    Collection,
     Literal,
     Mapping,
     Sequence,
@@ -425,7 +425,7 @@ def _shift_components(
     kwargs: dict[str, Any],
     /,
     *,
-    units: Sequence[str],
+    units: Collection[str],
     delta_types: type | UnionType,
     expected: str,
 ) -> Mapping[str, Any]:
@@ -477,69 +477,45 @@ WEEK_UNIT_MSG = "invalid unit: 'week', use 'week_mon' or 'week_sun'"
 
 
 def _shift_days(dt: _datetime, days: int) -> _datetime:
-    try:
-        return dt + _timedelta(days=days)
-    except OverflowError:
-        raise ValueError(RANGE_MSG) from None
+    return _add_seconds(dt, days * S_PER_DAY)
 
 
 def _start_of_dt(dt: _datetime, unit: str) -> _datetime:
-    if unit == "year":
-        return dt.replace(month=1, day=1, hour=0, minute=0, second=0)
-    elif unit == "month":
-        return dt.replace(day=1, hour=0, minute=0, second=0)
-    elif unit == "week_mon":
-        days_back = dt.isoweekday() - 1
-        d = _shift_days(dt, -days_back)
-        return d.replace(hour=0, minute=0, second=0)
-    elif unit == "week_sun":
-        days_back = dt.isoweekday() % 7
-        d = _shift_days(dt, -days_back)
-        return d.replace(hour=0, minute=0, second=0)
-    elif unit == "day":
-        return dt.replace(hour=0, minute=0, second=0)
-    elif unit == "hour":
+    if unit == "hour":
         return dt.replace(minute=0, second=0)
     elif unit == "minute":
         return dt.replace(second=0)
     elif unit == "second":
         return dt
-    elif unit == "week":
-        raise ValueError(WEEK_UNIT_MSG)
-    else:
-        raise invalid("unit", unit)
+    d = (
+        dt.date()
+        if unit == "day"
+        else Date._from_py_unchecked(dt.date())
+        .start_of(unit)  # type: ignore[arg-type]
+        ._py_date
+    )
+    return dt.replace(
+        year=d.year, month=d.month, day=d.day, hour=0, minute=0, second=0
+    )
 
 
 def _end_of_dt(dt: _datetime, unit: str) -> _datetime:
-    if unit == "year":
-        return dt.replace(month=12, day=31, hour=23, minute=59, second=59)
-    elif unit == "month":
-        return dt.replace(
-            day=days_in_month(dt.year, dt.month),
-            hour=23,
-            minute=59,
-            second=59,
-        )
-    elif unit == "week_mon":
-        days_fwd = 7 - dt.isoweekday()
-        d = _shift_days(dt, days_fwd)
-        return d.replace(hour=23, minute=59, second=59)
-    elif unit == "week_sun":
-        days_fwd = (6 - dt.isoweekday()) % 7
-        d = _shift_days(dt, days_fwd)
-        return d.replace(hour=23, minute=59, second=59)
-    elif unit == "day":
-        return dt.replace(hour=23, minute=59, second=59)
-    elif unit == "hour":
+    if unit == "hour":
         return dt.replace(minute=59, second=59)
     elif unit == "minute":
         return dt.replace(second=59)
     elif unit == "second":
         return dt
-    elif unit == "week":
-        raise ValueError(WEEK_UNIT_MSG)
-    else:
-        raise invalid("unit", unit)
+    d = (
+        dt.date()
+        if unit == "day"
+        else Date._from_py_unchecked(dt.date())
+        .end_of(unit)  # type: ignore[arg-type]
+        ._py_date
+    )
+    return dt.replace(
+        year=d.year, month=d.month, day=d.day, hour=23, minute=59, second=59
+    )
 
 
 def _start_of_next_dt(dt: _datetime, unit: str) -> _datetime:
@@ -867,12 +843,7 @@ class Date(_Base):
                 offset = 7
             delta = -(offset + (-n - 1) * 7)
 
-        try:
-            return Date._from_py_unchecked(
-                self._py_date + _timedelta(days=delta)
-            )
-        except OverflowError:
-            raise ValueError(RANGE_MSG) from None
+        return self._add_days(delta)
 
     def at(self, time: Time, /) -> PlainDateTime:
         """Combine a date with a time to create a datetime
@@ -893,11 +864,11 @@ class Date(_Base):
         return self._py_date
 
     def _init_from_py(self, d: _date) -> None:
-        warn_lossy_stdlib_subclass(d, _date, stacklevel=3)
         # Rebuilding from the fields drops a subclass (and a datetime's time)
         self._py_date = (
             d if type(d) is _date else _date(d.year, d.month, d.day)
         )
+        warn_lossy_stdlib_subclass(d, _date)
 
     def format_iso(self, *, basic: bool = False) -> str:
         """Format as an ISO 8601 string, such as ``2021-01-02``.
@@ -1583,8 +1554,7 @@ class Time(_Base):
         >>> t.replace(minute=3, nanosecond=4_000)
         Time("12:03:00.000004")
         """
-        _check_invalid_replace_kwargs(kwargs)
-        nanos = _pop_nanos_kwarg(kwargs, self._nanos)
+        nanos = _pop_replace_nanos(kwargs, self._nanos)
         return Time._from_py_unchecked(self._py.replace(**kwargs), nanos)
 
     def _to_ns_since_midnight(self) -> int:
@@ -1773,26 +1743,50 @@ _TIMEDELTA_SHIFT_KWARGS = frozenset(
 
 
 def _timedelta_from_shift_kwargs(
-    kwargs: dict[str, Any], /, *, fname: str, warn_level: int
-) -> TimeDelta:
-    """Build the TimeDelta for ``TimeDelta.add()``/``subtract()`` keywords.
-
-    Constructing it in those methods would attribute the days-are-24-hours
-    warning to their own frame, so emit it here at ``warn_level``, once the
-    constructor has succeeded, and let the constructor stay quiet.
-    """
+    kwargs: Mapping[str, Any], fname: str, /
+) -> tuple[TimeDelta, bool]:
+    """The TimeDelta of ``add()``/``subtract()`` keywords, and whether days
+    or weeks were read as 24-hour units without ``days_assumed_24h_ok``:
+    the caller warns from its own frame once the shift has succeeded."""
     check_no_kwargs(
         {k: v for k, v in kwargs.items() if k not in _TIMEDELTA_SHIFT_KWARGS},
         fname,
     )
-    result = TimeDelta(**{**kwargs, "days_assumed_24h_ok": True})
-    if (kwargs.get("weeks") or kwargs.get("days")) and not kwargs.get(
-        "days_assumed_24h_ok"
-    ):
+    return (
+        TimeDelta(**{**kwargs, "days_assumed_24h_ok": True}),
+        bool(
+            (kwargs.get("weeks") or kwargs.get("days"))
+            and not kwargs.get("days_assumed_24h_ok")
+        ),
+    )
+
+
+_ExactShiftable = TypeVar("_ExactShiftable", "TimeDelta", "Instant")
+
+
+def _shift_exact(
+    self: _ExactShiftable, sign: int, args: Any, kwargs: Any, /
+) -> _ExactShiftable:
+    """``add()``/``subtract()`` of TimeDelta and Instant: a shift by exact
+    units only."""
+    fname = "add" if sign == 1 else "subtract"
+    delta, days_assumed = _timedelta_from_shift_kwargs(
+        _shift_components(
+            fname,
+            args,
+            kwargs,
+            units=_TIMEDELTA_SHIFT_KWARGS,
+            delta_types=TimeDelta,
+            expected="a TimeDelta",
+        ),
+        fname,
+    )
+    result = self + (delta if sign == 1 else -delta)
+    if days_assumed:
         warn(
             DAYS_NOT_ALWAYS_24H_MSG,
             DaysAssumed24HoursWarning,
-            stacklevel=warn_level,
+            stacklevel=3,
         )
     return result
 
@@ -1955,27 +1949,17 @@ class TimeDelta(_Base):
             if relative_to is not UNSET:
                 # A TimeDelta is exact and the unit is a calendar unit, so
                 # the conversion always crosses the boundary.
-                relative_to = _ideltas._resolve_reference(
+                relative_to, warning = _ideltas._reference_and_warning(
                     relative_to,
                     True,
                     True,
                     naive_arithmetic_ok,
                     stale_offset_ok,
-                    3,
                 )
                 shifted = relative_to + self
                 sign: Literal[1, -1] = 1 if self._total_ns >= 0 else -1
 
-                target_date = shifted.date()
-                # The while loop handles the rare case of a 24h+ gap (e.g. Samoa 2011),
-                # where two consecutive dates map to the same instant.
-                if sign == 1:
-                    while relative_to._with_date(target_date) > shifted:
-                        target_date = target_date.subtract(days=1)
-                else:
-                    while relative_to._with_date(target_date) < shifted:
-                        target_date = target_date.add(days=1)
-
+                target_date = _zoned_target_date(shifted, relative_to, sign)
                 trunc_amount, trunc_date, expanded_date = DIFF_FUNCS[unit](
                     target_date._py_date,
                     relative_to._py_dt.date(),
@@ -1986,7 +1970,7 @@ class TimeDelta(_Base):
                     Date._from_py_unchecked(resolve_leap_day(trunc_date))
                 )
 
-                return (
+                result = (
                     trunc_amount
                     + (shifted - trunc_zdt)
                     / (
@@ -1998,6 +1982,9 @@ class TimeDelta(_Base):
                         - trunc_zdt
                     )
                 ) * sign
+                if warning is not None:
+                    warn(warning, stacklevel=2)
+                return result
             elif unit in ("days", "weeks"):
                 if not days_assumed_24h_ok:
                     warn(
@@ -2084,20 +2071,22 @@ class TimeDelta(_Base):
         if relative_to is not UNSET:
             # A TimeDelta is exact: the conversion crosses the boundary
             # exactly when the target units include a calendar unit.
-            relative_to = _ideltas._resolve_reference(
+            relative_to, warning = _ideltas._reference_and_warning(
                 relative_to,
                 True,
                 has_years_months or "days" in units or "weeks" in units,
                 naive_arithmetic_ok,
                 stale_offset_ok,
-                3,
             )
-            return (relative_to + self).since(
+            delta = (relative_to + self).since(
                 relative_to,
                 in_units=units,
                 round_mode=round_mode,
                 round_increment=round_increment,
             )
+            if warning is not None:
+                warn(warning, stacklevel=2)
+            return delta
 
         if ("days" in units or "weeks" in units) and not days_assumed_24h_ok:
             warn(
@@ -2156,7 +2145,6 @@ class TimeDelta(_Base):
         return _timedelta(microseconds=self._total_ns // 1_000)
 
     def _init_from_py(self, td: _timedelta, /) -> None:
-        warn_lossy_stdlib_subclass(td, _timedelta, stacklevel=3)
         self._total_ns = ns = (
             td.microseconds * 1_000
             + td.seconds * 1_000_000_000
@@ -2164,6 +2152,7 @@ class TimeDelta(_Base):
         )
         if abs(ns) > _MAX_DELTA_NANOS:
             raise ValueError(RANGE_MSG)
+        warn_lossy_stdlib_subclass(td, _timedelta)
 
     def format_iso(self) -> str:
         """Format as the *popular interpretation* of the ISO 8601 duration format.
@@ -2332,7 +2321,7 @@ class TimeDelta(_Base):
         days_assumed_24h_ok: bool = ...,
     ) -> TimeDelta: ...
 
-    def add(self, delta: TimeDelta = UNSET, /, **kwargs: Any) -> TimeDelta:
+    def add(self, *args: Any, **kwargs: Any) -> TimeDelta:
         """Add time to this delta, returning a new delta.
 
         Days and weeks are treated as exact 24-hour and 168-hour units,
@@ -2344,19 +2333,7 @@ class TimeDelta(_Base):
         >>> TimeDelta(hours=1).add(TimeDelta(minutes=30))
         TimeDelta("PT1h30m")
         """
-        if kwargs:
-            if delta is not UNSET:
-                raise TypeError(
-                    "add() cannot mix positional and keyword arguments"
-                )
-            return self + _timedelta_from_shift_kwargs(
-                kwargs, fname="add", warn_level=3
-            )
-        elif delta is UNSET:
-            return self
-        elif not isinstance(delta, TimeDelta):
-            raise TypeError("add() argument must be a TimeDelta")
-        return self + delta
+        return _shift_exact(self, 1, args, kwargs)
 
     @overload
     def subtract(self, delta: TimeDelta, /) -> TimeDelta: ...
@@ -2377,9 +2354,7 @@ class TimeDelta(_Base):
         days_assumed_24h_ok: bool = ...,
     ) -> TimeDelta: ...
 
-    def subtract(
-        self, delta: TimeDelta = UNSET, /, **kwargs: Any
-    ) -> TimeDelta:
+    def subtract(self, *args: Any, **kwargs: Any) -> TimeDelta:
         """Subtract time from this delta, returning a new delta.
 
         Days and weeks are treated as exact 24-hour and 168-hour units,
@@ -2389,19 +2364,7 @@ class TimeDelta(_Base):
         >>> TimeDelta(hours=1).subtract(minutes=30)
         TimeDelta("PT30m")
         """
-        if kwargs:
-            if delta is not UNSET:
-                raise TypeError(
-                    "subtract() cannot mix positional and keyword arguments"
-                )
-            return self - _timedelta_from_shift_kwargs(
-                kwargs, fname="subtract", warn_level=3
-            )
-        elif delta is UNSET:
-            return self
-        elif not isinstance(delta, TimeDelta):
-            raise TypeError("subtract() argument must be a TimeDelta")
-        return self - delta
+        return _shift_exact(self, -1, args, kwargs)
 
     @overload
     def __add__(self, other: TimeDelta, /) -> TimeDelta: ...
@@ -3129,10 +3092,12 @@ class _ExactAndLocalTime(_LocalTime, _ExactTime):
     def offset(self) -> TimeDelta:
         """The UTC offset of the datetime"""
         return TimeDelta._from_nanos_unchecked(
-            int(
-                self._py_dt.utcoffset().total_seconds()  # type: ignore[union-attr]
-                * 1_000_000_000
-            )
+            self._current_offset_secs() * 1_000_000_000
+        )
+
+    def _current_offset_secs(self) -> int:
+        return int(
+            self._py_dt.utcoffset().total_seconds()  # type: ignore[union-attr]
         )
 
     def to_instant(self) -> Instant:
@@ -3303,12 +3268,12 @@ class Instant(_ExactTime):
         return cls.from_timestamp(value, unit="nanosecond")
 
     def _init_from_py(self, d: _datetime) -> None:
-        warn_lossy_stdlib_subclass(d, _datetime, stacklevel=3)
         if d.tzinfo is None or d.utcoffset() is None:
             raise ValueError("datetime is naive; use PlainDateTime() instead")
         as_utc = check_utc_bounds(d).astimezone(_UTC)
         self._py_dt = _strip_subclasses(as_utc.replace(microsecond=0))
         self._nanos = as_utc.microsecond * 1_000
+        warn_lossy_stdlib_subclass(d, _datetime)
 
     @classmethod
     def parse_iso(cls, s: str, /) -> Instant:
@@ -3468,17 +3433,18 @@ class Instant(_ExactTime):
             raise ValueError("pattern must include an offset specifier (x/X)")
         if state.year is None or state.month is None or state.day is None:
             raise ValueError("pattern must include a year, a month, and a day")
-        dt = check_utc_bounds(
-            _datetime(
-                state.year,
-                state.month,
-                state.day,
-                state.hour or 0,
-                state.minute or 0,
-                state.second or 0,
-                tzinfo=_timezone(_timedelta(seconds=state.offset_secs)),
-            )
-        ).astimezone(_UTC)
+        local = _datetime(
+            state.year,
+            state.month,
+            state.day,
+            state.hour or 0,
+            state.minute or 0,
+            state.second or 0,
+            tzinfo=mk_fixed_tzinfo(state.offset_secs),
+        )
+        if state.weekday is not None and local.weekday() != state.weekday:
+            raise ValueError("weekday does not match the date")
+        dt = check_utc_bounds(local).astimezone(_UTC)
         warn_pattern(elements, stacklevel=3)
         if renamed:
             _warn_format(stacklevel=2)
@@ -3516,7 +3482,7 @@ class Instant(_ExactTime):
         which emits :class:`~whenever.DaysAssumed24HoursWarning`.
         Pass ``days_assumed_24h_ok=True`` when that is intentional.
         """
-        return self._shift(1, *args, **kwargs)
+        return _shift_exact(self, 1, args, kwargs)
 
     if not TYPE_CHECKING:  # for a nicer autodoc
 
@@ -3550,58 +3516,7 @@ class Instant(_ExactTime):
         which emits :class:`~whenever.DaysAssumed24HoursWarning`.
         Pass ``days_assumed_24h_ok=True`` when that is intentional.
         """
-        return self._shift(-1, *args, **kwargs)
-
-    @no_type_check
-    def _shift(self, sign: int, *args, **kwargs) -> Instant:
-        return self._shift_kwargs(
-            sign,
-            **_shift_components(
-                "add" if sign == 1 else "subtract",
-                args,
-                kwargs,
-                units=_TIMEDELTA_SHIFT_KWARGS,
-                delta_types=(TimeDelta,),
-                expected="a TimeDelta",
-            ),
-        )
-
-    def _shift_kwargs(
-        self,
-        sign: int,
-        *,
-        weeks: float = 0,
-        days: float = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-        days_assumed_24h_ok: bool = UNSET,
-    ) -> Instant:
-        delta_ns = sign * exact_units_to_nanos(
-            weeks=weeks,
-            days=days,
-            hours=hours,
-            minutes=minutes,
-            seconds=seconds,
-            milliseconds=milliseconds,
-            microseconds=microseconds,
-            nanoseconds=nanoseconds,
-        )
-        if abs(delta_ns) > _MAX_DELTA_NANOS:
-            raise ValueError(RANGE_MSG)
-        if (weeks or days) and not days_assumed_24h_ok:
-            warn(
-                DAYS_NOT_ALWAYS_24H_MSG,
-                DaysAssumed24HoursWarning,
-                stacklevel=4,
-            )
-        delta_secs, nanos = divmod(self._nanos + delta_ns, 1_000_000_000)
-        return self._from_py_unchecked(
-            _add_seconds(self._py_dt, delta_secs), nanos
-        )
+        return _shift_exact(self, -1, args, kwargs)
 
     def round(
         self,
@@ -3639,16 +3554,11 @@ class Instant(_ExactTime):
         """
         if unit == "day":
             raise ValueError(CANNOT_ROUND_DAY_MSG)
-        rounded_time, next_day = Time._from_py_unchecked(
-            self._py_dt.time(), self._nanos
+        rounded = PlainDateTime._from_py_unchecked(
+            self._py_dt.replace(tzinfo=None), self._nanos
         )._round_unchecked(_round_increment_ns(unit, increment, False), mode)
-        try:
-            rounded_date = self._py_dt.date() + _timedelta(days=next_day)
-        except OverflowError:
-            raise ValueError(RANGE_MSG) from None
         return self._from_py_unchecked(
-            _datetime.combine(rounded_date, rounded_time._py, tzinfo=_UTC),
-            rounded_time._nanos,
+            rounded._py_dt.replace(tzinfo=_UTC), rounded._nanos
         )
 
     def __add__(self, delta: TimeDelta, /) -> Instant:
@@ -3873,7 +3783,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         return _format_dt(
             self._py_dt,
             self._nanos,
-            self._py_dt.utcoffset(),  # type: ignore[arg-type]
+            self._current_offset_secs(),
             unit,
             sep,
             basic,
@@ -4016,7 +3926,6 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     def _init_from_py(self, d: _datetime, **kwargs: Any) -> None:
         check_no_kwargs(kwargs, "OffsetDateTime")
-        warn_lossy_stdlib_subclass(d, _datetime, stacklevel=3)
         if d.tzinfo is None or (offset := d.utcoffset()) is None:
             raise ValueError("datetime is naive; use PlainDateTime() instead")
         elif offset.microseconds:
@@ -4027,6 +3936,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             )
         )
         self._nanos = d.microsecond * 1_000
+        warn_lossy_stdlib_subclass(d, _datetime)
 
     if not TYPE_CHECKING:  # for a nicer autodoc
 
@@ -4067,7 +3977,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         >>> d.replace(day=10, stale_offset_ok=True)
         OffsetDateTime("2024-03-10 12:00:00-07:00")
         """
-        _check_invalid_replace_kwargs(kwargs)
+        nanos = _pop_replace_nanos(kwargs, self._nanos)
         try:
             kwargs["tzinfo"] = _load_offset(
                 kwargs.pop("offset"), warning_stacklevel=3
@@ -4076,7 +3986,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             offset_stated = False
         else:
             offset_stated = True
-        nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         result = self._from_py_unchecked(
             check_utc_bounds(self._py_dt.replace(**kwargs)), nanos
         )
@@ -4299,7 +4208,7 @@ class OffsetDateTime(_ExactAndLocalTime):
         >>> OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2)).format_rfc2822()
         "Sat, 15 Aug 2020 23:12:00 +0200"
         """
-        offset = int(self._py_dt.utcoffset().total_seconds())  # type: ignore[union-attr]
+        offset = self._current_offset_secs()
         offset_sign = "-" if offset < 0 else "+"
         offset = abs(offset)
         offset_h = offset // 3600
@@ -4362,9 +4271,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             minute=d.minute,
             second=d.second,
             nanos=self._nanos,
-            offset_secs=int(
-                d.utcoffset().total_seconds()  # type: ignore[union-attr]
-            ),
+            offset_secs=self._current_offset_secs(),
         )
         warn_pattern(elements, stacklevel=4)
         return result
@@ -4648,8 +4555,7 @@ class OffsetDateTime(_ExactAndLocalTime):
             return result
         elif offset_mismatch == "raise":
             raise InvalidOffsetError._for_tz(
-                int(self._py_dt.utcoffset().total_seconds()),  # type: ignore[union-attr]
-                result.tz_id,
+                self._current_offset_secs(), result.tz_id
             )
         else:  # offset_mismatch == "keep_local":
             result, implicit = self.to_plain()._assume_tz(tz, disambiguation)
@@ -4779,7 +4685,7 @@ class OffsetDateTime(_ExactAndLocalTime):
                     "<HBBBBBil",
                     *self._py_dt.timetuple()[:6],
                     self._nanos,
-                    int(self._py_dt.utcoffset().total_seconds()),  # type: ignore[union-attr]
+                    self._current_offset_secs(),
                 ),
             ),
         )
@@ -5082,7 +4988,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             _format_dt(
                 self._py_dt,
                 self._nanos,
-                self._py_dt.utcoffset(),  # type: ignore[arg-type]
+                self._current_offset_secs(),
                 unit,
                 sep,
                 basic,
@@ -5205,9 +5111,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             minute=d.minute,
             second=d.second,
             nanos=self._nanos,
-            offset_secs=int(
-                d.utcoffset().total_seconds()  # type: ignore[union-attr]
-            ),
+            offset_secs=self._current_offset_secs(),
             tz_id=self._tz.key,
             tz_abbrev=self.tz_abbrev(),
         )
@@ -5397,7 +5301,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         from zoneinfo import ZoneInfo
 
         check_no_kwargs(kwargs, "ZonedDateTime")
-        warn_lossy_stdlib_subclass(d, _datetime, stacklevel=3)
         if disambiguation is not UNSET:
             check_disambiguation(disambiguation)
         if d.tzinfo is None:
@@ -5419,7 +5322,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             # Unreachable via ZoneInfo: the TZif format stores whole seconds.
             raise ValueError("offset must be a whole number of seconds")
         written = ZonedInput(
-            d.replace(tzinfo=None, microsecond=0, fold=0),
+            _strip_subclasses(d.replace(tzinfo=None, microsecond=0, fold=0)),
             d.microsecond * 1_000,
             get_tz(d.tzinfo.key),
             _timezone(offset),
@@ -5430,6 +5333,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
         self._nanos = written.nanos
         self._tz = written.tz
+        warn_lossy_stdlib_subclass(d, _datetime)
         # One frame further: the __init__ wrapper
         if implicit:
             _warn_implicit_disambiguation(stacklevel=3)
@@ -5586,14 +5490,13 @@ class ZonedDateTime(_ExactAndLocalTime):
             kwargs,
             function_name="replace",
         )
-        _check_invalid_replace_kwargs(kwargs)
+        nanos = _pop_replace_nanos(kwargs, self._nanos)
         try:
             tzid = kwargs.pop("tz")
         except KeyError:
             tz = self._tz
         else:
             tz = _load_tz(tzid)
-        nanos = _pop_nanos_kwarg(kwargs, self._nanos)
         resolved, implicit = _resolve_disambiguation(
             self._py_dt.replace(**kwargs, tzinfo=None),
             tz,
@@ -6055,16 +5958,20 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam").day_length()
         TimeDelta("PT25h")
         """
-        midnight_naive = self._day_midnight()
-        # Both midnights go through the resolver start_of("day") uses, so the
-        # length can't drift from the boundaries it measures.
-        midnight = self._resolve_derived_local(midnight_naive, None)
-        next_midnight = self._resolve_derived_local(
-            _shift_days(midnight_naive, 1), None
+        start, end = self._day_bounds()
+        return TimeDelta._from_nanos_unchecked(
+            int((end - start).total_seconds()) * 1_000_000_000
         )
-        result = _object_new(TimeDelta)
-        result._init_from_py(next_midnight - midnight)
-        return result
+
+    def _day_bounds(self) -> tuple[_datetime, _datetime]:
+        """The start of the day this value lies in, and of the next. Both go
+        through the resolver ``start_of("day")`` uses, so the day's length
+        can't drift from the boundaries it measures."""
+        midnight = self._day_midnight()
+        return (
+            self._resolve_derived_local(midnight, None),
+            self._resolve_derived_local(_shift_days(midnight, 1), None),
+        )
 
     def _day_midnight(self) -> _datetime:
         """The naive midnight of the day this value lies in. A day is chosen
@@ -6112,24 +6019,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         # Raise for a local time that is valid but whose instant is not.
         return check_utc_bounds(naive.replace(tzinfo=mk_fixed_tzinfo(offset)))
 
-    def _current_offset_secs(self) -> int:
-        return int(
-            self._py_dt.utcoffset().total_seconds()  # type: ignore[union-attr]
-        )
-
-    def _resolve_for_unit(self, naive: _datetime, unit: str) -> _datetime:
-        return self._resolve_derived_local(
-            naive,
-            (
-                None
-                if unit not in _TIME_UNIT_SECS
-                else (
-                    self._current_offset_secs(),
-                    _TIME_UNIT_SECS[unit] * 1_000_000_000,
-                )
-            ),
-        )
-
     def _resolve_end_of_time_unit(
         self, naive: _datetime, unit: str
     ) -> _datetime:
@@ -6138,9 +6027,7 @@ class ZonedDateTime(_ExactAndLocalTime):
             case Unique(offset):
                 pass
             case Fold(end, earlier_offset, later_offset):
-                current_offset = int(
-                    self._py_dt.utcoffset().total_seconds()  # type: ignore[union-attr]
-                )
+                current_offset = self._current_offset_secs()
                 unit_seconds = _TIME_UNIT_SECS[unit]
                 # A fold shorter than the unit is part of the same local-clock
                 # unit, so include it when it ends exactly at the boundary.
@@ -6192,17 +6079,19 @@ class ZonedDateTime(_ExactAndLocalTime):
         A value past it lies in the day that has started, also where the
         clock reads the evening before for a second time.
         """
-        naive = _start_of_dt(
-            (
-                self._day_midnight()
-                if unit not in _TIME_UNIT_SECS
-                else self._py_dt.replace(tzinfo=None)
-            ),
-            unit,
-        )
-        return self._from_py_unchecked(
-            self._resolve_for_unit(naive, unit), 0, self._tz
-        )
+        if unit in _TIME_UNIT_SECS:
+            resolved = self._resolve_derived_local(
+                _start_of_dt(self._py_dt.replace(tzinfo=None), unit),
+                (
+                    self._current_offset_secs(),
+                    _TIME_UNIT_SECS[unit] * 1_000_000_000,
+                ),
+            )
+        else:
+            resolved = self._resolve_derived_local(
+                _start_of_dt(self._day_midnight(), unit), None
+            )
+        return self._from_py_unchecked(resolved, 0, self._tz)
 
     def end_of(
         self,
@@ -6231,7 +6120,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         if unit not in _TIME_UNIT_SECS:
             naive = _start_of_next_dt(self._day_midnight(), unit)
             return self._from_py_unchecked(
-                self._resolve_for_unit(naive, unit), 0, self._tz
+                self._resolve_derived_local(naive, None), 0, self._tz
             ).subtract(nanoseconds=1)
 
         new_dt = _end_of_dt(self._py_dt, unit)
@@ -6301,15 +6190,18 @@ class ZonedDateTime(_ExactAndLocalTime):
     def _round_day(self, mode: str) -> ZonedDateTime:
         # A day is not a fixed length, so the fraction to round is the time
         # elapsed since the start of the day over the day's own length.
-        start = self.start_of("day")
-        day_ns = self.day_length()._total_ns
-        elapsed_ns = (self - start)._total_ns
+        start, end = self._day_bounds()
+        day_ns = int((end - start).total_seconds()) * 1_000_000_000
+        elapsed_ns = (
+            int((self._py_dt - start).total_seconds()) * 1_000_000_000
+            + self._nanos
+        )
         assert 0 <= elapsed_ns < day_ns
         # The start of the day is the even multiple
-        return (
-            start + TimeDelta(nanoseconds=day_ns)
-            if rounds_up(mode, elapsed_ns, day_ns, False, 1)
-            else start
+        return self._from_py_unchecked(
+            end if rounds_up(mode, elapsed_ns, day_ns, False, 1) else start,
+            0,
+            self._tz,
         )
 
     def to_stdlib(self) -> _datetime:
@@ -6422,10 +6314,16 @@ class ZonedDateTime(_ExactAndLocalTime):
 
     def __repr__(self) -> str:
         return (
-            f'ZonedDateTime("{_format_date(self._py_dt, False)} '
-            f"{_format_time(self._py_dt, self._nanos, 'auto', False)}"
-            f"{_format_offset(self._py_dt.utcoffset(), False)}"  # type: ignore[arg-type]
-            f'[{self._tz.key or "<system time zone without ID>"}]")'
+            'ZonedDateTime("'
+            + _format_dt(
+                self._py_dt,
+                self._nanos,
+                self._current_offset_secs(),
+                "auto",
+                " ",
+                False,
+            )
+            + f'[{self._tz.key or "<system time zone without ID>"}]")'
         )
 
     def __str__(self) -> str:
@@ -6444,7 +6342,7 @@ class ZonedDateTime(_ExactAndLocalTime):
                     "<HBBBBBil",
                     *self._py_dt.timetuple()[:6],
                     self._nanos,
-                    int(self._py_dt.utcoffset().total_seconds()),  # type: ignore[union-attr]
+                    self._current_offset_secs(),
                 ),
                 key,
             ),
@@ -6465,24 +6363,17 @@ def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
     tz = get_tz(tzid)
     resolved = tz.convert(stored)
     result = ZonedDateTime._from_py_unchecked(resolved, nanos, tz)
-    current_offset = resolved.utcoffset()
-    assert current_offset is not None
-    if int(current_offset.total_seconds()) != offset_secs:
-        stored_local = (
-            f"{_format_date(stored, False)} "
-            f"{_format_time(stored, nanos, 'auto', False)}"
-        )
-        resulting_local = (
-            f"{_format_date(resolved, False)} "
-            f"{_format_time(resolved, nanos, 'auto', False)}"
-        )
+    current_offset = result._current_offset_secs()
+    if current_offset != offset_secs:
+        stored_local = _format_dt(stored, nanos, "", "auto", " ", False)
+        resulting_local = _format_dt(resolved, nanos, "", "auto", " ", False)
         warn(
             f"the ZonedDateTime pickle stored {stored_local} with offset "
-            f"{_format_offset(_timedelta(seconds=offset_secs), False)} for "
+            f"{format_offset_secs(offset_secs, basic=False)} for "
             f"{tzid_display(tzid)}, but the current time zone rules map that "
             f"instant to {resulting_local} with offset "
-            f"{_format_offset(current_offset, False)}; the instant was "
-            f"preserved and the local datetime and offset were updated",
+            f"{format_offset_secs(current_offset, basic=False)}; the instant "
+            "was preserved and the local datetime and offset were updated",
             PickleOffsetMismatchWarning,
             stacklevel=2,
         )
@@ -6691,13 +6582,13 @@ class PlainDateTime(_LocalTime):
 
     def _init_from_py(self, d: _datetime, **kwargs: Any) -> None:
         check_no_kwargs(kwargs, "PlainDateTime")
-        warn_lossy_stdlib_subclass(d, _datetime, stacklevel=3)
         if d.tzinfo is not None:
             raise ValueError(
                 f"datetime must be naive, got tzinfo={d.tzinfo!r}"
             )
         self._py_dt = _strip_subclasses(d.replace(microsecond=0, fold=0))
         self._nanos = d.microsecond * 1_000
+        warn_lossy_stdlib_subclass(d, _datetime)
 
     if not TYPE_CHECKING:  # for a nicer autodoc
 
@@ -6723,8 +6614,7 @@ class PlainDateTime(_LocalTime):
         >>> d.replace(month=2, day=28)
         PlainDateTime("2021-02-28 12:30:00")
         """
-        _check_invalid_replace_kwargs(kwargs)
-        nanos = _pop_nanos_kwarg(kwargs, self._nanos)
+        nanos = _pop_replace_nanos(kwargs, self._nanos)
         return self._from_py_unchecked(self._py_dt.replace(**kwargs), nanos)
 
     def replace_date(self, date: Date, /) -> PlainDateTime:
@@ -7712,26 +7602,21 @@ def _load_offset(
 
 
 # Helpers that pre-compute/lookup as much as possible
-_no_tzinfo_fold_or_ms = {"tzinfo", "fold", "microsecond"}.isdisjoint
+_STDLIB_ONLY_FIELDS = frozenset({"tzinfo", "fold", "microsecond"})
 
 
-def _check_invalid_replace_kwargs(kwargs: Any) -> None:
-    if not _no_tzinfo_fold_or_ms(kwargs):
-        raise TypeError(
-            "tzinfo, fold, or microsecond are not allowed arguments"
-        )
-
-
-def _pop_nanos_kwarg(kwargs: Any, default: int) -> int:
+def _pop_replace_nanos(kwargs: dict[str, Any], default: int, /) -> int:
+    """The nanosecond of a ``replace()`` call, after rejecting the stdlib
+    fields these types do not have."""
+    check_no_kwargs(
+        dict.fromkeys(kwargs.keys() & _STDLIB_ONLY_FIELDS), "replace"
+    )
     return check_nanos(kwargs.pop("nanosecond", default))
 
 
 def _weekday_ordinal(n: Any, /) -> int:
     """The ``n`` of the weekday finders: an integer other than zero."""
-    try:
-        n_int: int = _index(n)
-    except TypeError:
-        raise TypeError("n must be an integer") from None
+    n_int = expect_int("n", n)
     if n_int == 0:
         raise ValueError("n must not be 0")
     return n_int
@@ -7757,19 +7642,6 @@ def _format_time(
         )
 
 
-def _format_offset(offset: _timedelta | Literal["Z", ""], basic: bool) -> str:
-    if isinstance(offset, str):
-        return offset
-    sep = "" if basic else ":"
-    sign = "-" if offset.days == -1 else "+"
-    hours, remainder = divmod(abs(int(offset.total_seconds())), 3600)
-    minutes, seconds = divmod(remainder, 60)
-    if seconds:
-        return f"{sign}{int(hours):02d}{sep}{int(minutes):02d}{sep}{int(seconds):02d}"
-    else:
-        return f"{sign}{int(hours):02d}{sep}{int(minutes):02d}"
-
-
 def _format_nanos(ns: _Nanos, precision: str) -> str:
     ns_str = f".{ns:09d}"
     if precision == "auto":
@@ -7780,7 +7652,7 @@ def _format_nanos(ns: _Nanos, precision: str) -> str:
         return ns_str[:7]
     elif precision == "millisecond":
         return ns_str[:4]
-    elif precision in ("second", "hour", "minute"):
+    elif precision == "second":
         return ""
     else:
         raise invalid("unit", precision)
@@ -7789,17 +7661,22 @@ def _format_nanos(ns: _Nanos, precision: str) -> str:
 def _format_dt(
     dt: _datetime,
     ns: _Nanos,
-    offset: _timedelta | Literal["Z", ""],
+    offset: int | Literal["Z", ""],
     unit: str,
-    sep: Literal["T", " "] = "T",
-    basic: bool = False,
+    sep: Literal["T", " "],
+    basic: bool,
 ) -> str:
+    """The ISO form; ``offset`` is in seconds, ``Z``, or absent."""
     if sep not in ("T", " "):
         raise invalid("sep", sep)
     return (
         f"{_format_date(dt, basic)}{sep}"
         f"{_format_time(dt, ns, unit, basic)}"
-        f"{_format_offset(offset, basic)}"
+        + (
+            offset
+            if isinstance(offset, str)
+            else format_offset_secs(offset, basic=basic)
+        )
     )
 
 
@@ -7912,105 +7789,17 @@ def _plain_difference(
     /,
 ) -> ItemizedDelta | float:
     """The validated difference of two local datetimes, which
-    OffsetDateTime shares for two values at the same offset."""
-    if total is not None:
-        # A UTC reference keeps TimeDelta.total() from warning a second time.
-        return a._sub(b).total(total, relative_to=b.assume_tz("UTC"))
-    sign: Literal[1, -1] = 1 if a >= b else -1
-    result = _plain_difference_in_units(
-        a, b, units, round_mode, round_increment, sign
+    OffsetDateTime shares for two values at the same offset. Every day is
+    24 hours, so it is the zoned difference in UTC; that reference also
+    keeps ``TimeDelta.total()`` from warning a second time."""
+    return _zoned_difference(
+        a._assume_tz("UTC", UNSET)[0],
+        b._assume_tz("UTC", UNSET)[0],
+        total,
+        units,
+        round_mode,
+        round_increment,
     )
-    return ItemizedDelta._from_signed(
-        sign if any(result.values()) else 0, **result
-    )
-
-
-def _plain_difference_in_units(
-    a: PlainDateTime,
-    b: PlainDateTime,
-    units: tuple[DeltaUnitStr, ...],
-    round_mode: RoundModeStr,
-    round_increment: int,
-    sign: Literal[1, -1],
-    /,
-) -> dict[DeltaUnitStr, int]:
-    cal_units, exact_units = _split_calendar_and_exact_units(units)
-
-    target_date = a.date()._py_date
-    # Adjust target_date so the exact remainder has the same sign
-    # as the overall difference.
-    if sign == 1:
-        if b.replace_date(Date._from_py_unchecked(target_date)) > a:
-            target_date -= _timedelta(days=1)
-    else:
-        if b.replace_date(Date._from_py_unchecked(target_date)) < a:
-            target_date += _timedelta(days=1)
-
-    cal_results, trunc_date, expand_date = date_diff(
-        target_date,
-        b._py_dt.date(),
-        1 if exact_units else round_increment,
-        cal_units,
-        sign,
-    )
-    trunc = b.replace_date(
-        Date._from_py_unchecked(resolve_leap_day(trunc_date)),
-    )
-    expand = b.replace_date(
-        Date._from_py_unchecked(resolve_leap_day(expand_date)),
-    )
-
-    smallest_unit = units[-1]
-    result = cast(dict[DeltaUnitStr, int], cal_results)
-    # Where rounding ends up when it moves away from the truncated value
-    rounded_up: PlainDateTime | None = None
-    if exact_units:
-        diff_td = TimeDelta(
-            seconds=(a._py_dt - trunc._py_dt).days * 86_400
-            + (a._py_dt - trunc._py_dt).seconds,
-            nanoseconds=a._nanos - trunc._nanos,
-        )
-        exact_results = diff_td._in_exact_units(
-            exact_units,
-            round_increment=round_increment,
-            round_mode=round_mode,
-        )
-        result.update(exact_results)  # type: ignore[arg-type]
-        if cal_units and round_mode != "trunc":
-            endpoint = trunc.add(
-                nanoseconds=_exact_total_ns(exact_results, sign),
-                naive_arithmetic_ok=True,
-            )
-            if endpoint != a and (endpoint > a) == (sign == 1):
-                rounded_up = endpoint
-    elif round_mode != "trunc":
-        self_ns = (
-            (a._py_dt - trunc._py_dt).days * 86_400_000_000_000
-            + (a._py_dt - trunc._py_dt).seconds * 1_000_000_000
-            + a._nanos
-            - trunc._nanos
-        )
-        expand_ns = (
-            (expand._py_dt - trunc._py_dt).days * 86_400_000_000_000
-            + (expand._py_dt - trunc._py_dt).seconds * 1_000_000_000
-            + expand._nanos
-            - trunc._nanos
-        )
-        if rounds_up(
-            round_mode,
-            abs(self_ns),
-            abs(expand_ns),
-            result[smallest_unit] // round_increment % 2 == 1,
-            sign,
-        ):
-            rounded_up = expand
-
-    if rounded_up is not None:
-        # The larger units take the carry
-        return _plain_difference_in_units(
-            rounded_up, b, units, "trunc", round_increment, sign
-        )
-    return result
 
 
 def _offset_since(
@@ -8048,9 +7837,9 @@ def _offset_since(
     if calendar_output and not same_offset:
         raise ValueError(
             "calendar units require the same offset, got "
-            f"{format_offset_secs(self.offset._total_ns // 1_000_000_000)}"
+            f"{format_offset_secs(self._current_offset_secs(), basic=False)}"
             " and "
-            f"{format_offset_secs(other.offset._total_ns // 1_000_000_000)}"
+            f"{format_offset_secs(other._current_offset_secs(), basic=False)}"
         )
     if exact_remainder and not stale_offset_ok:
         warn(OFFSET_DIFFERENCE_STALE_MSG, StaleOffsetWarning, stacklevel=3)
@@ -8109,9 +7898,20 @@ def _zoned_since(
             "calendar units require the same time zone, got "
             f"{self.tz_id!r} and {other.tz_id!r}"
         )
+    return _zoned_difference(a, b, total, units, round_mode, round_increment)
+
+
+def _zoned_difference(
+    a: ZonedDateTime,
+    b: ZonedDateTime,
+    total: DeltaTotalUnitStr | None,
+    units: tuple[DeltaUnitStr, ...],
+    round_mode: RoundModeStr,
+    round_increment: int,
+    /,
+) -> ItemizedDelta | float:
     if total is not None:
         return (a - b).total(total, relative_to=b)
-
     sign: Literal[1, -1] = 1 if a >= b else -1
     result = _zoned_difference_in_units(
         a, b, units, round_mode, round_increment, sign
@@ -8119,6 +7919,22 @@ def _zoned_since(
     return ItemizedDelta._from_signed(
         sign if any(result.values()) else 0, **result
     )
+
+
+def _zoned_target_date(
+    a: ZonedDateTime, b: ZonedDateTime, sign: Literal[1, -1], /
+) -> Date:
+    """The date of ``a``, stepped so that ``b`` on that date does not lie
+    past ``a``: the exact remainder then has the sign of the difference.
+    The loop handles the rare case of a 24h+ gap, e.g. Samoa in 2011."""
+    target_date = a.date()
+    if sign == 1:
+        while b._with_date(target_date) > a:
+            target_date = target_date.subtract(days=1)
+    else:
+        while b._with_date(target_date) < a:
+            target_date = target_date.add(days=1)
+    return target_date
 
 
 def _zoned_difference_in_units(
@@ -8131,17 +7947,7 @@ def _zoned_difference_in_units(
     /,
 ) -> dict[DeltaUnitStr, int]:
     cal_units, exact_units = _split_calendar_and_exact_units(units)
-
-    # Adjust target_date so the exact remainder has the same sign
-    # as the overall difference. The while loop handles the rare case
-    # of a 24h+ gap, e.g. Samoa in 2011.
-    target_date = a.date()
-    if sign == 1:
-        while b._with_date(target_date) > a:
-            target_date = target_date.subtract(days=1)
-    else:
-        while b._with_date(target_date) < a:
-            target_date = target_date.add(days=1)
+    target_date = _zoned_target_date(a, b, sign)
     cal_results, trunc_date, expand_date = date_diff(
         target_date._py_date,
         b._py_dt.date(),

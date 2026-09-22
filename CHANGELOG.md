@@ -214,6 +214,11 @@ deprecated interfaces are removed.
   `IndexError`.
 - The pure-Python backend parsed RFC 2822 strings with a sign or whitespace
   inside a number, such as an offset of `--900`.
+- `Instant.parse()` accepted a weekday specifier that contradicts the date,
+  which the other `parse()` methods reject.
+- `ZonedDateTime()` given a `datetime` subclass, such as a `pandas`
+  `Timestamp`, kept the subclass in `to_stdlib()`; it now returns a plain
+  `datetime`, as the other types do.
 - `Instant.from_timestamp(253402300799.5)`, inside the last second of the
   range, raised in the Rust extension.
 - `reset_tzpath()` given an iterator set an empty search path, and the

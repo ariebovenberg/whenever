@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Literal
 from ._common import (
     WheneverDeprecationWarning,
     WheneverWarning,
+    format_offset_secs,
     round_offset_to_minute,
 )
 
@@ -846,22 +847,16 @@ def _format_offset_value(offset_secs: int, width: int, use_z: bool) -> str:
             )
     if offset_secs == 0 and use_z:
         return "Z"
+    if width > 3:
+        return format_offset_secs(offset_secs, basic=width == 4)
     sign = "+" if offset_secs >= 0 else "-"
-    total = abs(offset_secs)
-    oh, remainder = divmod(total, 3600)
-    om, os = divmod(remainder, 60)
+    oh, om = divmod(abs(offset_secs) // 60, 60)
     if width == 1:
         return f"{sign}{oh:02d}"
     elif width == 2:
         return f"{sign}{oh:02d}{om:02d}"
-    elif width == 3:
+    else:  # width == 3
         return f"{sign}{oh:02d}:{om:02d}"
-    elif width == 4:
-        base = f"{sign}{oh:02d}{om:02d}"
-        return base if os == 0 else f"{base}{os:02d}"
-    else:  # width == 5
-        base = f"{sign}{oh:02d}:{om:02d}"
-        return base if os == 0 else f"{base}:{os:02d}"
 
 
 def _parse_offset_value(

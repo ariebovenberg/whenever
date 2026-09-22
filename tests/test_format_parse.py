@@ -1390,6 +1390,18 @@ class TestInstantParse:
         with pytest.raises(ValueError, match="offset.*x/X"):
             Instant.parse("2024-03-15 14:30", pattern="YYYY-MM-DD HH:mm")
 
+    def test_weekday_mismatch(self):
+        # The weekday is checked against the local date as written,
+        # not the UTC date the instant lands on.
+        with pytest.raises(ValueError, match="weekday"):
+            Instant.parse(
+                "Mon 2024-03-15 14:30+02:00",
+                pattern="EEE YYYY-MM-DD HH:mmxxx",
+            )
+        assert Instant.parse(
+            "Fri 2024-03-15 01:30+05:00", pattern="EEE YYYY-MM-DD HH:mmxxx"
+        ) == Instant.from_utc(2024, 3, 14, 20, 30)
+
     def test_missing_date_fields(self):
         with pytest.raises(
             ValueError,

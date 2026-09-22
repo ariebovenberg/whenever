@@ -1657,7 +1657,7 @@ Nanoseconds are floored to microseconds.
 If you need more control over rounding, use :meth:`round` first.
 ";
 pub(crate) const TIMEDELTA_ADD: &CStr = c"\
-add($self, delta=..., /, **kwargs)
+add($self, delta=..., /, *, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, days_assumed_24h_ok=False)
 --
 
 Add time to this delta, returning a new delta.
@@ -1763,7 +1763,7 @@ Pass ``days_assumed_24h_ok=True`` when that is intentional.
 A :class:`TimeDelta` unit claims no calendar and never warns.
 ";
 pub(crate) const TIMEDELTA_SUBTRACT: &CStr = c"\
-subtract($self, delta=..., /, **kwargs)
+subtract($self, delta=..., /, *, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, days_assumed_24h_ok=False)
 --
 
 Subtract time from this delta, returning a new delta.

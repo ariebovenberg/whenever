@@ -227,9 +227,9 @@ _LOSSY_STDLIB_SUBCLASSES = frozenset(
 )
 
 
-def warn_lossy_stdlib_subclass(
-    obj: Any, base: type, /, *, stacklevel: int
-) -> None:
+def warn_lossy_stdlib_subclass(obj: Any, base: type, /) -> None:
+    """Called at the end of every ``_init_from_py``, so the warning lands
+    two frames up: past the constructor wrapper, on the user's call."""
     cls = type(obj)
     if cls is base:
         return
@@ -242,7 +242,7 @@ def warn_lossy_stdlib_subclass(
             f"reliably read through the datetime.{base.__name__} fields; "
             "convert it explicitly",
             WheneverWarning,
-            stacklevel=stacklevel + 1,
+            stacklevel=4,
         )
 
 
@@ -341,13 +341,14 @@ def tzid_display(tzid: str | None, /) -> str:
     return f"time zone '{tzid}'"
 
 
-def format_offset_secs(secs: int, /) -> str:
-    """``+05:00``, with seconds only when nonzero."""
+def format_offset_secs(secs: int, /, *, basic: bool) -> str:
+    """``+05:00`` (``+0500`` when basic), with seconds only when nonzero."""
+    sep = "" if basic else ":"
     sign = "-" if secs < 0 else "+"
     hours, rem = divmod(abs(secs), 3_600)
     minutes, seconds = divmod(rem, 60)
-    return f"{sign}{hours:02d}:{minutes:02d}" + (
-        f":{seconds:02d}" if seconds else ""
+    return f"{sign}{hours:02d}{sep}{minutes:02d}" + (
+        f"{sep}{seconds:02d}" if seconds else ""
     )
 
 

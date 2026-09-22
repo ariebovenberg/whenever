@@ -135,12 +135,14 @@ minute=..., second=..., nanosecond=...)""",
 milliseconds=0, microseconds=0, nanoseconds=0, days_assumed_24h_ok=False)""",
     W.Date.add: "($self, delta=..., /, *, years=0, months=0, weeks=0, days=0)",
 }
+MANUALLY_DEFINED_SIGS[W.TimeDelta.add] = MANUALLY_DEFINED_SIGS[W.Instant.add]
 MANUALLY_DEFINED_SIGS.update(
     {
         W.ZonedDateTime.subtract: MANUALLY_DEFINED_SIGS[W.ZonedDateTime.add],
         W.OffsetDateTime.subtract: MANUALLY_DEFINED_SIGS[W.OffsetDateTime.add],
         W.PlainDateTime.subtract: MANUALLY_DEFINED_SIGS[W.PlainDateTime.add],
         W.Instant.subtract: MANUALLY_DEFINED_SIGS[W.Instant.add],
+        W.TimeDelta.subtract: MANUALLY_DEFINED_SIGS[W.TimeDelta.add],
         W.Date.subtract: MANUALLY_DEFINED_SIGS[W.Date.add],
     }
 )

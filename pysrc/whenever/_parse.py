@@ -36,7 +36,7 @@ class InvalidOffsetError(ValueError):
     @classmethod
     def _for_tz(cls, offset_secs: int, tzid: str | None) -> InvalidOffsetError:
         return cls(
-            f"offset {format_offset_secs(offset_secs)} does not match "
+            f"offset {format_offset_secs(offset_secs, basic=False)} does not match "
             f"{tzid_display(tzid)}"
         )
 

@@ -13,7 +13,6 @@ from collections.abc import (
     Mapping,
     ValuesView,
 )
-from datetime import date as _date
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -55,14 +54,12 @@ from ._common import (
 from ._math import (
     DATE_DELTA_UNITS,
     DELTA_UNITS,
-    DIFF_FUNCS,
     EXACT_TOTAL_UNITS,
     EXACT_UNITS_STRICT,
     TOTAL_UNITS,
     Sign,
     normalize_units,
     resolve_date_rounding,
-    resolve_leap_day,
     resolve_rounding,
 )
 from ._parse import parse_timedelta_component
@@ -89,8 +86,9 @@ def _shift_datetime_operator(
     datetime: _T,
     delta: ItemizedDelta | ItemizedDateDelta | _whenever.TimeDelta,
     subtract: bool,
-    warn_stacklevel: int = 3,
 ) -> _T:
+    """Called by an operator method: the warnings point at the operator's
+    own caller."""
     from ._core import (
         NaiveArithmeticWarning,
         OffsetDateTime,
@@ -108,23 +106,15 @@ def _shift_datetime_operator(
             or isinstance(delta, ItemizedDelta)
             and any(delta.get(unit, 0) for unit in EXACT_UNITS_STRICT)
         ):
-            warn(
-                PLAIN_SHIFT_UNAWARE_MSG,
-                NaiveArithmeticWarning,
-                stacklevel=warn_stacklevel,
-            )
+            warn(PLAIN_SHIFT_UNAWARE_MSG, NaiveArithmeticWarning, stacklevel=3)
         kwargs = {"naive_arithmetic_ok": True}
     elif isinstance(datetime, OffsetDateTime):
-        warn(
-            OFFSET_SHIFT_STALE_MSG,
-            StaleOffsetWarning,
-            stacklevel=warn_stacklevel,
-        )
+        warn(OFFSET_SHIFT_STALE_MSG, StaleOffsetWarning, stacklevel=3)
         kwargs = {"stale_offset_ok": True}
     elif isinstance(datetime, ZonedDateTime):
         # add()/subtract() would attribute their warnings to this frame, so
         # tell them to point further up, at the operator's own caller.
-        kwargs = {"_warn_stacklevel": warn_stacklevel}
+        kwargs = {"_warn_stacklevel": 3}
     else:
         kwargs = {}
     operation = operand.subtract if subtract else operand.add
@@ -141,16 +131,16 @@ RELATIVE_TO_DATE_MSG = (
 IN_UNITS_REQUIRED_MSG = "in_units is required with relative_to"
 
 
-def _resolve_reference(
+def _reference_and_warning(
     relative_to: object,
     has_exact: bool,
     has_cal: bool,
     naive_arithmetic_ok: bool,
     stale_offset_ok: bool,
-    warn_stacklevel: int,
-) -> _whenever.ZonedDateTime:
-    """The ``ZonedDateTime`` a calendar-aware delta computation runs on, with
-    the one warning its reference type carries.
+) -> tuple[_whenever.ZonedDateTime, Warning | None]:
+    """The ``ZonedDateTime`` a calendar-aware delta computation runs on, and
+    the one warning its reference type carries, for the caller to emit from
+    its own frame once the computation has succeeded.
 
     ``has_exact`` and ``has_cal`` say which unit kinds the computation
     involves, the delta's components and the target units together: a
@@ -167,22 +157,19 @@ def _resolve_reference(
     )
 
     if isinstance(relative_to, ZonedDateTime):
-        return relative_to
+        return relative_to, None
     elif isinstance(relative_to, PlainDateTime):
-        if has_exact and has_cal and not naive_arithmetic_ok:
-            warn(
-                PLAIN_RELATIVE_TO_UNAWARE_MSG,
-                NaiveArithmeticWarning,
-                stacklevel=warn_stacklevel,
-            )
-        return relative_to.assume_tz("UTC")
+        return relative_to.assume_tz("UTC"), (
+            NaiveArithmeticWarning(PLAIN_RELATIVE_TO_UNAWARE_MSG)
+            if has_exact and has_cal and not naive_arithmetic_ok
+            else None
+        )
     elif isinstance(relative_to, OffsetDateTime):
-        if has_cal and not stale_offset_ok:
-            warn(
-                StaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG),
-                stacklevel=warn_stacklevel,
-            )
-        return relative_to.to_plain().assume_tz("UTC")
+        return relative_to.to_plain().assume_tz("UTC"), (
+            StaleOffsetWarning(STALE_OFFSET_CALENDAR_MSG)
+            if has_cal and not stale_offset_ok
+            else None
+        )
     raise TypeError(RELATIVE_TO_DATETIME_MSG)
 
 
@@ -200,11 +187,17 @@ def _reference_date(relative_to: object) -> _whenever.Date:
     raise TypeError(RELATIVE_TO_DATE_MSG)
 
 
-def _has_unit_kinds(*keys: Iterable[str]) -> tuple[bool, bool]:
-    """Whether exact and calendar units are present among ``keys``."""
+def _has_unit_kinds(
+    components: Mapping[str, int] | ItemizedDelta | ItemizedDateDelta,
+    units: Iterable[str],
+) -> tuple[bool, bool]:
+    """Whether exact and calendar units are involved: as a nonzero component
+    of the delta, or as a requested unit, which may be a subsecond total."""
     return (
-        any(k in EXACT_UNITS_STRICT for ks in keys for k in ks),
-        any(k in DATE_DELTA_UNITS for ks in keys for k in ks),
+        any(v for k, v in components.items() if k in EXACT_UNITS_STRICT)
+        or any(u in EXACT_TOTAL_UNITS for u in units),
+        _has_nonzero_calendar_units(components)
+        or any(u in DATE_DELTA_UNITS for u in units),
     )
 
 
@@ -228,9 +221,9 @@ def _shift_reference(
     """Shift a reference by summed components, which may mix signs, and
     attribute the shift's ``ImplicitDisambiguationWarning`` to the caller.
 
-    Both go past the stub, so this is the one place a cast is needed: a
-    mixed-sign sum cannot form an itemized delta, and ``_warn_stacklevel``
-    is private. ``warn_stacklevel`` counts from the caller of this helper.
+    Both go past the stub, so a cast is needed: a mixed-sign sum cannot
+    form an itemized delta, and ``_warn_stacklevel`` is private.
+    ``warn_stacklevel`` counts from the caller of this helper.
     """
     return cast(
         _whenever.ZonedDateTime,
@@ -282,18 +275,163 @@ def _has_nonzero_calendar_units(
     return any(map(delta.get, DATE_DELTA_UNITS))
 
 
-def _warn_operator_composition(
+def _compose_operator(
     a: ItemizedDelta | ItemizedDateDelta,
     b: ItemizedDelta | ItemizedDateDelta,
-) -> None:
-    """Called by an operator method once its result exists: the warning
-    points at the operator's own caller."""
+    negate: bool,
+) -> ItemizedDelta | ItemizedDateDelta:
+    """The body of ``+``/``-`` between itemized deltas, called directly by
+    the operator method so the warning points at its caller."""
+    result = _composed_type(a, b)(**_items_add(a, -b if negate else b))
     if _has_nonzero_calendar_units(a) or _has_nonzero_calendar_units(b):
         warn(
             CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG,
             CalendarUnitCompositionWarning,
             stacklevel=3,
         )
+    return result
+
+
+# The types an itemized delta shifts through ``+``/``-``. Built on demand:
+# the datetime types can't be imported while this module loads.
+def _datetime_types() -> tuple[
+    type[_whenever.ZonedDateTime],
+    type[_whenever.PlainDateTime],
+    type[_whenever.OffsetDateTime],
+]:
+    from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
+
+    return (ZonedDateTime, PlainDateTime, OffsetDateTime)
+
+
+# Only a date delta shifts a ``Date``: for an ``ItemizedDelta`` operand,
+# ``Date`` rejects the operation itself.
+def _date_or_datetime_types() -> tuple[
+    type[_whenever.Date],
+    type[_whenever.ZonedDateTime],
+    type[_whenever.PlainDateTime],
+    type[_whenever.OffsetDateTime],
+]:
+    from ._core import Date
+
+    return (Date, *_datetime_types())
+
+
+def _compose(
+    self: ItemizedDelta | ItemizedDateDelta,
+    arg: ItemizedDelta | ItemizedDateDelta,
+    components: Mapping[str, int],
+    /,
+    *,
+    relative_to: object,
+    in_units: Sequence[DeltaUnitStr],
+    round_mode: RoundModeStr,
+    round_increment: int,
+    cal_unit_composition_ok: bool,
+    naive_arithmetic_ok: bool,
+    stale_offset_ok: bool,
+    negate: bool,
+) -> ItemizedDelta | ItemizedDateDelta:
+    """The body of ``add()``/``subtract()``, called directly by them so the
+    warnings point at their caller. The result is an ``ItemizedDelta`` if
+    either operand is one, else an ``ItemizedDateDelta``."""
+    fname = "subtract" if negate else "add"
+    # Normalize the input into a single unit->value mapping
+    other: Mapping[str, int] = _read_components(components, negate)
+    if other:
+        if arg is not UNSET:
+            raise TypeError(
+                f"{fname}() cannot mix positional and keyword arguments"
+            )
+    elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
+        # Mypy can't see how itemized deltas are always valid str->int mappings
+        other = -arg if negate else arg  # type: ignore[assignment]
+    elif arg is not UNSET:
+        raise TypeError(
+            "argument must be an ItemizedDelta or ItemizedDateDelta"
+        )
+
+    if (
+        arg is UNSET
+        and not other
+        and relative_to is UNSET
+        and in_units is UNSET
+        and round_mode is UNSET
+        and round_increment is UNSET
+    ):
+        return self
+
+    type_ = _composed_type(self, other)
+
+    if relative_to is UNSET:
+        if in_units is not UNSET:
+            raise TypeError("in_units requires relative_to")
+        if round_mode is not UNSET or round_increment is not UNSET:
+            raise TypeError(
+                "round_mode and round_increment require relative_to"
+            )
+        result = type_(**_items_add(self, other))
+        if not cal_unit_composition_ok and (
+            _has_nonzero_calendar_units(self)
+            or _has_nonzero_calendar_units(other)
+        ):
+            warn(
+                CALENDAR_UNIT_METHOD_COMPOSITION_MSG,
+                CalendarUnitCompositionWarning,
+                stacklevel=3,
+            )
+        return result
+
+    if in_units is UNSET:
+        raise TypeError(IN_UNITS_REQUIRED_MSG)
+    combined = _items_add(self, other)
+    if type_ is ItemizedDateDelta:
+        date_units = normalize_units(in_units, DATE_DELTA_UNITS)
+        round_mode, round_increment = resolve_date_rounding(
+            round_mode, round_increment
+        )
+        date = _reference_date(relative_to)
+        return date.add(**combined).since(
+            date,
+            in_units=date_units,
+            round_mode=round_mode,
+            round_increment=round_increment,
+        )
+    if isinstance(self, ItemizedDateDelta):
+        from ._core import Date
+
+        if isinstance(relative_to, Date):
+            raise TypeError(
+                RELATIVE_TO_DATETIME_MSG + " when composing with ItemizedDelta"
+            )
+    units = normalize_units(in_units, DELTA_UNITS)
+    round_mode, round_increment = resolve_rounding(round_mode, round_increment)
+    reference, warning = _reference_and_warning(
+        relative_to,
+        *_has_unit_kinds(combined, units),
+        naive_arithmetic_ok,
+        stale_offset_ok,
+    )
+    result = _shift_reference(reference, combined, 3).since(
+        reference,
+        in_units=units,
+        round_mode=round_mode,
+        round_increment=round_increment,
+    )
+    if warning is not None:
+        warn(warning, stacklevel=3)
+    return result
+
+
+def _composed_type(
+    a: Mapping[str, int] | ItemizedDelta | ItemizedDateDelta,
+    b: Mapping[str, int] | ItemizedDelta | ItemizedDateDelta,
+) -> type[ItemizedDelta] | type[ItemizedDateDelta]:
+    """The type of a composition: ``ItemizedDelta`` if either operand is
+    one, else ``ItemizedDateDelta``."""
+    if isinstance(a, ItemizedDelta) or isinstance(b, ItemizedDelta):
+        return ItemizedDelta
+    return ItemizedDateDelta
 
 
 class CalendarUnitCompositionWarning(WheneverWarning):
@@ -351,6 +489,48 @@ def _parse_datedelta_component(s: str, exc: Exception) -> tuple[str, int, str]:
         raise exc
 
     return rest, int(raw), unit
+
+
+def _parse_iso_prefix(s: str, exc: Exception) -> tuple[Sign, str]:
+    """The sign, and the rest of the uppercased string after the ``P``."""
+    # Catch certain invalid strings early, making parsing easier
+    if len(s) < 3 or not s.isascii() or s[-1] in "Tt":
+        raise exc
+
+    s = s.upper()
+    if s[0] == "P":
+        return 1, s[1:]
+    elif s.startswith("-P"):
+        return -1, s[2:]
+    elif s.startswith("+P"):
+        return 1, s[2:]
+    raise exc
+
+
+def _parse_iso_date_part(
+    rest: str, exc: Exception
+) -> tuple[str, int | None, int | None, int | None, int | None]:
+    """The rest from the ``T`` separator on, and the years, months, weeks,
+    and days before it."""
+    years, months, weeks, days = (None,) * 4
+    prev_unit = ""
+    while rest and not rest.startswith("T"):
+        rest, value, unit = _parse_datedelta_component(rest, exc)
+
+        if unit == "Y" and prev_unit == "":
+            years = value
+        elif unit == "M" and prev_unit in "Y":
+            months = value
+        elif unit == "W" and prev_unit in "YM":
+            weeks = value
+        elif unit == "D" and prev_unit in "YMW":
+            days = value
+            break
+        else:
+            raise exc  # components out of order
+
+        prev_unit = unit
+    return rest, years, months, weeks, days
 
 
 def _check_bound(i: int | None, max_value: int, err: str) -> int | None:
@@ -474,24 +654,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         "_seconds",
         "_nanoseconds",
     )
-
-    def _has_cal(self) -> bool:
-        """True if this delta has any calendar units (years, months, weeks, days) set."""
-        return (
-            self._years is not None
-            or self._months is not None
-            or self._weeks is not None
-            or self._days is not None
-        )
-
-    def _has_exact_time(self) -> bool:
-        """True if this delta has any exact time units (hours, minutes, seconds, nanoseconds) set."""
-        return (
-            self._hours is not None
-            or self._minutes is not None
-            or self._seconds is not None
-            or self._nanoseconds is not None
-        )
 
     # Overloads for a nice autodoc.
     # Proper typing of the constructors is handled in the type stubs
@@ -863,50 +1025,13 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ItemizedDelta("-P1w11dT4h")
         """
         exc = ValueError(f"invalid ISO 8601 string: {s!r}")
-        prev_unit = ""
-        years, months, weeks, days, hours, minutes, seconds, nanos = (
-            None,
-        ) * 8
-
-        # Catch certain invalid strings early, making parsing easier
-        if len(s) < 3 or not s.isascii() or s[-1] in "Tt":
-            raise exc
-
-        sign: Sign
-        s = s.upper()
-        if s[0] == "P":
-            sign = 1
-            rest = s[1:]
-        elif s.startswith("-P"):
-            sign = -1
-            rest = s[2:]
-        elif s.startswith("+P"):
-            sign = 1
-            rest = s[2:]
-        else:
-            raise exc
-
-        # parse the date part
-        while rest and not rest.startswith("T"):
-            rest, value, unit = _parse_datedelta_component(rest, exc)
-
-            if unit == "Y" and prev_unit == "":
-                years = value
-            elif unit == "M" and prev_unit in "Y":
-                months = value
-            elif unit == "W" and prev_unit in "YM":
-                weeks = value
-            elif unit == "D" and prev_unit in "YMW":
-                days = value
-                break
-            else:
-                raise exc  # components out of order
-
-            prev_unit = unit
-
-        prev_unit = ""
+        sign, rest = _parse_iso_prefix(s, exc)
+        rest, years, months, weeks, days = _parse_iso_date_part(rest, exc)
         if rest and not rest.startswith("T"):
             raise exc
+
+        hours, minutes, seconds, nanos = (None,) * 4
+        prev_unit = ""
 
         # skip the "T" separator
         rest = rest[1:]
@@ -1245,113 +1370,30 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             Accepts the :class:`StaleOffsetWarning` of an
             :class:`OffsetDateTime` reference.
         """
-        return self._add(
-            delta,
-            {
-                "years": years,
-                "months": months,
-                "weeks": weeks,
-                "days": days,
-                "hours": hours,
-                "minutes": minutes,
-                "seconds": seconds,
-                "nanoseconds": nanoseconds,
-            },
-            relative_to=relative_to,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-            cal_unit_composition_ok=cal_unit_composition_ok,
-            naive_arithmetic_ok=naive_arithmetic_ok,
-            stale_offset_ok=stale_offset_ok,
-            negate=False,
-            warn_level=3,
-        )
-
-    def _add(
-        self,
-        arg: ItemizedDelta | ItemizedDateDelta,
-        components: Mapping[str, int],
-        /,
-        *,
-        relative_to: object,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr,
-        round_increment: int,
-        cal_unit_composition_ok: bool,
-        naive_arithmetic_ok: bool,
-        stale_offset_ok: bool,
-        negate: bool,
-        warn_level: int,
-    ) -> ItemizedDelta:
-        """``warn_level`` counts frames from here, so that the warnings land
-        on the user's call site rather than on whichever public method
-        delegated to us.
-        """
-        fname = "subtract" if negate else "add"
-        # Normalize the input into a single unit->value mapping
-        other: Mapping[str, int] = _read_components(components, negate)
-        if other:
-            if arg is not UNSET:
-                raise TypeError(
-                    f"{fname}() cannot mix positional and keyword arguments"
-                )
-        elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
-            # Mypy can't see how itemized deltas are always valid str->int mappings
-            other = -arg if negate else arg  # type: ignore[assignment]
-        elif arg is not UNSET:
-            raise TypeError(
-                "argument must be an ItemizedDelta or ItemizedDateDelta"
-            )
-
-        if (
-            arg is UNSET
-            and not other
-            and relative_to is UNSET
-            and in_units is UNSET
-            and round_mode is UNSET
-            and round_increment is UNSET
-        ):
-            return self
-
-        if relative_to is UNSET:
-            if in_units is not UNSET:
-                raise TypeError("in_units requires relative_to")
-            if round_mode is not UNSET or round_increment is not UNSET:
-                raise TypeError(
-                    "round_mode and round_increment require relative_to"
-                )
-            result = ItemizedDelta(**_items_add(self, other))
-            if not cal_unit_composition_ok and (
-                _has_nonzero_calendar_units(self)
-                or _has_nonzero_calendar_units(other)
-            ):
-                warn(
-                    CALENDAR_UNIT_METHOD_COMPOSITION_MSG,
-                    CalendarUnitCompositionWarning,
-                    stacklevel=warn_level,
-                )
-            return result
-
-        if in_units is UNSET:
-            raise TypeError(IN_UNITS_REQUIRED_MSG)
-        units = normalize_units(in_units, DELTA_UNITS)
-        round_mode, round_increment = resolve_rounding(
-            round_mode, round_increment
-        )
-        combined = _items_add(self, other)
-        reference = _resolve_reference(
-            relative_to,
-            *_has_unit_kinds(combined, units),
-            naive_arithmetic_ok,
-            stale_offset_ok,
-            warn_level + 1,
-        )
-        return _shift_reference(reference, combined, warn_level).since(
-            reference,
-            in_units=units,
-            round_mode=round_mode,
-            round_increment=round_increment,
+        return cast(
+            ItemizedDelta,
+            _compose(
+                self,
+                delta,
+                {
+                    "years": years,
+                    "months": months,
+                    "weeks": weeks,
+                    "days": days,
+                    "hours": hours,
+                    "minutes": minutes,
+                    "seconds": seconds,
+                    "nanoseconds": nanoseconds,
+                },
+                relative_to=relative_to,
+                in_units=in_units,
+                round_mode=round_mode,
+                round_increment=round_increment,
+                cal_unit_composition_ok=cal_unit_composition_ok,
+                naive_arithmetic_ok=naive_arithmetic_ok,
+                stale_offset_ok=stale_offset_ok,
+                negate=False,
+            ),
         )
 
     def subtract(
@@ -1384,27 +1426,30 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> ItemizedDelta(months=1, hours=5).subtract(hours=3, cal_unit_composition_ok=True)
         ItemizedDelta("P1mT2h")
         """
-        return self._add(
-            delta,
-            {
-                "years": years,
-                "months": months,
-                "weeks": weeks,
-                "days": days,
-                "hours": hours,
-                "minutes": minutes,
-                "seconds": seconds,
-                "nanoseconds": nanoseconds,
-            },
-            relative_to=relative_to,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-            cal_unit_composition_ok=cal_unit_composition_ok,
-            naive_arithmetic_ok=naive_arithmetic_ok,
-            stale_offset_ok=stale_offset_ok,
-            negate=True,
-            warn_level=3,
+        return cast(
+            ItemizedDelta,
+            _compose(
+                self,
+                delta,
+                {
+                    "years": years,
+                    "months": months,
+                    "weeks": weeks,
+                    "days": days,
+                    "hours": hours,
+                    "minutes": minutes,
+                    "seconds": seconds,
+                    "nanoseconds": nanoseconds,
+                },
+                relative_to=relative_to,
+                in_units=in_units,
+                round_mode=round_mode,
+                round_increment=round_increment,
+                cal_unit_composition_ok=cal_unit_composition_ok,
+                naive_arithmetic_ok=naive_arithmetic_ok,
+                stale_offset_ok=stale_offset_ok,
+                negate=True,
+            ),
         )
 
     def __add__(
@@ -1434,15 +1479,11 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         with ``cal_unit_composition_ok=True``, or composes calendar-aware
         with ``relative_to``.
         """
-        from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
-
-        if isinstance(other, (ZonedDateTime, PlainDateTime, OffsetDateTime)):
+        if isinstance(other, _datetime_types()):
             return _shift_datetime_operator(other, self, False)
-        if not isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
-            return NotImplemented
-        result = ItemizedDelta(**_items_add(self, other))
-        _warn_operator_composition(self, other)
-        return result
+        if isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
+            return cast(ItemizedDelta, _compose_operator(self, other, False))
+        return NotImplemented
 
     def __radd__(
         self,
@@ -1455,9 +1496,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         | _whenever.PlainDateTime
         | _whenever.OffsetDateTime
     ):
-        from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
-
-        if isinstance(other, (ZonedDateTime, PlainDateTime, OffsetDateTime)):
+        if isinstance(other, _datetime_types()):
             return _shift_datetime_operator(other, self, False)
         return NotImplemented
 
@@ -1471,11 +1510,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
         The same rules apply as for :meth:`__add__`.
         """
-        if not isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
-            return NotImplemented
-        result = ItemizedDelta(**_items_add(self, -other))
-        _warn_operator_composition(self, other)
-        return result
+        if isinstance(other, (ItemizedDelta, ItemizedDateDelta)):
+            return cast(ItemizedDelta, _compose_operator(self, other, True))
+        return NotImplemented
 
     def __rsub__(
         self,
@@ -1488,9 +1525,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         | _whenever.PlainDateTime
         | _whenever.OffsetDateTime
     ):
-        from ._core import OffsetDateTime, PlainDateTime, ZonedDateTime
-
-        if isinstance(other, (ZonedDateTime, PlainDateTime, OffsetDateTime)):
+        if isinstance(other, _datetime_types()):
             return _shift_datetime_operator(other, self, True)
         return NotImplemented
 
@@ -1541,19 +1576,21 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         round_mode, round_increment = resolve_rounding(
             round_mode, round_increment
         )
-        reference = _resolve_reference(
+        reference, warning = _reference_and_warning(
             relative_to,
             *_has_unit_kinds(self, units),
             naive_arithmetic_ok,
             stale_offset_ok,
-            3,
         )
-        return _shift_reference(reference, self, 2).since(
+        result = _shift_reference(reference, self, 2).since(
             reference,
             in_units=units,
             round_mode=round_mode,
             round_increment=round_increment,
         )
+        if warning is not None:
+            warn(warning, stacklevel=2)
+        return result
 
     def total(
         self,
@@ -1596,18 +1633,18 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         """
         if unit not in TOTAL_UNITS:
             raise invalid("unit", unit)
-        is_exact_unit = unit in EXACT_TOTAL_UNITS
-        reference = _resolve_reference(
+        reference, warning = _reference_and_warning(
             relative_to,
-            self._has_exact_time() or is_exact_unit,
-            self._has_cal() or not is_exact_unit,
+            *_has_unit_kinds(self, (unit,)),
             naive_arithmetic_ok,
             stale_offset_ok,
-            3,
         )
-        return (_shift_reference(reference, self, 2) - reference).total(
+        result = (_shift_reference(reference, self, 2) - reference).total(
             unit, relative_to=reference
         )
+        if warning is not None:
+            warn(warning, stacklevel=2)
+        return result
 
     if not TYPE_CHECKING:
         # This overload ensures it shows up nicely in the API docs, not just as "kwargs"
@@ -2005,44 +2042,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         See :ref:`here <iso8601-durations>` for more information.
         """
         exc = ValueError(f"invalid ISO 8601 string: {s!r}")
-
-        # Catch certain invalid strings early, making parsing easier
-        if len(s) < 3 or not s.isascii():
-            raise exc
-
-        sign: Sign
-        s = s.upper()  # normalize to uppercase for parsing
-        if s[0] == "P":
-            sign = 1
-            rest = s[1:]
-        elif s.startswith("-P"):
-            sign = -1
-            rest = s[2:]
-        elif s.startswith("+P"):
-            sign = 1
-            rest = s[2:]
-        else:
-            raise exc
-
-        years, months, weeks, days = (None,) * 4
-        prev_unit = ""
-        while rest:
-            rest, value, unit = _parse_datedelta_component(rest, exc)
-
-            if unit == "Y" and prev_unit == "":
-                years = value
-            elif unit == "M" and prev_unit in "Y":
-                months = value
-            elif unit == "W" and prev_unit in "YM":
-                weeks = value
-            elif unit == "D" and prev_unit in "YMW":
-                days = value
-                break
-            else:
-                raise exc  # components out of order
-
-            prev_unit = unit
-
+        sign, rest = _parse_iso_prefix(s, exc)
+        rest, years, months, weeks, days = _parse_iso_date_part(rest, exc)
         if rest:
             raise exc
 
@@ -2365,7 +2366,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             Accepts the :class:`StaleOffsetWarning` of an
             :class:`OffsetDateTime` reference.
         """
-        return self._add(
+        return _compose(
+            self,
             delta,
             {
                 "years": years,
@@ -2381,115 +2383,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             naive_arithmetic_ok=naive_arithmetic_ok,
             stale_offset_ok=stale_offset_ok,
             negate=False,
-            warn_level=3,
-        )
-
-    def _add(
-        self,
-        arg: ItemizedDateDelta | ItemizedDelta,
-        components: Mapping[str, int],
-        /,
-        *,
-        relative_to: object,
-        in_units: Sequence[DeltaUnitStr],
-        round_mode: RoundModeStr,
-        round_increment: int,
-        cal_unit_composition_ok: bool,
-        naive_arithmetic_ok: bool,
-        stale_offset_ok: bool,
-        negate: bool,
-        warn_level: int,
-    ) -> ItemizedDateDelta | ItemizedDelta:
-        """``warn_level`` counts frames from here, so that the warnings land
-        on the user's call site rather than on whichever public method
-        delegated to us.
-        """
-        fname = "subtract" if negate else "add"
-        other: Mapping[str, int] = _read_components(components, negate)
-        if other:
-            if arg is not UNSET:
-                raise TypeError(
-                    f"{fname}() cannot mix positional and keyword arguments"
-                )
-        elif isinstance(arg, (ItemizedDateDelta, ItemizedDelta)):
-            # Mypy doesn't see that itemized deltas are valid str->int maps
-            other = -arg if negate else arg  # type: ignore[assignment]
-        elif arg is not UNSET:
-            raise TypeError(
-                "argument must be an ItemizedDelta or ItemizedDateDelta"
-            )
-
-        if (
-            arg is UNSET
-            and not other
-            and relative_to is UNSET
-            and in_units is UNSET
-            and round_mode is UNSET
-            and round_increment is UNSET
-        ):
-            return self
-
-        if relative_to is UNSET:
-            if in_units is not UNSET:
-                raise TypeError("in_units requires relative_to")
-            if round_mode is not UNSET or round_increment is not UNSET:
-                raise TypeError(
-                    "round_mode and round_increment require relative_to"
-                )
-            result: ItemizedDateDelta | ItemizedDelta
-            if isinstance(other, ItemizedDelta):
-                result = ItemizedDelta(**_items_add(self, other))
-            else:
-                result = ItemizedDateDelta(**_items_add(self, other))
-            if not cal_unit_composition_ok and (
-                _has_nonzero_calendar_units(self)
-                or _has_nonzero_calendar_units(other)
-            ):
-                warn(
-                    CALENDAR_UNIT_METHOD_COMPOSITION_MSG,
-                    CalendarUnitCompositionWarning,
-                    stacklevel=warn_level,
-                )
-            return result
-
-        if in_units is UNSET:
-            raise TypeError(IN_UNITS_REQUIRED_MSG)
-        combined = _items_add(self, other)
-        if isinstance(other, ItemizedDelta):
-            from ._core import Date
-
-            if isinstance(relative_to, Date):
-                raise TypeError(
-                    RELATIVE_TO_DATETIME_MSG
-                    + " when composing with ItemizedDelta"
-                )
-            units = normalize_units(in_units, DELTA_UNITS)
-            round_mode, round_increment = resolve_rounding(
-                round_mode, round_increment
-            )
-            reference = _resolve_reference(
-                relative_to,
-                *_has_unit_kinds(combined, units),
-                naive_arithmetic_ok,
-                stale_offset_ok,
-                warn_level + 1,
-            )
-            return _shift_reference(reference, combined, warn_level).since(
-                reference,
-                in_units=units,
-                round_mode=round_mode,
-                round_increment=round_increment,
-            )
-        date_units = normalize_units(in_units, DATE_DELTA_UNITS)
-        round_mode, round_increment = resolve_date_rounding(
-            round_mode, round_increment
-        )
-        date = _reference_date(relative_to)
-        return date.add(**combined).since(
-            date,
-            in_units=date_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
         )
 
     def subtract(
@@ -2519,7 +2412,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> ItemizedDateDelta(months=1, days=5).subtract(days=3, cal_unit_composition_ok=True)
         ItemizedDateDelta("P1m2d")
         """
-        return self._add(
+        return _compose(
+            self,
             delta,
             {
                 "years": years,
@@ -2535,7 +2429,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             naive_arithmetic_ok=naive_arithmetic_ok,
             stale_offset_ok=stale_offset_ok,
             negate=True,
-            warn_level=3,
         )
 
     def __add__(
@@ -2570,18 +2463,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         ``cal_unit_composition_ok=True``, or composes calendar-aware with
         ``relative_to``.
         """
-        from ._core import Date, OffsetDateTime, PlainDateTime, ZonedDateTime
-
-        if isinstance(
-            other, (Date, ZonedDateTime, PlainDateTime, OffsetDateTime)
-        ):
+        if isinstance(other, _date_or_datetime_types()):
             return _shift_datetime_operator(other, self, False)
         if isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
-            result = type(other)(**_items_add(self, other))
-            _warn_operator_composition(self, other)
-            return result
-        else:
-            return NotImplemented
+            return _compose_operator(self, other, False)
+        return NotImplemented
 
     def __radd__(
         self,
@@ -2596,11 +2482,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         | _whenever.PlainDateTime
         | _whenever.OffsetDateTime
     ):
-        from ._core import Date, OffsetDateTime, PlainDateTime, ZonedDateTime
-
-        if isinstance(
-            other, (Date, ZonedDateTime, PlainDateTime, OffsetDateTime)
-        ):
+        if isinstance(other, _date_or_datetime_types()):
             return _shift_datetime_operator(other, self, False)
         return NotImplemented
 
@@ -2615,11 +2497,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         The same rules apply as for :meth:`__add__`.
         """
         if isinstance(other, (ItemizedDateDelta, ItemizedDelta)):
-            result = type(other)(**_items_add(self, -other))
-            _warn_operator_composition(self, other)
-            return result
-        else:
-            return NotImplemented
+            return _compose_operator(self, other, True)
+        return NotImplemented
 
     def __rsub__(
         self,
@@ -2634,11 +2513,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         | _whenever.PlainDateTime
         | _whenever.OffsetDateTime
     ):
-        from ._core import Date, OffsetDateTime, PlainDateTime, ZonedDateTime
-
-        if isinstance(
-            other, (Date, ZonedDateTime, PlainDateTime, OffsetDateTime)
-        ):
+        if isinstance(other, _date_or_datetime_types()):
             return _shift_datetime_operator(other, self, True)
         return NotImplemented
 
@@ -2668,24 +2543,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             :class:`Date`, or a datetime of which only the date is read,
             without a warning.
         """
-        if unit not in DATE_DELTA_UNITS:
-            raise invalid("unit", unit)
         date = _reference_date(relative_to)
-        shifted = date.add(self)
-        sgn = self.sign()
-        shifted_d = _date(shifted.year, shifted.month, shifted.day)
-        ref_d = _date(date.year, date.month, date.day)
-        trunc_amount, trunc_date_interim, expand_date_interim = DIFF_FUNCS[
-            unit
-        ](shifted_d, ref_d, 1, sgn or 1)
-
-        trunc_date = resolve_leap_day(trunc_date_interim)
-        expand_date = resolve_leap_day(expand_date_interim)
-
-        return (
-            trunc_amount
-            + ((shifted_d - trunc_date) / (expand_date - trunc_date))
-        ) * sgn
+        return date.add(self).since(date, total=unit)
 
     # A private constructor that bypasses sign/presence validation.
     # All component values must be non-negative; `sign` is applied when storing.

@@ -1451,6 +1451,30 @@ class TestInUnitsRelativeToNonZoned:
             result = d.in_units(["weeks", "days"], relative_to=ref)
         assert result == ItemizedDelta(weeks=5, days=1)
 
+    @pytest.mark.parametrize(
+        "units, warns, expected",
+        [
+            (["days"], False, ItemizedDelta(days=1)),
+            (["hours"], True, ItemizedDelta(hours=24)),
+        ],
+    )
+    def test_plain_datetime_zero_exact_component(self, units, warns, expected):
+        # A zero exact component is no clock arithmetic: the operator and
+        # the method agree. A requested exact unit is.
+        d = ItemizedDelta(days=1, hours=0)
+        ref = PlainDateTime(2020, 1, 1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert ref + d == PlainDateTime(2020, 1, 2)
+        if warns:
+            with warns_here(NaiveArithmeticWarning):
+                result = d.in_units(units, relative_to=ref)
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                result = d.in_units(units, relative_to=ref)
+        assert result == expected
+
     def test_offset_datetime_cal_delta_cal_output(self):
         # calendar delta + calendar output → warns (offset, calendar both sides)
         d = ItemizedDelta(months=1, days=5)

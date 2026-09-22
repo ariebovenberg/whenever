@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import enum
 from datetime import date as _date
-from operator import index as _index
 from struct import pack
 from typing import TYPE_CHECKING, Any, ClassVar, no_type_check, overload
 
@@ -582,14 +581,6 @@ MonthDay.MAX = MonthDay._from_py_unchecked(
 )
 
 
-def _iso_week_int(value: Any, name: str, /) -> int:
-    try:
-        result: int = _index(value)
-    except TypeError:
-        raise TypeError(f"{name} must be an integer") from None
-    return result
-
-
 def _is_long_year(year: int) -> bool:
     """Whether an ISO week year has 53 weeks.
 
@@ -632,8 +623,8 @@ class IsoWeekDate(_Base):
         def __init__(self, year: int, week: int, weekday: Weekday) -> None: ...
 
     def __init__(self, year: int, week: int, weekday: Weekday) -> None:
-        year = _iso_week_int(year, "year")
-        week = _iso_week_int(week, "week")
+        year = expect_int("year", year)
+        week = expect_int("week", week)
         if not isinstance(weekday, Weekday):
             raise TypeError("weekday must be a Weekday")
         try:

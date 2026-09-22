@@ -1278,6 +1278,34 @@ class TestReferenceRule:
         assert type(result) is ItemizedDelta
         assert result.strict_eq(ItemizedDelta(days=31, hours=1))
 
+    @pytest.mark.parametrize(
+        "units, warns, expected",
+        [
+            (["days"], False, ItemizedDelta(days=1)),
+            (["hours"], True, ItemizedDelta(hours=24)),
+        ],
+    )
+    def test_plain_datetime_zero_exact_component(self, units, warns, expected):
+        # A zero exact component is no clock arithmetic: the operator and
+        # the method agree. A requested exact unit is.
+        d = ItemizedDateDelta(days=1)
+        ref = PlainDateTime(2020, 1, 1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert ref + d == PlainDateTime(2020, 1, 2)
+        if warns:
+            with warns_here(NaiveArithmeticWarning):
+                result = d.add(
+                    ItemizedDelta(hours=0), relative_to=ref, in_units=units
+                )
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                result = d.add(
+                    ItemizedDelta(hours=0), relative_to=ref, in_units=units
+                )
+        assert result.strict_eq(expected)
+
     @pytest.mark.parametrize("method", ["add", "subtract"])
     def test_full_delta_operand_reference_rule(self, method):
         operation = getattr(ItemizedDateDelta(months=1), method)
