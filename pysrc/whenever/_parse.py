@@ -157,12 +157,9 @@ def instant_at_offset(
 ) -> _datetime:
     """Read ``local`` at ``offset_secs``, then re-express the resulting exact
     time with the offset ``tz`` actually applies to it."""
-    dt = check_utc_bounds(local.replace(tzinfo=mk_fixed_tzinfo(offset_secs)))
-    expected_offset = tz.offset_for_instant(int(dt.timestamp()))
-    try:
-        return dt.astimezone(mk_fixed_tzinfo(expected_offset))
-    except OverflowError:
-        raise ValueError("Instant out of range") from None
+    return tz.convert(
+        check_utc_bounds(local.replace(tzinfo=mk_fixed_tzinfo(offset_secs)))
+    )
 
 
 def matching_local_offset(
@@ -203,13 +200,13 @@ def matching_local_offset(
 
 class ZonedInput(NamedTuple):
     """A local time in a named time zone, with the offset it was written with:
-    the input to the resolution flow, from an ISO string or a stdlib datetime.
+    the input to the resolution flow, from an ISO string, a pattern, or a
+    stdlib datetime.
     """
 
     local: _datetime
     nanos: Nanos
     tz: TimeZone
-    tzid: str
     offset: _timezone | Literal["Z"] | None
     offset_exact: bool
 
@@ -239,7 +236,6 @@ def zdt_parts_from_iso(s: str, /) -> ZonedInput:
         _datetime.combine(date, time),
         nanos,
         get_tz(tzid),
-        tzid,
         offset,
         offset_exact,
     )

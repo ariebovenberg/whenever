@@ -56,22 +56,13 @@ def resolve_ambiguity(
     dt: _datetime,
     tz: TimeZone,
     disambiguation: DisambiguationStr,
-    nanos: int,
-) -> _datetime:
-    assert dt.tzinfo is None, "dt must be naive"
-    return _resolve_ambiguity_from_mapping(
-        dt, tz, disambiguation, tz.ambiguity_for_local(dt), nanos
-    )
-
-
-def _resolve_ambiguity_from_mapping(
-    dt: _datetime,
-    tz: TimeZone,
-    disambiguation: DisambiguationStr,
     ambiguity: LocalMapping,
     nanos: int,
     /,
 ) -> _datetime:
+    """Resolve the naive ``dt`` under ``disambiguation``, given the mapping
+    ``tz`` already computed for it."""
+    assert dt.tzinfo is None, "dt must be naive"
     check_disambiguation(disambiguation)
     match ambiguity:
         case Unique(offset):
@@ -98,27 +89,3 @@ def _resolve_ambiguity_from_mapping(
     # This ensures we raise an exception if the instant is out of range,
     # even if the local time is valid.
     return check_utc_bounds(dt.replace(tzinfo=mk_fixed_tzinfo(offset)))
-
-
-def _resolve_ambiguity_using_prev_offset_from_mapping(
-    dt: _datetime,
-    prev_offset: _timedelta,
-    ambiguity: LocalMapping,
-    /,
-) -> _datetime:
-    offset = int(prev_offset.total_seconds())
-    if isinstance(ambiguity, Unique):
-        offset = ambiguity.offset
-    elif isinstance(ambiguity, Fold):
-        # If the offset is already valid, there's nothing to do
-        # otherwise, always use the earlier offset
-        if ambiguity.later_offset != offset:
-            offset = ambiguity.earlier_offset
-    else:  # isinstance(ambiguity, Gap)
-        # Don't try to reuse the previous offset in case of a gap,
-        # since we can't prevent an unexpected shift anyway.
-        # We just do the default (compatible) behavior.
-        offset = ambiguity.later_offset
-        dt += _timedelta(seconds=offset - ambiguity.earlier_offset)
-
-    return dt.replace(tzinfo=mk_fixed_tzinfo(offset))

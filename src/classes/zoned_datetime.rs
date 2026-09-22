@@ -826,8 +826,8 @@ fn matching_local_offset(
 
 /// Resolve a written local time in a time zone to an exact time.
 ///
-/// Shared by the ISO and stdlib-datetime constructors: an offset that
-/// identifies an occurrence wins outright, and otherwise `mismatch` decides
+/// Shared by the ISO, pattern, and stdlib-datetime constructors: an offset
+/// that identifies an occurrence wins outright, and otherwise `mismatch` decides
 /// between raising, keeping the exact time, and keeping the local time and
 /// consulting `dis`.
 #[allow(clippy::too_many_arguments)]
@@ -1571,37 +1571,21 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     parsed.validate_weekday(date)?;
     let dt = date.at(parsed.time()?);
     let tz = state.tz_store.get(tz_id)?;
-    let result = if let Some(offset) = parsed.offset_secs {
-        if parsed.offset_is_z {
-            dt.assume_utc().into_zoned_obj(tz, cls)
-        } else if let Some(OffsetMatch::Occurrence(actual)) = matching_local_offset(
-            tz.mapping_for_local(dt.local_seconds()),
+    let result = match parsed.offset_secs {
+        Some(_) if parsed.offset_is_z => dt.assume_utc().into_zoned_obj(tz, cls),
+        Some(offset) => resolve_zoned_local(
+            cls,
+            dt,
+            tz,
             offset,
             parsed.offset_exact,
             false,
-        ) {
-            dt.assume_offset(actual)
-                .ok_or_range_err()?
-                .into_zoned_obj_unchecked(tz, cls)
-        } else {
-            match mismatch {
-                OffsetMismatch::Raise => raise(
-                    *state.exc_invalid_offset,
-                    format!("offset {offset} does not match {}", tz_err_display(&tz.key)),
-                ),
-                OffsetMismatch::KeepInstant => dt
-                    .assume_offset(offset)
-                    .ok_or_range_err()?
-                    .to_instant()
-                    .into_zoned_obj(tz, cls),
-                OffsetMismatch::KeepLocal => dt
-                    .resolve_with_disambiguation(&tz, dis, state)?
-                    .into_zoned_obj_unchecked(tz, cls),
-            }
-        }
-    } else {
-        dt.resolve_with_disambiguation(&tz, dis, state)?
-            .into_zoned_obj_unchecked(tz, cls)
+            dis,
+            mismatch,
+        ),
+        None => dt
+            .resolve_with_disambiguation(&tz, dis, state)?
+            .into_zoned_obj_unchecked(tz, cls),
     }?;
     pattern.warn(*state.warn_whenever, *state.warn_deprecation)?;
     if renamed {

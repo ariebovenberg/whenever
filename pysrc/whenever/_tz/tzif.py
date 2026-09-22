@@ -12,7 +12,12 @@ from datetime import datetime as _datetime, timezone as _timezone
 from io import BytesIO
 from typing import IO, MutableSequence, Sequence, final
 
-from .._common import EPOCH_SECS_MAX, EPOCH_SECS_MIN
+from .._common import (
+    EPOCH_SECS_MAX,
+    EPOCH_SECS_MIN,
+    RANGE_MSG,
+    mk_fixed_tzinfo,
+)
 from .common import Fold, Gap, LocalMapping, Unique
 from .posix import MAX_OFFSET, TzStr, epoch_for_date, year_for_epoch
 
@@ -104,6 +109,15 @@ class TimeZone:
         else:
             assert self._utc_offsets  # ensured during parsing
             return self._utc_offsets[-1]
+
+    def convert(self, dt: _datetime) -> _datetime:
+        """Re-express an aware datetime with the offset at its instant"""
+        try:
+            return dt.astimezone(
+                mk_fixed_tzinfo(self.offset_for_instant(int(dt.timestamp())))
+            )
+        except OverflowError:
+            raise ValueError(RANGE_MSG) from None
 
     def ambiguity_for_local(self, dt: _datetime) -> LocalMapping:
         assert dt.tzinfo is None
