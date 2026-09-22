@@ -4,10 +4,15 @@ import os
 import pickle
 import re
 import shutil
+import sys
 from copy import copy, deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
-from zoneinfo import available_timezones as zoneinfo_available_timezones
+from zoneinfo import (
+    ZoneInfoNotFoundError,
+    available_timezones as zoneinfo_available_timezones,
+)
 
 import pytest
 from whenever import (
@@ -27,7 +32,7 @@ from whenever import (
 )
 from whenever._tz.system import _tzid_from_path, get_tz
 
-from .common import system_tz
+from .common import AMS_TZ_RAWFILE, system_tz
 
 try:
     import tzdata  # noqa
@@ -719,6 +724,21 @@ class TestEmptyTzIsUtc:
         assert tz.key is None
         assert tz.offset_for_instant(0) == 0
 
+    @pytest.mark.skipif(
+        sys.platform not in ("linux", "darwin"), reason="a unix convention"
+    )
+    def test_no_localtime_file(self, monkeypatch, tmp_path: Path):
+        from whenever._tz import system
+
+        monkeypatch.setattr(system, "LOCALTIME", str(tmp_path / "localtime"))
+        monkeypatch.delenv("TZ", raising=False)
+        reset_system_tz()
+        try:
+            assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "UTC"
+        finally:
+            monkeypatch.undo()
+            reset_system_tz()
+
 
 def test_get_system_tz():
 
@@ -789,6 +809,144 @@ class TestUnresolvableSystemTz:
 )
 def test_tzid_from_path(path, expect):
     assert _tzid_from_path(path) == expect
+
+
+@pytest.mark.skipif(
+    sys.platform not in ("linux", "darwin"), reason="a unix convention"
+)
+class TestLocaltimeCopy:
+    """A copied /etc/localtime has no symlink to name it; /etc/timezone may."""
+
+    @pytest.fixture
+    def root(self, monkeypatch, tmp_path: Path):
+        from whenever._tz import system
+
+        shutil.copyfile(AMS_TZ_RAWFILE, tmp_path / "localtime")
+        europe = tmp_path / "zoneinfo" / "Europe"
+        europe.mkdir(parents=True)
+        shutil.copyfile(AMS_TZ_RAWFILE, europe / "Amsterdam")
+        (europe / "Berlin").write_bytes(b"TZif2 with other rules")
+        monkeypatch.setattr(system, "LOCALTIME", str(tmp_path / "localtime"))
+        monkeypatch.setattr(
+            system, "TIMEZONE_FILE", str(tmp_path / "timezone")
+        )
+        monkeypatch.setattr(system, "ZONEINFO_DIR", str(tmp_path / "zoneinfo"))
+        monkeypatch.delenv("TZ", raising=False)
+        yield tmp_path
+        monkeypatch.undo()
+        reset_system_tz()
+
+    def test_name_matches(self, root: Path) -> None:
+        (root / "timezone").write_text("Europe/Amsterdam\n")
+        assert get_tz() == (0, "Europe/Amsterdam")
+        reset_system_tz()
+        assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
+
+    @pytest.mark.parametrize(
+        "contents",
+        [
+            b"Europe/Berlin\n",  # stale: names other rules
+            b"Europe/Nowhere\n",  # names no database file
+            b"Europe\n",  # a directory
+            b"",
+            b"\xff\xfe not text",
+            None,  # no such file
+        ],
+    )
+    def test_no_usable_name(self, root: Path, contents: bytes | None) -> None:
+        if contents is not None:
+            (root / "timezone").write_bytes(contents)
+        assert get_tz() == (1, os.path.realpath(root / "localtime"))
+        reset_system_tz()
+        assert ZonedDateTime.now(SYSTEM_TZ).tz_id is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="posix paths")
+class TestTzEnvPath:
+    def test_into_zoneinfo_dir_names_the_zone(self, tmp_path: Path) -> None:
+        zone = tmp_path / "zoneinfo" / "Europe" / "Amsterdam"
+        zone.parent.mkdir(parents=True)
+        shutil.copyfile(AMS_TZ_RAWFILE, zone)
+        with system_tz(str(zone)):
+            assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
+
+    def test_elsewhere_has_no_id(self, tmp_path: Path) -> None:
+        zone = tmp_path / "Amsterdam"
+        shutil.copyfile(AMS_TZ_RAWFILE, zone)
+        with system_tz(str(zone)):
+            assert ZonedDateTime.now(SYSTEM_TZ).tz_id is None
+
+
+class TestTzlocalBackend:
+    """The platforms that defer to tzlocal, simulated with a stub module."""
+
+    @pytest.fixture
+    def tzlocal(self, monkeypatch):
+        from whenever._tz import system
+
+        stub = SimpleNamespace()
+        monkeypatch.setitem(sys.modules, "tzlocal", stub)
+        monkeypatch.setattr(
+            system, "_key_or_file", system._tzlocal_key_or_file
+        )
+        monkeypatch.delenv("TZ", raising=False)
+        yield stub
+        monkeypatch.undo()
+        reset_system_tz()
+
+    def test_reloads_before_reading_the_name(self, tzlocal) -> None:
+        calls: list[str] = []
+
+        def reload() -> None:
+            calls.append("reload")
+
+        def name() -> str:
+            calls.append("name")
+            return "Europe/Amsterdam"
+
+        tzlocal.reload_localzone = reload
+        tzlocal.get_localzone_name = name
+        reset_system_tz()
+        assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
+        assert calls == ["reload", "name"]
+
+    @pytest.mark.parametrize(
+        "exc, message",
+        [
+            (
+                LookupError("Can not find Windows timezone configuration"),
+                "Can not find Windows timezone configuration",
+            ),
+            (ZoneInfoNotFoundError("Foo Standard Time"), "Foo Standard Time"),
+        ],
+    )
+    def test_failure_raises_and_keeps_cache(
+        self, tzlocal, monkeypatch, exc: LookupError, message: str
+    ) -> None:
+        monkeypatch.setenv("TZ", "Europe/Amsterdam")
+        reset_system_tz()
+        monkeypatch.delenv("TZ")
+
+        def fail() -> None:
+            raise exc
+
+        tzlocal.reload_localzone = fail
+        with pytest.raises(
+            TimeZoneNotFoundError,
+            match=f"^cannot determine the system time zone: {message}$",
+        ):
+            reset_system_tz()
+        assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
+
+    def test_no_name_falls_back_to_localtime(
+        self, tzlocal, monkeypatch, tmp_path: Path
+    ) -> None:
+        from whenever._tz import system
+
+        tzlocal.reload_localzone = lambda: None
+        tzlocal.get_localzone_name = lambda: None
+        monkeypatch.setattr(system, "LOCALTIME", str(tmp_path / "localtime"))
+        assert get_tz() == (0, "")  # no file is UTC
 
 
 def test_tz_store_rejects_non_string_key():

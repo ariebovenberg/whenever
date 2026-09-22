@@ -141,7 +141,8 @@ deprecated interfaces are removed.
   drops; call `.date()` first.
 - `Time()` rejects a `time` with a tzinfo, as `PlainDateTime()` rejects an
   aware `datetime`.
-- An empty `TZ` environment variable resolves to UTC, as the C library reads
+- An empty `TZ` environment variable, or no `TZ` and no `/etc/localtime`,
+  resolves to UTC, as the C library reads
   it, instead of raising `TimeZoneNotFoundError`.
 - `ZonedDateTime()` accepts a `datetime` whose tzinfo is a `ZoneInfo`
   subclass.
@@ -212,6 +213,16 @@ deprecated interfaces are removed.
   the `tzdata` package, which could answer with another zone's rules, and
   aborted on some files; the pure-Python backend leaked `struct.error` or
   `IndexError`.
+- The system time zone gets its ID in two more cases: `TZ` set to a path
+  into a zoneinfo directory, such as `/usr/share/zoneinfo/Europe/Amsterdam`,
+  and an `/etc/localtime` that is a copy of a database file rather than a
+  symlink to one, when `/etc/timezone` names that zone. Both gave a system
+  time zone without ID before.
+- On Windows and the other platforms that use `tzlocal`,
+  `reset_system_tz()` determines the system time zone again, where
+  `tzlocal`'s cache made it repeat the first answer, and a `tzlocal`
+  failure raises `TimeZoneNotFoundError` instead of leaking
+  `zoneinfo.ZoneInfoNotFoundError`.
 - The pure-Python backend parsed RFC 2822 strings with a sign or whitespace
   inside a number, such as an offset of `--900`.
 - `Instant.parse()` accepted a weekday specifier that contradicts the date,
