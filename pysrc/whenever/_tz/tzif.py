@@ -19,7 +19,7 @@ from .._common import (
     mk_fixed_tzinfo,
 )
 from .common import Fold, Gap, LocalMapping, Unique
-from .posix import MAX_OFFSET, TzStr, epoch_for_date, year_for_epoch
+from .posix import MAX_OFFSET, TzStr, year_for_epoch
 
 EpochSecs = int
 Offset = int
@@ -51,6 +51,12 @@ class TimeZone:
 
     Invariant: if posix TZ isn't given, there must be at least one entry in
     each pair.
+
+    The POSIX TZ string takes over from the last recorded offset at
+    ``_footer_from``: its first transition after the file's last record,
+    which may be a marker that changes nothing (zic's "slim" files). Before
+    it, the last recorded offset holds. ``_footer_local_from`` is where that
+    transition's gap or fold begins, in local time.
     """
 
     __slots__ = (
@@ -61,6 +67,8 @@ class TimeZone:
         "_local_epochs",
         "_local_values",
         "_end",
+        "_footer_from",
+        "_footer_local_from",
         "_meta_by_utc",
         "_abbrev_data",
     )
@@ -74,6 +82,8 @@ class TimeZone:
     _local_epochs: tuple[EpochSecs, ...]
     _local_values: tuple[tuple[Offset, OffsetDelta], ...]
     _end: TzStr | None
+    _footer_from: EpochSecs
+    _footer_local_from: EpochSecs
 
     def __init__(
         self,
@@ -83,6 +93,8 @@ class TimeZone:
         _local_epochs: tuple[EpochSecs, ...],
         _local_values: tuple[tuple[Offset, OffsetDelta], ...],
         _end: TzStr | None,
+        _footer_from: EpochSecs,
+        _footer_local_from: EpochSecs,
         _meta_by_utc: tuple[TransitionMeta, ...],
         _abbrev_data: bytes,
     ):
@@ -92,6 +104,8 @@ class TimeZone:
         self._local_epochs = _local_epochs
         self._local_values = _local_values
         self._end = _end
+        self._footer_from = _footer_from
+        self._footer_local_from = _footer_local_from
         self._meta_by_utc = _meta_by_utc
         self._abbrev_data = _abbrev_data
 
@@ -102,10 +116,9 @@ class TimeZone:
             return self._utc_offsets[max(0, idx - 1)]
 
         # If the time is after the last transition, use the POSIX TZ string
-        if self._end is not None:
+        if self._end is not None and t >= self._footer_from:
             return self._end.offset_for_instant(t)
-        # If there's no POSIX TZ string, use the last offset.
-        # There's not much else we can do.
+        # Otherwise, the last offset holds.
         else:
             assert self._utc_offsets  # ensured during parsing
             return self._utc_offsets[-1]
@@ -142,15 +155,13 @@ class TimeZone:
                 return Gap(next_transition, offset + ambiguity, offset)
 
         # If the time is after the last transition, use the POSIX TZ string
-        if self._end is not None:
+        if self._end is not None and t >= self._footer_local_from:
             return self._end._ambiguity_for_local_epoch(t)
 
-        # If there's no POSIX TZ string, use the last offset.
-        # There's not much else we can do.
+        # Otherwise, the last offset holds.
         else:
-            assert self._local_values  # ensured during parsing
-            prev_offset, last_shift = self._local_values[-1]
-            return Unique(prev_offset + last_shift)
+            assert self._utc_offsets  # ensured during parsing
+            return Unique(self._utc_offsets[-1])
 
     def meta_for_instant(self, t: EpochSecs) -> tuple[int, str]:
         """Get time zone metadata (dst_saving_secs, abbreviation)
@@ -161,7 +172,7 @@ class TimeZone:
             return saving, abbrev
 
         # After last transition: try POSIX TZ string, then fall back
-        if self._end is not None:
+        if self._end is not None and t >= self._footer_from:
             return self._end.meta_for_instant(t)
         else:
             assert self._meta_by_utc  # ensured during parsing
@@ -175,8 +186,10 @@ class TimeZone:
         if idx < len(self._utc_epochs):
             return (self._utc_epochs[idx], self._utc_offsets[idx])
         if self._end is not None:
-            return self._end.next_transition(t)
-        return None  # pragma: no cover
+            # The first transition of the POSIX TZ string that counts is the
+            # one at `_footer_from`.
+            return self._end.next_transition(max(t, self._footer_from - 1))
+        return None
 
     def prev_transition(self, t: EpochSecs) -> tuple[EpochSecs, Offset] | None:
         """Get the (epoch, new_offset) of the previous transition record
@@ -186,7 +199,7 @@ class TimeZone:
             not self._utc_epochs or t > self._utc_epochs[-1]
         ):
             result = self._end.prev_transition(t)
-            if result is not None:
+            if result is not None and result[0] >= self._footer_from:
                 return result
         # Search recorded transitions: last one strictly < t.
         # Skip index 0 which is the sentinel initial offset, not a real transition.
@@ -232,6 +245,8 @@ class TimeZone:
             _local_epochs=(),
             _local_values=(),
             _end=TzStr.parse(s),
+            _footer_from=EPOCH_SECS_MIN,
+            _footer_local_from=EPOCH_SECS_MIN,
             _meta_by_utc=(),
             _abbrev_data=b"",
         )
@@ -353,47 +368,18 @@ def _extend_with_posix(
     offsets: MutableSequence[tuple[EpochSecs, Offset]],
     meta: MutableSequence[TransitionMeta],
     end: TzStr,
+    footer_from: EpochSecs,
 ) -> None:
-    """Append pre-computed DST transitions from the POSIX TZ rule to *offsets*
-    and *meta*, covering years from (last recorded year + 1) to
-    ``_PRECALC_UNTIL`` inclusive.
-
-    For time zones without a DST rule the tables are already complete; this
-    function returns immediately.
-    """
-    if not end.dst:
-        return
-
-    start_rule, start_time = end.dst.start
-    end_rule, end_time = end.dst.end
-    std = end.std
-    dst_offset = end.dst.offset
-    dst_saving = dst_offset - std
-    dst_abbrev = end.dst.abbrev
-    std_abbrev = end.std_abbrev
-
-    last_epoch = offsets[-1][0] if offsets else EPOCH_SECS_MIN
-    start_year = year_for_epoch(last_epoch) if offsets else 1970
-
-    for year in range(start_year, _PRECALC_UNTIL + 1):
-        dst_start = epoch_for_date(start_rule.apply(year)) + start_time - std
-        dst_end = epoch_for_date(end_rule.apply(year)) + end_time - dst_offset
-        if dst_start < dst_end:
-            # Northern hemisphere: DST active in summer
-            transitions = (
-                ((dst_start, dst_offset), (dst_saving, None, dst_abbrev)),
-                ((dst_end, std), (0, None, std_abbrev)),
-            )
-        else:
-            # Southern hemisphere: DST active in winter
-            transitions = (
-                ((dst_end, std), (0, None, std_abbrev)),
-                ((dst_start, dst_offset), (dst_saving, None, dst_abbrev)),
-            )
-        for transition, transition_meta in transitions:
-            if transition[0] > last_epoch:
-                offsets.append(transition)
-                meta.append(transition_meta)
+    """Append the transitions of the POSIX TZ rule to *offsets* and *meta*,
+    from ``footer_from`` up to ``_PRECALC_UNTIL`` inclusive."""
+    t = footer_from - 1
+    while (nxt := end.next_transition(t)) is not None and (
+        year_for_epoch(nxt[0]) <= _PRECALC_UNTIL
+    ):
+        t = nxt[0]
+        offsets.append(nxt)
+        saving, abbrev = end.meta_for_instant(t)
+        meta.append((saving, None, abbrev))
 
 
 def _parse_content(
@@ -422,6 +408,9 @@ def _parse_content(
     offset_indices = list(_read_exact(data, header.timecnt))
     types = _parse_type_info(header.typecnt, data)
     abbrev_data = _read_exact(data, header.charcnt)
+    # RFC 8536 has abbreviations in ASCII
+    if not abbrev_data.isascii():
+        raise ValueError("Invalid TZif data")
 
     offsets_by_utc, meta_by_utc = _load_transitions(
         transition_times, types, offset_indices, abbrev_data
@@ -429,25 +418,54 @@ def _parse_content(
 
     # Parse POSIX TZ string for v2+ files
     end = None
-    if header.version >= 2:
+    if header.version < 2:
+        # The unused metadata ends the file, and a truncated file is corrupt
+        _read_exact(
+            data, header.isutcnt + header.isstdcnt + header.leapcnt * 8
+        )
+    else:
         # Skip unused metadata and newline before tz string
         _read_exact(
             data, header.isutcnt + header.isstdcnt + header.leapcnt * 12 + 1
         )
-        # Find the TZ string (until newline or end of data)
+        # Find the TZ string (until newline or end of data).
+        # RFC 8536 allows an empty one: then there is none.
         tz_string, *_ = data.read().split(b"\n", 1)
 
-        if tz_string:  # pragma: no branch
+        if tz_string:
             end = TzStr.parse(tz_string.decode("ascii"))
 
-    if not (end or offsets_by_utc):
-        raise ValueError("No transition data in file")  # pragma: no cover
+    # DST records with no standard record after them pair with the standard
+    # offset of the POSIX TZ string, the next one to come (Indiana/Winamac
+    # moved from Central standard time to Eastern DST in 2007).
+    if end is not None:
+        i = len(meta_by_utc) - 1
+        # The entry before the first record has no DST saving
+        while meta_by_utc[i][0]:
+            if footer_saving := offsets_by_utc[i][1] - end.std:
+                _, abbrind, abbrev = meta_by_utc[i]
+                meta_by_utc[i] = (footer_saving, abbrind, abbrev)
+            i -= 1
 
-    # Pre-compute transitions from POSIX rule up to a fixed horizon.
-    # This ensures the fast bisect path is used for common date ranges,
-    # avoiding repeated Python-level DST boundary calculations.
-    if end:
-        _extend_with_posix(offsets_by_utc, meta_by_utc, end)
+    # The last record, even one that changes nothing, marks where the POSIX
+    # TZ string takes over (RFC 8536 section 3.3). Without records, it
+    # governs the whole range.
+    footer_from = footer_local_from = EPOCH_SECS_MIN
+    if end is not None and transition_times:
+        last = transition_times[-1]
+        last_offset = offsets_by_utc[-1][1]
+        if (nxt := end.next_transition(last)) is not None:
+            footer_from, offset = nxt
+            footer_local_from = clamp_epoch_secs(
+                footer_from + min(offset, last_offset)
+            )
+        else:
+            footer_from = last
+            footer_local_from = clamp_epoch_secs(last + last_offset)
+        # Pre-compute transitions from POSIX rule up to a fixed horizon.
+        # This ensures the fast bisect path is used for common date ranges,
+        # avoiding repeated Python-level DST boundary calculations.
+        _extend_with_posix(offsets_by_utc, meta_by_utc, end, footer_from)
 
     local_transitions = _local_transitions(offsets_by_utc)
     return TimeZone(
@@ -457,6 +475,8 @@ def _parse_content(
         _local_epochs=tuple(t for t, _ in local_transitions),
         _local_values=tuple(v for _, v in local_transitions),
         _end=end,
+        _footer_from=footer_from,
+        _footer_local_from=footer_local_from,
         _meta_by_utc=tuple(meta_by_utc),
         _abbrev_data=abbrev_data,
     )
@@ -465,20 +485,23 @@ def _parse_content(
 def _parse_v2_transitions(
     header: Header, data: IO[bytes]
 ) -> Sequence[EpochSecs]:
-    return list(
-        map(
-            clamp_epoch_secs,
-            struct.unpack(
-                f">{header.timecnt}q", data.read(8 * header.timecnt)
-            ),
-        )
-    )
+    times = struct.unpack(f">{header.timecnt}q", data.read(8 * header.timecnt))
+    return list(map(clamp_epoch_secs, _ascending(times)))
 
 
 def _parse_v1_transitions(
     header: Header, data: IO[bytes]
 ) -> Sequence[EpochSecs]:
-    return struct.unpack(f">{header.timecnt}i", data.read(4 * header.timecnt))
+    return _ascending(
+        struct.unpack(f">{header.timecnt}i", data.read(4 * header.timecnt))
+    )
+
+
+def _ascending(times: tuple[int, ...]) -> tuple[int, ...]:
+    # RFC 8536 requires ascending times
+    if any(a >= b for a, b in zip(times, times[1:])):
+        raise ValueError("Invalid TZif data")
+    return times
 
 
 def _parse_type_info(
@@ -505,7 +528,7 @@ def _abbrev_at(abbrev_data: bytes, idx: int) -> str:
         end = abbrev_data.index(b"\x00", idx)
     except ValueError:  # pragma: no cover
         end = len(abbrev_data)
-    return abbrev_data[idx:end].decode("ascii", errors="replace")
+    return abbrev_data[idx:end].decode("ascii")
 
 
 def _load_transitions(
@@ -542,15 +565,26 @@ def _load_transitions(
         (0, first_abbrind, _abbrev_at(abbrev_data, first_abbrind)),
     ]
 
-    for idx, epoch in zip(indices, transition_times):
+    for i, (idx, epoch) in enumerate(zip(indices, transition_times)):
         if types[idx] == prev_type:
             continue
+        follows_dst = prev_type[1]
         prev_type = utoff, isdst, abbrind = types[idx]
         offsets.append((epoch, utoff))
 
         if not isdst:
             dst_saving = 0
             last_std_offset = utoff
+        elif (
+            follows_dst
+            and i + 1 < len(indices)
+            and not (next_type := types[indices[i + 1]])[1]
+            and next_type[0] != utoff
+        ):
+            # One DST type straight after another (Pacific/Apia crossing the
+            # date line): pair it with the standard type that follows it
+            # directly, as CPython does.
+            dst_saving = utoff - next_type[0]
         elif utoff == last_std_offset:
             # Standard time moved and DST began at the same moment, so the
             # saving cannot be read off the previous standard offset.

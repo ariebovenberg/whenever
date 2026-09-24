@@ -58,7 +58,7 @@ def _parse_nanos(s: str) -> Nanos:
 def _strict_int(s: str) -> int:
     # Callers validate the full input is ASCII once.
     if not s.isdigit():
-        raise ValueError()
+        raise ValueError(f"invalid digits: {s!r}")
     return int(s)
 
 
@@ -140,13 +140,10 @@ def offset_dt_from_iso(s: str) -> tuple[_datetime, Nanos]:
         else:
             assert isinstance(offset, _timezone)
             tzinfo = offset
-
-        return (
-            check_utc_bounds(_datetime.combine(date, time, tzinfo)),
-            nanos,
-        )
     except ValueError:
         _parse_err(s)
+
+    return check_utc_bounds(_datetime.combine(date, time, tzinfo)), nanos
 
 
 def instant_at_offset(
@@ -177,7 +174,12 @@ def matching_local_offset(
         case Unique(offset):
             candidate_offsets = (offset,)
         case Fold(_, earlier_offset, later_offset):
-            candidate_offsets = (earlier_offset, later_offset)
+            # An exact match wins over the earlier offset matching after
+            # rounding.
+            if later_offset == parsed_offset:
+                candidate_offsets = (later_offset,)
+            else:
+                candidate_offsets = (earlier_offset, later_offset)
         case Gap(_, later_offset, earlier_offset):  # pragma: no branch
             # A skipped local time has no occurrence, so no offset identifies
             # one. A stdlib datetime in a gap does name an exact time, though:
@@ -263,16 +265,16 @@ def _time_offset_tz_from_iso(
     bool,
     SafeTzId | None,
 ]:
-    # ditch the bracketted time zone (if present)
-    if s.endswith("]"):
-        from ._tz import validate_tzid
-
-        # NOTE: sorry for the unicode escape sequences. Literal brackets
-        # break my LSP's indentation detection. \x5b is open bracket '['
-        s, tz_raw = s[:-1].rsplit("\x5b", 1)
-        tz = validate_tzid(tz_raw)
-    else:
-        tz = None
+    # split off the bracketed time zone ID (if present). The first bracket
+    # opens it and the only closing bracket ends the string.
+    # NOTE: sorry for the unicode escape sequences. Literal brackets
+    # break my LSP's indentation detection. \x5b is open bracket '['
+    tz_raw: str | None = None
+    if (bracket := s.find("\x5b")) != -1:
+        s, tz_raw = s[:bracket], s[bracket + 1 :]
+        if tz_raw[-1:] != "]" or "]" in tz_raw[:-1]:
+            raise ValueError("invalid time zone ID brackets")
+        tz_raw = tz_raw[:-1]
 
     # determine the offset
     offset: Literal["Z"] | _timezone | None
@@ -293,7 +295,12 @@ def _time_offset_tz_from_iso(
             offset_exact = len(s_offset) in (6, 8)
 
     time, nanos = time_from_iso(s_time)
-    return (time, nanos, offset, offset_exact, tz)
+    if tz_raw is None:
+        return (time, nanos, offset, offset_exact, None)
+
+    from ._tz import validate_tzid
+
+    return (time, nanos, offset, offset_exact, validate_tzid(tz_raw))
 
 
 def yearmonth_from_iso(s: str) -> _date:
@@ -444,8 +451,9 @@ _RFC2822_ZONES = {
 
 def parse_rfc2822(s: str) -> _datetime:
     # Technically, only tab, space and CRLF are allowed in RFC2822,
-    # but we allow any ASCII whitespace
-    if not s.isascii():
+    # but we allow any ASCII whitespace. str.split() also splits on the
+    # separators \x1c-\x1f, which aren't whitespace.
+    if not s.isascii() or any(c in s for c in "\x1c\x1d\x1e\x1f"):
         _rfc2822_err(s)
 
     # Parse the weekday

@@ -92,15 +92,22 @@ fn __new__(cls: PyClass<PlainDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
     if args.len() == 1 {
         let arg = args.iter().next().unwrap();
         let nkwargs = kwargs.map_or(0, |d| d.len());
-        if PyStr::isinstance(arg) && nkwargs == 0 {
+        let is_str = PyStr::isinstance(arg);
+        let dt = (!is_str)
+            .then(|| arg.cast_allow_subclass::<PyDateTime>())
+            .flatten();
+        if (is_str || dt.is_some())
+            && let Some((key, _)) = kwargs.and_then(|d| d.iteritems().next())
+        {
+            return raise_unexpected_kwarg("PlainDateTime", key);
+        }
+        if is_str {
             return parse_iso(cls, arg);
         }
-        if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            if let Some((key, _)) = kwargs.and_then(|d| d.iteritems().next()) {
-                return raise_unexpected_kwarg("PlainDateTime", key);
-            }
+        if let Some(dt) = dt {
+            let pdt = PlainDateTime::from_stdlib_datetime(dt)?;
             warn_lossy_stdlib_subclass::<PyDateTime>(cls.state(), arg, "datetime")?;
-            return PlainDateTime::from_stdlib_datetime(dt)?.to_obj(cls);
+            return pdt.to_obj(cls);
         }
         if nkwargs == 0 {
             return raise_type_err(
@@ -229,16 +236,17 @@ fn shift_operator(obj_a: PyObj, obj_b: PyObj, negate: bool) -> PyReturn {
         };
         let state = cls.state();
 
-        let result = if let Some(tdelta) = other.extract(*state.time_delta_type) {
+        let Some(tdelta) = other.extract(*state.time_delta_type) else {
+            return Ok(None);
+        };
+        let result = slf.shift(tdelta.negate_if(negate)).ok_or_range_err()?;
+        if !tdelta.is_zero() {
             warn_with_class(
                 *state.warn_naive_arithmetic,
                 doc::PLAIN_SHIFT_UNAWARE_MSG,
                 1,
             )?;
-            slf.shift(tdelta.negate_if(negate)).ok_or_range_err()?
-        } else {
-            return Ok(None);
-        };
+        }
         Ok(Some(result.to_obj(slf.class())?))
     })
 }
@@ -405,7 +413,7 @@ fn shift_method(
     };
 
     let shift = shift.negate_if(negate);
-
+    let result = slf.shift_by(shift).ok_or_range_err()?;
     if !shift.time.is_zero() && !suppress_unaware {
         warn_with_class(
             *state.warn_naive_arithmetic,
@@ -413,7 +421,7 @@ fn shift_method(
             1,
         )?;
     }
-    slf.shift_by(shift).ok_or_range_err()?.to_obj(cls)
+    result.to_obj(cls)
 }
 
 fn difference(
@@ -510,9 +518,11 @@ fn assume_utc(cls: PyClass<PlainDateTime>, d: PlainDateTime) -> PyReturn {
 
 fn assume_fixed_offset(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyObj) -> PyReturn {
     let state = cls.state();
-    slf.assume_offset(Offset::from_py(arg, state)?)
-        .ok_or_range_err()?
-        .to_obj(*state.offset_datetime_type)
+    let result = slf
+        .assume_offset(Offset::from_py(arg, state)?)
+        .ok_or_range_err()?;
+    Offset::warn_if_int(arg, state)?;
+    result.to_obj(*state.offset_datetime_type)
 }
 
 fn assume_tz(
@@ -806,7 +816,7 @@ fn plain_since_in_units(
             .then_some(expand_dt)
     } else {
         let diff = a.diff(trunc_dt);
-        let rounded = diff.round_to_unit(exact_units.smallest(), round_increment, round_mode)?;
+        let rounded = diff.round_in_units(exact_units, round_increment, round_mode)?;
         if calendar_units.is_empty() || rounded.abs() <= diff.abs() {
             let mut result = rounded.itemize(exact_units)?;
             result.fill_calendar_units(calendar_results);
@@ -843,7 +853,13 @@ fn round(
 ) -> PyReturn {
     let round::Args {
         increment, mode, ..
-    } = round::Args::parse(args, kwargs, cls.state(), round::ArgsContext::Standard)?;
+    } = round::Args::parse(
+        args,
+        kwargs,
+        cls.state(),
+        round::ArgsContext::Standard,
+        true,
+    )?;
     let round_nanos = match increment {
         round::RoundIncrement::Day => NS_PER_DAY,
         round::RoundIncrement::Exact(ns) => ns.get(),
@@ -858,7 +874,7 @@ fn round(
 
 fn format(cls: PyClass<PlainDateTime>, slf: PlainDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
@@ -879,13 +895,13 @@ fn __format__(cls: PyClass<PlainDateTime>, slf: PlainDateTime, spec_obj: PyObj) 
 fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
     let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 

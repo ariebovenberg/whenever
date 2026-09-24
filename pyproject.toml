@@ -79,7 +79,7 @@ docs = [
     "myst-parser>=5,<6",
     "sphinx-copybutton~=0.5",
     "sphinx-design>=0.7,<0.8",
-    "sphinx-llm>=1,<2",
+    "sphinx-llm>=1,<1.1",
     "sphinx-reredirects>=1.1,<2",
     "sphinx>=9,<10",
     "sphinxext-opengraph>=0.13,<0.14",
@@ -178,8 +178,8 @@ bindings = "pyo3-ffi"
 
 [build-system]
 requires = [
-    "setuptools",
-    "wheel",
+    # 77 for the PEP 639 `license` field
+    "setuptools>=77",
 ]
 # We need a custom backend to make editable installs build the Rust
 # extension in place.

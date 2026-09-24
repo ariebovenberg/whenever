@@ -539,11 +539,26 @@ fn is_reserved_char(ch: u8) -> bool {
 
 /// Quote text in a message as Python's `repr()` does. Patterns and inputs
 /// are ASCII by the time a message quotes them, and `escape_ascii` writes
-/// control characters and backslashes as `repr()` does; a quote inside the
-/// text is written as `\'`, where `repr()` would switch to double quotes.
-/// The parity test never passes one.
+/// control characters and backslashes as `repr()` does. Like `repr()`, it
+/// switches to double quotes for text with only single quotes in it, and
+/// escapes only the quote it is using.
 fn quoted(s: &[u8]) -> String {
-    format!("'{}'", s.escape_ascii())
+    let quote = if s.contains(&b'\'') && !s.contains(&b'"') {
+        b'"'
+    } else {
+        b'\''
+    };
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push(quote as char);
+    for &b in s {
+        if (b == b'\'' || b == b'"') && b != quote {
+            out.push(b as char);
+        } else {
+            out.extend(b.escape_ascii().map(char::from));
+        }
+    }
+    out.push(quote as char);
+    out
 }
 
 // ---- Pattern compilation ----
@@ -696,12 +711,22 @@ fn compile_quoted_literal<'a>(
         elements.push(Element::Literal(&pattern[i..i + 1]));
         return Ok(i + 1);
     }
-    let text_start = i;
-    while i < n && pattern[i] != b'\'' {
-        i += 1;
-    }
-    if i >= n {
-        return Err("unterminated quoted literal in pattern".into());
+    let mut text_start = i;
+    loop {
+        while i < n && pattern[i] != b'\'' {
+            i += 1;
+        }
+        if i >= n {
+            return Err("unterminated quoted literal in pattern".into());
+        }
+        if pattern.get(i + 1) != Some(&b'\'') {
+            break;
+        }
+        // A doubled quote inside a quoted run is a literal quote (LDML):
+        // keep the first, skip the second, and continue the run.
+        elements.push(Element::Literal(&pattern[text_start..=i]));
+        i += 2;
+        text_start = i;
     }
     if i > text_start {
         elements.push(Element::Literal(&pattern[text_start..i]));
@@ -1752,21 +1777,24 @@ fn parse_field(
     match field {
         Field::Year4 => {
             let (v, p) = parse_digits(s, pos, 4)?;
-            state.year =
-                Some(Year::new(v as u16).ok_or_else(|| format!("year out of range: {}", v))?);
+            state.year = Some(
+                Year::new(v as u16).ok_or_else(|| format!("year must be in 1..9999, not {v}"))?,
+            );
             Ok(p)
         }
         Field::Year2 => unreachable!("Year2 is format-only"),
         Field::MonthNum => {
             let (v, p) = parse_digits(s, pos, 2)?;
-            state.month =
-                Some(Month::new(v as u8).ok_or_else(|| format!("month out of range: {}", v))?);
+            state.month = Some(
+                Month::new(v as u8).ok_or_else(|| format!("month must be in 1..12, not {v}"))?,
+            );
             Ok(p)
         }
         Field::MonthNumUnpadded => {
             let (v, p) = parse_1or2_digits(s, pos)?;
-            state.month =
-                Some(Month::new(v as u8).ok_or_else(|| format!("month out of range: {}", v))?);
+            state.month = Some(
+                Month::new(v as u8).ok_or_else(|| format!("month must be in 1..12, not {v}"))?,
+            );
             Ok(p)
         }
         Field::MonthAbbr => {

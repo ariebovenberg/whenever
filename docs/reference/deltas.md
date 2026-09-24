@@ -103,7 +103,7 @@ ItemizedDelta("PT1h30s")
 Seconds and nanoseconds are one quantity written as two components, the way
 ISO 8601 writes `PT1.5S` as one number. Keeping `90 minutes` unbalanced
 against hours preserves something you asked for; keeping nanoseconds
-unbalanced against seconds would preserve nothing. Four rules follow:
+unbalanced against seconds would preserve nothing. Five rules follow:
 
 - There are no `milliseconds` or `microseconds` components. Use
   {meth}`~ItemizedDelta.total` for a scalar in those units. It returns a
@@ -147,6 +147,14 @@ unbalanced against seconds would preserve nothing. Four rules follow:
   'PT0.0S'
   >>> dict(ItemizedDelta.parse_iso("PT0.0S"))
   {'seconds': 0, 'nanoseconds': 0}
+  ```
+
+- Component-wise composition carries and borrows between `seconds` and
+  `nanoseconds`, and between those two only:
+
+  ```python
+  >>> ItemizedDelta(nanoseconds=999_999_999).add(nanoseconds=1)
+  ItemizedDelta("PT1.0s")
   ```
 
 (delta-eq)=
@@ -233,6 +241,10 @@ For example, 150 minutes balanced into hours and minutes:
 
 Rounding applies to the smallest unit and carries into the larger ones:
 23.5 hours rounded up in days and hours is 1 day and 0 hours, never 24 hours.
+With `round_increment=`, the smallest unit is a multiple of the increment,
+and rounding it up to the next unit carries: 5 hours 20 minutes in hours and
+minutes with an increment of 90 is `PT5h0m`, or `PT6h0m` with
+`round_mode="ceil"`.
 
 `"nanoseconds"` is accepted only together with `"seconds"`:
 the component is bounded, so it cannot hold a difference on its own
@@ -376,7 +388,10 @@ Exact-only composition does not warn.
 on it alone, since scaling only makes sense for one exact duration.
 Multiplying or dividing by a number rounds half-even to the nearest
 nanosecond; an integer operand is exact, a `float` operand carries float
-precision. Dividing by another `TimeDelta` gives a `float`; `//` and `%`
+precision. Float keywords to the constructor and `add()` convert exactly
+down to the nanosecond, and truncate only a fraction below it toward zero:
+`TimeDelta(seconds=1.5e-9)` is 1 nanosecond, where
+`TimeDelta(seconds=1) * 1.5e-9` rounds to 2. Dividing by another `TimeDelta` gives a `float`; `//` and `%`
 take a `TimeDelta` divisor only.
 
 ```python
@@ -396,7 +411,11 @@ The itemized deltas are mappings, not numbers: they have `+`, `-`, unary
 and emit {class}`~whenever.CalendarUnitCompositionWarning` when either
 operand contains nonzero calendar units. Exact-only composition does not
 warn. Use the method forms if you want to pass `cal_unit_composition_ok=True`
-or if you need calendar-aware composition via `relative_to`.
+or if you need calendar-aware composition via `relative_to`. An itemized
+delta has one sign, so a composition that leaves components of both signs
+raises {class}`ValueError`: `ItemizedDelta(hours=1) + ItemizedDelta(minutes=-90)`
+is rejected with "mixed sign in delta". To split a delta into its date and
+time halves, use {meth}`~ItemizedDelta.date_and_time_parts`.
 
 `sign()` exists where ordering does not: the itemized deltas cannot be
 compared, so it is how you read their sign, whereas a `TimeDelta` compares

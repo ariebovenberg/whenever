@@ -8,10 +8,11 @@ import sphinx
 
 sphinx.SPHINX_RUNNING = True
 
-# viewcode resolves the deprecated ``.. data:: TZPATH`` reference entry by
-# attribute access, which is exactly what the deprecation warns about.
-# Remove together with the entry in 1.0.
+# viewcode and autodoc resolve the deprecated ``TZPATH`` and
+# ``DisambiguateStr`` reference entries by attribute access, which is exactly
+# what the deprecation warns about. Remove together with the entries in 1.0.
 warnings.filterwarnings("ignore", message="TZPATH is deprecated")
+warnings.filterwarnings("ignore", message="DisambiguateStr is deprecated")
 
 # -- Project information -----------------------------------------------------
 

@@ -74,7 +74,7 @@ mean the instant *is* a UTC datetime.
 >>> now = Instant.now()
 Instant("2026-01-23 05:30:15Z")
 >>> now.year
-AttributeError: 'Instant' object has no attribute 'year'
+AttributeError: 'whenever.Instant' object has no attribute 'year'
 ```
 
 If you need to access calendar fields, convert to a datetime type first:

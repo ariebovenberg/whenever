@@ -67,8 +67,8 @@ entry is unspecified. Lookup examines only the directory components of the
 requested ID rather than indexing the complete database.
 
 The initial search path comes from the `PYTHONTZPATH` environment variable,
-falling back to the interpreter's compiled-in `TZPATH`: the same sources
-{mod}`zoneinfo` reads. Entries that are not absolute paths are ignored.
+falling back to the `TZPATH` setting the interpreter was built with
+(`sysconfig.get_config_var("TZPATH")`): the same sources {mod}`zoneinfo` reads. Entries that are not absolute paths are ignored.
 Calling {func}`~whenever.reset_tzpath` with no argument reads them again.
 {func}`~whenever.get_tzpath` returns a snapshot: the tuple it returned does
 not change when the path is reset later.

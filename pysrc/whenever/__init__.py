@@ -18,6 +18,16 @@ def __getattr__(name: str) -> object:
             stacklevel=2,
         )
         return get_tzpath()
+    # Not cached, so that every access warns.
+    elif name == "DisambiguateStr":
+        from ._common import warn_deprecated
+        from ._typing import DisambiguateStr
+
+        warn_deprecated(
+            "DisambiguateStr is deprecated; use DisambiguationStr instead",
+            stacklevel=2,
+        )
+        return DisambiguateStr
     elif name == "AnyDelta":
         from ._core import TimeDelta
         from ._ideltas import ItemizedDateDelta, ItemizedDelta
@@ -41,7 +51,7 @@ def __dir__() -> list[str]:
         (
             globals().keys()
             | _LAZY_NAMES.keys()
-            | {"TZPATH", "AnyDelta", "__version__"}
+            | {"TZPATH", "DisambiguateStr", "AnyDelta", "__version__"}
         )
         - {"_LAZY_MODULES", "_LAZY_NAMES"}
     )
@@ -170,7 +180,6 @@ _LAZY_MODULES = {
         "DeltaTotalUnitStr",
         "DateDeltaUnitStr",
         "ExactDeltaUnitStr",
-        "DisambiguateStr",
         "DisambiguationStr",
         "OffsetMismatchStr",
         "TimestampUnitStr",

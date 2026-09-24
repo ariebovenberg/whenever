@@ -42,7 +42,7 @@ which keeps behavior predictable and fast.
 
 In the rare case that you need to change the system time zone
 while your program is running, you can use the
-{meth}`~whenever.reset_system_tz` method to determine the system time zone again.
+{func}`~whenever.reset_system_tz` function to determine the system time zone again.
 Existing datetimes will not be affected by this change,
 but new datetimes will use the updated system time zone.
 

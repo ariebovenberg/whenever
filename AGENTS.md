@@ -43,6 +43,9 @@ CI runs this coverage check on Python 3.14.
   Size follows importance: a breaking or API change gets its own entry
   with a **Rationale**; a fix or behaviour change gets a sentence or two;
   polish a user would barely notice merges into a neighbouring entry.
+  Fixes of one kind share one high-level line ("exceptions now agree
+  between the backends", "POSIX TZ strings are parsed strictly") rather
+  than one line each.
   Message wordings, helpers, backend mechanics, and plan steps stay out.
   So does anything a user of the last release never saw, which that
   release's code decides: a defect that appeared and was fixed within the
@@ -67,6 +70,8 @@ CI runs this coverage check on Python 3.14.
 
 - **Remove redundant checks**: if a condition is guaranteed by earlier logic, don't re-check it.
   Add a debug assert and/or a comment explaining why it's safe instead.
+  Enforce an invariant where the value is constructed, so every later use can
+  rely on it without guarding, re-validating, or catching a panic.
 - Only comment code where names and types are insufficient to explain the logic. Avoid redundant comments.
 - **Complexity budget**: weigh what an addition costs against what it buys.
   A perfect error message does not weigh up against three helper functions
@@ -92,8 +97,13 @@ CI runs this coverage check on Python 3.14.
   six types with patterns. `==` across types is `False` outside the exact
   family and against stdlib objects; ordering across types raises `TypeError`.
   Sub-microsecond precision is floored on the way to the stdlib.
-- **Exceptions**: out of domain is `ValueError`, `OverflowError` only for a
-  machine-integer overflow. A wrong type raises whatever falls out, usually
+- **Exceptions**: out of domain is `ValueError`. A value past the
+  representable range may raise `OverflowError` instead, and the backends
+  need not agree which; near year 1 and year 9999 they may also differ in
+  whether a call raises at all. Neither backend crashes or builds an invalid
+  value. Unpickling trusts its payload beyond the constructor's own checks:
+  a corrupt pickle may raise any exception with any message, short of a
+  crash. A wrong type raises whatever falls out, usually
   `TypeError` or `AttributeError`; the type checker is the guard. A check is
   added only where a wrong type would pass silently, such as a string where
   a sequence of strings is expected; its message is the one for a wrong

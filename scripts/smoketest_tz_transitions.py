@@ -1,6 +1,9 @@
 """Compare Whenever's time zone transitions against ``zdump -i``.
 
-Requires tzcode 2026b. On macOS, install it with ``brew install tzdb``.
+Requires the ``zdump`` of tzcode 2026b or later. On macOS, install it with
+``brew install tzdb``. Another ``zdump``, such as the one glibc ships on
+Linux, reports no tzcode version: it is used when it supports ``-i``, and
+the check is skipped otherwise.
 """
 
 from __future__ import annotations
@@ -8,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -22,7 +26,7 @@ from whenever import (
     reset_tzpath,
 )
 
-ZDUMP_VERSION = "zdump (tzcode) 2026b"
+MIN_TZCODE_VERSION = "2026b"
 
 
 def parse_offset(value: str) -> int:
@@ -243,6 +247,33 @@ def check_tzdata_database(
     )
 
 
+def unusable_zdump() -> str | None:
+    """Why the installed ``zdump`` can't serve as the reference, if so"""
+    try:
+        version = subprocess.run(
+            ["zdump", "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        ).stdout.strip()
+    except FileNotFoundError:
+        return "not installed"
+    if match := re.search(r"\(tzcode\) (\d{4}[a-z])", version):
+        # Fail rather than skip: an old tzcode zdump misreads newer data
+        assert match[1] >= MIN_TZCODE_VERSION, (version, MIN_TZCODE_VERSION)
+        return None
+    # Not tzcode's own zdump (glibc's, for example): it has to support -i
+    probe = subprocess.run(
+        ["zdump", "-i", "-c", "2020,2021", "UTC"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if probe.returncode != 0 or not probe.stdout.startswith("TZ="):
+        return f"{version!r} does not support -i"
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--start-year", type=int, default=1900)
@@ -254,14 +285,9 @@ def main() -> None:
     if args.workers < 1:
         parser.error("--workers must be positive")
 
-    version = subprocess.run(
-        ["zdump", "--version"],
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    ).stdout.strip()
-    assert version == ZDUMP_VERSION, (version, ZDUMP_VERSION)
+    if (reason := unusable_zdump()) is not None:
+        print(f"zdump is unusable ({reason}); skipping")
+        return
 
     system_zones, system_transitions = check_system_database(
         args.start_year, args.end_year, args.workers

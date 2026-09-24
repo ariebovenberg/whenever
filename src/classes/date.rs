@@ -112,14 +112,22 @@ impl PyPayload for Date {
 }
 
 fn __new__(cls: PyClass<Date>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
-    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+    let kwarg = kwargs.and_then(|d| d.iteritems().next());
+    if let (1, Some((key, _))) = (args.len(), kwarg) {
+        let arg = args.iter().next().unwrap();
+        if PyStr::isinstance(arg) || PyDate::isinstance(arg) {
+            return raise_unexpected_kwarg("Date", key);
+        }
+    }
+    if args.len() == 1 && kwarg.is_none() {
         let arg = args.iter().next().unwrap();
         if PyStr::isinstance(arg) {
             return parse_iso(cls, arg);
         }
         if let Some(d) = arg.cast_allow_subclass::<PyDate>() {
+            let date = Date::from_stdlib_date(d);
             warn_lossy_stdlib_subclass::<PyDate>(cls.state(), arg, "date")?;
-            return Date::from_stdlib_date(d).to_obj(cls);
+            return date.to_obj(cls);
         }
         return raise_type_err("Date() requires an ISO 8601 string or datetime.date");
     }
@@ -568,7 +576,7 @@ fn today(cls: PyClass<Date>, tz_obj: PyObj) -> PyReturn {
 
 fn format(cls: PyClass<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
@@ -589,13 +597,13 @@ fn __format__(cls: PyClass<Date>, slf: Date, spec_obj: PyObj) -> PyReturn {
 fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
     let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 

@@ -16,7 +16,7 @@ DEFAULT_PYTEST_ARGS := -q --tb=short
 DEFAULT_CARGO_ARGS := --quiet --message-format=short
 MYPY_ARGS := --no-error-summary
 RUFF_ARGS := --quiet
-SPHINXOPTS ?= -q
+SPHINXOPTS ?= -q -W --keep-going
 BUILD_ARGS := -q
 RUST_BUILD_ARGS := --qbuild
 DEFAULT_COV_REPORT_ARGS := --cov-report=term-missing:skip-covered --cov-report=html
@@ -27,7 +27,7 @@ DEFAULT_PYTEST_ARGS := -s
 DEFAULT_CARGO_ARGS :=
 MYPY_ARGS :=
 RUFF_ARGS :=
-SPHINXOPTS ?=
+SPHINXOPTS ?= -W --keep-going
 BUILD_ARGS :=
 RUST_BUILD_ARGS :=
 DEFAULT_COV_REPORT_ARGS := --cov-report=term-missing --cov-report=html

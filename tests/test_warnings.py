@@ -1,6 +1,11 @@
 """The warning hierarchy, and that every warning names the caller's line."""
 
 import warnings
+from datetime import (
+    datetime as py_datetime,
+    timedelta as py_timedelta,
+    timezone as py_timezone,
+)
 
 import pytest
 from whenever import (
@@ -191,6 +196,141 @@ def test_points_at_the_caller(call, category):
     line that called the library, not to a frame inside it."""
     with warns_here(category):
         call()
+
+
+def _pandas(base: type) -> type:
+    """A subclass the lossy-subclass warning names"""
+    return type("Timestamp", (base,), {"__module__": "pandas._libs"})
+
+
+_UTC = py_timezone.utc
+
+
+@pytest.mark.parametrize(
+    "call, exc",
+    [
+        pytest.param(
+            lambda: TimeDelta(days=10**9), ValueError, id="TimeDelta(days=)"
+        ),
+        pytest.param(
+            lambda: OffsetDateTime.now(hours(30)),
+            ValueError,
+            id="OffsetDateTime.now(hours(30))",
+        ),
+        pytest.param(
+            lambda: OffsetDateTime.now("x"),  # type: ignore[call-overload]
+            TypeError,
+            id="OffsetDateTime.now('x')",
+        ),
+        pytest.param(
+            lambda: OffsetDateTime.now(TimeDelta(seconds=0.5)),
+            ValueError,
+            id="OffsetDateTime.now(half a second)",
+        ),
+        pytest.param(
+            lambda: Instant(_pandas(py_datetime)(2020, 1, 1)),
+            ValueError,
+            id="Instant(naive)",
+        ),
+        pytest.param(
+            lambda: OffsetDateTime(_pandas(py_datetime)(2020, 1, 1)),
+            ValueError,
+            id="OffsetDateTime(naive)",
+        ),
+        pytest.param(
+            lambda: ZonedDateTime(
+                _pandas(py_datetime)(2020, 1, 1, tzinfo=_UTC)
+            ),
+            ValueError,
+            id="ZonedDateTime(no ZoneInfo)",
+        ),
+        pytest.param(
+            lambda: PlainDateTime(
+                _pandas(py_datetime)(2020, 1, 1, tzinfo=_UTC)
+            ),
+            ValueError,
+            id="PlainDateTime(aware)",
+        ),
+        pytest.param(
+            lambda: TimeDelta(_pandas(py_timedelta)(days=999_999_999)),
+            ValueError,
+            id="TimeDelta(out of range)",
+        ),
+        pytest.param(
+            lambda: OffsetDateTime(2020, 1, 1, offset=hours(0)).add(
+                years=9000
+            ),
+            ValueError,
+            id="OffsetDateTime.add",
+        ),
+        pytest.param(
+            lambda: (
+                OffsetDateTime(9999, 12, 31, 23, offset=hours(0)) + hours(1)
+            ),
+            ValueError,
+            id="OffsetDateTime + TimeDelta",
+        ),
+        pytest.param(
+            lambda: OffsetDateTime(
+                9999, 12, 31, 23, 30, offset=hours(0)
+            ).round("hour", mode="ceil"),
+            ValueError,
+            id="OffsetDateTime.round",
+        ),
+        pytest.param(
+            lambda: OffsetDateTime(1, 1, 1, 12, offset=hours(0)).start_of(
+                "week_sun"
+            ),
+            ValueError,
+            id="OffsetDateTime.start_of",
+        ),
+        pytest.param(
+            lambda: (
+                OffsetDateTime(9999, 12, 31, 23, offset=hours(0)) - hours(-1)
+            ),
+            ValueError,
+            id="OffsetDateTime - TimeDelta",
+        ),
+        pytest.param(
+            lambda: PlainDateTime(9999, 12, 31, 23).add(hours=1),
+            ValueError,
+            id="PlainDateTime.add",
+        ),
+        pytest.param(
+            lambda: PlainDateTime(9999, 12, 31, 23) + hours(1),
+            ValueError,
+            id="PlainDateTime + TimeDelta",
+        ),
+        pytest.param(
+            lambda: hours(1) + PlainDateTime(9999, 12, 31, 23),
+            ValueError,
+            id="TimeDelta + PlainDateTime",
+        ),
+        pytest.param(
+            lambda: (
+                hours(1) + OffsetDateTime(9999, 12, 31, 23, offset=hours(0))
+            ),
+            ValueError,
+            id="TimeDelta + OffsetDateTime",
+        ),
+        pytest.param(
+            lambda: PlainDateTime(9999, 12, 31, 23) + ItemizedDelta(hours=1),
+            ValueError,
+            id="PlainDateTime + ItemizedDelta",
+        ),
+        pytest.param(
+            lambda: PlainDateTime(9999, 12, 31, 23) - hours(-1),
+            ValueError,
+            id="PlainDateTime - TimeDelta",
+        ),
+    ],
+)
+def test_a_rejected_call_emits_no_warning(call, exc):
+    """Validate, then warn: the caller sees the real exception."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(exc):
+            call()
 
 
 def test_12h_warning_points_at_the_caller():

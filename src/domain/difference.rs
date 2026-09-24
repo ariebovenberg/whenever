@@ -450,6 +450,12 @@ impl ExactUnitSet {
     pub(crate) fn smallest(self) -> ExactUnit {
         ExactUnit::from_index(self.0.smallest_index())
     }
+
+    /// The unit just above the smallest, if the set has one.
+    pub(crate) fn second_smallest(self) -> Option<ExactUnit> {
+        let rest = UnitMask(self.0.0 & !(1 << self.0.smallest_index()));
+        (!rest.is_empty()).then(|| ExactUnit::from_index(rest.smallest_index()))
+    }
 }
 
 /// Bitfield set of units. Bit 0 = Years, bit 7 = Nanoseconds.
@@ -802,14 +808,14 @@ pub(crate) fn round_by_time(
     neg: bool,
 ) -> i32 {
     // Only run the rounding logic if the rounding mode isn't already trunc
-    // since that mode doesn't require any work.
-    if mode == round::AbsMode::Trunc {
+    // since that mode doesn't require any work. A skipped day can make the
+    // two endpoints coincide; the truncated value is then already rounded.
+    if mode == round::AbsMode::Trunc || expand == trunc {
         // Truncated value (the common case)
         value
     } else {
         let r = target.diff(trunc).abs();
         let e = expand.diff(trunc).abs();
-        debug_assert!(!e.is_zero());
         // r.cmp(e - r) is equivalent to (r * 2).cmp(e), avoiding overflow
         let half_cmp = r.cmp(&(e.add(-r).unwrap()));
         round(value, !r.is_zero(), half_cmp, mode, increment, neg)

@@ -25,8 +25,10 @@ Sometimes you need to control what `.now()` returns, typically for testing.
 ```{note}
 
 It's also possible to use the
-[freezegun](https://github.com/spulec/freezegun) library,
-but it will *only work on the pure-Python backend* of `whenever`.
+[freezegun](https://github.com/spulec/freezegun) library.
+It works on the pure-Python backend, and on the Rust extension only while
+`time-machine` is installed too: the extension then reads the clock through
+{func}`time.time_ns`, which freezegun patches.
 ```
 
 The context manager yields a {class}`~whenever.TimePatch` handle to the

@@ -32,7 +32,7 @@ such as the **Unix epoch**.
 Examples of exact time include:
 
 - "2026-01-15 12:00 UTC"
-- "1.673.779.200 seconds since the Unix epoch"
+- "1,768,478,400 seconds since the Unix epoch"
 - "The moment this database record was created"
 
 Exact time is what you use when you care about *when something actually happened*.

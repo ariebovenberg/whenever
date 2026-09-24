@@ -115,12 +115,14 @@ See the {ref}`FAQ <faq-instant-no-local>` for more details.
 ## Methods on all four types
 
 Text in and out is shared by all four types; see {ref}`iso8601` and
-{ref}`pattern-format`:
+{ref}`pattern-format`. So is `difference()`, the exact time between two
+values:
 
 |   | {class}`Instant` | {class}`ZonedDateTime` | {class}`OffsetDateTime` | {class}`PlainDateTime` |
 |----|:--------:|:-----:|:------:|:------:|
 | `format_iso()`, `parse_iso()` | {meth}`🔗 <Instant.format_iso>`, {meth}`🔗 <Instant.parse_iso>` | {meth}`🔗 <ZonedDateTime.format_iso>`, {meth}`🔗 <ZonedDateTime.parse_iso>` | {meth}`🔗 <OffsetDateTime.format_iso>`, {meth}`🔗 <OffsetDateTime.parse_iso>` | {meth}`🔗 <PlainDateTime.format_iso>`, {meth}`🔗 <PlainDateTime.parse_iso>` |
 | `format()`, `parse()` | {meth}`🔗 <Instant.format>`, {meth}`🔗 <Instant.parse>` | {meth}`🔗 <ZonedDateTime.format>`, {meth}`🔗 <ZonedDateTime.parse>` | {meth}`🔗 <OffsetDateTime.format>`, {meth}`🔗 <OffsetDateTime.parse>` | {meth}`🔗 <PlainDateTime.format>`, {meth}`🔗 <PlainDateTime.parse>` |
+| `difference()` | {meth}`🔗 <Instant.difference>` | {meth}`🔗 <ZonedDateTime.difference>` | {meth}`🔗 <OffsetDateTime.difference>` | {meth}`🔗 <PlainDateTime.difference>` |
 
 ## Other methods
 
@@ -130,6 +132,7 @@ Several other methods are unique to one or more classes:
 |--------------------------------------------|-----------------------------------------|----------------------------------------|-------------------------------------------------------|
 | {attr}`~Instant.MIN`, {attr}`~Instant.MAX` |                                         |                                        | {attr}`~PlainDateTime.MIN`, {attr}`~PlainDateTime.MAX` |
 | {meth}`~Instant.from_utc`                  |                                         |                                        |                                                        |
+| {meth}`~Instant.add`, {meth}`~Instant.subtract` |                                    |                                        | {meth}`x + TimeDelta <PlainDateTime.__add__>`          |
 | {meth}`~Instant.format_rfc2822`, {meth}`~Instant.parse_rfc2822` |                    | {meth}`~OffsetDateTime.format_rfc2822`, {meth}`~OffsetDateTime.parse_rfc2822` |                     |
 |                                            | {meth}`~ZonedDateTime.to_instant`       | {meth}`~OffsetDateTime.to_instant`     |                                                        |
 |                                            | {meth}`~ZonedDateTime.to_plain`         | {meth}`~OffsetDateTime.to_plain`       |                                                        |

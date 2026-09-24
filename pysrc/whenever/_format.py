@@ -1179,20 +1179,26 @@ _RESERVED_CHARS = frozenset("<>[]{}#")
 
 
 def _compile_quoted_literal(
-    pattern: str, i: int, n: int
-) -> tuple[int, _Element]:
-    """Compile a quoted literal ('...' or escaped quote '').
-    Returns (new_pos, element).
+    pattern: str, i: int, n: int, elements: list[_Element]
+) -> int:
+    """Compile a quoted literal ('...' or escaped quote '') into ``elements``.
+    Returns the new position.
     """
     i += 1  # skip opening quote
     if i < n and pattern[i] == "'":
-        return i + 1, _Literal("'")
+        elements.append(_Literal("'"))
+        return i + 1
     start = i
-    while i < n and pattern[i] != "'":
-        i += 1
-    if i >= n:
-        raise ValueError("unterminated quoted literal in pattern")
-    return i + 1, _Literal(pattern[start:i])  # skip closing quote
+    while (end := pattern.find("'", i)) != -1:
+        if not pattern.startswith("''", end):
+            if end > start:
+                elements.append(_Literal(pattern[start:end]))
+            return end + 1  # skip closing quote
+        # A doubled quote inside a quoted run is a literal quote (LDML):
+        # keep the first, skip the second, and continue the run.
+        elements.append(_Literal(pattern[start : end + 1]))
+        i = start = end + 2
+    raise ValueError("unterminated quoted literal in pattern")
 
 
 def _compile_specifier(
@@ -1305,17 +1311,15 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
             if pending is not None:
                 elements.append(_Literal(pending))
                 pending = None
-            new_i, el = _compile_quoted_literal(pattern, i, n)
-            elements.append(el)
-            i = new_i
+            i = _compile_quoted_literal(pattern, i, n, elements)
             continue
 
         if ch == "[":
             if pending is not None:
                 elements.append(_Literal(pending))
                 pending = None
-            i, el = _compile_optional_seconds(pattern, i)
-            elements.append(el)
+            i, optional_seconds = _compile_optional_seconds(pattern, i)
+            elements.append(optional_seconds)
             continue
 
         # Recognized specifier: delegate pending handling to the field itself

@@ -69,7 +69,8 @@ out-of-range payloads still raise exceptions.
 
 ## Compatibility
 
-1.0 reads every pickle written by 0.8.0 or later of a type it still has.
+Every pickle written by 0.8.0 or later loads, as long as its type still
+exists. 0.11 also loads `Instant` pickles written before 0.8.0; 1.0 won't.
 `DateDelta` and `DateTimeDelta` pickles stopped loading in 0.11 with their
 types; `SystemDateTime` pickles in 0.9.0. The payload stores a time zone ID,
 never the rules, so what a pickle loads as depends on the time zone data of

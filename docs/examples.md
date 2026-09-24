@@ -220,7 +220,10 @@ ZonedDateTime("2023-03-26 01:30:00+01:00[Europe/Berlin]")
 Or, you can even reject ambiguous datetimes altogether:
 
 ```python
->>> zoned = dt.assume_tz("Europe/Berlin", disambiguation="raise")
+>>> dt.assume_tz("Europe/Berlin", disambiguation="raise")
+Traceback (most recent call last):
+  ...
+whenever.SkippedTime: 2023-03-26 02:30:00 is skipped in time zone 'Europe/Berlin'
 ```
 
 ## "Same time tomorrow" across DST

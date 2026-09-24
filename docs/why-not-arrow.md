@@ -11,8 +11,8 @@ myst:
 
 # Why not Arrow?
 
-[**Arrow**](https://pypi.org/project/arrow/) (2013) is the most-downloaded
-third-party datetime library for Python. It was closely modeled on JavaScript's
+[**Arrow**](https://pypi.org/project/arrow/) (2013) is one of the most
+popular third-party datetime libraries for Python. It was closely modeled on JavaScript's
 `moment.js`: one friendly `Arrow` type, a permissive `arrow.get()` that accepts
 almost anything, moment-style format tokens, and localized, human-readable
 differences (`humanize()`).
@@ -108,7 +108,7 @@ and has fallen out of favor since:
 - **JavaScript itself retreated from it.** Implicit coercion (`==`) and
   `Date`'s guess-the-format parsing became the language's famous footguns;
   moment.js is in maintenance mode and [recommends against itself for new
-  projects](https://momentjs.com/docs/#/-project-status/), and its successors
+  projects](https://momentjs.com/news/#2020-09-14-project-status), and its successors
   are strict about their input.
 - **Static typing changed what "ergonomic" means.** Since PEP 484, Python
   codebases increasingly rely on type checkers and IDE completion. A function
@@ -195,7 +195,7 @@ whatever follows---including the time and offset---is silently dropped:
 <Arrow [2024-01-01T00:00:00+00:00]>
 ```
 
-Timezone expressions are matched by an unanchored regex with an optional sign,
+Time zone expressions are matched by an unanchored regex with an optional sign,
 so junk becomes an offset:
 
 ```python

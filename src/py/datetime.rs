@@ -184,8 +184,14 @@ impl Typed<DateTimeTag> {
         unsafe { PyDate::from_ptr_unchecked(self.as_ptr()) }
     }
 
+    /// Call the base `datetime.utcoffset()`, leaving a subclass's override
+    /// unread: the "Stdlib overloads" rule. The stdlib checks the tzinfo's
+    /// result: `None` or a `timedelta` strictly within 24 hours.
     pub(crate) fn utcoffset(&self) -> PyReturn {
-        self.getattr(c"utcoffset")?.call0()
+        // SAFETY: the datetime API is imported, since self is a datetime
+        let datetime_type =
+            unsafe { PyObj::from_ptr_unchecked((*PyDateTimeAPI()).DateTimeType.cast()) };
+        datetime_type.getattr(c"utcoffset")?.call1(*self)
     }
 }
 

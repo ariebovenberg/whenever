@@ -1,5 +1,5 @@
 #[cfg(test)]
-use crate::common::{fmt::Sink, parse::Scan};
+use crate::common::parse::Scan;
 use crate::{
     common::{
         compat::{FORMAT_KEYWORD_WARNING, parse_pattern_keyword, warn_deprecated},
@@ -140,7 +140,14 @@ pub(crate) const SINGLETONS: &[(&CStr, Time); 4] = &[
 ];
 
 fn __new__(cls: PyClass<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
-    if args.len() == 1 && kwargs.map_or(0, |d| d.len()) == 0 {
+    let kwarg = kwargs.and_then(|d| d.iteritems().next());
+    if let (1, Some((key, _))) = (args.len(), kwarg) {
+        let obj = args.iter().next().unwrap();
+        if PyStr::isinstance(obj) || PyTime::isinstance(obj) {
+            return raise_unexpected_kwarg("Time", key);
+        }
+    }
+    if args.len() == 1 && kwarg.is_none() {
         let obj = args.iter().next().unwrap();
         if PyStr::isinstance(obj) {
             return parse_iso(cls, obj);
@@ -297,7 +304,13 @@ fn replace(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwarg
 fn round(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let round::Args {
         increment, mode, ..
-    } = round::Args::parse(args, kwargs, cls.state(), round::ArgsContext::Standard)?;
+    } = round::Args::parse(
+        args,
+        kwargs,
+        cls.state(),
+        round::ArgsContext::Standard,
+        false,
+    )?;
     let increment_ns = match increment {
         round::RoundIncrement::Day => raise_value_err("invalid unit: 'day'")?,
         round::RoundIncrement::Exact(incr) => incr.get(),
@@ -307,7 +320,7 @@ fn round(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs)
 
 fn format(cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
@@ -328,13 +341,13 @@ fn __format__(cls: PyClass<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
 fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
     let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
@@ -408,15 +421,6 @@ pub(crate) static SPEC: PyDefCell<PyType_Spec> =
 mod tests {
     use super::*;
     use crate::common::fmt::Chunk;
-
-    impl Sink for Vec<u8> {
-        fn write(&mut self, bytes: &[u8]) {
-            self.extend_from_slice(bytes);
-        }
-        fn write_byte(&mut self, b: u8) {
-            self.push(b);
-        }
-    }
 
     #[test]
     fn format_iso() {

@@ -29,7 +29,7 @@ use crate::{
     },
     py::*,
     pymodule::State,
-    tz::tzif::TimeZone,
+    tz::{posix::abbrev_text, tzif::TimeZone},
 };
 use core::{
     ffi::{CStr, c_int, c_void},
@@ -124,9 +124,9 @@ impl PlainDateTime {
         )
     }
 
-    /// Resolve using an explicit disambiguation, or—if omitted—by preferring
-    /// the given offset. Warns if the offset can't decide the matter either:
-    /// in a gap it is never applicable, and in a fold it may match neither side.
+    /// Resolve by preferring the given offset, and otherwise by the
+    /// disambiguation. Warns if that is omitted and has to decide: in a gap
+    /// the offset never applies, and in a fold it may match neither side.
     pub(crate) fn resolve_with_disambiguation_or_offset(
         self,
         tz: &TimeZone,
@@ -136,23 +136,23 @@ impl PlainDateTime {
         state: &State,
     ) -> PyResult<OffsetDateTime> {
         let mapping = tz.mapping_for_local(self.local_seconds());
-        let policy = match disambiguation {
-            Some(d) => ResolvePolicy::Disambiguate(d),
-            None => {
-                if match mapping {
-                    LocalMapping::Unique { .. } => false,
-                    LocalMapping::Gap { .. } => true,
-                    LocalMapping::Fold { before, after, .. } => offset != before && offset != after,
-                } {
-                    warn_with_class(
-                        *state.warn_implicit_disambiguation,
-                        doc::IMPLICIT_DISAMBIGUATION_MSG,
-                        warn_stacklevel,
-                    )?;
-                }
-                ResolvePolicy::PreserveOffset(offset)
+        if disambiguation.is_none()
+            && match mapping {
+                LocalMapping::Unique { .. } => false,
+                LocalMapping::Gap { .. } => true,
+                LocalMapping::Fold { before, after, .. } => offset != before && offset != after,
             }
-        };
+        {
+            warn_with_class(
+                *state.warn_implicit_disambiguation,
+                doc::IMPLICIT_DISAMBIGUATION_MSG,
+                warn_stacklevel,
+            )?;
+        }
+        let policy = ResolvePolicy::PreserveOffset(
+            offset,
+            disambiguation.unwrap_or(Disambiguation::Compatible),
+        );
         self.resolve_mapping_or_raise(mapping, policy, tz, state)
     }
 
@@ -242,7 +242,6 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
             return parse_iso_inner(cls, arg, dis, mismatch);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            warn_lossy_stdlib_subclass::<PyDateTime>(cls.state(), arg, "datetime")?;
             let (dis, mismatch, _) = match kwargs {
                 Some(d) => parse_iso_kwargs(d.iteritems(), "ZonedDateTime", false, cls.state())?,
                 None => parse_iso_kwargs(
@@ -252,7 +251,9 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
                     cls.state(),
                 )?,
             };
-            return from_stdlib_datetime_inner(cls, dt, dis, mismatch);
+            let zdt = from_stdlib_datetime_inner(cls, dt, dis, mismatch)?;
+            warn_lossy_stdlib_subclass::<PyDateTime>(cls.state(), arg, "datetime")?;
+            return Ok(zdt);
         }
         if kwargs.map_or(0, |d| d.len()) == 0 {
             return raise_type_err(
@@ -474,12 +475,13 @@ fn strict_eq(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> 
 }
 
 fn exact_eq(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> PyReturn {
+    let result = strict_eq(cls, slf, obj_b)?;
     warn_deprecated(
         cls.state(),
         c"exact_eq() is deprecated; use strict_eq() instead",
         1,
     )?;
-    strict_eq(cls, slf, obj_b)
+    Ok(result)
 }
 
 fn to_tz(cls: PyClass<ZonedDateTime>, slf: PyRef<'_, ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
@@ -494,7 +496,10 @@ fn to_tz(cls: PyClass<ZonedDateTime>, slf: PyRef<'_, ZonedDateTime>, tz_obj: PyO
 
 pub(crate) fn unpickle(state: &State, args: &[PyObj]) -> PyReturn {
     let &[data, tz_obj] = args else {
-        raise_type_err(pickle::INVALID_DATA)?
+        raise_type_err(format!(
+            "_unpkl_zoned() takes 2 positional arguments but {} were given",
+            args.len()
+        ))?
     };
     let stored =
         pickle::decode_offset(data.expect_bytes()?).ok_or_value_err(pickle::INVALID_DATA)?;
@@ -531,10 +536,14 @@ fn to_fixed_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, args: &[PyO
     let state = cls.state();
     match handle_opt_arg("to_fixed_offset", args)? {
         None => slf.to_plain().assume_offset_unchecked(slf.offset),
-        Some(arg) => slf
-            .to_instant()
-            .to_offset(Offset::from_py(arg, state)?)
-            .ok_or_range_err()?,
+        Some(arg) => {
+            let result = slf
+                .to_instant()
+                .to_offset(Offset::from_py(arg, state)?)
+                .ok_or_range_err()?;
+            Offset::warn_if_int(arg, state)?;
+            result
+        }
     }
     .to_obj(*state.offset_datetime_type)
 }
@@ -591,17 +600,11 @@ fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -
             .at(Time::MIN)
             .start_of_unit(unit)
             .ok_or_range_err()?
-            .resolve_derived(&slf.tz, None)
+            .resolve_derived(&slf.tz)
             .ok_or_range_err()?
             .into_zoned_obj_unchecked(slf.tz.clone(), cls),
         DateTimeBoundaryUnit::Time(u) => slf
-            .to_plain()
-            .start_of_unit(unit)
-            .ok_or_range_err()?
-            .resolve_derived(
-                &slf.tz,
-                Some((slf.offset, u.in_secs() as u64 * NS_PER_SECOND as u64)),
-            )
+            .start_of_time_unit(u)
             .ok_or_range_err()?
             .into_zoned_obj_unchecked(slf.tz.clone(), cls),
     }
@@ -609,62 +612,23 @@ fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -
 
 fn end_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
     let unit = DateTimeBoundaryUnit::from_py(unit_obj, cls.state())?;
-
-    // Behavior differs:
-    // 1. Calendar units always consume folds--so that it seamlessly lines up
-    //    with the next "start of day/week/month/year".
-    // 2. Other units consume folds under certain conditions, but not always.
     match unit {
+        // The start of the next unit, less one nanosecond
         DateTimeBoundaryUnit::Date(_) | DateTimeBoundaryUnit::Day => slf
-            // Calculate the start of the next unit, then step back one ns.
             .day()
             .at(Time::MIN)
             .next_start_of_unit(unit)
             .ok_or_range_err()?
-            .resolve_derived(&slf.tz, None)
+            .resolve_derived(&slf.tz)
             .ok_or_range_err()?
             .to_instant()
             .shift(-TimeDelta::RESOLUTION)
             .unwrap()
             .into_zoned_obj(slf.tz.clone(), cls),
-        DateTimeBoundaryUnit::Time(u) => {
-            let end_local = slf.to_plain().end_of_unit(unit).ok_or_range_err()?;
-            let local_seconds = end_local.local_seconds();
-            match slf.tz.mapping_for_local(local_seconds) {
-                LocalMapping::Unique { offset } => end_local.assume_offset(offset),
-                LocalMapping::Fold {
-                    transition,
-                    before,
-                    after,
-                } => {
-                    end_local.assume_offset(
-                        // Use the 'later' part of the fold if...
-                        if
-                        // ...(a) we're already in that part of the fold...
-                        after == slf.offset ||
-                        // ...or (b) we're exactly at the end of the fold, and the fold is
-                        // shorter than the unit.
-                        (local_seconds.get() + 1 == transition.get()
-                            && before.sub(after).get() < u.in_secs())
-                        {
-                            after
-                        } else {
-                            before
-                        },
-                    )
-                }
-                LocalMapping::Gap {
-                    transition,
-                    before,
-                    after,
-                } => transition
-                    .saturating_add_i32(-after.sub(before).get() - 1)
-                    .datetime(SubSecNanos::MAX)
-                    .assume_offset(before),
-            }
-        }
-        .ok_or_range_err()?
-        .into_zoned_obj_unchecked(slf.tz.clone(), cls),
+        DateTimeBoundaryUnit::Time(u) => slf
+            .end_of_time_unit(u)
+            .ok_or_range_err()?
+            .into_zoned_obj_unchecked(slf.tz.clone(), cls),
     }
 }
 
@@ -814,6 +778,8 @@ fn matching_local_offset(
     };
     match mapping {
         LocalMapping::Unique { offset } => matches(offset).map(OffsetMatch::Occurrence),
+        // An exact match wins over the earlier offset matching after rounding.
+        LocalMapping::Fold { after, .. } if after == parsed => Some(OffsetMatch::Occurrence(after)),
         LocalMapping::Fold { before, after, .. } => matches(before)
             .or_else(|| matches(after))
             .map(OffsetMatch::Occurrence),
@@ -1254,8 +1220,7 @@ fn dst_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 
 fn tz_abbrev(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
-    // SAFETY: TzAbbrev always contains valid ASCII bytes
-    unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) }.to_py()
+    abbrev_text(meta.abbrev).to_py()
 }
 
 fn add(
@@ -1345,24 +1310,17 @@ fn round(
 ) -> PyReturn {
     let round::Args {
         increment, mode, ..
-    } = round::Args::parse(args, kwargs, cls.state(), round::ArgsContext::Standard)?;
+    } = round::Args::parse(
+        args,
+        kwargs,
+        cls.state(),
+        round::ArgsContext::Standard,
+        true,
+    )?;
 
     match increment {
         round::RoundIncrement::Day => slf.round_day(mode),
-        round::RoundIncrement::Exact(ns) => {
-            let ZonedDateTime {
-                mut date,
-                time,
-                offset,
-                ref tz,
-            } = *slf;
-            let (time_rounded, next_day) = time.round(ns.get(), mode);
-            if next_day == 1 {
-                date = date.tomorrow().ok_or_range_err()?;
-            };
-            date.at(time_rounded)
-                .resolve_derived(tz, Some((offset, ns.get())))
-        }
+        round::RoundIncrement::Exact(ns) => slf.round_time_unit(ns.get(), mode),
     }
     .ok_or_range_err()?
     .into_zoned_obj_unchecked(slf.tz.clone(), cls)
@@ -1430,10 +1388,16 @@ fn zoned_since_float(
                 .to_instant();
             // result is signed; take absolute value and restore sign at the end.
             // num/denom ratio is always positive (same sign).
-            let num = a.to_instant().diff(trunc).total_nanos() as f64;
-            let denom = expand.diff(trunc).total_nanos() as f64;
+            // A skipped day can make the two endpoints coincide. The
+            // truncated amount is then the whole total.
+            let fraction = if expand == trunc {
+                0.0
+            } else {
+                a.to_instant().diff(trunc).total_nanos() as f64
+                    / expand.diff(trunc).total_nanos() as f64
+            };
             let sign: f64 = if neg { -1.0 } else { 1.0 };
-            ((result.abs() as f64 + num / denom) * sign).to_py()
+            ((result.abs() as f64 + fraction) * sign).to_py()
         }
     }
 }
@@ -1498,14 +1462,13 @@ fn zoned_since(
 
 fn format(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET_TZ, "ZonedDateTime")?;
     let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
-    // SAFETY: TzAbbrev always contains valid ASCII bytes
-    let abbrev_str = unsafe { std::str::from_utf8_unchecked(meta.abbrev.as_bytes()) };
+    let abbrev_str = abbrev_text(meta.abbrev);
     let result = pattern.format(
         &slf.to_plain()
             .pattern_values()
@@ -1527,7 +1490,7 @@ fn __format__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, spec_obj: PyObj)
 fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
@@ -1554,7 +1517,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let fmt_obj =
         fmt_obj.ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")?;
     let fmt_pystr = fmt_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
@@ -1642,12 +1605,15 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
                     args: *mut PyObject,
                     kwargs: *mut PyObject,
                 ) -> *mut PyObject {
-                    from_system_tz(
-                        unsafe { PyClass::from_ptr_unchecked(cls.cast()) },
-                        unsafe { PyTuple::from_ptr_unchecked(args) },
-                        (!kwargs.is_null()).then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
+                    catch_panic!(
+                        from_system_tz(
+                            unsafe { PyClass::from_ptr_unchecked(cls.cast()) },
+                            unsafe { PyTuple::from_ptr_unchecked(args) },
+                            (!kwargs.is_null())
+                                .then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
+                        )
+                        .to_py_owned_ptr()
                     )
-                    .to_py_owned_ptr()
                 }
                 _wrap
             },

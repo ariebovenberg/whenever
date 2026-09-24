@@ -1,5 +1,9 @@
 use crate::{
-    classes::{itemized_date_delta::ItemizedDateDelta, itemized_delta::ItemizedDelta},
+    classes::{
+        itemized_date_delta::ItemizedDateDelta,
+        itemized_delta::ItemizedDelta,
+        time_delta::{TimeDelta, exact_unit_for_kwarg},
+    },
     domain::{
         difference::ExactUnit,
         scalar::{DeltaDays, DeltaMonths},
@@ -39,64 +43,67 @@ pub(crate) fn parse_datetime_shift_arg(
     }
 }
 
-fn parse_calendar_shift_unit(
-    key: PyObj,
-    value: PyObj,
-    eq: StrEqFn,
-    state: &State,
-) -> PyResult<Option<CalendarShift>> {
-    Ok(Some(if eq(key, *state.strs.years) {
-        CalendarShift {
-            months: DeltaMonths::from_i64_years(value.expect_int("years")?.to_i64()?)
-                .ok_or_range_err()?,
-            days: DeltaDays::ZERO,
-        }
-    } else if eq(key, *state.strs.months) {
-        CalendarShift {
-            months: DeltaMonths::from_i64(value.expect_int("months")?.to_i64()?)
-                .ok_or_range_err()?,
-            days: DeltaDays::ZERO,
-        }
-    } else if eq(key, *state.strs.weeks) {
-        CalendarShift {
-            months: DeltaMonths::ZERO,
-            days: DeltaDays::from_i64_weeks(value.expect_int("weeks")?.to_i64()?)
-                .ok_or_range_err()?,
-        }
-    } else if eq(key, *state.strs.days) {
-        CalendarShift {
-            months: DeltaMonths::ZERO,
-            days: DeltaDays::from_i64(value.expect_int("days")?.to_i64()?).ok_or_range_err()?,
-        }
-    } else {
-        return Ok(None);
-    }))
+/// Keyword components summed before any range check, as pure Python does:
+/// `months=-120000, years=10000` is no shift at all.
+#[derive(Default)]
+struct KwargSums {
+    months: i64,
+    days: i64,
+    nanos: i128,
 }
 
-fn parse_datetime_shift_unit(
-    key: PyObj,
-    value: PyObj,
-    eq: StrEqFn,
-    state: &State,
-) -> PyResult<Option<DateTimeShift>> {
-    if let Some(calendar) = parse_calendar_shift_unit(key, value, eq, state)? {
-        return Ok(Some(calendar.to_shift()));
+impl KwargSums {
+    fn add_calendar(
+        &mut self,
+        key: PyObj,
+        value: PyObj,
+        eq: StrEqFn,
+        state: &State,
+    ) -> PyResult<bool> {
+        let (name, factor, sum) = if eq(key, *state.strs.years) {
+            ("years", 12, &mut self.months)
+        } else if eq(key, *state.strs.months) {
+            ("months", 1, &mut self.months)
+        } else if eq(key, *state.strs.weeks) {
+            ("weeks", 7, &mut self.days)
+        } else if eq(key, *state.strs.days) {
+            ("days", 1, &mut self.days)
+        } else {
+            return Ok(false);
+        };
+        *sum = value
+            .expect_int(name)?
+            .to_i64()?
+            .checked_mul(factor)
+            .and_then(|v| sum.checked_add(v))
+            .ok_or_range_err()?;
+        Ok(true)
     }
-    Ok(Some(if eq(key, *state.strs.hours) {
-        ExactUnit::Hours.parse_py_number(value)?.to_shift()
-    } else if eq(key, *state.strs.minutes) {
-        ExactUnit::Minutes.parse_py_number(value)?.to_shift()
-    } else if eq(key, *state.strs.seconds) {
-        ExactUnit::Seconds.parse_py_number(value)?.to_shift()
-    } else if eq(key, *state.strs.milliseconds) {
-        ExactUnit::Milliseconds.parse_py_number(value)?.to_shift()
-    } else if eq(key, *state.strs.microseconds) {
-        ExactUnit::Microseconds.parse_py_number(value)?.to_shift()
-    } else if eq(key, *state.strs.nanoseconds) {
-        ExactUnit::Nanoseconds.parse_py_number(value)?.to_shift()
-    } else {
-        return Ok(None);
-    }))
+
+    fn add_exact(
+        &mut self,
+        key: PyObj,
+        value: PyObj,
+        eq: StrEqFn,
+        state: &State,
+    ) -> PyResult<bool> {
+        let Some(unit) = exact_unit_for_kwarg(key, eq, state) else {
+            return Ok(false);
+        };
+        debug_assert!(!matches!(unit, ExactUnit::Days | ExactUnit::Weeks));
+        self.nanos = self
+            .nanos
+            .checked_add(unit.parse_py_nanos(value)?)
+            .ok_or_range_err()?;
+        Ok(true)
+    }
+
+    fn calendar(&self) -> PyResult<CalendarShift> {
+        Ok(CalendarShift {
+            months: DeltaMonths::from_i64(self.months).ok_or_range_err()?,
+            days: DeltaDays::from_i64(self.days).ok_or_range_err()?,
+        })
+    }
 }
 
 pub(crate) fn parse_calendar_shift_kwargs<K>(
@@ -107,15 +114,9 @@ pub(crate) fn parse_calendar_shift_kwargs<K>(
 where
     K: IntoIterator<Item = (PyObj, PyObj)>,
 {
-    let mut shift = CalendarShift::ZERO;
-    handle_kwargs(fname, kwargs, |k, v, eq| {
-        let Some(unit) = parse_calendar_shift_unit(k, v, eq, state)? else {
-            return Ok(false);
-        };
-        shift = shift.add(unit).ok_or_range_err()?;
-        Ok(true)
-    })?;
-    Ok(shift)
+    let mut sums = KwargSums::default();
+    handle_kwargs(fname, kwargs, |k, v, eq| sums.add_calendar(k, v, eq, state))?;
+    sums.calendar()
 }
 
 pub(crate) fn parse_datetime_shift_kwargs<K, F>(
@@ -128,14 +129,14 @@ where
     K: IntoIterator<Item = (PyObj, PyObj)>,
     F: FnMut(PyObj, PyObj, StrEqFn) -> PyResult<bool>,
 {
-    let mut shift = DateTimeShift::ZERO;
+    let mut sums = KwargSums::default();
     handle_kwargs(fname, kwargs, |k, v, eq| {
-        if let Some(unit) = parse_datetime_shift_unit(k, v, eq, state)? {
-            shift = shift.add(unit).ok_or_range_err()?;
-            Ok(true)
-        } else {
-            handle_extra(k, v, eq)
-        }
+        Ok(sums.add_calendar(k, v, eq, state)?
+            || sums.add_exact(k, v, eq, state)?
+            || handle_extra(k, v, eq)?)
     })?;
-    Ok(shift)
+    Ok(DateTimeShift {
+        calendar: sums.calendar()?,
+        time: TimeDelta::from_nanos(sums.nanos).ok_or_range_err()?,
+    })
 }

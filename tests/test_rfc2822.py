@@ -58,6 +58,20 @@ from whenever import (
             ),
             "Sat, 15 Aug 2020 23:12:09 -0522",
         ),
+        # -0000 means "offset unknown", so a known offset under a minute
+        # writes +0000
+        (
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-seconds(30)),
+            "Sat, 15 Aug 2020 23:12:09 +0000",
+        ),
+        (
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-seconds(59)),
+            "Sat, 15 Aug 2020 23:12:09 +0000",
+        ),
+        (
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-seconds(60)),
+            "Sat, 15 Aug 2020 23:12:09 -0001",
+        ),
     ],
 )
 def test_format_offset_datetime(d, expected):
@@ -273,6 +287,11 @@ INVALID_RFC2822 = [
     "Sat, 15 Aug 202023:12 -2100",
     "Sat, 15 Aug 2020 23:12-2100",
     "Sat, 15 Aug 2020 23:12:00-2100",
+    # information separators, which str.split() takes for whitespace
+    "Tue, 13 Jul 2021 09:45:00\x1c-0900",
+    "Tue,\x1d13 Jul 2021 09:45:00 -0900",
+    "\x1eTue, 13 Jul 2021 09:45:00 -0900",
+    "Tue, 13 Jul\x1f2021 09:45:00 -0900",
     # Invalid values
     "Sun, 15 Aug 2020 23:12 +0400",
     "Foo, 15 Aug 2020 23:12 +0400",

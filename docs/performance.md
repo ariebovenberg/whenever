@@ -133,7 +133,8 @@ install size or platform coverage matters more than runtime speed.
 `whenever`'s focus on runtime speed and rich API means it is relatively large.
 However, it keeps the wheel size reasonable through careful design choices:
 
-- Several types (`Weekday`, `YearMonth`, `MonthDay`, `IsoWeekDate`) are
+- Several types (`Weekday`, `YearMonth`, `MonthDay`, `IsoWeekDate`,
+  `ItemizedDelta`, `ItemizedDateDelta`, and the `TimePatch` handle) are
   implemented only in Python even when the Rust extension is active, keeping
   the Rust extension focused on the performance-critical datetime types.
 - Inlining is used judiciously: hot code paths are optimized, while cold paths

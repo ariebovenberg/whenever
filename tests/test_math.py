@@ -8,11 +8,22 @@ It also holds the rounding law, which every ``round()`` follows.
 """
 
 import math
+import re
+import warnings
 from fractions import Fraction
 from typing import Any
 
 import pytest
-from whenever import Date, Time, TimeDelta, hours
+from whenever import (
+    Date,
+    Instant,
+    OffsetDateTime,
+    PlainDateTime,
+    Time,
+    TimeDelta,
+    ZonedDateTime,
+    hours,
+)
 from whenever._math import rounds_up
 
 MODES = [
@@ -142,5 +153,81 @@ class TestRoundingLaw:
                         )
 
     def test_largest_delta_does_not_escape_its_range(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             TimeDelta.MAX.round(TimeDelta(nanoseconds=97), mode="half_trunc")
+
+
+_ROUNDABLE = [
+    Time(13, 45, 7),
+    PlainDateTime(2024, 1, 1, 13, 45, 7),
+    OffsetDateTime(2024, 1, 1, 13, 45, 7, offset=hours(2)),
+    ZonedDateTime(2024, 1, 1, 13, 45, 7, tz="Europe/Paris"),
+    Instant.from_utc(2024, 1, 1, 13, 45, 7),
+    TimeDelta(hours=13, minutes=45, seconds=7),
+]
+
+
+def _round(value: Any, *args: Any, **kwargs: Any) -> Any:
+    if isinstance(value, OffsetDateTime):
+        kwargs["stale_offset_ok"] = True
+    return value.round(*args, **kwargs)
+
+
+class TestRoundArguments:
+    @pytest.mark.parametrize(
+        "value", _ROUNDABLE, ids=lambda v: type(v).__name__
+    )
+    def test_increment_without_unit_counts_seconds(self, value):
+        assert _round(value, increment=15) == _round(
+            value, "second", increment=15
+        )
+        assert _round(value, increment=15) != value
+
+    @pytest.mark.parametrize(
+        "value", _ROUNDABLE[:-1], ids=lambda v: type(v).__name__
+    )
+    def test_increment_without_unit_is_validated(self, value):
+        with pytest.raises(
+            ValueError, match="^increment must divide a 24-hour day evenly$"
+        ):
+            _round(value, increment=7)
+
+    @pytest.mark.parametrize(
+        "call, message",
+        [
+            # the unit is checked before the increment
+            (
+                lambda: Time(1).round("day", increment=30),  # type: ignore[call-overload]
+                "invalid unit: 'day'",
+            ),
+            (
+                lambda: Instant.from_timestamp(0).round("day", increment=2),  # type: ignore[call-overload]
+                "cannot round an Instant to a day: an Instant has no calendar; "
+                "use 'hour' with increment=24 for exactly 24 hours",
+            ),
+            (
+                lambda: Time(1).round("foo", increment=0),  # type: ignore[call-overload]
+                "invalid unit: 'foo'",
+            ),
+            (
+                lambda: TimeDelta.ZERO.round("foo", increment=0),  # type: ignore[call-overload]
+                "invalid unit: 'foo'",
+            ),
+            # both are checked before a warning
+            (
+                lambda: TimeDelta.ZERO.round("day", increment=2**62),
+                "value or calculation out of range",
+            ),
+            (
+                lambda: TimeDelta.ZERO.round("week", increment=0),
+                "increment must be a positive integer",
+            ),
+        ],
+    )
+    def test_validation_order(self, call, message):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with pytest.raises(
+                ValueError, match="^" + re.escape(message) + "$"
+            ):
+                call()

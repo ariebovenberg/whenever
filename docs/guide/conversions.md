@@ -61,15 +61,16 @@ Instant("2023-12-28 09:30:00.123Z")
 ZonedDateTime("2023-12-28 10:30:00.5+01:00[Europe/Amsterdam]")
 ```
 
-{class}`~whenever.OffsetDateTime` and {class}`~whenever.ZonedDateTime` have no
-timestamp constructor of their own: build an {class}`~whenever.Instant` and
-move it with `to_fixed_offset()` or `to_tz()`.
+To get an {class}`~whenever.OffsetDateTime` or {class}`~whenever.ZonedDateTime`
+from a timestamp, build an {class}`~whenever.Instant` and move it with
+`to_fixed_offset()` or `to_tz()`. Their own timestamp factories are
+deprecated.
 
 ## To and from local time
 
 Conversion to a "plain" datetime is easy: calling
 {meth}`~whenever.ZonedDateTime.to_plain` simply
-retrieves the date and time part of the datetime, and discards the any time zone
+retrieves the date and time part of the datetime, and discards any time zone
 or offset information.
 
 ```python

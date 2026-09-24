@@ -336,15 +336,6 @@ impl UnixDays {
         }
     }
 
-    pub(crate) unsafe fn add_unchecked(self, days: i32) -> Self {
-        debug_assert!(
-            self.0
-                .checked_add(days)
-                .is_some_and(|v| (Self::MIN.0..=Self::MAX.0).contains(&v))
-        );
-        Self(self.0 + days)
-    }
-
     pub(crate) fn shift(self, d: DeltaDays) -> Option<Self> {
         // Safety: both values well within i32::MIN/MAX
         Self::new(self.0 + d.get())
@@ -562,17 +553,8 @@ impl DeltaMonths {
             .then(|| Self::new_unchecked(months as i32))
     }
 
-    pub(crate) fn from_i64_years(years: i64) -> Option<Self> {
-        years.checked_mul(12).and_then(Self::from_i64)
-    }
-
     pub(crate) const fn get(self) -> i32 {
         self.0
-    }
-
-    pub(crate) fn add(self, d: DeltaMonths) -> Option<Self> {
-        // Safety: both values well within i32::MIN/MAX
-        Self::new(self.0 + d.get())
     }
 
     pub(crate) const fn is_zero(self) -> bool {
@@ -623,19 +605,8 @@ impl DeltaDays {
             .then(|| Self::new_unchecked(days as i32))
     }
 
-    pub(crate) fn from_i64_weeks(weeks: i64) -> Option<Self> {
-        weeks
-            .checked_mul(DAYS_PER_WEEK.into())
-            .and_then(Self::from_i64)
-    }
-
     pub(crate) const fn abs(self) -> Self {
         Self(self.0.abs())
-    }
-
-    pub(crate) fn add(self, d: DeltaDays) -> Option<Self> {
-        // SAFETY: both values well within i32::MIN/MAX
-        Self::new(self.0 + d.get())
     }
 
     pub(crate) const fn is_zero(self) -> bool {
@@ -781,10 +752,14 @@ impl SubSecNanos {
         Self::new_unchecked(nanos.subsec_nanos())
     }
 
+    /// The nanoseconds of the fraction, floored.
     pub(crate) fn from_fract(frac: f64) -> Self {
-        // Safety: remainder is always in range
+        // A tiny negative fraction's remainder rounds up to a whole second,
+        // where the floor is the last nanosecond before it.
         Self::new_unchecked(
-            (frac.fract() * f64::from(NS_PER_SECOND)).rem_euclid(f64::from(NS_PER_SECOND)) as _,
+            (frac.fract() * f64::from(NS_PER_SECOND))
+                .rem_euclid(f64::from(NS_PER_SECOND))
+                .min(f64::from(Self::MAX.0)) as _,
         )
     }
 
@@ -1044,11 +1019,6 @@ mod tests {
 
     #[test]
     fn checked_delta_conversions() {
-        assert_eq!(DeltaMonths::from_i64_years(1).unwrap().get(), 12);
-        assert!(DeltaMonths::from_i64_years(i64::MAX).is_none());
-        assert_eq!(DeltaDays::from_i64_weeks(1).unwrap().get(), 7);
-        assert!(DeltaDays::from_i64_weeks(i64::MAX).is_none());
-
         assert_eq!(i32::from_i64(i32::MAX as i64), Some(i32::MAX));
         assert_eq!(i32::from_i64(i32::MIN as i64), None);
         assert_eq!(i32::from_i64(i32::MAX as i64 + 1), None);

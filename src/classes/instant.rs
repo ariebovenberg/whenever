@@ -3,6 +3,7 @@ use core::ptr::null_mut as NULL;
 use pyo3_ffi::*;
 
 pub(crate) use crate::domain::instant::Instant;
+use crate::domain::time_delta::ParseError;
 
 use crate::{
     classes::{
@@ -56,17 +57,14 @@ impl Instant {
         let inst = Date::from_stdlib_date(dt.date())
             .at(Time::from_stdlib_datetime(dt))
             .assume_utc();
-        Ok({
-            let offset = dt.utcoffset()?;
-            if let Some(py_delta) = (*offset).cast_exact::<PyTimeDelta>() {
-                // SAFETY: Python offsets are already bounded to +/- 24 hours: well within TimeDelta range.
-                inst.shift(-TimeDelta::from_stdlib_timedelta_unchecked(py_delta))
-            } else if offset.is_none() {
-                raise_value_err("datetime is naive; use PlainDateTime() instead")?
-            } else {
-                raise_value_err("datetime utcoffset() returned non-delta value")?
-            }
-        })
+        let offset = dt.utcoffset()?;
+        if offset.is_none() {
+            raise_value_err("datetime is naive; use PlainDateTime() instead")?
+        }
+        // SAFETY: the stdlib's utcoffset() returns None or a timedelta
+        // (possibly a subclass) strictly within 24 hours: well within range.
+        let py_delta = unsafe { (*offset).cast_unchecked::<PyTimeDelta>() };
+        Ok(inst.shift(-TimeDelta::from_stdlib_timedelta_unchecked(py_delta)))
     }
 
     pub(crate) const fn python_hash(self) -> Py_hash_t {
@@ -94,10 +92,9 @@ fn __new__(cls: PyClass<Instant>, args: PyTuple, kwargs: Option<PyDict>) -> PyRe
             return parse_iso(cls, arg);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
+            let instant = Instant::from_stdlib_datetime(dt)?.ok_or_range_err()?;
             warn_lossy_stdlib_subclass::<PyDateTime>(cls.state(), arg, "datetime")?;
-            return Instant::from_stdlib_datetime(dt)?
-                .ok_or_range_err()?
-                .to_obj(cls);
+            return instant.to_obj(cls);
         }
         raise_type_err("Instant() requires an ISO 8601 string or datetime.datetime")
     } else {
@@ -256,12 +253,13 @@ fn strict_eq(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
 }
 
 fn exact_eq(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
+    let result = strict_eq(cls, slf, obj_b)?;
     warn_deprecated(
         cls.state(),
         c"exact_eq() is deprecated; use strict_eq() instead",
         1,
     )?;
-    strict_eq(cls, slf, obj_b)
+    Ok(result)
 }
 
 fn __reduce__(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
@@ -328,21 +326,23 @@ fn from_timestamp(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs
 }
 
 fn from_timestamp_millis(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
+    let result = TimestampUnit::Millisecond.parse(ts)?;
     warn_deprecated(
         cls.state(),
         c"from_timestamp_millis() is deprecated; use from_timestamp(..., unit='millisecond') instead",
         1,
     )?;
-    TimestampUnit::Millisecond.parse(ts)?.to_obj(cls)
+    result.to_obj(cls)
 }
 
 fn from_timestamp_nanos(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
+    let result = TimestampUnit::Nanosecond.parse(ts)?;
     warn_deprecated(
         cls.state(),
         c"from_timestamp_nanos() is deprecated; use from_timestamp(..., unit='nanosecond') instead",
         1,
     )?;
-    TimestampUnit::Nanosecond.parse(ts)?.to_obj(cls)
+    result.to_obj(cls)
 }
 
 fn to_stdlib(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
@@ -372,7 +372,10 @@ fn parse_iso(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
             .ok_or_type_err("parse_iso() argument must be a string")?
             .as_utf8()?,
     )
-    .ok_or_else_value_err(|| format!("invalid ISO 8601 string: {s_obj}"))?
+    .or_else(|e| match e {
+        ParseError::Invalid => raise_value_err(format!("invalid ISO 8601 string: {s_obj}")),
+        ParseError::OutOfRange => raise_range_err(),
+    })?
     .to_instant()
     .to_obj(cls)
 }
@@ -440,9 +443,13 @@ fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyRet
     let state = cls.state();
     match handle_opt_arg("to_fixed_offset", args)? {
         None => slf.to_utc_plain().assume_offset_unchecked(Offset::ZERO),
-        Some(arg) => slf
-            .to_offset(Offset::from_py(arg, state)?)
-            .ok_or_range_err()?,
+        Some(arg) => {
+            let result = slf
+                .to_offset(Offset::from_py(arg, state)?)
+                .ok_or_range_err()?;
+            Offset::warn_if_int(arg, state)?;
+            result
+        }
     }
     .to_obj(*state.offset_datetime_type)
 }
@@ -479,7 +486,13 @@ fn parse_rfc2822(cls: PyClass<Instant>, s_obj: PyObj) -> PyReturn {
 fn round(cls: PyClass<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let round::Args {
         increment, mode, ..
-    } = round::Args::parse(args, kwargs, cls.state(), round::ArgsContext::Standard)?;
+    } = round::Args::parse(
+        args,
+        kwargs,
+        cls.state(),
+        round::ArgsContext::Standard,
+        false,
+    )?;
     let increment_ns = match increment {
         round::RoundIncrement::Day => raise_value_err(doc::CANNOT_ROUND_DAY_MSG)?,
         round::RoundIncrement::Exact(ns) => ns.get(),
@@ -489,7 +502,7 @@ fn round(cls: PyClass<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterK
 
 fn format(cls: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
@@ -514,13 +527,13 @@ fn __format__(cls: PyClass<Instant>, slf: Instant, spec_obj: PyObj) -> PyReturn 
 fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let s_obj = handle_one_arg("parse", args)?;
     let s_pystr = s_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
     let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
     let fmt_pystr = fmt_obj
-        .cast_exact::<PyStr>()
+        .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
     let fmt_bytes = fmt_pystr.as_utf8()?;
 
@@ -579,12 +592,15 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
                     args: *mut PyObject,
                     kwargs: *mut PyObject,
                 ) -> *mut PyObject {
-                    from_utc(
-                        unsafe { PyClass::<Instant>::from_ptr_unchecked(cls.cast()) },
-                        unsafe { PyTuple::from_ptr_unchecked(args) },
-                        (!kwargs.is_null()).then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
+                    catch_panic!(
+                        from_utc(
+                            unsafe { PyClass::<Instant>::from_ptr_unchecked(cls.cast()) },
+                            unsafe { PyTuple::from_ptr_unchecked(args) },
+                            (!kwargs.is_null())
+                                .then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
+                        )
+                        .to_py_owned_ptr()
                     )
-                    .to_py_owned_ptr()
                 }
                 _wrap
             },

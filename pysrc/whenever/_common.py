@@ -158,6 +158,9 @@ class _SystemTZ:
     __slots__ = ()
     __module__ = "whenever"
 
+    def __new__(cls) -> _SystemTZ:
+        return SYSTEM_TZ
+
     def __repr__(self) -> str:
         return "SYSTEM_TZ"
 
@@ -171,7 +174,7 @@ class _SystemTZ:
         return "SYSTEM_TZ"
 
 
-SYSTEM_TZ = _SystemTZ()
+SYSTEM_TZ: _SystemTZ = object.__new__(_SystemTZ)
 
 
 # We cache fixed-offset tzinfo objects to avoid creating multiple identical ones.
@@ -368,7 +371,10 @@ def split_timestamp(
         if isinstance(value, float) and not _isfinite(value):
             raise ValueError(RANGE_MSG)
         seconds, fraction = divmod(value, 1)
-        seconds, nanos = int(seconds), int(fraction * 1_000_000_000)
+        # A tiny negative fraction rounds up to a whole second,
+        # where the floor is the last nanosecond before it.
+        seconds = int(seconds)
+        nanos = min(int(fraction * 1_000_000_000), 999_999_999)
     else:
         if not isinstance(value, int):
             raise TypeError(f"timestamp in {unit}s must be an integer")
@@ -472,6 +478,16 @@ else:
 
 
 _Tcall = TypeVar("_Tcall", bound=Callable[..., None])
+_TStdlib = TypeVar("_TStdlib", _date, _time, _datetime)
+
+
+def replace_fields(obj: _TStdlib, /, **kwargs: Any) -> _TStdlib:
+    """``obj.replace(**kwargs)``, where a field beyond a C int is out of
+    range like any other."""
+    try:
+        return obj.replace(**kwargs)
+    except OverflowError:
+        raise ValueError(RANGE_MSG) from None
 
 
 # I'd love for this to be a decorator, but every attempt I made resulted
@@ -495,6 +511,9 @@ def add_alternate_constructors(
             case [obj] if not isinstance(obj, int):
                 raise TypeError(f"{type(self).__name__}() requires {accepted}")
             case _:
-                init_default(self, *args, **kwargs)
+                try:
+                    init_default(self, *args, **kwargs)
+                except OverflowError:  # a field beyond a C int
+                    raise ValueError(RANGE_MSG) from None
 
     return __init__  # type: ignore[return-value]

@@ -30,8 +30,9 @@ deprecated interfaces are removed.
   while `Instant` is the natural type for constructing an exact time from a
   timestamp.
 
-- The system timezone is now accepted everywhere a named timezone (i.e. `tz=`)
-  is accepted, using the new `SYSTEM_TZ` sentinel (PEP661). The methods specific to the
+- The system time zone is now accepted everywhere a named time zone (i.e.
+  `tz=`) is accepted, using the new `SYSTEM_TZ` sentinel (PEP 661). The
+  methods specific to the
   system time zone are deprecated: `to_system_tz()`, `assume_system_tz()`,
   `Date.today_in_system_tz()`, `ZonedDateTime.now_in_system_tz()`, and
   `ZonedDateTime.from_system_tz()`.
@@ -98,7 +99,6 @@ deprecated interfaces are removed.
   Choosing a rational default is OK, but the user should be alerted
   to make this explicit.
 
-
 **Added and improved**
 
 - Time zone IDs are matched case-insensitively in ASCII letters. The
@@ -108,7 +108,8 @@ deprecated interfaces are removed.
   matched at its written precision, while `Z` always identifies an exact UTC
   instant. `OffsetDateTime.assume_tz()` supports the same policy and uses
   `disambiguation=` when retaining local time.
-- Added `Date.today(tz)`.
+- Added `Date.today(tz)`, and the type aliases `DeltaTotalUnitStr` and
+  `TimestampUnitStr`.
 - Added millisecond and microsecond totals to datetime differences and
   `ItemizedDelta.total()`. `ItemizedDelta` and `ItemizedDateDelta` are
   hashable, so they can be `set` members and `dict` keys.
@@ -146,11 +147,10 @@ deprecated interfaces are removed.
   it, instead of raising `TimeZoneNotFoundError`.
 - `ZonedDateTime()` accepts a `datetime` whose tzinfo is a `ZoneInfo`
   subclass.
-- Multiplying or dividing a `TimeDelta` by a float computes the product in
-  double precision, then rounds it half-even to a whole nanosecond, on both
-  backends; an integer operand is exact. The pure-Python backend truncated,
-  the Rust extension rounded away from zero, and both lost precision on
-  long deltas.
+- Multiplying or dividing a `TimeDelta` by a float rounds the result
+  half-even to a whole nanosecond, where it truncated toward zero:
+  `TimeDelta(nanoseconds=1) * 0.6` was `PT0s` and is 1 nanosecond now. An
+  integer operand is exact.
 - Integer fields, itemized delta components, and integer keywords such as
   `increment=` accept integer-like objects such as numpy integers on both
   backends. `ItemizedDelta(days=1.5)` and `ItemizedDelta(months=float('nan'))`
@@ -159,25 +159,26 @@ deprecated interfaces are removed.
 - `relative_to` on `ItemizedDelta.add()` and `subtract()` accepts
   `PlainDateTime` and `OffsetDateTime` with the same warnings as
   `in_units()`. Composing two date deltas returns an `ItemizedDateDelta`
-  whatever the reference, and `ItemizedDateDelta.in_units()` and `total()`
-  accept a datetime reference, reading its date.
-- A type checker now accepts `Date + ItemizedDateDelta`, and rejects
-  `disambiguation=` on the forms of `ZonedDateTime.add()`/`subtract()` that
-  take exact units only, since those cannot land on a repeated or skipped
-  local time.
+  whatever the reference, and so does `ItemizedDateDelta.in_units()` with a
+  datetime reference, where it returned an `ItemizedDelta`.
+- A type checker now accepts `Date + ItemizedDateDelta`, and `sorted()`
+  over a mix of `Instant`, `OffsetDateTime`, and `ZonedDateTime` under
+  `mypy --strict`. It rejects `disambiguation=` on the forms of
+  `ZonedDateTime.add()`/`subtract()` that take exact units only, since
+  those cannot land on a repeated or skipped local time.
 - Argument validation is tightened. `format_iso(basic=...)` reads its flag
   by truthiness like every other flag, so a non-`bool` no longer raises.
   `"week"` is a valid unit only on `TimeDelta.round()`, where a week has a
   fixed length, and `round()` with a `TimeDelta` unit rejects an explicit
-  `increment=`: the delta is the increment. `start_of()` and `end_of()`
-  raise `ValueError` for a boundary past the supported range, such as
-  `end_of("year")` in 9999, as do the deprecated `from_timestamp*()`
-  factories of `OffsetDateTime` and `ZonedDateTime`, in place of
-  `OverflowError`.
+  `increment=`: the delta is the increment. A non-integer `increment=`
+  raises `TypeError`, where it raised `ValueError`. `TimeDelta.total()`
+  checks `relative_to=` for every unit, as `in_units()` does.
 - `TimePatch.shift()` is exact: `shift(days=1)` is 24 hours and emits
   `DaysAssumed24HoursWarning`, and it takes no `disambiguation=`.
-- A non-integer `increment=` raises `TypeError`, where it raised
-  `ValueError`.
+- With exact units, `round_increment=` rounds the smallest component, as
+  it does with calendar units, and rounding up carries into the next unit:
+  5 hours 20 minutes in hours and minutes with `round_increment=90` is
+  `PT5h0m`, where it was `PT4h30m`.
 - A `.FFF` pattern no longer parses a bare trailing dot (`12:30:05.`), and
   a fractional specifier followed by a digit field is rejected when the
   pattern is compiled.
@@ -185,6 +186,10 @@ deprecated interfaces are removed.
   names the format, from the constructors as well as the parse functions,
   and a string that names no time zone raises `TimeZoneNotFoundError` (a
   `ValueError`) wherever it is given, including inside an ISO string.
+- `ZonedDateTime.replace()`, `replace_date()`, `replace_time()`, and
+  calendar `add()`/`subtract()` keep the current offset where it still
+  identifies an occurrence of the new local time, whatever
+  `disambiguation=` says, as parsing already does.
 
 **Fixed**
 
@@ -193,14 +198,21 @@ deprecated interfaces are removed.
   family, arithmetic, rounding, the pattern engine, time zone IDs, the
   search path, and pydantic validation. An out-of-range result is a
   `ValueError` on both, where the pure-Python backend leaked
-  `OverflowError`, `OSError` in some cases.
+  `OverflowError`, `OSError` in some cases. A few results that differed
+  agree now too, such as `round(increment=15)` without a unit, whose
+  increment the Rust extension ignored.
 - Warnings point at the caller, where several pointed at internal frames,
-  and a call that rejects an argument no longer warns before it raises.
+  and a call that rejects an argument no longer warns before it raises. A
+  zero shift no longer warns.
 - `help()` on a Rust extension method that takes keyword arguments, such as
   `Instant.parse`, showed no documentation; it now does on both backends.
 - `repr(Weekday.MONDAY)` is `Weekday.MONDAY`, which rebuilds the member.
 - An `ItemizedDateDelta` with a datetime reference failed with a bare
   `AssertionError`.
+- Rare inputs crashed, aborted the interpreter, or gave a wrong value:
+  rounding near the ends of the supported range, a rounded difference
+  across a day a time zone skipped, `from_timestamp()` with a tiny negative
+  float, and a time zone file without transitions.
 - `round()` in the Rust extension rounded to the wrong side in rare cases:
   just below the half of an odd `increment`, on some `half_even` ties, and
   for `trunc` and `expand` on an `Instant` before 1970.
@@ -208,28 +220,37 @@ deprecated interfaces are removed.
   and `in_units(relative_to=)` could return 1 day and 24 hours for
   `in_units=["days", "hours"]` with `round_mode="ceil"`; the result is now
   2 days and 0 hours. The same goes for 12 months, which is now 1 year.
+- Adding or subtracting itemized deltas carries between `seconds` and
+  `nanoseconds`, where it raised on reaching a whole second.
+- A standard library subclass, such as a `pandas` `Timestamp`, is read
+  through its base fields, so its overrides are ignored.
 - A corrupt time zone file on the search path raises
   `TimeZoneNotFoundError` on both backends. The Rust extension fell back to
   the `tzdata` package, which could answer with another zone's rules, and
   aborted on some files; the pure-Python backend leaked `struct.error` or
-  `IndexError`.
+  `IndexError`. Both backends read the same valid files.
+- POSIX TZ strings follow RFC 9636 on both backends, including rule times
+  up to 167 hours, daylight saving time all year, and transitions that
+  cross the new year.
 - The system time zone gets its ID in two more cases: `TZ` set to a path
   into a zoneinfo directory, such as `/usr/share/zoneinfo/Europe/Amsterdam`,
   and an `/etc/localtime` that is a copy of a database file rather than a
   symlink to one, when `/etc/timezone` names that zone. Both gave a system
-  time zone without ID before.
+  time zone without ID before. An ID is kept only when the time zone
+  database has the same rules for it.
 - On Windows and the other platforms that use `tzlocal`,
   `reset_system_tz()` determines the system time zone again, where
   `tzlocal`'s cache made it repeat the first answer, and a `tzlocal`
   failure raises `TimeZoneNotFoundError` instead of leaking
   `zoneinfo.ZoneInfoNotFoundError`.
 - The pure-Python backend parsed RFC 2822 strings with a sign or whitespace
-  inside a number, such as an offset of `--900`.
+  inside a number, such as an offset of `--900`. `format_rfc2822()` wrote
+  `-0000`, which means an unknown offset, for a negative offset under a
+  minute.
 - `Instant.parse()` accepted a weekday specifier that contradicts the date,
   which the other `parse()` methods reject.
-- `ZonedDateTime()` given a `datetime` subclass, such as a `pandas`
-  `Timestamp`, kept the subclass in `to_stdlib()`; it now returns a plain
-  `datetime`, as the other types do.
+- In a pattern, `''` inside a quoted run is a literal quote:
+  `'it''s'` formats as `it's`, where it wrote `its`.
 - `Instant.from_timestamp(253402300799.5)`, inside the last second of the
   range, raised in the Rust extension.
 - `reset_tzpath()` given an iterator set an empty search path, and the
@@ -241,11 +262,10 @@ deprecated interfaces are removed.
   repeats midnight, the second pass of the evening before belongs to the
   day that has already started: `start_of()`, `end_of()`, `day_length()`,
   and `round("day")` agree on it now.
-- `ZonedDateTime.start_of()` and `round()` in a fall-back shorter than the
-  unit resolve to the first occurrence, as `end_of()` already did, so the
-  unit intervals tile the timeline again. In Colombo, where clocks fell
-  back from 00:30 to 00:00 on 2006-04-15, both occurrences of 00:15 now
-  share the hour that starts at 00:00+06:00.
+- Around a fall-back, `ZonedDateTime.start_of()`, `end_of()`, and `round()`
+  with an hour, minute, or second unit, and `since()`/`until()` with
+  calendar units, choose their boundaries by the instant rather than the
+  clock reading, so the units tile the timeline without overlap.
 - `dst_offset()` reported zero for historical periods in which standard
   time and daylight saving time changed at the same moment (Argentina,
   1999), and `next_transition()`/`prev_transition()` no longer stop at a
@@ -259,8 +279,10 @@ deprecated interfaces are removed.
   *whenever*'s time zone rules raises `InvalidOffsetError` by default, and
   `offset_mismatch=` and `disambiguation=` resolve it.
 
-Migration summary. A type checker that implements PEP 702 (`@deprecated`)
-flags each spelling in this table at the call site:
+Migration summary. Each spelling in this table warns at runtime. A type
+checker that implements PEP 702 (`@deprecated`) also flags each deprecated
+method, keyword, and value at the call site; `TZPATH`, `DisambiguateStr`,
+and the pattern letters warn at runtime only:
 
 | Deprecated spelling | Preferred spelling |
 |---|---|

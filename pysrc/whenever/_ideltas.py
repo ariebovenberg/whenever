@@ -100,16 +100,18 @@ def _shift_datetime_operator(
 
     operand = cast(Any, datetime)
     kwargs: dict[str, Any]
+    warning: tuple[str, type[Warning]] | None = None
     if isinstance(datetime, PlainDateTime):
         if (
             isinstance(delta, TimeDelta)
+            and delta
             or isinstance(delta, ItemizedDelta)
             and any(delta.get(unit, 0) for unit in EXACT_UNITS_STRICT)
         ):
-            warn(PLAIN_SHIFT_UNAWARE_MSG, NaiveArithmeticWarning, stacklevel=3)
+            warning = (PLAIN_SHIFT_UNAWARE_MSG, NaiveArithmeticWarning)
         kwargs = {"naive_arithmetic_ok": True}
     elif isinstance(datetime, OffsetDateTime):
-        warn(OFFSET_SHIFT_STALE_MSG, StaleOffsetWarning, stacklevel=3)
+        warning = (OFFSET_SHIFT_STALE_MSG, StaleOffsetWarning)
         kwargs = {"stale_offset_ok": True}
     elif isinstance(datetime, ZonedDateTime):
         # add()/subtract() would attribute their warnings to this frame, so
@@ -118,7 +120,10 @@ def _shift_datetime_operator(
     else:
         kwargs = {}
     operation = operand.subtract if subtract else operand.add
-    return cast(_T, operation(delta, **kwargs))
+    result = cast(_T, operation(delta, **kwargs))
+    if warning is not None:
+        warn(*warning, stacklevel=3)
+    return result
 
 
 RELATIVE_TO_DATETIME_MSG = (
@@ -243,6 +248,14 @@ def _items_add(
 ) -> Mapping[str, int]:
     sum = Counter(a)
     sum.update(b)
+    # Seconds and nanoseconds are one quantity (ADR 0005): carry and borrow
+    # between them, and only between them.
+    ns = sum.get("nanoseconds")
+    if ns is not None and ("seconds" in sum or abs(ns) >= 1_000_000_000):
+        total = sum.get("seconds", 0) * 1_000_000_000 + ns
+        secs, ns = divmod(abs(total), 1_000_000_000)
+        sign = -1 if total < 0 else 1
+        sum["seconds"], sum["nanoseconds"] = sign * secs, sign * ns
     return sum
 
 
@@ -471,7 +484,9 @@ _NANOS_OUT_OF_RANGE_MSG = (
     "nanoseconds must be within ±999,999,999; put whole seconds in seconds="
 )
 
-_MAX_DDELTA_DIGITS = 8  # consistent with Rust extension
+# As for the time components; the constructor reports a larger value as out
+# of range.
+_MAX_DDELTA_DIGITS = 35
 
 
 # Returns (rest_of_string, value, unit), e.g. ("3D", 2, "Y")
@@ -1251,11 +1266,12 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         .. deprecated:: 0.11
            Use :meth:`strict_eq` instead.
         """
+        result = self.strict_eq(other)
         warn_deprecated(
             "exact_eq() is deprecated; use strict_eq() instead",
             stacklevel=2,
         )
-        return self.strict_eq(other)
+        return result
 
     def __abs__(self) -> ItemizedDelta:
         """If the components are negative, return the positive version
@@ -1742,16 +1758,19 @@ def _unpkl_idelta(
     seconds: int | None,
     nanoseconds: int | None,
 ) -> ItemizedDelta:
-    self = _object_new(ItemizedDelta)
-    self._years = years
-    self._months = months
-    self._weeks = weeks
-    self._days = days
-    self._hours = hours
-    self._minutes = minutes
-    self._seconds = seconds
-    self._nanoseconds = nanoseconds
-    return self
+    components = {
+        "years": years,
+        "months": months,
+        "weeks": weeks,
+        "days": days,
+        "hours": hours,
+        "minutes": minutes,
+        "seconds": seconds,
+        "nanoseconds": nanoseconds,
+    }
+    return ItemizedDelta(
+        **{k: v for k, v in components.items() if v is not None}
+    )
 
 
 _unpkl_idelta.__module__ = "whenever"
@@ -2251,11 +2270,12 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         .. deprecated:: 0.11
            Use :meth:`strict_eq` instead.
         """
+        result = self.strict_eq(other)
         warn_deprecated(
             "exact_eq() is deprecated; use strict_eq() instead",
             stacklevel=2,
         )
-        return self.strict_eq(other)
+        return result
 
     def __abs__(self) -> ItemizedDateDelta:
         """If the components are negative, return the positive version
@@ -2606,12 +2626,15 @@ def _unpkl_iddelta(
     weeks: int | None,
     days: int | None,
 ) -> ItemizedDateDelta:
-    self = _object_new(ItemizedDateDelta)
-    self._years = years
-    self._months = months
-    self._weeks = weeks
-    self._days = days
-    return self
+    components = {
+        "years": years,
+        "months": months,
+        "weeks": weeks,
+        "days": days,
+    }
+    return ItemizedDateDelta(
+        **{k: v for k, v in components.items() if v is not None}
+    )
 
 
 _unpkl_iddelta.__module__ = "whenever"

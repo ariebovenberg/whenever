@@ -47,7 +47,8 @@ which allows higher-level operations—such as arithmetic—to behave sensibly a
 
 In `whenever`, ambiguous local times are by default resolved using the same convention
 as most libraries: the offset before the change is used.
-However, `whenever` also provides explicit options to handle ambiguity:
+The `disambiguation=` argument chooses explicitly: `"compatible"`,
+`"earlier"`, `"later"`, or `"raise"`.
 
 If `disambiguation` is omitted, this `"compatible"` policy is applied, but an
 {class}`~whenever.ImplicitDisambiguationWarning` is emitted when a repeated or

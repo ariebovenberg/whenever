@@ -5,7 +5,7 @@ use super::{
     scalar::{Offset, Sign},
     shift::DateTimeShift,
     time::Time,
-    time_delta::TimeDelta,
+    time_delta::{ParseError, TimeDelta},
     units::S_PER_HOUR,
 };
 use crate::{common::parse::Scan, tz::tzif::is_valid_key};
@@ -46,17 +46,17 @@ impl OffsetDateTime {
         self.to_plain().shift_by(shift)?.assume_offset(offset)
     }
 
-    pub(crate) fn parse_iso(s: &[u8]) -> Option<Self> {
-        Scan::new(s).parse_all(Self::read_iso)
-    }
-
-    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
-        PlainDateTime::read_iso(s)?
-            .assume_offset(Offset::read_iso(s)?)
-            .and_then(|dt| {
+    /// A well-formed string whose value is out of range is `OutOfRange`.
+    pub(crate) fn parse_iso(s: &[u8]) -> Result<Self, ParseError> {
+        let (dt, offset) = Scan::new(s)
+            .parse_all(|s| {
+                let dt = PlainDateTime::read_iso(s)?;
+                let offset = Offset::read_iso(s)?;
                 skip_tzname(s)?;
-                Some(dt)
+                Some((dt, offset))
             })
+            .ok_or(ParseError::Invalid)?;
+        dt.assume_offset(offset).ok_or(ParseError::OutOfRange)
     }
 }
 

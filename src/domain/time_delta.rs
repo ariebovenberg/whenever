@@ -60,7 +60,8 @@ impl TimeDelta {
     /// Scale by a float, rounding half-even to the nearest nanosecond.
     /// `None` for `nan` or a result out of range.
     pub(crate) fn scale_f64(self, factor: f64, divide: bool) -> Option<Self> {
-        let nanos = self.to_nanos_f64();
+        // One correctly rounded conversion, as Python's `int * float` does
+        let nanos = self.total_nanos() as f64;
         Self::from_nanos_f64(
             if divide {
                 nanos / factor
@@ -169,20 +170,50 @@ impl TimeDelta {
         round_increment: difference::DifferenceIncrement,
         round_mode: round::Mode,
     ) -> Option<ItemizedDelta> {
-        self.round_to_unit(units.smallest(), round_increment, round_mode)?
+        self.round_in_units(units, round_increment, round_mode)?
             .itemize(units)
     }
 
-    pub(crate) fn round_to_unit(
+    /// Round to a multiple of the increment in the smallest unit. Below a
+    /// larger unit, only the component under that unit is rounded, and
+    /// rounding up carries into it: the smallest component stays a multiple
+    /// of the increment, below the next unit.
+    pub(crate) fn round_in_units(
         self,
-        unit: ExactUnit,
+        units: ExactUnitSet,
         round_increment: difference::DifferenceIncrement,
         round_mode: round::Mode,
     ) -> Option<Self> {
-        let increment = (unit.in_nanos() as u64 as u128)
+        let increment = (units.smallest().in_nanos() as u64 as u128)
             .checked_mul(round_increment.as_i128() as u128)
             .and_then(DeltaIncrement::from_nanos)?;
-        self.round(increment, round_mode)
+        let next = match units.second_smallest() {
+            // Where the increment divides the next unit, rounding the
+            // component is rounding the total.
+            Some(next)
+                if !(next.in_nanos() as u128).is_multiple_of(increment.total_nanos() as u128) =>
+            {
+                next.in_nanos() as i128
+            }
+            _ => return self.round(increment, round_mode),
+        };
+        let increment = increment.total_nanos();
+        let negative = self.is_negative();
+        let magnitude = self.total_nanos().abs();
+        let component = magnitude % next;
+        let remainder = component % increment;
+        let truncated = magnitude - remainder;
+        let rounded = if round_mode.to_abs(negative).rounds_up(
+            remainder > 0,
+            remainder.cmp(&(increment - remainder)),
+            (component / increment) % 2 != 0,
+        ) {
+            let carried = truncated + increment;
+            carried - carried % next % increment
+        } else {
+            truncated
+        };
+        Self::from_nanos(if negative { -rounded } else { rounded })
     }
 
     /// Balance over the given units. Whatever is below the smallest is dropped.
@@ -317,7 +348,8 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(u128, TimeUnit)> {
         return None;
     }
     let mut tally: u128 = 0;
-    for i in 0..s.len().min(35) {
+    // At most 35 digits, then the unit
+    for i in 0..s.len().min(36) {
         match s[i] {
             c if c.is_ascii_digit() => tally = tally * 10 + u128::from(c - b'0'),
             b'H' | b'h' if i > 0 => {
@@ -331,20 +363,20 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(u128, TimeUnit)> {
             b'S' | b's' if i > 0 => {
                 *s = &s[i + 1..];
                 return Some((
-                    tally.checked_mul(NS_PER_SECOND as u128)?,
+                    tally.saturating_mul(NS_PER_SECOND as u128),
                     TimeUnit::Nanos {
                         has_fraction: false,
                     },
                 ));
             }
             b'.' | b',' if i > 0 => {
-                let result = parse_nano_fractions(&s[i + 1..]).and_then(|nanos| {
-                    Some((
+                let result = parse_nano_fractions(&s[i + 1..]).map(|nanos| {
+                    (
                         tally
-                            .checked_mul(NS_PER_SECOND as u128)?
-                            .checked_add(nanos as u128)?,
+                            .saturating_mul(NS_PER_SECOND as u128)
+                            .saturating_add(nanos as u128),
                         TimeUnit::Nanos { has_fraction: true },
-                    ))
+                    )
                 });
                 *s = &[];
                 return result;
@@ -355,6 +387,7 @@ pub(crate) fn parse_time_component(s: &mut &[u8]) -> Option<(u128, TimeUnit)> {
     None
 }
 
+/// The total in nanoseconds, saturating on overflow, and whether it is empty.
 pub(crate) fn parse_all_components(s: &mut &[u8]) -> Option<(u128, bool)> {
     let mut previous = None;
     let mut nanos: u128 = 0;
@@ -362,13 +395,13 @@ pub(crate) fn parse_all_components(s: &mut &[u8]) -> Option<(u128, bool)> {
         let (value, unit) = parse_time_component(s)?;
         match (unit, previous.replace(unit)) {
             (TimeUnit::Hours, None) => {
-                nanos = nanos.checked_add(value.checked_mul(NS_PER_HOUR as u128)?)?;
+                nanos = nanos.saturating_add(value.saturating_mul(NS_PER_HOUR as u128));
             }
             (TimeUnit::Minutes, None | Some(TimeUnit::Hours)) => {
-                nanos = nanos.checked_add(value.checked_mul(NS_PER_MINUTE as u128)?)?;
+                nanos = nanos.saturating_add(value.saturating_mul(NS_PER_MINUTE as u128));
             }
             (TimeUnit::Nanos { .. }, _) => {
-                nanos = nanos.checked_add(value)?;
+                nanos = nanos.saturating_add(value);
                 if !s.is_empty() {
                     return None;
                 }
@@ -394,8 +427,6 @@ impl Offset {
 pub(crate) struct DeltaIncrement(i128);
 
 impl DeltaIncrement {
-    pub(crate) const SECOND: Self = Self(NS_PER_SECOND as i128);
-
     pub(crate) fn from_nanos(nanos: u128) -> Option<Self> {
         (nanos != 0 && nanos / NS_PER_SECOND as u128 <= u64::MAX as u128)
             .then_some(Self(nanos as i128))

@@ -124,6 +124,18 @@ from the clock. Bugs follow: `today()` can even return yesterday.
 - 🧵 Free-threading support (beta)
 - 🚀 Supports per-interpreter GIL
 
+## Installation
+
+```shell
+pip install whenever
+```
+
+*Whenever* supports Python 3.10 and newer. Platform wheels include the Rust
+extension; a pure-Python wheel covers other platforms, and PyPy and GraalVM
+load the pure-Python backend automatically. To choose the pure-Python backend
+yourself, see the
+[FAQ](https://whenever.readthedocs.io/en/latest/faq.html#how-can-i-use-the-pure-python-backend).
+
 ## Quickstart
 
 ```python

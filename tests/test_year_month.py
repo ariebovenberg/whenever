@@ -10,11 +10,14 @@ from whenever import (
 
 
 class TestInit:
-    def test_valid(self):
-        assert YearMonth(2021, 12) is not None
-        assert YearMonth(1, 1) is not None
-        assert YearMonth(9999, 12) is not None
-        assert YearMonth(year=2002, month=2) is not None
+    @pytest.mark.parametrize("year, month", [(2021, 12), (1, 1), (9999, 12)])
+    def test_valid(self, year, month):
+        ym = YearMonth(year, month)
+        assert (ym.year, ym.month) == (year, month)
+
+    def test_keywords(self):
+        ym = YearMonth(year=2002, month=2)
+        assert (ym.year, ym.month) == (2002, 2)
 
     @pytest.mark.parametrize(
         "year, month",

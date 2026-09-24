@@ -121,7 +121,7 @@ Since equality is based on full nanosecond precision,
 two datetimes may no longer be equal after a round-trip that loses precision.
 
 This may not be apparent in development if your system's clock only supports microsecond
-precision (such as MacOS).
+precision (such as macOS).
 
 Use `.round('microsecond')` to explicitly round values to microsecond precision.
 

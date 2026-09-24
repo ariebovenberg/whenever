@@ -261,6 +261,19 @@ class TestInitFromPy:
                 py_datetime(2020, 8, 15, tzinfo=MyTz())  # type: ignore[abstract]
             )
 
+    # The stdlib checks what a tzinfo returns
+    @pytest.mark.parametrize(
+        "offset",
+        [timedelta(days=2), timedelta(days=-2), timedelta(days=10**8)],
+    )
+    def test_utcoffset_out_of_range(self, offset):
+        class MyTz(tzinfo):
+            def utcoffset(self, _):
+                return offset
+
+        with pytest.raises(ValueError):
+            OffsetDateTime(py_datetime(2020, 1, 1, tzinfo=MyTz()))  # type: ignore[abstract]
+
     def test_keyword_rejected(self):
         d = py_datetime(2020, 8, 15, tzinfo=timezone.utc)
         with pytest.raises(
@@ -504,11 +517,15 @@ class TestParseIso:
         "s",
         [
             "0001-01-01T02:08:30+05:00",
+            "0001-01-01 02:08:30+05:00",
             "9999-12-31T22:08:30-05:00",
         ],
     )
     def test_bounds(self, s):
-        with pytest.raises(ValueError):
+        # well-formed, so the value is out of range, not the string invalid
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
             OffsetDateTime.parse_iso(s)
 
     @given(text())
@@ -856,10 +873,10 @@ class TestShift:
             nanosecond=987_654,
             offset=hours(4),
         )
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(ValueError, match="range|year"):
             d.add(hours=24 * 365 * 8000)
 
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(ValueError, match="range|year"):
             d.add(hours=-24 * 365 * 3000)
 
         with pytest.raises(TypeError, match="argument must be"):
@@ -869,9 +886,10 @@ class TestShift:
         with pytest.raises(TypeError):
             d.add(seconds(4), hours=48, seconds=5)  # type: ignore[call-overload]
 
-        # tempt a i128 overflow
+        # tempt an i128 overflow: at or beyond 2**63, a backend may overflow
+        # its machine integer before the range check
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.add(nanoseconds=1 << 127 - 1)
+            d.add(nanoseconds=(1 << 127) - 1)
 
         # UTC equivalent must stay within bounds even when local time is in range
         with pytest.raises(ValueError, match="out of range"):
@@ -1165,19 +1183,19 @@ class TestSince:
     @pytest.mark.parametrize(
         ("kwargs", "message"),
         [
-            ({"in_units": []}, "units must not be empty"),
+            ({"in_units": []}, "in_units must not be empty"),
             (
                 {"in_units": ["hours", "hours"]},
-                "units cannot contain duplicates",
+                "in_units cannot contain duplicates",
             ),
             ({"in_units": ["foo"]}, "invalid unit: 'foo'"),
             (
                 {"in_units": ["minutes", "hours"]},
-                "units must be in decreasing order of size",
+                "in_units must be in decreasing order of size",
             ),
             (
                 {"in_units": "hours"},
-                "units must be a sequence of strings, not a single string",
+                "in_units must be a sequence of strings, not a single string",
             ),
             (
                 {"in_units": ["hours", "nanoseconds"]},
@@ -1273,15 +1291,15 @@ class TestSince:
         assert b.until(a, total="minutes") == 120.0
 
     def test_very_large_increment(self):
-        a = OffsetDateTime(2023, 2, 15, offset=hours(9))
+        a = OffsetDateTime(2023, 2, 15, nanosecond=1, offset=hours(9))
         b = OffsetDateTime(2021, 7, 3, offset=hours(9))
-        # round_increment=1<<65 ns exceeds i64::MAX; ceil mode rounds up to 1*(1<<65)
+        # round_increment=1<<65 ns exceeds i64::MAX; ceil carries it into the seconds
         assert a.since(
             b,
             in_units=["seconds", "nanoseconds"],
             round_increment=1 << 65,
             round_mode="ceil",
-        ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
+        ) == ItemizedDelta(seconds=36_944_636_947, nanoseconds=0)
 
     def test_total_nanoseconds_returns_int(self):
         a = OffsetDateTime(2023, 2, 15, offset=hours(9))
@@ -1707,6 +1725,57 @@ class TestRound:
         assert just_after.round("hour", mode="ceil").strict_eq(
             OffsetDateTime(1, 1, 1, 1, offset=hours(0))
         )
+
+    # The local result is in range, but its instant isn't
+    @pytest.mark.parametrize(
+        "d, unit, mode",
+        [
+            (
+                OffsetDateTime(
+                    9999,
+                    12,
+                    31,
+                    18,
+                    59,
+                    59,
+                    nanosecond=999_999_999,
+                    offset=hours(-5),
+                ),
+                "second",
+                "ceil",
+            ),
+            (
+                OffsetDateTime(
+                    9999,
+                    12,
+                    31,
+                    13,
+                    59,
+                    59,
+                    nanosecond=999_999_999,
+                    offset=hours(-10),
+                ),
+                "hour",
+                "half_even",
+            ),
+            (
+                Instant.MIN.to_fixed_offset(hours(5)),
+                "day",
+                "floor",
+            ),
+            (
+                OffsetDateTime(1, 1, 1, 5, 30, offset=hours(5) + minutes(30)),
+                "hour",
+                "floor",
+            ),
+        ],
+    )
+    @suppress(StaleOffsetWarning)
+    def test_result_instant_out_of_range(self, d, unit, mode):
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            d.round(unit, mode=mode)
 
     @suppress(StaleOffsetWarning)
     def test_round_by_timedelta(self):
@@ -2245,12 +2314,34 @@ class TestAssumeTz:
         d = OffsetDateTime(dt)
         assert d.assume_tz(tz, **kwargs).strict_eq(expect)
 
-    def test_invalid_offset_raises(self):
+    # The local time is valid in the time zone while the instant is not.
+    @pytest.mark.parametrize(
+        "d, tz, expect",
+        [
+            (
+                OffsetDateTime(1, 1, 1, 1, offset=hours(1)),
+                "Etc/GMT+12",
+                ZonedDateTime("0001-01-01 01:00:00-12:00[Etc/GMT+12]"),
+            ),
+            (
+                OffsetDateTime(9999, 12, 31, 23, offset=hours(0)),
+                "Europe/Amsterdam",
+                ZonedDateTime("9999-12-31 23:00:00+01:00[Europe/Amsterdam]"),
+            ),
+        ],
+    )
+    def test_keep_local_at_the_range_edges(self, d, tz, expect):
+        assert d.assume_tz(tz, offset_mismatch="keep_local").strict_eq(expect)
+        with pytest.raises(InvalidOffsetError, match="does not match"):
+            d.assume_tz(tz)
+
+    @pytest.mark.parametrize("kwargs", [{}, {"offset_mismatch": "raise"}])
+    def test_invalid_offset_raises(self, kwargs):
         with pytest.raises(
             InvalidOffsetError, match="offset -09:00 does not match"
         ):
             OffsetDateTime("2023-05-01 12:30:00-09:00").assume_tz(
-                "America/New_York"
+                "America/New_York", **kwargs
             )
 
     @system_tz("Europe/Amsterdam")
@@ -2362,7 +2453,7 @@ class TestAssumeTz:
         ],
     )
     def test_keep_local_raise(self, value, error):
-        with pytest.raises(error):
+        with pytest.raises(error, match="is (skipped|repeated)"):
             OffsetDateTime(value).assume_tz(
                 "Europe/Paris",
                 offset_mismatch="keep_local",
@@ -2406,12 +2497,16 @@ class TestAssumeTz:
         assert result.to_instant() == d.to_instant()
 
     def test_skipped_time(self):
-        with pytest.raises(InvalidOffsetError):
+        with pytest.raises(
+            InvalidOffsetError, match="does not match time zone"
+        ):
             OffsetDateTime("2023-03-26 02:30:00+01:00").assume_tz(
                 "Europe/Paris"
             )
 
-        with pytest.raises(InvalidOffsetError):
+        with pytest.raises(
+            InvalidOffsetError, match="does not match time zone"
+        ):
             OffsetDateTime("2023-03-26 02:30:00+02:00").assume_tz(
                 "Europe/Paris"
             )
@@ -2481,12 +2576,12 @@ class TestConversion:
             )
         )
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             OffsetDateTime(
                 1, 1, 1, hour=3, minute=59, offset=hours(0)
             ).to_fixed_offset(hours(-4))
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             OffsetDateTime(
                 9999, 12, 31, hour=23, offset=hours(0)
             ).to_fixed_offset(hours(1))
@@ -2514,7 +2609,7 @@ class TestConversion:
                 tz="America/New_York",
             )
         )
-        with pytest.raises(TimeZoneNotFoundError):
+        with pytest.raises(TimeZoneNotFoundError, match="not found"):
             d.to_tz("America/Not_A_Real_Zone")
 
         small_dt = OffsetDateTime(1, 1, 1, offset=hours(0))
@@ -2551,12 +2646,12 @@ class TestConversion:
         )
 
         small_dt = OffsetDateTime(1, 1, 1, offset=hours(0))
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             small_dt.to_tz(SYSTEM_TZ)
 
         big_dt = OffsetDateTime(9999, 12, 31, hour=23, offset=hours(0))
         with system_tz("Europe/Amsterdam"):
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="out of range"):
                 big_dt.to_tz(SYSTEM_TZ)
 
     def test_to_plain(self):

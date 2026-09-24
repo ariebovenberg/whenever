@@ -190,13 +190,6 @@ class TestInit:
         [
             lambda: ItemizedDelta(nanoseconds=1_000_000_000),
             lambda: ItemizedDelta(nanoseconds=-1_000_000_000),
-            lambda: ItemizedDelta(seconds=1, nanoseconds=999_999_999).add(
-                nanoseconds=1
-            ),
-            lambda: (
-                ItemizedDelta(nanoseconds=999_999_999)
-                + ItemizedDelta(nanoseconds=1)
-            ),
         ],
     )
     def test_nanoseconds_range(self, make):
@@ -257,7 +250,7 @@ class TestInit:
         assert ItemizedDelta("PT1H30M").strict_eq(
             ItemizedDelta(hours=1, minutes=30)
         )
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             ItemizedDelta("not valid")
 
 
@@ -761,6 +754,23 @@ class TestParseIso:
         ):
             ItemizedDelta.parse_iso(s)
 
+    @pytest.mark.parametrize(
+        "s", ["P999999999Y", "P" + "9" * 35 + "D", "PT" + "9" * 35 + "H"]
+    )
+    def test_well_formed_out_of_range(self, s: str):
+        with pytest.raises(ValueError, match="^delta out of range$"):
+            ItemizedDelta.parse_iso(s)
+
+    def test_digit_limit(self):
+        assert ItemizedDelta.parse_iso("P" + "0" * 34 + "1D").strict_eq(
+            ItemizedDelta(days=1)
+        )
+        s = "P" + "0" * 35 + "1D"
+        with pytest.raises(
+            ValueError, match=f"^invalid ISO 8601 string: {s!r}$"
+        ):
+            ItemizedDelta.parse_iso(s)
+
 
 class TestEquality:
     def test_equal(self):
@@ -1078,7 +1088,7 @@ class TestShift:
             )
 
     def test_overflows(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             ItemizedDelta(years=5_000).add(
                 years=5_000,
                 relative_to=ZonedDateTime(
@@ -1088,7 +1098,7 @@ class TestShift:
             )
 
         # Overflow due to relative_to
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             ItemizedDelta(years=5).add(
                 months=29,
                 relative_to=ZonedDateTime(
@@ -1125,6 +1135,40 @@ class TestShift:
             )
             .strict_eq(ItemizedDelta(months=2))
         )
+
+    @pytest.mark.parametrize(
+        "a, b, expected",
+        [
+            (
+                ItemizedDelta(nanoseconds=999_999_999),
+                ItemizedDelta(nanoseconds=1),
+                ItemizedDelta(seconds=1, nanoseconds=0),
+            ),
+            (
+                ItemizedDelta(nanoseconds=500_000_000),
+                ItemizedDelta(nanoseconds=700_000_000),
+                ItemizedDelta(seconds=1, nanoseconds=200_000_000),
+            ),
+            (
+                ItemizedDelta(seconds=1),
+                ItemizedDelta(nanoseconds=-1),
+                ItemizedDelta(seconds=0, nanoseconds=999_999_999),
+            ),
+            # a borrow across zero flips the sign of both
+            (
+                ItemizedDelta(seconds=0, nanoseconds=1),
+                ItemizedDelta(nanoseconds=-2),
+                ItemizedDelta(seconds=0, nanoseconds=-1),
+            ),
+        ],
+    )
+    def test_carry_between_seconds_and_nanoseconds(self, a, b, expected):
+        # Seconds and nanoseconds are one quantity (ADR 0005)
+        assert (a + b).strict_eq(expected)
+        assert (a - (-b)).strict_eq(expected)
+        assert a.add(b, cal_unit_composition_ok=True).strict_eq(expected)
+        assert a.add(**b).strict_eq(expected)
+        assert a.subtract(**(-b)).strict_eq(expected)
 
     def test_without_relative_to(self):
         with warns_here(CalendarUnitCompositionWarning) as caught:
@@ -1722,7 +1766,7 @@ class TestTotal:
         assert isinstance(microseconds_result, float)
 
     def test_relative_to_overflows(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             ItemizedDelta(years=2, nanoseconds=1).total(
                 "months",
                 relative_to=ZonedDateTime(
@@ -1730,7 +1774,7 @@ class TestTotal:
                 ),
             )
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             ItemizedDelta(years=-2, minutes=0).total(
                 "months",
                 relative_to=ZonedDateTime(
@@ -1884,12 +1928,12 @@ class TestMessages:
             (
                 lambda: _D.in_units([], relative_to=_UTC),
                 ValueError,
-                "units must not be empty",
+                "in_units must not be empty",
             ),
             (
                 lambda: _D.add(hours=1, relative_to=_UTC, in_units=[]),
                 ValueError,
-                "units must not be empty",
+                "in_units must not be empty",
             ),
             (
                 lambda: _D.in_units(["foo"], relative_to=_UTC),

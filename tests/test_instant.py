@@ -1,3 +1,5 @@
+import math
+import pickle
 import re
 import warnings
 from datetime import datetime as py_datetime, timedelta, timezone, tzinfo
@@ -28,6 +30,7 @@ from .common import (
     VALID_ISO_STRINGS,
     DatetimeSubclass,
     Idx,
+    out_of_range_error,
     system_tz,
     warns_here,
 )
@@ -201,32 +204,32 @@ class TestFromUTC:
         [
             (dict(year=0), "date|year"),
             (dict(year=10_000), "date|year"),
-            (dict(year=BIG_INT), "too (large|big)|date|year"),
-            (dict(year=-BIG_INT), "too (large|big)|date|year"),
+            (dict(year=BIG_INT), "too (large|big)|range|date|year"),
+            (dict(year=-BIG_INT), "too (large|big)|range|date|year"),
             (dict(month=0), "date|month"),
             (dict(month=13), "date|month"),
-            (dict(month=BIG_INT), "too (large|big)|date|month"),
-            (dict(month=-BIG_INT), "too (large|big)|date|month"),
+            (dict(month=BIG_INT), "too (large|big)|range|date|month"),
+            (dict(month=-BIG_INT), "too (large|big)|range|date|month"),
             (dict(day=0), "date|day"),
             (dict(day=32), "date|day"),
-            (dict(day=BIG_INT), "too (large|big)|date|day"),
-            (dict(day=-BIG_INT), "too (large|big)|date|day"),
+            (dict(day=BIG_INT), "too (large|big)|range|date|day"),
+            (dict(day=-BIG_INT), "too (large|big)|range|date|day"),
             (dict(hour=-1), "time|hour"),
             (dict(hour=24), "time|hour"),
-            (dict(hour=BIG_INT), "too (large|big)|time|hour"),
-            (dict(hour=-BIG_INT), "too (large|big)|time|hour"),
+            (dict(hour=BIG_INT), "too (large|big)|range|time|hour"),
+            (dict(hour=-BIG_INT), "too (large|big)|range|time|hour"),
             (dict(minute=-1), "time|minute"),
             (dict(minute=60), "time|minute"),
-            (dict(minute=BIG_INT), "too (large|big)|time|minute"),
-            (dict(minute=-BIG_INT), "too (large|big)|time|minute"),
+            (dict(minute=BIG_INT), "too (large|big)|range|time|minute"),
+            (dict(minute=-BIG_INT), "too (large|big)|range|time|minute"),
             (dict(second=-1), "time|second"),
             (dict(second=60), "time|second"),
-            (dict(second=BIG_INT), "too (large|big)|time|second"),
-            (dict(second=-BIG_INT), "too (large|big)|time|second"),
+            (dict(second=BIG_INT), "too (large|big)|range|time|second"),
+            (dict(second=-BIG_INT), "too (large|big)|range|time|second"),
             (dict(nanosecond=-1), "time|nanos"),
             (dict(nanosecond=1_000_000_000), "time|nanos"),
-            (dict(nanosecond=BIG_INT), "too (large|big)|time|nanos"),
-            (dict(nanosecond=-BIG_INT), "too (large|big)|time|nanos"),
+            (dict(nanosecond=BIG_INT), "too (large|big)|range|time|nanos"),
+            (dict(nanosecond=-BIG_INT), "too (large|big)|range|time|nanos"),
         ],
     )
     def test_bounds(self, kwargs, keyword):
@@ -240,7 +243,9 @@ class TestFromUTC:
             "nanosecond": 0,
         }
 
-        with pytest.raises((ValueError, OverflowError), match=keyword):
+        with pytest.raises(
+            out_of_range_error(*kwargs.values()), match=keyword
+        ):
             Instant.from_utc(**{**defaults, **kwargs})
 
     def test_kwargs(self):
@@ -357,16 +362,9 @@ class TestFromTimestamp:
             1969, 12, 31, 23, 59, 56
         )
 
-        # Far outside the range, the backends may disagree on the type:
-        # Rust overflows its machine integer before it can check the range.
-        with pytest.raises((ValueError, OverflowError)):
-            method(1_000_000_000_000_000_000 * factor)
-
-        with pytest.raises((ValueError, OverflowError)):
-            method(-1_000_000_000_000_000_000 * factor)
-
-        with pytest.raises((ValueError, OverflowError)):
-            method(1 << 129)
+        for value in (10**18 * factor, -(10**18) * factor, 1 << 129):
+            with pytest.raises(out_of_range_error(value)):
+                method(value)
 
         if unit != "second":
             with pytest.raises(TypeError):
@@ -478,6 +476,25 @@ class TestFromTimestamp:
 
         with pytest.raises(ValueError, match="out of range"):
             Instant.from_timestamp(float("nan"))
+
+    # The fraction of a tiny negative float rounds up to a whole second
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            (-1e-17, (-1, 999_999_999)),
+            (-5e-324, (-1, 999_999_999)),
+            (math.nextafter(-1.0, -math.inf), (-2, 999_999_999)),
+            (math.nextafter(-1234.0, -math.inf), (-1235, 999_999_999)),
+            (1e-17, (0, 0)),
+            (5e-324, (0, 0)),
+        ],
+    )
+    def test_float_floors_below_a_whole_second(self, value, expected):
+        secs, nanos = expected
+        i = Instant.from_timestamp(value)
+        assert i == Instant.from_timestamp(secs) + nanoseconds(nanos)
+        assert i.to_stdlib().microsecond == nanos // 1_000
+        assert pickle.loads(pickle.dumps(i)) == i
 
     def test_invalid(self):
         with pytest.raises(TypeError):
@@ -614,6 +631,20 @@ class TestParseIso:
         ):
             Instant.parse_iso(s)
 
+    @pytest.mark.parametrize(
+        "s",
+        [
+            "0001-01-01T02:08:30+05:00",
+            "9999-12-31T22:08:30-05:00",
+        ],
+    )
+    def test_bounds(self, s):
+        # well-formed, so the value is out of range, not the string invalid
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            Instant.parse_iso(s)
+
     @given(text())
     def test_fuzzing(self, s: str):
         with pytest.raises(
@@ -677,10 +708,10 @@ class TestShift:
 
     def test_add_invalid(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises(ValueError, match="range"):
             d.add(hours=24 * 365 * 8000)
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises(ValueError, match="range"):
             d.add(hours=-24 * 365 * 3000)
 
         with pytest.raises(TypeError, match="TimeDelta"):
@@ -783,10 +814,10 @@ class TestShift:
 
     def test_subtract_invalid(self):
         d = Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises(ValueError, match="range"):
             d.subtract(hours=24 * 365 * 3000)
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises(ValueError, match="range"):
             d.subtract(hours=-24 * 365 * 8000)
 
         with pytest.raises(TypeError, match="TimeDelta"):
@@ -829,7 +860,7 @@ class TestShift:
         # same with subtract
         assert d - hours(-24) - seconds(-5) == d + hours(24) + seconds(5)
 
-        with pytest.raises((ValueError, OverflowError), match="range"):
+        with pytest.raises(ValueError, match="range"):
             d + hours(9_000 * 366 * 24)
 
     def test_operators_invalid(self):
@@ -1264,10 +1295,10 @@ class TestConversion:
             OffsetDateTime(2020, 8, 15, 17, offset=hours(-3))
         )
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             Instant.MIN.to_fixed_offset(hours(-4))
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             Instant.MAX.to_fixed_offset(hours(4))
 
     def test_to_tz(self):
@@ -1287,7 +1318,7 @@ class TestConversion:
         ):
             d.to_tz(3)
 
-        with pytest.raises(TimeZoneNotFoundError):
+        with pytest.raises(TimeZoneNotFoundError, match="not found"):
             d.to_tz("America/Nowhere")
 
     @system_tz("America/New_York")
@@ -1318,11 +1349,11 @@ class TestConversion:
             )
         )
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             Instant.MIN.to_tz(SYSTEM_TZ)
 
         with system_tz("Europe/Amsterdam"):
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="out of range"):
                 Instant.MAX.to_tz(SYSTEM_TZ)
 
     def test_to_stdlib(self):

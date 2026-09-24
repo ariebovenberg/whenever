@@ -24,13 +24,16 @@ make build
 # rebuild it in release mode
 make build-release
 
-# clear the build artifacts (useful if you want to test the pure-Python backend)
-make clean
+# remove the compiled extension, to test the pure-Python backend
+make clean-ext
 
 make test  # run the tests (Python and Rust)
+make test-cov  # run the tests on the pure-Python backend, with coverage
 make fix  # apply autoformatting
 make ci-lint  # various static checks
 make typecheck  # run mypy and typing tests
+make docs  # build the docs, failing on any warning
+make check-examples  # run the docstring examples, to review by hand
 ```
 
 ## Maintainer's notes

@@ -7,13 +7,22 @@ This is pretty much a reimplementation of the Rust version located in the
 from __future__ import annotations
 
 import calendar
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timezone
+from operator import itemgetter
 
-from .._common import EPOCH_ORDINAL, S_PER_DAY, S_PER_HOUR
+from .._common import (
+    EPOCH_ORDINAL,
+    EPOCH_SECS_MAX,
+    EPOCH_SECS_MIN,
+    S_PER_DAY,
+    S_PER_HOUR,
+)
 from .common import Fold, Gap, LocalMapping, Unique
 
 DEFAULT_DST = S_PER_HOUR
 DEFAULT_RULE_TIME = 2 * S_PER_HOUR
+# RFC 9636: a rule time ranges from -167 to 167 hours
+MAX_RULE_TIME = 167 * S_PER_HOUR + 59 * 60 + 59
 MAX_OFFSET = 24 * S_PER_HOUR
 Weekday = int  # Different than usual! Sunday=0, Saturday=6
 UTC = timezone.utc
@@ -25,9 +34,28 @@ def year_for_epoch(ts: int) -> int:
     return date.fromordinal(ts // S_PER_DAY + EPOCH_ORDINAL).year
 
 
-def epoch_for_date(d: date) -> int:
-    """Convert a date to a POSIX timestamp in UTC."""
-    return int(datetime.combine(d, time.min).replace(tzinfo=UTC).timestamp())
+def _days(d: date) -> int:
+    """Days since the Unix epoch"""
+    return d.toordinal() - EPOCH_ORDINAL
+
+
+def _clamp(secs: int) -> int:
+    return max(EPOCH_SECS_MIN, min(EPOCH_SECS_MAX, secs))
+
+
+# How far a year's rule transitions can stray into an adjacent year: a rule
+# time of up to 168 hours, an offset of up to 24, and the 366th day of a
+# common year.
+_STRAY = (168 + 24 + 24) * S_PER_HOUR
+
+
+def _jan1(year: int) -> int:
+    """Midnight UTC on Jan 1 of `year`, saturating at the supported range"""
+    if year < 1:
+        return EPOCH_SECS_MIN
+    if year > 9999:
+        return EPOCH_SECS_MAX
+    return _days(date(year, 1, 1)) * S_PER_DAY
 
 
 class LastWeekday:
@@ -40,7 +68,7 @@ class LastWeekday:
         self.month = month
         self.weekday = weekday
 
-    def apply(self, year: int) -> date:
+    def days(self, year: int) -> int:
         last_day_any_weekday = calendar.monthrange(year, self.month)[1]
         last_weekday = (
             last_day_any_weekday
@@ -51,7 +79,7 @@ class LastWeekday:
             )
             % 7
         )
-        return date(year, self.month, last_weekday)
+        return _days(date(year, self.month, last_weekday))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, LastWeekday):
@@ -74,14 +102,14 @@ class NthWeekday:
         self.nth = nth
         self.weekday = weekday
 
-    def apply(self, year: int) -> date:
+    def days(self, year: int) -> int:
         first_day_any_weekday = date(year, self.month, 1)
         first_weekday = (
             ((self.weekday + 7 - first_day_any_weekday.isoweekday() % 7) % 7)
             + 7 * (self.nth - 1)
             + 1
         )
-        return first_day_any_weekday.replace(day=first_weekday)
+        return _days(first_day_any_weekday.replace(day=first_weekday))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, NthWeekday):
@@ -94,16 +122,17 @@ class NthWeekday:
 
 
 class DayOfYear:
-    nth: int  # 1-365, 366 for leap years
+    # 1-366; in a common year, 366 is Jan 1 of the next year, as POSIX,
+    # zoneinfo and libc have it.
+    nth: int
 
     __slots__ = ("nth",)
 
     def __init__(self, nth: int):
         self.nth = nth
 
-    def apply(self, year: int) -> date:
-        day = min(self.nth, 365 + calendar.isleap(year))
-        return date(year, 1, 1) + timedelta(day - 1)
+    def days(self, year: int) -> int:
+        return _days(date(year, 1, 1)) + self.nth - 1
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, DayOfYear):
@@ -122,11 +151,11 @@ class JulianDayOfYear:
     def __init__(self, nth: int):
         self.nth = nth
 
-    def apply(self, year: int) -> date:
+    def days(self, year: int) -> int:
         day = self.nth
         if calendar.isleap(year) and day > 59:
             day += 1
-        return date(year, 1, 1) + timedelta(day - 1)
+        return _days(date(year, 1, 1)) + day - 1
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, JulianDayOfYear):
@@ -192,7 +221,7 @@ class TzStr:
         self.std_abbrev = std_abbrev
 
     def offset_for_instant(self, epoch: int) -> int:
-        if self.dst and self._is_dst_at(epoch):
+        if self.dst and self._is_dst_at(self.dst, epoch):
             return self.dst.offset
         return self.std
 
@@ -204,117 +233,161 @@ class TzStr:
 
     # NOTE: `epoch` is the datetime in seconds since the LOCAL epoch.
     def _ambiguity_for_local_epoch(self, epoch: int) -> LocalMapping:
-        if not self.dst:
+        dst = self.dst
+        if not dst:
             return Unique(self.std)
-        year = year_for_epoch(epoch)
-
-        start_rule, start_time = self.dst.start
-        end_rule, end_time = self.dst.end
-        dst_offset = self.dst.offset
-
-        start = epoch_for_date(start_rule.apply(year)) + start_time
-        end = epoch_for_date(end_rule.apply(year)) + end_time
-
-        if start < end:
-            t1, t2 = start, end
-            off1, off2 = self.std, dst_offset
-            shift = dst_offset - self.std
-        else:
-            t1, t2 = end, start
-            off1, off2 = dst_offset, self.std
-            shift = self.std - dst_offset
-
-        if shift >= 0:
-            if epoch < t1:
-                return Unique(off1)
-            elif epoch < t1 + shift:
-                return Gap(t1 + shift, off2, off1)
-            elif epoch < t2 - shift:
-                return Unique(off2)
-            elif epoch < t2:
-                return Fold(t2, off2, off1)
-            else:
-                return Unique(off1)
-        else:
-            if epoch < t1 + shift:
-                return Unique(off1)
-            elif epoch < t1:
-                return Fold(t1, off1, off2)
-            elif epoch < t2:
-                return Unique(off2)
-            elif epoch < t2 - shift:
-                return Gap(t2 - shift, off1, off2)
-            else:
-                return Unique(off1)
-
-    def _utc_transitions_for_year(
-        self, year: int
-    ) -> tuple[tuple[int, int], tuple[int, int]] | None:
-        """Return ((start_epoch, new_offset), (end_epoch, new_offset))
-        DST transition instants in UTC for the given year.
-        Returns None if no DST rule or year out of range."""
-        if not self.dst or not (1 <= year <= 9999):
-            return None
-        start_rule, start_time = self.dst.start
-        end_rule, end_time = self.dst.end
-        start = epoch_for_date(start_rule.apply(year)) + start_time - self.std
-        end = epoch_for_date(end_rule.apply(year)) + end_time - self.dst.offset
-        return ((start, self.dst.offset), (end, self.std))
-
-    def _is_dst_at(self, epoch: int) -> bool:
-        """Whether DST is active at the given UTC epoch."""
-        trans = self._utc_transitions_for_year(
-            year_for_epoch(epoch + self.std)
+        # A local time reads one instant per offset; an offset holds for the
+        # local time when it is in effect at that instant.
+        std_holds = not self._is_dst_at(dst, _clamp(epoch - self.std))
+        dst_holds = self._is_dst_at(dst, _clamp(epoch - dst.offset))
+        if std_holds != dst_holds:
+            return Unique(self.std if std_holds else dst.offset)
+        small, large = sorted((self.std, dst.offset))
+        # The larger offset reads the earlier instant: before the transition
+        # in a fold, after it in a gap.
+        transition = _clamp(
+            self._change_after(dst, _clamp(epoch - large)) + large
         )
-        if trans is None:
-            return False  # pragma: no cover
-        (start, _), (end, _) = trans
-        if start < end:
-            return start <= epoch < end
-        else:
-            return not (end <= epoch < start)
+        if std_holds:
+            return Fold(transition, large, small)
+        return Gap(transition, large, small)
+
+    def _year_transitions(
+        self, dst: Dst, year: int
+    ) -> tuple[tuple[int, bool], tuple[int, bool]]:
+        """The two rule transitions of a year, earliest first, each flagged
+        with whether DST starts there. A rule time beyond 24 hours, or the
+        366th day of a common year, can move a transition into an adjacent
+        year."""
+        start_rule, start_time = dst.start
+        end_rule, end_time = dst.end
+        start = _clamp(
+            _clamp(start_rule.days(year) * S_PER_DAY + start_time) - self.std
+        )
+        end = _clamp(
+            _clamp(end_rule.days(year) * S_PER_DAY + end_time) - dst.offset
+        )
+        if end < start:
+            return ((end, False), (start, True))
+        return ((start, True), (end, False))
+
+    def _transitions_near(
+        self, dst: Dst, epoch: int, years_before: int, years_after: int
+    ) -> list[tuple[int, bool]]:
+        """The rule transitions of the years around `epoch`, in order. At a
+        shared instant, the later year's transition comes last and wins."""
+        year = self._year_of(epoch)
+        items = [
+            t
+            for y in range(
+                max(1, year - years_before), min(9999, year + years_after) + 1
+            )
+            for t in self._year_transitions(dst, y)
+        ]
+        # Stable, so a tie keeps the year order
+        items.sort(key=itemgetter(0))
+        return items
+
+    def _year_of(self, epoch: int) -> int:
+        """The local year of `epoch`, in standard time"""
+        return year_for_epoch(_clamp(epoch + self.std))
+
+    def _is_dst_at(self, dst: Dst, epoch: int) -> bool:
+        """Whether DST is in effect at the given UTC epoch: the latest rule
+        transition at or before it decides. An adjacent year's transitions
+        count only near the turn of the year, so most calls see one year."""
+        year = self._year_of(epoch)
+
+        def latest(y: int) -> tuple[int, bool] | None:
+            if not 1 <= y <= 9999:
+                return None
+            return next(
+                (
+                    t
+                    for t in reversed(self._year_transitions(dst, y))
+                    if t[0] <= epoch
+                ),
+                None,
+            )
+
+        best = latest(year)
+        if best is None or best[0] < _jan1(year) + _STRAY:
+            prev = latest(year - 1)
+            if prev is not None and (best is None or prev[0] > best[0]):
+                best = prev
+        # At a shared instant, the later year wins
+        if epoch >= _jan1(year + 1) - _STRAY:
+            nxt = latest(year + 1)
+            if nxt is not None and (best is None or nxt[0] >= best[0]):
+                best = nxt
+        if best is not None:
+            return best[1]
+        # Only at the edge of the supported range: before a transition, the
+        # other state holds.
+        return not self._year_transitions(dst, year)[0][1]
+
+    def _change_after(self, dst: Dst, epoch: int) -> int:
+        """The first instant after `epoch` where DST starts or ends"""
+        change = self._next_change(dst, epoch)
+        return EPOCH_SECS_MAX if change is None else change[0]
+
+    def _next_change(self, dst: Dst, epoch: int) -> tuple[int, bool] | None:
+        state = self._is_dst_at(dst, epoch)
+        items = self._transitions_near(dst, epoch, 1, 2)
+        # A year's transitions stay within days of it, so the years in view
+        # settle every instant up to a year before the last of them ends.
+        limit = _jan1(self._year_of(epoch) + 2)
+        for i, (t, starts_dst) in enumerate(items):
+            if t >= limit:
+                break
+            # Only the last transition at an instant counts
+            if t <= epoch or (i + 1 < len(items) and items[i + 1][0] == t):
+                continue
+            if starts_dst != state:
+                return t, starts_dst
+        return None
 
     def next_transition(self, epoch: int) -> tuple[int, int] | None:
         """Return (epoch, new_offset) of the next UTC offset transition
-        after `epoch`, or None if there is no DST rule."""
-        trans = self._utc_transitions_for_year(
-            year_for_epoch(epoch + self.std)
-        )
-        if trans is None:
+        after `epoch`, or None if there is none."""
+        dst = self.dst
+        if not dst:
             return None
-        future = sorted((e, o) for e, o in trans if e > epoch)
-        if future:
-            return future[0]
-        # Both transitions are <= epoch; check next year
-        trans = self._utc_transitions_for_year(
-            year_for_epoch(epoch + self.std) + 1
-        )
-        if trans is None:
+        change = self._next_change(dst, epoch)
+        if change is None:
             return None
-        return min(trans)
+        t, is_dst = change
+        return t, dst.offset if is_dst else self.std
 
     def prev_transition(self, epoch: int) -> tuple[int, int] | None:
         """Return (epoch, new_offset) of the previous UTC offset transition
-        before `epoch`, or None if there is no DST rule."""
-        trans = self._utc_transitions_for_year(
-            year_for_epoch(epoch + self.std)
-        )
-        if trans is None:
+        before `epoch`, or None if there is none."""
+        dst = self.dst
+        if not dst:
             return None
-        past = sorted(((e, o) for e, o in trans if e < epoch), reverse=True)
-        if past:
-            return past[0]
-        # Both transitions are >= epoch; check previous year
-        trans = self._utc_transitions_for_year(
-            year_for_epoch(epoch + self.std) - 1
-        )
-        if trans is None:
-            return None
-        return max(trans)
+        items = self._transitions_near(dst, epoch, 2, 1)
+        # See `_next_change`
+        limit = _jan1(self._year_of(epoch) - 1)
+        for i in reversed(range(len(items))):
+            t, starts_dst = items[i]
+            if t < limit:
+                break
+            # Only the last transition at an instant counts
+            if t >= epoch or (i + 1 < len(items) and items[i + 1][0] == t):
+                continue
+            before = next(
+                (s for u, s in reversed(items[:i]) if u < t),
+                None,
+            )
+            if before is None:
+                before = self._is_dst_at(dst, _clamp(t - 1))
+            if starts_dst != before:
+                return t, dst.offset if starts_dst else self.std
+        return None
 
     def meta_for_instant(self, epoch: int) -> tuple[int, str]:
         """Return (dst_saving_secs, abbreviation) for the given UTC epoch."""
-        if self.dst and self._is_dst_at(epoch):
+        if self.dst and self._is_dst_at(self.dst, epoch):
             return (self.dst.offset - self.std, self.dst.abbrev)
         return (0, self.std_abbrev)
 
@@ -378,24 +451,23 @@ class TzStr:
 
 
 def parse_tzname(s: str) -> tuple[str, str]:
-    """Parse the time zone name, returning (name, rest_of_string)."""
+    """Parse the time zone name, returning (name, rest_of_string). Per POSIX,
+    a name has three or more characters: letters, or, between ``<`` and
+    ``>``, letters, digits, ``+`` and ``-``."""
     if s[:1] == "<":  # bracketed format
         stop = s.find(">") + 1
-        if stop < 3:  # not found or empty name
-            raise ValueError("Invalid TZ string: missing or empty name")
         name = s[1 : stop - 1]
-    else:  # unbracketed format only allows letters
-        for stop, char in enumerate(s):
-            if not char.isalpha():
-                break
-        else:
-            raise ValueError("Invalid TZ string: missing or empty name")
-
-        if stop == 0:
+        if not stop or not all(c.isalnum() or c in "+-" for c in name):
             raise ValueError("Invalid TZ string: invalid name")
+    else:  # unbracketed format only allows letters
+        stop = len(s) - len(s.lstrip(_LETTERS))
         name = s[:stop]
-
+    if len(name) < 3:
+        raise ValueError("Invalid TZ string: invalid name")
     return name, s[stop:]
+
+
+_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 
 def expect_char(s: str, char: str) -> str:
@@ -405,15 +477,14 @@ def expect_char(s: str, char: str) -> str:
 
 
 def parse_offset(s: str) -> tuple[int, str]:
-    delta_s, s = parse_hms(s)
-    if abs(delta_s) >= MAX_OFFSET:
-        raise ValueError("Invalid POSIX TZ string: offset out of range")
+    delta_s, s = parse_hms(s, MAX_OFFSET - 1)
     # POSIX TZ strings use negative offsets, so we negate the parsed value
     return -delta_s, s
 
 
-# Parse a time string in the format h[hh[:mm[:ss]]]
-def parse_hms(s: str) -> tuple[int, str]:
+# Parse a time string in the format h[h[h]][:mm[:ss]], up to `max` seconds.
+# The hours take a third digit only when `max` needs one.
+def parse_hms(s: str, max: int) -> tuple[int, str]:
     sign = 1
     if s[:1] == "+":
         s = s[1:]
@@ -422,7 +493,10 @@ def parse_hms(s: str) -> tuple[int, str]:
         sign = -1
 
     total = 0
-    hour, s = parse_up_to_3_digits(s)
+    if max > 99 * S_PER_HOUR:
+        hour, s = parse_up_to_3_digits(s)
+    else:
+        hour, s = parse_up_to_2_digits(s)
     total += hour * 3600
     if s[:1] == ":":
         s = s[1:]
@@ -433,7 +507,16 @@ def parse_hms(s: str) -> tuple[int, str]:
             second, s = parse_00_to_59(s)
             total += second
 
+    if total > max:
+        raise ValueError("Invalid POSIX TZ string: time out of range")
     return sign * total, s
+
+
+def parse_up_to_2_digits(s: str) -> tuple[int, str]:
+    total = int(s[:1])
+    if (nextchar := s[1:2]).isdigit():
+        return total * 10 + int(nextchar), s[2:]
+    return total, s[1:]
 
 
 def parse_up_to_3_digits(s: str) -> tuple[int, str]:
@@ -503,7 +586,7 @@ def parse_rule(s: str) -> tuple[tuple[Rule, int], str]:
     if s[:1] == "/":
         # Optional time
         s = s[1:]
-        time, s = parse_hms(s)
+        time, s = parse_hms(s, MAX_RULE_TIME)
     else:
         time = DEFAULT_RULE_TIME
 

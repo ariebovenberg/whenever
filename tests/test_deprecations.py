@@ -65,6 +65,18 @@ class TestDisambiguateKeyword:
                 ),
             ),
             (
+                lambda: ZonedDateTime.parse(  # type: ignore[deprecated]
+                    "2020-08-15 00:00 UTC",
+                    pattern="YYYY-MM-DD HH:mm VV",
+                    disambiguate="raise",
+                ),
+                lambda: ZonedDateTime.parse(
+                    "2020-08-15 00:00 UTC",
+                    pattern="YYYY-MM-DD HH:mm VV",
+                    disambiguation="raise",
+                ),
+            ),
+            (
                 lambda: ZonedDateTime(2020, 8, 15, tz="UTC").add(  # type: ignore[deprecated]
                     hours=1, disambiguate="raise"
                 ),
@@ -179,15 +191,20 @@ class TestDisambiguateKeyword:
             )
 
     def test_str_alias(self):
-        """``DisambiguateStr`` is a silent alias: no warning, same values."""
-        from whenever import DisambiguateStr, DisambiguationStr
+        """``DisambiguateStr`` warns at each access, with the same values."""
+        from whenever import DisambiguationStr
 
         def values(alias: Any) -> tuple[Any, ...]:
             # On Python 3.12+ these are `type` statements, whose values sit
             # behind `__value__`; before that they're plain `Literal`s.
             return get_args(getattr(alias, "__value__", alias))
 
-        assert values(DisambiguateStr) == values(DisambiguationStr)
+        for _ in range(2):
+            alias = deprecated(
+                lambda: whenever.DisambiguateStr,
+                match="DisambiguateStr is deprecated; use DisambiguationStr",
+            )
+            assert values(alias) == values(DisambiguationStr)
 
 
 class TestParseFormatKeyword:
@@ -357,7 +374,7 @@ class TestRaisingCallEmitsNoWarning:
                 TimeZoneNotFoundError,
             ),
             (
-                lambda: PlainDateTime(2023, 6, 1).assume_system_tz(  # type: ignore[deprecated, call-arg]
+                lambda: PlainDateTime(2023, 6, 1).assume_system_tz(  # type: ignore[call-overload]
                     disambiguate="bogus"
                 ),
                 ValueError,
@@ -403,22 +420,70 @@ class TestRaisingCallEmitsNoWarning:
         assert caught == []
 
     @pytest.mark.parametrize(
-        "call",
+        "call, exc",
         [
-            lambda: OffsetDateTime.from_timestamp(  # type: ignore[deprecated]
-                Instant.MAX.timestamp(), offset=hours(1)
+            (
+                lambda: OffsetDateTime.from_timestamp(  # type: ignore[deprecated]
+                    Instant.MAX.timestamp(), offset=hours(1)
+                ),
+                ValueError,
             ),
-            lambda: OffsetDateTime.from_timestamp(0, offset="x"),  # type: ignore[deprecated, arg-type]
-            lambda: ZonedDateTime.from_timestamp(  # type: ignore[deprecated]
-                Instant.MAX.timestamp(), tz="Asia/Tokyo"
+            (
+                lambda: OffsetDateTime.from_timestamp(0, offset="x"),  # type: ignore[deprecated, arg-type]
+                TypeError,
             ),
-            lambda: PlainDateTime(2020, 1, 1).assume_system_tz("raise"),  # type: ignore[deprecated, call-arg]
+            (
+                lambda: ZonedDateTime.from_timestamp(  # type: ignore[deprecated]
+                    Instant.MAX.timestamp(), tz="Asia/Tokyo"
+                ),
+                ValueError,
+            ),
+            (
+                lambda: PlainDateTime(2020, 1, 1).assume_system_tz("raise"),  # type: ignore[call-overload]
+                TypeError,
+            ),
+            (
+                lambda: OffsetDateTime.from_timestamp(0, offset=25),  # type: ignore[deprecated]
+                ValueError,
+            ),
+            (
+                lambda: Instant.from_timestamp_millis(1.5),  # type: ignore[deprecated, arg-type]
+                TypeError,
+            ),
+            (
+                lambda: Instant.from_timestamp_nanos(1.5),  # type: ignore[deprecated, arg-type]
+                TypeError,
+            ),
+            (
+                lambda: Instant.from_utc(2020, 1, 1).exact_eq(3),  # type: ignore[deprecated, arg-type]
+                TypeError,
+            ),
+            (
+                lambda: OffsetDateTime(  # type: ignore[deprecated]
+                    2020, 1, 1, offset=hours(1)
+                ).exact_eq(3),  # type: ignore[arg-type]
+                TypeError,
+            ),
+            (
+                lambda: ZonedDateTime(2020, 1, 1, tz="UTC").exact_eq(3),  # type: ignore[deprecated, arg-type]
+                TypeError,
+            ),
+            (
+                lambda: ItemizedDelta(hours=1).exact_eq(3),  # type: ignore[deprecated, arg-type]
+                TypeError,
+            ),
+            (
+                lambda: ItemizedDateDelta(days=1).exact_eq(3),  # type: ignore[deprecated, arg-type]
+                TypeError,
+            ),
         ],
     )
-    def test_deprecated_method(self, call: Callable[[], object]):
+    def test_deprecated_method(
+        self, call: Callable[[], object], exc: type[Exception]
+    ):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            with pytest.raises((ValueError, TypeError)):
+            with pytest.raises(exc):
                 call()
         assert caught == []
 
@@ -480,12 +545,13 @@ class TestTimestampWrappers:
         ],
     )
     def test_instant_factories_keep_integer_requirement(self, method, unit):
-        with warns_here(WheneverDeprecationWarning) as caught:
+        # validate, then warn: the rejection comes without the deprecation
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
             with pytest.raises(
                 TypeError, match=f"^timestamp in {unit}s must be an integer$"
             ):
                 getattr(Instant, method)(1.5)
-        assert caught[0].filename == __file__
 
     @pytest.mark.parametrize(
         "method, value, unit",
@@ -512,8 +578,12 @@ class TestTimestampWrappers:
         ["from_timestamp", "from_timestamp_millis", "from_timestamp_nanos"],
     )
     def test_offset_factories_warn_about_stale_offset(self, method):
+        # The advice names only the preferred API
         with warns_here(WheneverDeprecationWarning):
-            with warns_here(StaleOffsetWarning):
+            with warns_here(
+                StaleOffsetWarning,
+                match=r"use Instant\.from_timestamp\(ts\)\.to_tz\('<tz>'\)",
+            ):
                 getattr(OffsetDateTime, method)(0, offset=hours(5))
 
     @pytest.mark.parametrize(
@@ -779,14 +849,14 @@ class TestSystemTzWrappers:
             match=assume_system_tz_msg,
         ).strict_eq(assumed)
         with warns_here(WheneverDeprecationWarning) as caught:
-            actual = plain.assume_system_tz(disambiguate="raise")  # type: ignore[deprecated, call-arg]
+            actual = plain.assume_system_tz(disambiguate="raise")  # type: ignore[deprecated]
         assert actual.strict_eq(assumed)
         assert {str(w.message) for w in caught} == {
             "assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
             "'disambiguate' is deprecated; use 'disambiguation' instead",
         }
         assert deprecated(
-            plain.assume_system_tz,  # type: ignore[deprecated]
+            plain.assume_system_tz,
             match=assume_system_tz_msg,
         ).strict_eq(plain.assume_tz(SYSTEM_TZ, disambiguation="compatible"))
         # The arguments are validated before the method warns, so a call that
@@ -797,7 +867,7 @@ class TestSystemTzWrappers:
                 TypeError,
                 match="both 'disambiguation' and deprecated 'disambiguate'",
             ):
-                plain.assume_system_tz(  # type: ignore[deprecated, call-arg]
+                plain.assume_system_tz(  # type: ignore[call-overload]
                     disambiguation="raise", disambiguate="raise"
                 )
         assert caught == []
@@ -988,12 +1058,43 @@ class TestIntegerOffsets:
             )  # type: ignore[deprecated]
         assert d.offset == hours(-5)
 
-    def test_still_range_checked(self):
-        with warns_here(WheneverDeprecationWarning):
-            with pytest.raises(
-                ValueError, match="offset must be between -24 and 24 hours"
-            ):
-                OffsetDateTime(2020, 8, 15, 5, 12, offset=34)  # type: ignore[deprecated]
+    @pytest.mark.parametrize(
+        "call, message",
+        [
+            (
+                lambda: OffsetDateTime(2020, 8, 15, 5, 12, offset=34),  # type: ignore[deprecated]
+                "^offset must be between -24 and 24 hours$",
+            ),
+            (
+                lambda: OffsetDateTime(2023, 13, 1, offset=1),  # type: ignore[deprecated]
+                "month|date",
+            ),
+            (
+                lambda: Instant.from_utc(2020, 1, 1).to_fixed_offset(25),  # type: ignore[deprecated]
+                "^offset must be between -24 and 24 hours$",
+            ),
+            (
+                lambda: OffsetDateTime(2020, 1, 1, offset=hours(1)).replace(  # type: ignore[deprecated]
+                    offset=25
+                ),
+                "^offset must be between -24 and 24 hours$",
+            ),
+            (
+                lambda: PlainDateTime(2020, 1, 1).assume_fixed_offset(25),  # type: ignore[deprecated]
+                "^offset must be between -24 and 24 hours$",
+            ),
+            (
+                lambda: OffsetDateTime.now(25, stale_offset_ok=True),  # type: ignore[deprecated]
+                "^offset must be between -24 and 24 hours$",
+            ),
+        ],
+    )
+    def test_still_range_checked(self, call, message):
+        # validate, then warn: the rejection comes without the deprecation
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with pytest.raises(ValueError, match=message):
+                call()
 
     def test_now(self):
         instant = Instant.from_utc(2020, 8, 15)

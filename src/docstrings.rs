@@ -350,7 +350,9 @@ For deltas including months or days, use :class:`~ItemizedDelta`,
 or :class:`~whenever.ItemizedDateDelta` for date-only deltas.
 
 The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
-for example.
+for example. Float inputs convert exactly down to the nanosecond, and
+a fraction below one nanosecond is truncated toward zero:
+``seconds=1.5e-9`` is 1 nanosecond.
 
 >>> d = TimeDelta(hours=1, minutes=90)
 TimeDelta(\"PT2h30m\")
@@ -957,7 +959,8 @@ Instant(\"2020-01-01 12:45:00Z\")
 ``\"day\"`` is rejected: an instant has no calendar, so a day has no
 midnight to start at. ``round(\"hour\", increment=24)`` gives periods
 of exactly 24 hours, counted from midnight UTC like every increment
-on an :class:`Instant`.
+on an :class:`Instant`. ``\"half_even\"`` also breaks a tie toward
+the even multiple counted from that midnight, not from the epoch.
 ";
 pub(crate) const INSTANT_SUBTRACT: &CStr = c"\
 subtract($self, delta=..., /, *, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, days_assumed_24h_ok=False)
@@ -1808,9 +1811,10 @@ relative_to
     it, days and weeks are taken as 24 and 168 hours. A
     :class:`ZonedDateTime` emits no warning. A :class:`PlainDateTime`
     ignores time zone transitions, and emits
-    :class:`NaiveArithmeticWarning`. An :class:`OffsetDateTime` holds
-    its offset fixed for the whole calculation, and emits
-    :class:`StaleOffsetWarning`.
+    :class:`NaiveArithmeticWarning` for a calendar unit. An
+    :class:`OffsetDateTime` holds its offset fixed for the whole
+    calculation, and emits :class:`StaleOffsetWarning` for a
+    calendar unit. An exact unit doesn't use the reference.
 days_assumed_24h_ok
     Accepts the :class:`~whenever.DaysAssumed24HoursWarning` of a
     day or week total without a reference.
@@ -1867,10 +1871,10 @@ DST is active
 
 Note
 ----
-Some time zones have unusual DST rules. For example,
-Europe/Dublin defines its standard time as IST (UTC+1) and uses
-\"negative DST\" in winter. In such cases, this method
-returns a negative value during winter.
+Some time zones have unusual DST rules. For example, some builds
+of the time zone database define Europe/Dublin's standard time as
+IST (UTC+1), with \"negative DST\" in winter. With such data, this
+method returns a negative value during winter.
 
 The value can differ from ``zoneinfo``'s ``dst()``, which falls back
 to one hour when it cannot pair a DST period with a standard one.
@@ -1881,10 +1885,8 @@ The end of the given unit
 >>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").end_of(\"day\")
 ZonedDateTime(\"2024-08-15 23:59:59.999999999-04:00[America/New_York]\")
 
-See also :meth:`start_of`. A boundary skipped by a transition snaps to
-the edge of the gap, so that successive intervals stay contiguous.
-A repeated boundary is whatever the next :meth:`start_of` resolves
-to; in a fall-back shorter than the unit, that is the later offset.
+The end is one nanosecond before the start of the next unit, as
+:meth:`start_of` defines it.
 ";
 pub(crate) const ZONEDDATETIME_EXACT_EQ: &CStr = c"\
 Deprecated alias for :meth:`strict_eq`.
@@ -2135,18 +2137,19 @@ Important
 ---------
 Replacing fields keeps the current offset while it is valid for the
 new local time (**offset-preserving resolution**), so a repeated
-local time stays on its side of the transition. A skipped local
-time, a changed ``tz=``, or an offset that no longer applies falls
-to ``disambiguation=``, which is ``\"compatible\"`` with
-:class:`ImplicitDisambiguationWarning` when omitted. A stated ``tz=``
-keeps the local fields and moves the instant; :meth:`to_tz` keeps
-the instant. See :ref:`offset-preserving`.
+local time stays on its side of the transition, whatever
+``disambiguation=`` says. A skipped local time, a changed ``tz=``,
+or an offset that no longer applies falls to ``disambiguation=``,
+which is ``\"compatible\"`` with :class:`ImplicitDisambiguationWarning`
+when omitted. A stated ``tz=`` keeps the local fields and moves the
+instant; :meth:`to_tz` keeps the instant. See
+:ref:`offset-preserving`.
 
 >>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz=\"Europe/Paris\", disambiguation=\"later\")
 >>> d.replace(minute=45)  # still the second occurrence
 ZonedDateTime(\"2023-10-29 02:45:00+01:00[Europe/Paris]\")
->>> d.replace(minute=45, disambiguation=\"earlier\")
-ZonedDateTime(\"2023-10-29 02:45:00+02:00[Europe/Paris]\")
+>>> d.replace(minute=45, disambiguation=\"earlier\")  # the offset still decides
+ZonedDateTime(\"2023-10-29 02:45:00+01:00[Europe/Paris]\")
 
 Pass ``SYSTEM_TZ`` as ``tz=`` for the system time zone.
 
@@ -2203,11 +2206,11 @@ ZonedDateTime(\"2020-08-15 23:30:00+02:00[Europe/Paris]\")
 
 Notes
 -----
-* A rounded time that is repeated keeps the current offset if that
-  offset is still valid, and takes the earlier one otherwise; in a
-  fall-back shorter than the increment, it is the first occurrence.
-  A rounded time that is skipped becomes the first instant after
-  the gap.
+* The result is one of the boundaries :meth:`start_of` knows, with
+  the increment as the unit: the latest at or before the value, or
+  the earliest after it. So ``floor`` never returns a later instant,
+  and ``ceil`` never an earlier one. A rounded time that is skipped
+  becomes the first instant after the gap.
 * Rounding to a day compares the time elapsed since the start of the
   day with the day's length. On the 23-hour day of 2023-03-26 in
   Amsterdam, 11:31 therefore rounds down and 12:31 rounds up.
@@ -2237,16 +2240,16 @@ ZonedDateTime(\"2024-08-15 00:00:00-04:00[America/New_York]\")
 >>> ZonedDateTime(2024, 8, 15, 14, 30, tz=\"America/New_York\").start_of(\"hour\")
 ZonedDateTime(\"2024-08-15 14:00:00-04:00[America/New_York]\")
 
-A boundary skipped by a transition snaps to the edge of the gap, so
-that successive intervals stay contiguous.
+A boundary in a gap snaps to the end of the gap, so that successive
+intervals stay contiguous.
 
-For ``\"hour\"``, ``\"minute\"``, and ``\"second\"``, a repeated boundary
-keeps the current offset if that offset is still valid; in a
-fall-back shorter than the unit, it is the first occurrence. For
-``\"day\"``, ``\"week_mon\"``, ``\"week_sun\"``, ``\"month\"``, and
-``\"year\"``, a repeated boundary always takes the earlier occurrence.
-A value past it lies in the day that has started, also where the
-clock reads the evening before for a second time.
+In a fold, a boundary on the clock occurs twice. For ``\"hour\"``,
+``\"minute\"``, and ``\"second\"``, both occurrences start a unit if the
+fold is at least as long as the unit; in a shorter fold, only the
+first does, and that unit runs longer. The result is the latest start
+at or before the value. For ``\"day\"`` and longer units, only the
+first occurrence of a repeated midnight starts a unit: where a fold
+repeats the evening before, its second pass belongs to the new day.
 ";
 pub(crate) const ZONEDDATETIME_STRICT_EQ: &CStr = c"\
 Compare two values, including what ``==`` ignores.
@@ -2530,7 +2533,7 @@ pub(crate) const IMPLICIT_DISAMBIGUATION_MSG: &CStr = c"resolving a local dateti
 pub(crate) const INTEGER_OFFSET_DEPRECATION_MSG: &CStr = c"integer offsets are deprecated because their unit is implicit; pass a TimeDelta instead, for example hours(2)";
 pub(crate) const OFFSET_DATETIME_DOCS_MSG: &CStr = c"For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples.";
 pub(crate) const OFFSET_DIFFERENCE_STALE_MSG: &CStr = c"You are calculating a difference in calendar units between OffsetDateTimes with a remainder in exact units. The whole calendar units are correct in any time zone, but the remainder after the last whole unit is computed with the offset held fixed, and a time zone transition inside that final partial unit shifts it by the transition length. Use a ZonedDateTime for a difference that accounts for the time zone. If the fixed-offset assumption is intentional, pass `stale_offset_ok=True` to `since()` or `until()`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
-pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"You are converting a timestamp using a fixed UTC offset. The result is correct for that offset, but the offset may be stale relative to the region you intend at this timestamp. If you mean a named time zone, use ZonedDateTime.from_timestamp(ts, tz='<tz>'); if you only need the instant, use Instant.from_timestamp(ts). If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"You are converting a timestamp using a fixed UTC offset. The result is correct for that offset, but the offset may be stale relative to the region you intend at this timestamp. If you mean a named time zone, use Instant.from_timestamp(ts).to_tz('<tz>'); if you only need the instant, use Instant.from_timestamp(ts). If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_NOW_STALE_MSG: &CStr = c"You are getting the current time using a fixed UTC offset. A fixed offset has no time zone rules, so it may be stale relative to the region you intend after a DST or other rule change. If you mean a named time zone, use ZonedDateTime.now('<tz>'); if you only need the current instant, use Instant.now(). If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an OffsetDateTime is valid and preserves its observed UTC offset. That offset may be stale relative to the source time zone if the result is in a different DST or time zone rule period (e.g. after replacing the month on a datetime in a European time zone). Convert to ZonedDateTime first (using .assume_tz()) for field replacement that accounts for the time zone. If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_ROUND_STALE_MSG: &CStr = c"Rounding an OffsetDateTime is valid and preserves its observed UTC offset. That offset may be stale relative to the source time zone if the rounded time crosses a time zone transition. Convert to a ZonedDateTime first (using .assume_tz()) for rounding that accounts for the time zone. If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";

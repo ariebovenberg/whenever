@@ -46,6 +46,7 @@ whenever\..*\.__get_pydantic_core_schema__
 # `disambiguate=`, `tz=`) through a catch-all that the Rust text signatures
 # do not list. Remove with the shims in 1.0.
 whenever\..*\.parse
+whenever\.PlainDateTime\.assume_system_tz
 whenever\.PlainDateTime\.assume_tz
 whenever\.ZonedDateTime\.add
 whenever\.ZonedDateTime\.format_iso

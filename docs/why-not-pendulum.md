@@ -277,7 +277,7 @@ Pendulum's entry points also disagree about what a missing time zone means:
 |---|---|
 | `pendulum.parse(...)` | UTC |
 | `pendulum.instance(...)` | UTC |
-| `pendulum.strptime(...)` | UTC |
+| `DateTime.strptime(...)` | UTC |
 | `pendulum.from_timestamp(...)` | UTC |
 | `DateTime.fromtimestamp(...)` | the system time zone |
 | `DateTime.combine(...)` | naive |
@@ -305,7 +305,7 @@ Notably, the standard library has been *retiring* that third reading:
 precisely because naive-but-actually-UTC values are a bug factory.
 
 Pendulum keeps all three inherited readings, doubles down on the deprecated
-one (`parse()`, `instance()`, and `strptime()` all assume UTC)
+one (`parse()`, `instance()`, and `DateTime.strptime()` all assume UTC)
 and adds a fourth of its own: `in_timezone()` reads a
 naive value as "already in whatever time zone you name".
 
@@ -418,6 +418,11 @@ On that day, `today()` resolves the skipped midnight *backwards*, into the previ
 DateTime(2025, 4, 24, 23, 0, 0, tzinfo=Timezone('Africa/Cairo'))
 ```
 
+Reported in
+[#915](https://github.com/python-pendulum/pendulum/issues/915);
+a fix is proposed in
+[#994](https://github.com/python-pendulum/pendulum/pull/994).
+
 (pendulum-equality)=
 
 #### Equal values can be an hour apart
@@ -455,9 +460,8 @@ False
 ```
 
 First reported in
-[#351](https://github.com/python-pendulum/pendulum/issues/351);
-a fix is proposed in
-[#985](https://github.com/python-pendulum/pendulum/pull/985).
+[#351](https://github.com/python-pendulum/pendulum/issues/351), which is
+still open.
 
 :::{admonition} How `whenever` does it
 :class: tip
@@ -466,7 +470,9 @@ Ambiguity in `whenever` is settled by an explicit
 {ref}`disambiguation <ambiguity>` argument on the operation that creates the
 value, defaulting to `"compatible"` — the same convention as RFC 5545,
 Temporal, NodaTime, and the standard library's `fold=0` — with `"raise"`
-available when you would rather be told than guessed at. The resolved offset
+available when you would rather be told than guessed at. Relying on the
+default emits {class}`~whenever.ImplicitDisambiguationWarning`, so the
+guess is never silent. The resolved offset
 is part of the value, so copying, pickling, and converting it preserve the
 instant.
 :::
@@ -566,13 +572,9 @@ DateTime(2024, 3, 31, 4, 30, 0, tzinfo=Timezone('Europe/Paris'))
 ```
 
 `+` decomposes a `Duration` into units; `-` collapses it to seconds.
-So the obvious round trip fails, and `dt - delta` differs from both
-`dt.subtract(...)` and `dt + -delta`:
+So `dt - delta` differs from both `dt.subtract(...)` and `dt + -delta`:
 
 ```python
->>> d = pendulum.duration(days=1, hours=2)
->>> (b + d) - d
-DateTime(2024, 3, 30, 0, 30, 0, tzinfo=Timezone('Europe/Paris'))   # not b
 >>> dt = pendulum.datetime(2013, 4, 2, tz="Europe/Paris")
 >>> three_days = pendulum.duration(days=3)
 >>> dt.subtract(days=3)
@@ -721,7 +723,7 @@ but they have remained open, sometimes for years.
 |---|---|---|---|
 | `Timezone` and `FixedTimezone` are unhashable | [#1008](https://github.com/python-pendulum/pendulum/issues/1008) | Sep 2026 | [#1009](https://github.com/python-pendulum/pendulum/pull/1009) |
 | Values carrying a non-Pendulum `tzinfo` are treated as naive | [#527](https://github.com/python-pendulum/pendulum/issues/527), [#646](https://github.com/python-pendulum/pendulum/issues/646) | Dec 2020 | — |
-| `astimezone()` to a `dateutil` zone loses the timezone | [#820](https://github.com/python-pendulum/pendulum/issues/820) | Apr 2024 | [#1006](https://github.com/python-pendulum/pendulum/pull/1006) |
+| `astimezone()` to a `dateutil` zone loses the time zone | [#820](https://github.com/python-pendulum/pendulum/issues/820) | Apr 2024 | [#1006](https://github.com/python-pendulum/pendulum/pull/1006) |
 | A `dateutil` zone passed as `tz=` becomes `+00:00` | — | unreported | — |
 | `Duration / timedelta`, `//`, `%`, and `divmod()` raise `AttributeError` | [#382](https://github.com/python-pendulum/pendulum/issues/382) | Jun 2019 | — |
 | `//`, `%`, and `divmod()` ignore calendar units | [#799](https://github.com/python-pendulum/pendulum/issues/799) | Jan 2024 | — |
@@ -732,7 +734,7 @@ but they have remained open, sometimes for years.
 | `Interval.in_days()` counts local calendar dates, not 24-hour periods | — | unreported | — |
 | A negative `Interval` contains neither endpoint, yet `range()` iterates it | — | unreported | — |
 | Pickling and `copy.copy` drop `fold` | [#908](https://github.com/python-pendulum/pendulum/issues/908) | Aug 2025 | [#909](https://github.com/python-pendulum/pendulum/pull/909) |
-| `precise_diff` ignores the end's time of day | [#906](https://github.com/python-pendulum/pendulum/issues/906) | Aug 2025 | — |
+| `precise_diff` ignores the end's time of day | [#906](https://github.com/python-pendulum/pendulum/issues/906) | Aug 2025 | [#953](https://github.com/python-pendulum/pendulum/pull/953) |
 | `precise_diff` month detection is not monotonic — 29 days is "1 month", 30 days is "4 weeks 2 days" | — | unreported | — |
 | The two builds disagree on ISO 8601 durations | [#534](https://github.com/python-pendulum/pendulum/issues/534), [#833](https://github.com/python-pendulum/pendulum/issues/833) | Feb 2021 | [#993](https://github.com/python-pendulum/pendulum/pull/993), [#1005](https://github.com/python-pendulum/pendulum/pull/1005) |
 | No parity tests between the two builds | [#907](https://github.com/python-pendulum/pendulum/issues/907) | Aug 2025 | — |
@@ -740,8 +742,8 @@ but they have remained open, sometimes for years.
 | Out-of-range offsets parse, then fail on use | — | unreported | — |
 | Offsets in time-only strings are silently discarded | — | unreported | — |
 | Formatter tokens are recognized but not implemented | — | unreported | — |
-| Locale data is wrong or missing in ~15 locales | — | unreported | [#1001](https://github.com/python-pendulum/pendulum/pull/1001) (for `zh`) |
-| `TZ` is ignored on macOS | [#905](https://github.com/python-pendulum/pendulum/issues/905) | Jul 2025 | — |
+| Locale data is wrong or missing in ~15 locales | — | unreported | [#1001](https://github.com/python-pendulum/pendulum/pull/1001) (for `zh`; merged, unreleased) |
+| `TZ` is ignored on macOS | [#905](https://github.com/python-pendulum/pendulum/issues/905) | Jul 2025 | [#942](https://github.com/python-pendulum/pendulum/pull/942) |
 | The classes declare no `__slots__` | — | unreported | — |
 | `timezone(2)` means seconds, `datetime(tz=2)` means hours | — | unreported | — |
 | No API reference | [#199](https://github.com/python-pendulum/pendulum/issues/199) | May 2018 | — |
@@ -818,7 +820,7 @@ DateTime(9999, 12, 31, 23, 59, 0, tzinfo=Timezone('UTC'))    # 59.999999 s short
 
 (pendulum-foreign-tzinfo)=
 
-### Timezones Pendulum didn't create
+### Time zones Pendulum didn't create
 
 Pendulum's methods work through `DateTime.tz`, which is `None` for any
 `tzinfo` that isn't Pendulum's own. Such values are easy to come by:
@@ -875,7 +877,7 @@ Traceback (most recent call last):
 TypeError: cannot use 'pendulum.tz.timezone.Timezone' as a set element (unhashable type: 'Timezone')
 ```
 
-Timezones as dictionary keys, set members, or `lru_cache` arguments are routine;
+Time zones as dictionary keys, set members, or `lru_cache` arguments are routine;
 none of that works.
 
 (pendulum-serialization)=
@@ -942,6 +944,7 @@ English.
 'lun., 15 janv. 2024 12:00:00 +0000'
 >>> pendulum.datetime(2024, 1, 15, 12).to_cookie_string()    # only this one is pinned
 'Monday, 15-Jan-2024 12:00:00 UTC'
+>>> pendulum.set_locale("en")
 ```
 
 (pendulum-two-impls)=
@@ -985,7 +988,7 @@ fractional component as tenths regardless of the number of digits
 ([#534](https://github.com/python-pendulum/pendulum/issues/534), open since 2021)
 and accepts near-anything as ISO 8601:
 
-```python
+```text
 # Compiled parser                     # Pure-Python parser
 >>> pendulum.parse("P1.25D")          >>> pendulum.parse("P1.25D")
 Duration(days=1, hours=6)             Duration(days=3, hours=12)
@@ -1017,7 +1020,6 @@ Several published examples no longer match version 3.2.0:
 - parts of the documentation still call the result of `diff()` a `Period`,
   although the public class is now `Interval`;
 - examples for `Duration.total_days()` disagree with the actual result;
-- the `from_format` escaping example (`"[today] dddd"`) raises;
 - the introduction claims comparisons account for time zones; the
   repeated-hour example above shows otherwise.
 
@@ -1040,7 +1042,6 @@ including cases where a tested fix is already available
 ([#909](https://github.com/python-pendulum/pendulum/pull/909),
 [#968](https://github.com/python-pendulum/pendulum/pull/968),
 [#975](https://github.com/python-pendulum/pendulum/pull/975),
-[#985](https://github.com/python-pendulum/pendulum/pull/985),
 [#987](https://github.com/python-pendulum/pendulum/pull/987)).
 
 ## In short

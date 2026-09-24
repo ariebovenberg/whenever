@@ -1,7 +1,7 @@
 use crate::{
     common::sync::{OncePyCell, SyncCell},
     py::*,
-    tz::tzif::{TimeZone, is_valid_key},
+    tz::tzif::{MAX_KEY_LEN, TimeZone, is_valid_key},
 };
 use ahash::AHashMap;
 use std::{
@@ -37,13 +37,7 @@ impl Cache {
     where
         F: FnOnce() -> PyResult<Option<TimeZone>>,
     {
-        // First check: attempt to upgrade the weak ref under the lock
-        let cached = self.inner.with_mut(|CacheInner { lookup, lru }| {
-            lookup.get(key).and_then(Weak::upgrade).inspect(|arc| {
-                Self::promote_lru(arc, lru);
-            })
-        });
-        if let Some(arc) = cached {
+        if let Some(arc) = self.get(key.as_str()) {
             return Ok(Some(arc));
         }
 
@@ -64,6 +58,15 @@ impl Cache {
             Self::new_to_lru(Arc::clone(&loaded), lru);
             Some(loaded)
         }))
+    }
+
+    /// A cached entry, by its lowercase key. Upgrades the weak ref under the lock.
+    fn get(&self, key: &str) -> Option<Arc<TimeZone>> {
+        self.inner.with_mut(|CacheInner { lookup, lru }| {
+            lookup.get(key).and_then(Weak::upgrade).inspect(|arc| {
+                Self::promote_lru(arc, lru);
+            })
+        })
     }
 
     fn new_to_lru(tz: Arc<TimeZone>, lru: &mut Lru) {
@@ -319,6 +322,20 @@ impl TzStore {
 
     /// Fetches the time zone definition for the given IANA time zone ID.
     pub(crate) fn get(&self, key: &str) -> PyResult<Arc<TimeZone>> {
+        // A cache hit needs neither validation nor an owned key: the cache
+        // holds only valid keys.
+        let mut buf = [0; MAX_KEY_LEN];
+        if let Some(lower) = buf.get_mut(..key.len()) {
+            lower.copy_from_slice(key.as_bytes());
+            lower.make_ascii_lowercase();
+            // SAFETY: lowercasing ASCII bytes keeps UTF-8 valid
+            if let Some(tz) = self
+                .cache
+                .get(unsafe { std::str::from_utf8_unchecked(lower) })
+            {
+                return Ok(tz);
+            }
+        }
         let Some(validated) = ValidatedKey::new(key) else {
             return raise(
                 self.exc_notfound,
@@ -335,12 +352,17 @@ impl TzStore {
 
     /// The `get` function, but accepts a Python Object as the key.
     pub(crate) fn obj_get(&self, tz_obj: PyObj) -> PyResult<Arc<TimeZone>> {
-        self.get(
-            tz_obj
-                .cast_allow_subclass::<PyStr>()
-                .ok_or_type_err("tz must be a string or SYSTEM_TZ")?
-                .as_str()?,
-        )
+        let key = tz_obj
+            .cast_allow_subclass::<PyStr>()
+            .ok_or_type_err("tz must be a string or SYSTEM_TZ")?;
+        match key.as_str().catch(exc_unicode_encode_error())? {
+            Some(key) => self.get(key),
+            // A lone surrogate has no UTF-8 encoding, so it names no time zone.
+            None => raise(
+                self.exc_notfound,
+                format!("time zone ID {tz_obj} not found"),
+            ),
+        }
     }
 
     fn get_or_posix(&self, key: &str) -> PyResult<Arc<TimeZone>> {
@@ -443,7 +465,7 @@ impl TzStore {
 
     fn read_tzif_by_key(&self, base: &Path, key: &NormalizedKey) -> Option<TzifRead> {
         let ResolvedPath { path, id, updates } = self.directories.resolve(base, key)?;
-        let timezone = self.read_tzif_at_path(&path, Some(&id))?;
+        let timezone = self.read_tzif_at_path(&path, &id)?;
         if timezone.is_ok() {
             self.directories.publish(updates);
         }
@@ -451,11 +473,11 @@ impl TzStore {
     }
 
     /// Read a TZif file from the given path, returning None if it doesn't exist.
-    fn read_tzif_at_path(&self, path: &Path, key: Option<&str>) -> Option<TzifRead> {
+    fn read_tzif_at_path(&self, path: &Path, key: &str) -> Option<TzifRead> {
         path.is_file().then(|| {
             fs::read(path)
                 .ok()
-                .and_then(|d| TimeZone::parse_tzif(&d, key).ok())
+                .and_then(|d| TimeZone::parse_tzif(&d, Some(key)).ok())
                 .ok_or(Unreadable)
         })
     }
@@ -470,16 +492,20 @@ impl TzStore {
             .ok_or_type_err(ERR_MSG)?;
 
         let mut items = tz_tuple.iter();
-        // We expect a tuple of (int, str)
-        let (Some(tz_type_obj), Some(tz_value_obj), None) = (
+        // We expect a tuple of (int, str), or (1, str, str) for a file
+        let (Some(tz_type_obj), Some(tz_value_obj)) = (
             items.next().and_then(|x| x.cast_exact::<PyInt>()),
             items.next().and_then(|x| x.cast_exact::<PyStr>()),
-            items.next(),
         ) else {
             raise_type_err(ERR_MSG)?
         };
         let tz_type = tz_type_obj.to_i64()?;
         let tz_value = tz_value_obj.as_str()?;
+        let suggested_id = match (tz_type, items.next(), items.next()) {
+            (1, Some(id), None) => Some(id.cast_exact::<PyStr>().ok_or_type_err(ERR_MSG)?),
+            (0 | 2, None, _) => None,
+            _ => raise_type_err(ERR_MSG)?,
+        };
 
         if tz_value.is_empty() {
             // An empty TZ is UTC, as the C library reads it: the database's
@@ -491,24 +517,39 @@ impl TzStore {
                 )),
             };
         }
-        match tz_type {
+        match (tz_type, suggested_id) {
             // type 0: a zoneinfo key
-            0 => self.get(tz_value),
-            // type 1: Path to a TZif file
-            1 => {
-                let path = PathBuf::from(tz_value);
-                let tzif = self
-                    .read_tzif_at_path(&path, None)
-                    .and_then(Result::ok)
-                    .ok_or_else_raise(self.exc_notfound, || {
-                        format!("no time zone found at path {}", py_repr(tz_value))
-                    })?;
-                Ok(Arc::new(tzif))
-            }
+            (0, _) => self.get(tz_value),
+            // type 1: Path to a TZif file, and the key it suggests or ""
+            (1, Some(id)) => self.read_system_tz_file(tz_value, id.as_str()?),
             // type 2: zoneinfo key OR posix TZ string (we're unsure which)
-            2 => self.get_or_posix(tz_value),
+            (2, _) => self.get_or_posix(tz_value),
             _ => raise_type_err(ERR_MSG)?,
         }
+    }
+
+    /// Read the system time zone from a file. The suggested ID holds only
+    /// if the database agrees on the rules.
+    fn read_system_tz_file(&self, path: &str, id: &str) -> PyResult<Arc<TimeZone>> {
+        // Only a regular file: reading a FIFO would block
+        let Some((data, tz)) = Path::new(path)
+            .is_file()
+            .then(|| fs::read(path).ok())
+            .flatten()
+            .and_then(|d| TimeZone::parse_tzif(&d, None).ok().map(|tz| (d, tz)))
+        else {
+            return raise(
+                self.exc_notfound,
+                format!("no time zone found at path {}", py_repr(path)),
+            );
+        };
+        if !id.is_empty()
+            && let Some(known) = self.get(id).catch(self.exc_notfound)?
+            && TimeZone::parse_tzif(&data, known.key.as_deref()).is_ok_and(|t| t == *known)
+        {
+            return Ok(known);
+        }
+        Ok(Arc::new(tz))
     }
 }
 
@@ -566,6 +607,12 @@ struct NormalizedKey(String);
 
 impl NormalizedKey {
     fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<str> for NormalizedKey {
+    fn borrow(&self) -> &str {
         &self.0
     }
 }

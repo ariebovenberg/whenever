@@ -6,7 +6,7 @@ from datetime import (
     timezone as py_timezone,
 )
 from fractions import Fraction
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 from whenever import (
@@ -32,9 +32,13 @@ from whenever import (
     patch_current_time,
 )
 
-from .common import system_tz, warns_here
-
-MAX_I64 = 1 << 63
+from .common import (
+    MAX_I64,
+    ROUND_MODES_AT_A_TIE,
+    out_of_range_error,
+    system_tz,
+    warns_here,
+)
 
 
 class TestInit:
@@ -51,17 +55,18 @@ class TestInit:
         assert d.day == 2
 
     @pytest.mark.parametrize(
-        "args, kwargs",
+        "args, kwargs, expect",
         [
-            ((2021, 1, 2), {}),
-            ((), {"year": 2021, "month": 1, "day": 2}),
-            ((2021,), {"month": 1, "day": 2}),
-            ((2021, 3), {"day": 2}),
-            ((2021, 3, 1), {}),
+            ((2021, 1, 2), {}, (2021, 1, 2)),
+            ((), {"year": 2021, "month": 1, "day": 2}, (2021, 1, 2)),
+            ((2021,), {"month": 1, "day": 2}, (2021, 1, 2)),
+            ((2021, 3), {"day": 2}, (2021, 3, 2)),
+            ((2021, 3, 1), {}, (2021, 3, 1)),
         ],
     )
-    def test_valid_arg_kwargs(self, args, kwargs):
-        assert Date(*args, **kwargs) is not None
+    def test_valid_arg_kwargs(self, args, kwargs, expect):
+        d = Date(*args, **kwargs)
+        assert (d.year, d.month, d.day) == expect
 
     @pytest.mark.parametrize(
         "args, kwargs",
@@ -119,7 +124,8 @@ class TestInit:
     )
     def test_invalid_year(self, year, month, day):
         with pytest.raises(
-            (ValueError, OverflowError), match="int|range|date|year"
+            out_of_range_error(year, month, day),
+            match="int|range|date|year",
         ):
             Date(year, month, day)
 
@@ -135,7 +141,8 @@ class TestInit:
     )
     def test_invalid_month(self, year, month, day):
         with pytest.raises(
-            (ValueError, OverflowError), match="int|range|date|month"
+            out_of_range_error(year, month, day),
+            match="int|range|date|month",
         ):
             Date(year, month, day)
 
@@ -154,7 +161,8 @@ class TestInit:
     )
     def test_invalid_day(self, year, month, day):
         with pytest.raises(
-            (ValueError, OverflowError), match="int|range|date|day"
+            out_of_range_error(year, month, day),
+            match="int|range|date|day",
         ):
             Date(year, month, day)
 
@@ -429,6 +437,20 @@ class TestReplace:
 
 
 class TestShift:
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            dict(years=10_000, months=-120_000),
+            dict(months=-120_000, years=10_000),
+            dict(weeks=10**9, days=-(7 * 10**9)),
+        ],
+    )
+    def test_range_checks_the_sum(self, kwargs):
+        d = Date(2020, 1, 1)
+        assert d.add(**kwargs) == d
+        assert d.subtract(**kwargs) == d
+        assert d.at(Time(1)).add(**kwargs) == d.at(Time(1))
+
     def test_invalid(self):
         with pytest.raises(TypeError):
             Date(2021, 1, 1) + None  # type: ignore[operator]
@@ -509,6 +531,17 @@ class TestShift:
 
 
 class TestDifference:
+    @pytest.mark.parametrize("mode, up, down", ROUND_MODES_AT_A_TIE)
+    def test_every_round_mode_at_a_tie(self, mode, up, down):
+        # 5 days in increments of 2 is 2.5 increments
+        a, b = Date(2020, 1, 1), Date(2020, 1, 6)
+        kwargs: dict[str, Any] = dict(
+            in_units=["days"], round_increment=2, round_mode=mode
+        )
+        assert b.since(a, **kwargs) == ItemizedDateDelta(days=up * 2)
+        assert a.since(b, **kwargs) == ItemizedDateDelta(days=down * 2)
+        assert a.until(b, **kwargs) == ItemizedDateDelta(days=up * 2)
+
     @pytest.mark.parametrize(
         ("kwargs", "message"),
         [
@@ -818,7 +851,7 @@ class TestDifference:
             d.since(Date(2020, 1, 1), total="foos")  # type: ignore[call-overload]
 
         # empty units list
-        with pytest.raises(ValueError, match="^units must not be empty$"):
+        with pytest.raises(ValueError, match="^in_units must not be empty$"):
             d.since(Date(2020, 1, 1), in_units=())
 
         # neither total nor in_units specified
@@ -1251,7 +1284,7 @@ class TestNextDay:
         assert d.next_day() == expected
 
     def test_at_max(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             Date.MAX.next_day()
 
 
@@ -1271,7 +1304,7 @@ class TestPrevDay:
         assert d.prev_day() == expected
 
     def test_at_min(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             Date.MIN.prev_day()
 
 

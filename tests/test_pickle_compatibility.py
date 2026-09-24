@@ -149,7 +149,9 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
             "_unpkl_local",
             (struct.pack("<HBBBBBi", 2024, 2, 29, 0, 0, 0, 1_000_000_000),),
         ),
+        ("_unpkl_local", (struct.pack("<HBBBBBi", 2024, 2, 29, 0, 0, 0, -1),)),
         ("_unpkl_utc", (struct.pack("<qL", 0, 1_000_000_000),)),
+        ("_unpkl_utc", (struct.pack("<qL", 0, 0),)),
         ("_unpkl_inst", (struct.pack("<qL", -62_135_596_801, 0),)),
         ("_unpkl_inst", (struct.pack("<qL", 253_402_300_800, 0),)),
         ("_unpkl_inst", (struct.pack("<qL", 0, 1_000_000_000),)),
@@ -190,14 +192,52 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
                 "UTC",
             ),
         ),
+        (
+            "_unpkl_zoned",
+            (struct.pack("<HBBBBBil", 2024, 1, 1, 0, 0, 0, -1, 0), "UTC"),
+        ),
+        ("_unpkl_ym", (struct.pack("<HB", 2024, 13),)),
         ("_unpkl_md", (struct.pack("<BB", 2, 30),)),
         ("_unpkl_iwd", (struct.pack("<hBB", 2024, 54, 1),)),
         ("_unpkl_iwd", (struct.pack("<hBB", 0, 1, 1),)),
+        ("_unpkl_iwd", (struct.pack("<hBB", 2024, 1, 8),)),
     ],
 )
 def test_malformed_payload_is_rejected(name: str, args: tuple[object, ...]):
+    with pytest.raises(ValueError, match="^invalid pickle data$"):
+        getattr(w, name)(*args)
+
+
+@pytest.mark.parametrize(
+    ("name", "args"),
+    [
+        ("_unpkl_iddelta", (10**9, 0, 0, 0)),
+        ("_unpkl_iddelta", (1, -1, 0, 0)),
+        ("_unpkl_iddelta", (None, None, None, None)),
+        ("_unpkl_idelta", (1, -1, None, None, None, None, None, None)),
+        ("_unpkl_idelta", (None, None, None, None, None, None, 1, 10**9)),
+        ("_unpkl_idelta", (None,) * 8),
+    ],
+)
+def test_itemized_payload_is_validated(name: str, args: tuple[object, ...]):
+    # The constructor checks the components
     with pytest.raises(ValueError):
         getattr(w, name)(*args)
+
+
+@pytest.mark.parametrize("args", [(bytes(15),), (bytes(15), "UTC", "UTC")])
+def test_zoned_unpickler_arity(args: tuple[object, ...]):
+    with pytest.raises(TypeError, match="positional argument"):
+        getattr(w, "_unpkl_zoned")(*args)
+
+
+def test_unpicklers_accept_bytes_subclass():
+    class Bytes(bytes):
+        pass
+
+    assert getattr(w, "_unpkl_date")(
+        Bytes(struct.pack("<HBB", 2024, 2, 29))
+    ) == w.Date(2024, 2, 29)
 
 
 @pytest.mark.parametrize(
@@ -220,7 +260,7 @@ def test_wrong_payload_length_is_rejected(
 ):
     unpickle = getattr(w, name)
     for data in (bytes(size - 1), bytes(size + 1)):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid pickle data"):
             unpickle(data, *extra)
 
 

@@ -114,11 +114,15 @@ pub(crate) enum ArgsContext {
 }
 
 impl Args {
+    /// Where `day_allowed` is false, a `"day"` unit returns
+    /// [`RoundIncrement::Day`] before the increment is read, so the caller
+    /// rejects the unit with its own message.
     pub(crate) fn parse(
         args: &[PyObj],
         kwargs: &mut IterKwargs,
         state: &State,
         context: ArgsContext,
+        day_allowed: bool,
     ) -> PyResult<Self> {
         let opt_arg = handle_opt_arg("round", args)?;
 
@@ -129,12 +133,7 @@ impl Args {
             if eq(key, *state.strs.mode) {
                 mode = Mode::from_py(value, &state.strs)?;
             } else if eq(key, *state.strs.increment) {
-                let raw_increment = value.expect_int("increment")?.to_i64()?;
-                if raw_increment <= 0 {
-                    raise_value_err(INCREMENT_POSITIVE_MSG)?;
-                }
-                // SAFETY: we just checked that it's >0
-                increment_kwarg = Some(unsafe { NonZeroU64::new_unchecked(raw_increment as _) });
+                increment_kwarg = Some(value);
             } else if context == ArgsContext::Offset && eq(key, *state.strs.stale_offset_ok) {
                 suppress_stale = value.is_truthy()?;
             } else {
@@ -143,12 +142,10 @@ impl Args {
             Ok(true)
         })?;
 
-        let increment = match opt_arg {
-            None => {
-                RoundIncrement::Exact(unsafe { NonZeroU64::new_unchecked(NS_PER_SECOND as u64) })
-            }
-            Some(arg) => {
-                if let Some(delta) = arg.extract(*state.time_delta_type) {
+        let unit = match opt_arg {
+            None => RoundUnit::Second,
+            Some(arg) => match arg.extract(*state.time_delta_type) {
+                Some(delta) => {
                     if increment_kwarg.is_some() {
                         raise_type_err("cannot specify an increment with a TimeDelta argument")?;
                     }
@@ -162,27 +159,43 @@ impl Args {
                         .and_then(NonZero::<u64>::new)
                         .filter(|&n| NS_PER_DAY.is_multiple_of(n.get()))
                         .ok_or_value_err(UNIT_DIV_MSG)?;
-                    RoundIncrement::Exact(nanos)
-                } else {
-                    let unit = RoundUnit::from_py(arg, state, false)?;
-                    let increment_int = increment_kwarg.unwrap_or(NonZeroU64::MIN);
-                    debug_assert!(unit != RoundUnit::Week);
-                    if unit == RoundUnit::Day {
-                        if increment_int.get() != 1 {
-                            raise_value_err(INCREMENT_DIV_MSG)?;
-                        }
-                        RoundIncrement::Day
-                    } else {
-                        let nanos = unit
-                            .default_increment()
-                            .checked_mul(increment_int.get())
-                            .and_then(NonZeroU64::new)
-                            .filter(|n| NS_PER_DAY.is_multiple_of(n.get()))
-                            .ok_or_value_err(INCREMENT_DIV_MSG)?;
-                        RoundIncrement::Exact(nanos)
-                    }
+                    return Ok(Args {
+                        increment: RoundIncrement::Exact(nanos),
+                        mode,
+                        suppress_stale,
+                    });
                 }
+                None => RoundUnit::from_py(arg, state, false)?,
+            },
+        };
+        debug_assert!(unit != RoundUnit::Week);
+        if unit == RoundUnit::Day && !day_allowed {
+            return Ok(Args {
+                increment: RoundIncrement::Day,
+                mode,
+                suppress_stale,
+            });
+        }
+        let increment_int = match increment_kwarg {
+            None => NonZeroU64::MIN,
+            Some(value) => {
+                let raw = value.expect_int("increment")?.to_i64()?;
+                NonZeroU64::new(raw.max(0) as u64).ok_or_value_err(INCREMENT_POSITIVE_MSG)?
             }
+        };
+        let increment = if unit == RoundUnit::Day {
+            if increment_int.get() != 1 {
+                raise_value_err(INCREMENT_DIV_MSG)?;
+            }
+            RoundIncrement::Day
+        } else {
+            let nanos = unit
+                .default_increment()
+                .checked_mul(increment_int.get())
+                .and_then(NonZeroU64::new)
+                .filter(|n| NS_PER_DAY.is_multiple_of(n.get()))
+                .ok_or_value_err(INCREMENT_DIV_MSG)?;
+            RoundIncrement::Exact(nanos)
         };
 
         Ok(Args {
@@ -211,12 +224,7 @@ impl DeltaArgs {
             if eq(key, *state.strs.mode) {
                 mode = Mode::from_py(value, &state.strs)?;
             } else if eq(key, *state.strs.increment) {
-                let raw_increment = value.expect_int("increment")?.to_i128()?;
-                if raw_increment <= 0 {
-                    raise_value_err(INCREMENT_POSITIVE_MSG)?;
-                }
-                // SAFETY: we just checked that it's >0
-                increment_kwarg = Some(unsafe { NonZeroU128::new_unchecked(raw_increment as _) });
+                increment_kwarg = Some(value);
             } else if eq(key, *state.strs.days_assumed_24h_ok) {
                 suppress_24h_warning = value.is_truthy()?;
             } else {
@@ -224,38 +232,46 @@ impl DeltaArgs {
             }
             Ok(true)
         })?;
-        let increment = match opt_arg {
-            None => DeltaIncrement::SECOND,
-            Some(arg) => {
-                if let Some(delta) = arg.extract(*state.time_delta_type) {
+        let unit = match opt_arg {
+            None => RoundUnit::Second,
+            Some(arg) => match arg.extract(*state.time_delta_type) {
+                Some(delta) => {
                     if increment_kwarg.is_some() {
                         raise_type_err("cannot specify an increment with a TimeDelta argument")?;
                     }
                     if delta.is_negative() || delta.is_zero() {
                         raise_value_err(UNIT_POSITIVE_MSG)?;
                     }
-                    // SAFETY: a positive TimeDelta is within an increment's range
-                    DeltaIncrement::from_nanos(delta.total_nanos() as u128).unwrap()
-                } else {
-                    let unit = RoundUnit::from_py(arg, state, true)?;
-                    if matches!(unit, RoundUnit::Day | RoundUnit::Week) && !suppress_24h_warning {
-                        warn_with_class(
-                            *state.warn_days_not_always_24h,
-                            doc::DAYS_NOT_ALWAYS_24H_MSG,
-                            1,
-                        )?;
-                    }
-                    DeltaIncrement::from_nanos(
-                        increment_kwarg
-                            .map_or(1, |v| v.get())
-                            .checked_mul(unit.default_increment().into())
-                            .ok_or_range_err()?,
-                    )
-                    .ok_or_range_err()?
+                    return Ok(DeltaArgs {
+                        // SAFETY: a positive TimeDelta is within an increment's range
+                        increment: DeltaIncrement::from_nanos(delta.total_nanos() as u128).unwrap(),
+                        mode,
+                    });
                 }
+                None => RoundUnit::from_py(arg, state, true)?,
+            },
+        };
+        let increment_int = match increment_kwarg {
+            None => NonZeroU128::MIN,
+            Some(value) => {
+                let raw = value.expect_int("increment")?.to_i128()?;
+                NonZeroU128::new(raw.max(0) as u128).ok_or_value_err(INCREMENT_POSITIVE_MSG)?
             }
         };
-
+        let increment = DeltaIncrement::from_nanos(
+            increment_int
+                .get()
+                .checked_mul(unit.default_increment().into())
+                .ok_or_range_err()?,
+        )
+        .ok_or_range_err()?;
+        if matches!(unit, RoundUnit::Day | RoundUnit::Week) && !suppress_24h_warning {
+            warn_with_class(
+                *state.warn_days_not_always_24h,
+                doc::DAYS_NOT_ALWAYS_24H_MSG,
+                1,
+            )?;
+        }
         Ok(DeltaArgs { increment, mode })
     }
 }

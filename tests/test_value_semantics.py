@@ -309,6 +309,75 @@ def test_integer_keywords_read_the_index_protocol(call):
     assert call(Idx()) == call(5)
 
 
+_Z = ZonedDateTime(2020, 1, 1, tz="Europe/Paris")
+_O = OffsetDateTime(2020, 1, 1, offset=hours(1))
+_P = PlainDateTime(2020, 1, 1)
+
+
+# A wrong operand is named by its expected type, not by what it lacks
+@pytest.mark.parametrize(
+    "call, message",
+    [
+        (
+            lambda x: Date(2020, 1, 1).since(x, total="days"),
+            r"since\(\) argument must be a Date",
+        ),
+        (
+            lambda x: Date(2020, 1, 1).until(x, total="days"),
+            r"until\(\) argument must be a Date",
+        ),
+        (lambda x: Date(2020, 1, 1).at(x), r"at\(\) argument must be a Time"),
+        (lambda x: Time(12).on(x), r"on\(\) argument must be a Date"),
+        (
+            lambda x: _P.replace_date(x),
+            r"replace_date\(\) argument must be a Date",
+        ),
+        (
+            lambda x: _P.replace_time(x),
+            r"replace_time\(\) argument must be a Time",
+        ),
+        (
+            lambda x: _O.replace_date(x),
+            r"replace_date\(\) argument must be a Date",
+        ),
+        (
+            lambda x: _O.replace_time(x),
+            r"replace_time\(\) argument must be a Time",
+        ),
+        (
+            lambda x: _Z.replace_date(x),
+            r"replace_date\(\) argument must be a Date",
+        ),
+        (
+            lambda x: _Z.replace_time(x),
+            r"replace_time\(\) argument must be a Time",
+        ),
+    ],
+)
+@pytest.mark.parametrize("operand", [None, 3, _P])
+def test_wrong_operand_names_the_expected_type(call, message, operand):
+    with pytest.raises(TypeError, match=f"^{message}$"):
+        call(operand)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        Date(2020, 1, 1),
+        Time(12),
+        PlainDateTime(2020, 1, 1),
+        OffsetDateTime(2020, 1, 1, offset=hours(1)),
+    ],
+    ids=type_name,
+)
+@pytest.mark.parametrize("convert", [str, lambda v: v.to_stdlib()])
+def test_single_argument_rejects_a_keyword(value, convert):
+    with pytest.raises(
+        TypeError, match=r"\(\) got an unexpected keyword argument 'foo'$"
+    ):
+        type(value)(convert(value), foo=1)
+
+
 @pytest.mark.parametrize("cls", ALL_TYPES, ids=lambda c: c.__name__)
 def test_types_are_final(cls):
     with pytest.raises(

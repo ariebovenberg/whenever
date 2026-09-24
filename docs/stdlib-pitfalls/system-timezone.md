@@ -43,9 +43,9 @@ This is the case when giving a `PlainDateTime` a time zone:
 
 ```python
 >>> from whenever import PlainDateTime
->>> dt = PlainDateTime(2024, 3, 10, 15, 0, 0)
+>>> dt = PlainDateTime(2024, 3, 9, 15, 0, 0)
 >>> dt.assume_tz(SYSTEM_TZ)
-ZonedDateTime("2024-03-10 15:00:00-05:00[America/New_York]")
+ZonedDateTime("2024-03-09 15:00:00-05:00[America/New_York]")
 ```
 
 or when converting from a moment in time:
@@ -53,7 +53,7 @@ or when converting from a moment in time:
 ```python
 >>> now = Instant.now()
 >>> now.to_tz(SYSTEM_TZ)
-ZonedDateTime("2024-03-10 10:30:00-05:00[America/New_York]")
+ZonedDateTime("2024-03-09 10:30:00-05:00[America/New_York]")
 ```
 
 The resulting time zone always has the full knowledge of DST rules and historical changes,

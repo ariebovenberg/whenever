@@ -259,7 +259,7 @@ class TestAssumeTz:
             PlainDateTime(2020, 8, 15).assume_tz(3)
 
     def test_unknown_tz_id(self):
-        with pytest.raises(TimeZoneNotFoundError):
+        with pytest.raises(TimeZoneNotFoundError, match="not found"):
             PlainDateTime(2020, 8, 15).assume_tz("Europe/Nowhere")
 
     def test_skipped_time(self):
@@ -730,10 +730,10 @@ class TestShift:
     @suppress(NaiveArithmeticWarning)
     def test_invalid(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(ValueError, match="range|year"):
             d.add(hours=24 * 365 * 8000)
 
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(ValueError, match="range|year"):
             d.add(hours=-24 * 365 * 3000)
 
         with pytest.raises((TypeError, AttributeError)):
@@ -743,9 +743,10 @@ class TestShift:
         with pytest.raises(TypeError):
             d.add(hours(48), seconds=5)  # type: ignore[call-overload]
 
-        # tempt an i128 overflow
+        # tempt an i128 overflow: at or beyond 2**63, a backend may overflow
+        # its machine integer before the range check
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.add(nanoseconds=1 << 127 - 1)
+            d.add(nanoseconds=(1 << 127) - 1)
 
     @pytest.mark.parametrize(
         ("call", "exc", "message"),
@@ -1038,7 +1039,7 @@ class TestSince:
             ),
             ({"total": "foo"}, "invalid unit: 'foo'"),
             ({"in_units": ["foos"]}, "invalid unit: 'foos'"),
-            ({"in_units": ()}, "units must not be empty"),
+            ({"in_units": ()}, "in_units must not be empty"),
             ({}, "must specify either 'total' or 'in_units'"),
             (
                 {"total": "years", "in_units": ("days",)},
@@ -1046,11 +1047,11 @@ class TestSince:
             ),
             (
                 {"in_units": ["years", "days", "days"]},
-                "units cannot contain duplicates",
+                "in_units cannot contain duplicates",
             ),
             (
                 {"in_units": ["hours", "days"]},
-                "units must be in decreasing order of size",
+                "in_units must be in decreasing order of size",
             ),
             # round_mode and round_increment are not supported with total=,
             # not even round_increment=1
@@ -1518,17 +1519,58 @@ class TestSince:
         b = PlainDateTime(23, 3, 15)
         assert a.since(b, total="nanoseconds") == 283280457600000000000
 
+    @pytest.mark.parametrize(
+        "delta, units, increment, trunc, ceil",
+        [
+            (
+                dict(minutes=5, seconds=20),
+                ["minutes", "seconds"],
+                61,
+                ItemizedDelta(minutes=5, seconds=0),
+                ItemizedDelta(minutes=6, seconds=0),
+            ),
+            (
+                dict(hours=5, minutes=20),
+                ["hours", "minutes"],
+                90,
+                ItemizedDelta(hours=5, minutes=0),
+                ItemizedDelta(hours=6, minutes=0),
+            ),
+            (
+                dict(days=1, hours=23, minutes=59),
+                ["days", "hours", "minutes"],
+                15,
+                ItemizedDelta(days=1, hours=23, minutes=45),
+                ItemizedDelta(days=2, hours=0, minutes=0),
+            ),
+        ],
+    )
+    def test_increment_rounds_the_smallest_component(
+        self, delta, units, increment, trunc, ceil
+    ):
+        a = PlainDateTime(2024, 1, 1)
+        b = a.add(**delta, naive_arithmetic_ok=True)
+        kwargs = dict(in_units=units, round_increment=increment)
+        assert (
+            b.since(a, round_mode="trunc", naive_arithmetic_ok=True, **kwargs)
+            == trunc
+        )
+        assert (
+            b.since(a, round_mode="ceil", naive_arithmetic_ok=True, **kwargs)
+            == ceil
+        )
+
     @suppress(NaiveArithmeticWarning)
     def test_very_large_increment(self):
-        a = PlainDateTime(2023, 2, 15)
+        a = PlainDateTime(2023, 2, 15, nanosecond=1)
         b = PlainDateTime(2021, 7, 3)
-        # round_increment=1<<65 ns exceeds i64::MAX; ceil mode rounds up to 1*(1<<65)
+        # round_increment=1<<65 ns exceeds i64::MAX; ceil carries it into the seconds
         assert a.since(
             b,
             in_units=["seconds", "nanoseconds"],
             round_increment=1 << 65,
             round_mode="ceil",
-        ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
+        ) == ItemizedDelta(seconds=36_944_636_947, nanoseconds=0)
 
 
 class TestRound:

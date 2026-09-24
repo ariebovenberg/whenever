@@ -11,30 +11,34 @@ when the boundary they compute falls in a repeated or skipped local time.
   before it. It is never extrapolated across the gap.
 - A repeated calendar-unit boundary (`year`, `month`, `week_mon`,
   `week_sun`, `day`) resolves to the earlier occurrence. A repeated
-  time-unit boundary (`hour`, `minute`, `second`) keeps the value's current
-  offset when that is one of the two and the fold is at least as long as
-  the unit, and otherwise takes the earlier occurrence. That rule is stated
-  for `start_of()`; `end_of()` inherits whatever the next `start_of()`
-  resolves to, which in a fall-back shorter than the unit is the later
-  offset, because the whole fold lies inside one unit (Lord Howe,
-  2024-04-07: `end_of("hour")` of 01:15+11:00 is 01:59:59.999999999+10:30).
-- `end_of()` is the next `start_of()` minus one nanosecond, and
+  time-unit boundary (`hour`, `minute`, `second`, and a `round()`
+  increment) is a boundary at both occurrences when the fold is at least
+  as long as the unit, and at the earlier one otherwise, because a shorter
+  fold lies inside one unit interval.
+- These rules define a sorted set of boundary instants. `floor()` and
+  `start_of()` take the latest boundary at or before the value, `ceil()`
+  the earliest at or after it, and `end_of()` is the next boundary minus
+  one nanosecond. The value's clock reading never picks the boundary.
   `day_length()` is the difference between consecutive `start_of("day")`
   results.
-- `round()` resolves its result with the time-unit rule, so `floor` never
-  returns an instant after its input. Rounding to a day compares the time
-  elapsed since `start_of("day")` with `day_length()`, as Temporal does.
+- `round()` to a time unit chooses between the boundary at or before the
+  value and the one after it, so `floor` never returns an instant after
+  its input and `ceil` never one before it. Rounding to a day compares the
+  time elapsed since `start_of("day")` with `day_length()`, as Temporal
+  does.
 - For every unit, every instant lies in exactly one interval: the boundaries
   partition the timeline. A day is chosen by the instant, not by the local
   date: with `S(d)` the start of local date `d`, the day of an instant with
   local date `d` is `d + 1` when it is at or after `S(d + 1)`, and `d`
-  otherwise. Every calendar unit takes its day from that rule. A fall-back shorter than the unit that begins on
-  a boundary of that unit (Colombo, 2006-04-15: 00:30+06:00 back to
-  00:00+05:30) would break this if the later occurrence kept its offset,
-  since the two occurrences of 00:15 would then start different hours. So
-  `start_of()`, `end_of()`, and `round()` all resolve a fold shorter than
-  the unit (the increment, for `round()`) to the first occurrence, and
-  both occurrences share the hour that starts at 00:00+06:00.
+  otherwise. Every calendar unit takes its day from that rule, and so do
+  the calendar units of `since()` and `until()`.
+- Examples. Colombo, 2006-04-15, fell back 30 minutes from 00:30+06:00 to
+  00:00+05:30, a fold shorter than an hour: one 90-minute hour runs from
+  00:00+06:00 (18:00Z) to 01:00+05:30 (19:30Z), and `ceil` of
+  00:00+05:30 is 01:00+05:30. Goose Bay, 2010-11-07, fell back an hour
+  from 00:01-03:00 to 23:01-04:00, a fold as long as the unit: its hours
+  start at 02:00Z, 03:00Z, 04:00Z, and 05:00Z, and midnight starts two of
+  them.
 
 ## Considered options
 

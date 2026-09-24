@@ -194,7 +194,8 @@ while it is still valid for the new local time.
 
 A repeated local time is the case that needs the rule. The current offset is
 one of the two the time zone offers, so the value stays on the side of the
-transition it was already on, and no policy applies:
+transition it was already on, whatever `disambiguation` says. A written
+offset in a parsed string wins over `disambiguation` in the same way.
 
 ```python
 >>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz="Europe/Paris", disambiguation="later")
@@ -202,16 +203,19 @@ transition it was already on, and no policy applies:
 ZonedDateTime("2023-10-29 02:30:00+01:00[Europe/Paris]")
 >>> d.replace(minute=45)  # still the second occurrence
 ZonedDateTime("2023-10-29 02:45:00+01:00[Europe/Paris]")
+>>> d.replace(minute=45, disambiguation="earlier")  # the offset still decides
+ZonedDateTime("2023-10-29 02:45:00+01:00[Europe/Paris]")
 ```
 
-`disambiguation` decides every other case. It defaults to `"compatible"` and
-emits an {class}`~whenever.ImplicitDisambiguationWarning` when omitted. A
-skipped local time always falls to `disambiguation`, because no earlier offset
-is valid inside a gap. A repeated local time falls to it as well when the
-operation changes the time zone, since neither offset of the new time zone need
-match the current one.
+`disambiguation` decides only where the offset identifies no occurrence. It
+defaults to `"compatible"` and emits an
+{class}`~whenever.ImplicitDisambiguationWarning` when omitted. A skipped local
+time always falls to `disambiguation`, because no earlier offset is valid
+inside a gap. A repeated local time falls to it when neither of its offsets is
+the current one: after the time zone changed its standard offset, or when the
+operation changes the time zone.
 
 ```python
->>> d.replace(minute=45, disambiguation="earlier")  # explicit policy wins
-ZonedDateTime("2023-10-29 02:45:00+02:00[Europe/Paris]")
+>>> d.replace(month=3, day=26, hour=2, disambiguation="earlier")  # a gap
+ZonedDateTime("2023-03-26 01:30:00+01:00[Europe/Paris]")
 ```

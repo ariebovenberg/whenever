@@ -15,8 +15,7 @@ use crate::{
     docstrings as doc,
     domain::{
         difference::{
-            self, CalendarIncrement, DifferenceSpec, DifferenceUnitSet, ExactUnit, ExactUnitSet,
-            TotalUnit,
+            self, CalendarIncrement, DifferenceSpec, DifferenceUnitSet, ExactUnit, TotalUnit,
         },
         scalar::*,
         time_delta::ParseError,
@@ -98,15 +97,9 @@ pub(crate) const SINGLETONS: &[(&CStr, TimeDelta); 3] = &[
     (c"MAX", TimeDelta::MAX),
 ];
 
-pub(crate) fn set_timedelta_from_kwargs(
-    key: PyObj,
-    value: PyObj,
-    delta: &mut TimeDelta,
-    units: &mut ExactUnitSet,
-    eq: StrEqFn,
-    state: &State,
-) -> PyResult<bool> {
-    let unit = if eq(key, *state.strs.weeks) {
+/// The exact unit a `TimeDelta` keyword names, if any.
+pub(crate) fn exact_unit_for_kwarg(key: PyObj, eq: StrEqFn, state: &State) -> Option<ExactUnit> {
+    Some(if eq(key, *state.strs.weeks) {
         ExactUnit::Weeks
     } else if eq(key, *state.strs.days) {
         ExactUnit::Days
@@ -123,11 +116,8 @@ pub(crate) fn set_timedelta_from_kwargs(
     } else if eq(key, *state.strs.nanoseconds) {
         ExactUnit::Nanoseconds
     } else {
-        return Ok(false);
-    };
-    units.insert(unit);
-    *delta = delta.add(unit.parse_py_number(value)?).ok_or_range_err()?;
-    Ok(true)
+        return None;
+    })
 }
 
 pub(crate) fn timedelta_from_kwargs<K>(
@@ -138,22 +128,28 @@ pub(crate) fn timedelta_from_kwargs<K>(
 where
     K: IntoIterator<Item = (PyObj, PyObj)>,
 {
-    let mut result = TimeDelta::ZERO;
+    let mut nanos: i128 = 0;
     let mut suppress_24h_warning = false;
-    let mut units = ExactUnitSet::EMPTY;
+    let mut days_assumed_24h = false;
 
     handle_kwargs(fname, kwargs, |key, value, eq| {
         if eq(key, *state.strs.days_assumed_24h_ok) {
             suppress_24h_warning = value.is_truthy()?;
-            Ok(true)
-        } else {
-            set_timedelta_from_kwargs(key, value, &mut result, &mut units, eq, state)
+            return Ok(true);
         }
+        let Some(unit) = exact_unit_for_kwarg(key, eq, state) else {
+            return Ok(false);
+        };
+        nanos = nanos
+            .checked_add(unit.parse_py_nanos(value)?)
+            .ok_or_range_err()?;
+        days_assumed_24h |=
+            matches!(unit, ExactUnit::Days | ExactUnit::Weeks) && value.is_truthy()?;
+        Ok(true)
     })?;
+    let result = TimeDelta::from_nanos(nanos).ok_or_range_err()?;
 
-    if !suppress_24h_warning
-        && (units.contains(ExactUnit::Days) || units.contains(ExactUnit::Weeks))
-    {
+    if days_assumed_24h && !suppress_24h_warning {
         warn_with_class(
             *state.warn_days_not_always_24h,
             doc::DAYS_NOT_ALWAYS_24H_MSG,
@@ -174,10 +170,9 @@ fn __new__(cls: PyClass<TimeDelta>, args: PyTuple, kwargs: Option<PyDict>) -> Py
             if PyStr::isinstance(arg) {
                 parse_iso(cls, arg)
             } else if let Some(d) = arg.cast_allow_subclass::<PyTimeDelta>() {
+                let delta = TimeDelta::from_stdlib_timedelta(d).ok_or_range_err()?;
                 warn_lossy_stdlib_subclass::<PyTimeDelta>(state, arg, "timedelta")?;
-                TimeDelta::from_stdlib_timedelta(d)
-                    .ok_or_range_err()?
-                    .to_obj(cls)
+                delta.to_obj(cls)
             } else {
                 raise_type_err("TimeDelta() requires an ISO 8601 string or datetime.timedelta")
             }
@@ -322,9 +317,12 @@ fn mul_float(delta_obj: PyObj, factor: f64) -> PyReturn {
 fn __truediv__(a_obj: PyObj, b_obj: PyObj) -> PyReturn {
     binary_operation::<TimeDelta>(a_obj, b_obj, "/", |operands| {
         if let Some(py_int) = b_obj.cast_allow_subclass::<PyInt>() {
-            let factor = py_int.to_i128()?;
             // SAFETY: the first operand is a TimeDelta and the second is an int.
             let (cls, delta) = unsafe { a_obj.assume_heaptype::<TimeDelta>() };
+            let Some(factor) = py_int.to_i128().catch(exc_overflow_error())? else {
+                // Past i128, the quotient rounds to zero for every TimeDelta
+                return Ok(Some(TimeDelta::ZERO.to_obj(cls)?));
+            };
             if factor == 1 {
                 return Ok(Some(a_obj.newref()));
             } else if factor == 0 {
@@ -426,16 +424,15 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                     match_type!(
                         other,
                         *state.plain_datetime_type => |dt| {
-                            warn_with_class(
-                                *state.warn_naive_arithmetic,
-                                doc::PLAIN_SHIFT_UNAWARE_MSG,
-                                1,
-                            )?;
-                            Ok(Some(
-                                dt.shift(*slf)
-                                    .ok_or_range_err()?
-                                    .to_obj(*state.plain_datetime_type)?,
-                            ))
+                            let result = dt.shift(*slf).ok_or_range_err()?;
+                            if !slf.is_zero() {
+                                warn_with_class(
+                                    *state.warn_naive_arithmetic,
+                                    doc::PLAIN_SHIFT_UNAWARE_MSG,
+                                    1,
+                                )?;
+                            }
+                            Ok(Some(result.to_obj(*state.plain_datetime_type)?))
                         },
                         *state.instant_type => |inst| {
                             Ok(Some(
@@ -445,18 +442,17 @@ fn add_operator(a_obj: PyObj, b_obj: PyObj, negate: bool) -> PyReturn {
                             ))
                         },
                         *state.offset_datetime_type => |odt| {
+                            let result = odt
+                                .to_plain()
+                                .shift(*slf)
+                                .and_then(|dt| dt.assume_offset(odt.offset))
+                                .ok_or_range_err()?;
                             warn_with_class(
                                 *state.warn_potentially_stale_offset,
                                 doc::OFFSET_SHIFT_STALE_MSG,
                                 1,
                             )?;
-                            Ok(Some(
-                                odt.to_plain()
-                                    .shift(*slf)
-                                    .and_then(|dt| dt.assume_offset(odt.offset))
-                                    .ok_or_range_err()?
-                                    .to_obj(*state.offset_datetime_type)?,
-                            ))
+                            Ok(Some(result.to_obj(*state.offset_datetime_type)?))
                         },
                         ref *state.zoned_datetime_type => |zdt| {
                             Ok(Some(zdt.shift(
@@ -749,6 +745,14 @@ fn total(
     } else {
         unit.to_exact()
     };
+    if let Some(arg) = relative_to_arg
+        && exact_unit.is_ok()
+        && arg.extract_ref(*state.zoned_datetime_type).is_none()
+    {
+        // An exact unit doesn't need the reference, but checks it as
+        // in_units() does.
+        resolve_local_relative_to(arg, state, false, false)?;
+    }
     let calendar_unit = match exact_unit {
         Ok(ExactUnit::Nanoseconds) => {
             // Special case for nanoseconds: always return an int
@@ -822,8 +826,14 @@ pub(crate) fn total_calendar(
 
     let r = shifted_inst.diff(trunc_odt.to_instant()).abs();
     let e = expand_odt.to_instant().diff(trunc_odt.to_instant());
-
-    (trunc_amount as f64 + r.to_nanos_f64() / e.to_nanos_f64()).to_py()
+    // A skipped day can make the two endpoints coincide. The truncated
+    // amount is then the whole total.
+    let fraction = if e.is_zero() {
+        0.0
+    } else {
+        r.to_nanos_f64() / e.to_nanos_f64()
+    };
+    (trunc_amount as f64 + fraction).to_py()
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[

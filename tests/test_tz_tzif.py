@@ -2,16 +2,24 @@
 # so expect some unpythonic code.
 
 import os
+import struct
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from whenever import (
+    Instant,
+    TimeDelta,
+    TimeZoneNotFoundError,
+    ZonedDateTime,
+    hours,
+)
 from whenever._common import EPOCH_SECS_MAX, EPOCH_SECS_MIN
 from whenever._tz.common import Fold, Gap, Unique
 from whenever._tz.posix import TzStr
 from whenever._tz.tzif import TimeZone, bisect
 
-from .common import hhmm, ymdhms
+from .common import hhmm, tz_rules_from_file, ymdhms
 
 TZIF_DIR = Path(__file__).parent / "tzif"
 UTC_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -40,6 +48,8 @@ def simple_tz(
         _local_epochs=(),
         _local_values=(),
         _end=None,
+        _footer_from=EPOCH_SECS_MIN,
+        _footer_local_from=EPOCH_SECS_MIN,
         _meta_by_utc=meta_by_utc,
         _abbrev_data=abbrev_data,
     )
@@ -148,6 +158,13 @@ class TestTZifFiles:
         assert ambiguity(tzif, 4_000_000_000) == Unique(3600)
         # meta_for_instant after last transition with no POSIX string: falls back to last entry
         assert tzif.meta_for_instant(4_000_000_000) == (0, "CET")
+
+    def test_v1_without_transitions(self):
+        tzif = TimeZone.parse_tzif((TZIF_DIR / "Fixed_v1.tzif").read_bytes())
+        assert tzif._end is None
+        assert tzif.offset_for_instant(0) == 3600
+        assert ambiguity(tzif, 0) == Unique(3600)
+        assert tzif.meta_for_instant(0) == (0, "CET")
 
     def test_clamp_transitions_to_range(self):
         """Test clamping of out-of-range transitions"""
@@ -371,3 +388,289 @@ def test_smoke():
                 continue
 
             assert TimeZone.parse_tzif(data) is not None
+
+
+def tzif(
+    *,
+    version: int,
+    times: tuple[int, ...],
+    idxs: tuple[int, ...],
+    types: tuple[tuple[int, int, int], ...],
+    abbrevs: bytes,
+    footer: bytes,
+) -> bytes:
+    """A TZif file: `types` are (utoff, isdst, abbrind); a v1 file has its
+    data in the first block and no footer."""
+
+    def header(timecnt: int) -> bytes:
+        v = b"\x00" if version == 1 else str(version).encode()
+        return (
+            b"TZif"
+            + v
+            + b"\x00" * 15
+            + struct.pack(">6i", 0, 0, 0, timecnt, len(types), len(abbrevs))
+        )
+
+    def block(fmt: str) -> bytes:
+        return (
+            struct.pack(f">{len(times)}{fmt}", *times)
+            + bytes(idxs)
+            + b"".join(struct.pack(">iBB", *t) for t in types)
+            + abbrevs
+        )
+
+    if version == 1:
+        return header(len(times)) + block("i")
+    empty_v1 = header(0) + b"".join(struct.pack(">iBB", *t) for t in types)
+    return (
+        empty_v1
+        + abbrevs
+        + header(len(times))
+        + block("q")
+        + b"\n"
+        + footer
+        + b"\n"
+    )
+
+
+def _with_leap_count(data: bytes, count: int) -> bytes:
+    """Overwrite the leap second count in the first header"""
+    return data[:28] + struct.pack(">i", count) + data[32:]
+
+
+SLIM_DIR = TZIF_DIR / "slim"
+
+
+class TestSlimFiles:
+    """zic's "slim" files (the ``tzdata`` package) end with a record that
+    changes nothing: the POSIX TZ string takes over only from there."""
+
+    @pytest.mark.parametrize(
+        "tz, utc, offset, abbrev",
+        [
+            # the footer's DST began only in 2019
+            ("Pacific/Norfolk", (2016, 1, 15), hours(11), "+11"),
+            ("Pacific/Norfolk", (2019, 8, 1), hours(11), "+11"),
+            # standard time moved to -02 in March 2023, and stayed there
+            ("America/Nuuk", (2023, 6, 1, 12), hours(-2), "-02"),
+            ("America/Nuuk", (2023, 11, 15), hours(-2), "-02"),
+            # 1995 summer time ended a week before the footer's rule
+            ("Europe/London", (1995, 10, 25, 12), hours(0), "GMT"),
+            ("Europe/London", (1995, 12, 25, 12), hours(0), "GMT"),
+        ],
+    )
+    def test_last_record_holds_until_the_marker(
+        self, tz, utc, offset, abbrev, tmp_path: Path
+    ):
+        with tz_rules_from_file(tz, str(SLIM_DIR / tz), tmp_path):
+            d = Instant.from_utc(*utc).to_tz(tz)
+            assert d.offset == offset
+            assert d.tz_abbrev() == abbrev
+            assert d.dst_offset() == TimeDelta.ZERO
+
+    @pytest.mark.parametrize(
+        "tz, last_change, footer_start",
+        [
+            (
+                "Pacific/Norfolk",
+                "2015-10-04 01:30:00+11:00",
+                "2019-10-06 03:00:00+12:00",
+            ),
+            (
+                "America/Nuuk",
+                "2023-03-25 23:00:00-02:00",
+                "2024-03-31 00:00:00-01:00",
+            ),
+            (
+                "Europe/London",
+                "1995-10-22 01:00:00+00:00",
+                "1996-03-31 02:00:00+01:00",
+            ),
+            (
+                "Antarctica/Troll",
+                "2005-02-12 00:00:00+00:00",
+                "2005-03-27 03:00:00+02:00",
+            ),
+        ],
+    )
+    def test_no_transition_between_last_change_and_footer(
+        self, tz, last_change, footer_start, tmp_path: Path
+    ):
+        with tz_rules_from_file(tz, str(SLIM_DIR / tz), tmp_path):
+            last = ZonedDateTime(f"{last_change}[{tz}]")
+            first = ZonedDateTime(f"{footer_start}[{tz}]")
+            assert last.next_transition() == first
+            assert first.prev_transition() == last
+
+    def test_dst_record_before_the_footer_pairs_with_its_standard_time(
+        self, tmp_path: Path
+    ):
+        # The file ends with Winamac's 2007 move from Central standard time
+        # to Eastern DST: an hour of DST, not two
+        tz = "America/Indiana/Winamac"
+        with tz_rules_from_file(tz, str(SLIM_DIR / tz), tmp_path):
+            d = ZonedDateTime(2007, 7, 1, tz=tz)
+            assert d.offset == hours(-4)
+            assert d.dst_offset() == hours(1)
+
+    def test_no_fold_before_the_marker(self, tmp_path: Path):
+        # The footer ends DST at the marker instant, a change the file's
+        # last records never had. (zoneinfo reports a fold here.)
+        tz = "America/Nuuk"
+        with tz_rules_from_file(tz, str(SLIM_DIR / tz), tmp_path):
+            d = ZonedDateTime(
+                2023, 10, 28, 23, 30, tz=tz, disambiguation="raise"
+            )
+            assert d.offset == hours(-2)
+            assert not d.is_repeated()
+
+
+class TestDegenerateFiles:
+    LMT = (-5364662400,)  # one record in 1800
+
+    def _zone(self, tmp_path: Path, data: bytes):
+        path = tmp_path / "src"
+        path.write_bytes(data)
+        return tz_rules_from_file("Test/Zone", str(path), tmp_path / "db")
+
+    def test_empty_footer(self, tmp_path: Path):
+        # RFC 8536 allows it: the last record then holds
+        data = tzif(
+            version=2,
+            times=self.LMT,
+            idxs=(1,),
+            types=((0, 0, 0), (7200, 0, 4)),
+            abbrevs=b"LMT\x00EET\x00",
+            footer=b"",
+        )
+        with self._zone(tmp_path, data):
+            d = ZonedDateTime(2024, 7, 1, tz="Test/Zone")
+            assert d.offset == hours(2)
+            assert d.tz_abbrev() == "EET"
+            assert d.next_transition() is None
+
+    def test_dst_record_at_the_footers_standard_offset(self, tmp_path: Path):
+        # DST began with standard time moving to the offset of the footer's
+        # standard time: the saving stays one hour until the footer governs
+        data = tzif(
+            version=2,
+            times=(1590969600,),  # 2020-06-01
+            idxs=(1,),
+            types=((0, 0, 0), (3600, 1, 4)),
+            abbrevs=b"LMT\x00XDT\x00",
+            footer=b"CET-1CEST,M3.5.0,M10.5.0/3",
+        )
+        with self._zone(tmp_path, data):
+            d = ZonedDateTime(2020, 7, 1, tz="Test/Zone")
+            assert d.offset == hours(1)
+            assert d.dst_offset() == hours(1)
+            assert d.tz_abbrev() == "XDT"
+
+    def test_no_records_and_a_dst_footer(self, tmp_path: Path):
+        # The footer governs the whole range, as in zoneinfo
+        data = tzif(
+            version=2,
+            times=(),
+            idxs=(),
+            types=((1050, 0, 0),),
+            abbrevs=b"LMT\x00",
+            footer=b"CET-1CEST,M3.5.0,M10.5.0/3",
+        )
+        with self._zone(tmp_path, data):
+            for year in (1, 1000, 2024):
+                summer = ZonedDateTime(year, 7, 1, tz="Test/Zone")
+                assert summer.offset == hours(2)
+                assert summer.tz_abbrev() == "CEST"
+                assert ZonedDateTime(
+                    year, 1, 15, tz="Test/Zone"
+                ).offset == hours(1)
+
+    def test_long_abbreviation(self, tmp_path: Path):
+        data = tzif(
+            version=2,
+            times=self.LMT,
+            idxs=(1,),
+            types=((0, 0, 0), (3600, 0, 4)),
+            abbrevs=b"LMT\x00ABCDEFGHI\x00",
+            footer=b"",
+        )
+        with self._zone(tmp_path, data):
+            d = ZonedDateTime(2024, 7, 1, tz="Test/Zone")
+            assert d.tz_abbrev() == "ABCDEFGHI"
+            assert d.format("zz") == "ABCDEFGHI"
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            # transitions out of order
+            tzif(
+                version=2,
+                times=(0, -100),
+                idxs=(1, 0),
+                types=((0, 0, 0), (3600, 0, 0)),
+                abbrevs=b"UTC\x00",
+                footer=b"UTC0",
+            ),
+            # a repeated transition time
+            tzif(
+                version=1,
+                times=(0, 0),
+                idxs=(1, 0),
+                types=((0, 0, 0), (3600, 0, 0)),
+                abbrevs=b"UTC\x00",
+                footer=b"",
+            ),
+            # a v1 leap second count beyond the end of the file
+            _with_leap_count(
+                tzif(
+                    version=1,
+                    times=(),
+                    idxs=(),
+                    types=((3600, 0, 0),),
+                    abbrevs=b"CET\x00",
+                    footer=b"",
+                ),
+                1000,
+            ),
+            # a type index beyond the types
+            tzif(
+                version=2,
+                times=(0,),
+                idxs=(5,),
+                types=((3600, 0, 0),),
+                abbrevs=b"CET\x00",
+                footer=b"CET-1",
+            ),
+            # a footer outside ASCII
+            tzif(
+                version=2,
+                times=(0,),
+                idxs=(0,),
+                types=((3600, 0, 0),),
+                abbrevs=b"CET\x00",
+                footer=b"C\xc3\xa9T-1",
+            ),
+            # an abbreviation outside ASCII
+            tzif(
+                version=2,
+                times=(0,),
+                idxs=(0,),
+                types=((3600, 0, 0),),
+                abbrevs=b"C\xc3\xa9T\x00",
+                footer=b"",
+            ),
+            # a footer whose rule time was cut off
+            tzif(
+                version=2,
+                times=(-5364662400,),
+                idxs=(0,),
+                types=((3600, 0, 0),),
+                abbrevs=b"CET\x00",
+                footer=b"CET-1CEST,M3.5.0,M10.5.0/",
+            ),
+        ],
+    )
+    def test_corrupt_file_is_not_found(self, data, tmp_path: Path):
+        with self._zone(tmp_path, data):
+            with pytest.raises(TimeZoneNotFoundError, match="Test/Zone"):
+                ZonedDateTime(2024, 7, 1, tz="Test/Zone")

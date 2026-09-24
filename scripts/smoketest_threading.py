@@ -9,7 +9,7 @@ import time
 from os import environ
 from threading import Thread
 
-from whenever import PlainDateTime, reset_system_tz
+from whenever import SYSTEM_TZ, PlainDateTime, reset_system_tz
 
 if not hasattr(sys, "_is_gil_enabled") or sys._is_gil_enabled():
     # Running with GIL enabled can still be useful to compare performance,
@@ -61,7 +61,7 @@ def set_system_tz(tzs):
     for tz in tzs:
         environ["TZ"] = tz
         reset_system_tz()
-        zdt = PLAIN_DT.assume_system_tz()
+        zdt = PLAIN_DT.assume_tz(SYSTEM_TZ)
         del zdt
 
 

@@ -134,10 +134,10 @@ that suppresses it for that one call, and is named in the warning's message.
 | Keyword argument | Suppresses | Used on |
 |---|---|---|
 | `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | the {class}`~whenever.TimeDelta` constructor and methods, {class}`~whenever.Instant` `add`/`subtract`, {meth}`TimePatch.shift() <whenever.TimePatch.shift>` |
-| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` `add`/`subtract`, `since`/`until`, `now()`, `replace()`, `replace_date()`, `replace_time()`, `round()`, `start_of()`, `end_of()`; the delta methods `total()`, `in_units()`, `add()`, and `subtract()` with an {class}`~whenever.OffsetDateTime` as `relative_to` |
-| `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods; the delta methods `total()`, `in_units()`, `add()`, and `subtract()` with a {class}`~whenever.PlainDateTime` as `relative_to` |
+| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` `add`/`subtract`, `since`/`until`, `now()`, `replace()`, `replace_date()`, `replace_time()`, `round()`, `start_of()`, `end_of()`; the delta methods `total()`, `in_units()`, `add()`, and `subtract()` with an {class}`~whenever.OffsetDateTime` as `relative_to`, except on {class}`~whenever.ItemizedDateDelta`, which reads only its date |
+| `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods; the delta methods `total()`, `in_units()`, `add()`, and `subtract()` with a {class}`~whenever.PlainDateTime` as `relative_to`, except on {class}`~whenever.ItemizedDateDelta`, which reads only its date |
 | `cal_unit_composition_ok=True` | {class}`~whenever.CalendarUnitCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
-| `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `replace()`, `add`/`subtract`, and `assume_tz()` |
+| `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `parse_iso()`, `parse()`, `replace()`, `replace_date()`, `replace_time()`, `add`/`subtract`; `assume_tz()` on {class}`~whenever.PlainDateTime` and {class}`~whenever.OffsetDateTime` |
 | none: filter the category | {class}`~whenever.PickleOffsetMismatchWarning` | `pickle.loads()` of a {class}`~whenever.ZonedDateTime` |
 | none: fix the pattern | the 12-hour {class}`~whenever.WheneverWarning` | `format()` and `parse()`: add `a`/`aa`, or use `H`/`HH` |
 | none: convert explicitly | the lossy-subclass {class}`~whenever.WheneverWarning` | constructors given a `pandas` or `pendulum` object, or `Date()` given a `datetime` |
@@ -193,15 +193,15 @@ with warnings.catch_warnings():
 This is useful when you want to blanket-suppress warnings for a block of code
 or for operators (which can't take keyword arguments).
 
-```{admonition} Limitation before Python 3.14
+```{admonition} Limitation in concurrent code
 :class: warning
 
-Before Python 3.14, {class}`warnings.catch_warnings` is **not context-safe**:
+By default, {class}`warnings.catch_warnings` is **not context-safe**:
 in concurrent code (threads or async tasks) the suppression filter may leak to
 other contexts, or other contexts may interfere with yours. This is a
 [known CPython limitation](https://docs.python.org/3/library/warnings.html#warning-filter)
 addressed by the ``PYTHON_CONTEXT_AWARE_WARNINGS`` flag introduced in
-Python 3.14.
+Python 3.14. The flag is on by default only in free-threaded builds.
 
 The call-local escapes described above don't have this limitation —
 they suppress the warning for exactly one call, regardless of concurrency.
@@ -230,6 +230,6 @@ underlying issue or suppress it explicitly with the appropriate keyword argument
 | Application code | `filterwarnings("error", ...)` at startup |
 | CI / test suite | `filterwarnings = error::whenever.WheneverWarning` in `pytest.ini` |
 | One intentional imprecision | Call-local escape (e.g. `naive_arithmetic_ok=True`) + a comment |
-| Suppress operator warnings | `warnings.catch_warnings()` block (Python ≥ 3.14 for concurrency safety) |
+| Suppress operator warnings | `warnings.catch_warnings()` block (thread-safe only with Python 3.14's `context_aware_warnings`, on by default only in free-threaded builds) |
 | Entire module intentionally imprecise | `filterwarnings("ignore", ..., module=r"mymodule\.*")` |
 | Exploratory scripts | `filterwarnings("ignore", ...)` globally |

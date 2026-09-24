@@ -38,12 +38,12 @@ impl Typed<StrTag> {
 }
 
 impl PyObj {
-    /// Extract an exact `bytes` object's contents.
+    /// Extract the contents of a `bytes` object, or of a subclass.
     pub(crate) fn expect_bytes(&self) -> PyResult<&[u8]> {
-        if unsafe { PyBytes_CheckExact(self.as_ptr()) } == 0 {
+        if unsafe { PyBytes_Check(self.as_ptr()) } == 0 {
             return raise_type_err("expected bytes argument");
         }
-        // SAFETY: the exact-type check proves the bytes APIs succeed, and the returned
+        // SAFETY: the type check proves the bytes APIs succeed, and the returned
         // slice cannot outlive the borrowed argument.
         let p = unsafe { PyBytes_AsString(self.as_ptr()) };
         debug_assert!(!p.is_null());

@@ -9,3 +9,4 @@ graft _custom_pybuild
 graft tests
 global-exclude __pycache__
 global-exclude *.py[co]
+global-exclude *.so *.pyd

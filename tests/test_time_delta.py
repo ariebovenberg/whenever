@@ -27,7 +27,13 @@ from whenever import (
     seconds,
 )
 
-from .common import INVALID_TDELTAS, Idx, suppress, warns_here
+from .common import (
+    INVALID_TDELTAS,
+    ROUND_MODES_AT_A_TIE,
+    Idx,
+    suppress,
+    warns_here,
+)
 
 MAX_HOURS = 9999 * 366 * 24
 RANGE_MSG = "value or calculation out of range"
@@ -196,6 +202,29 @@ class TestInit:
             ValueError, match="value or calculation out of range"
         ):
             TimeDelta(**kwargs)
+
+    @pytest.mark.parametrize(
+        "kwargs, expected",
+        [
+            (dict(minutes=5_269_873_000, hours=-87_831_216), minutes(40)),
+            (dict(hours=-87_831_216, minutes=5_269_873_000), minutes(40)),
+            (
+                dict(nanoseconds=-(1000 << 60), microseconds=1 << 60),
+                TimeDelta.ZERO,
+            ),
+            (
+                dict(weeks=10**9, days=-(7 * 10**9), days_assumed_24h_ok=True),
+                TimeDelta.ZERO,
+            ),
+        ],
+    )
+    def test_range_checks_the_sum(self, kwargs, expected):
+        assert TimeDelta(**kwargs) == expected
+        assert TimeDelta.ZERO.add(**kwargs) == expected
+        assert (
+            Instant.from_timestamp(0).add(**kwargs)
+            == Instant.from_timestamp(0) + expected
+        )
 
     def test_invalid_kwargs(self):
         with pytest.raises(TypeError, match="foo"):
@@ -536,15 +565,26 @@ class TestParseIso:
             f"PT{10_000 * 366 * 24}H",
             f"PT{10_000 * 366 * 24 * 3600}S",
             "PT340282366920938463463374607431S",
+            # a component that overflows before the range check
+            "PT999999999999999999999999999H",
+            "PT" + "9" * 35 + "H",
+            "PT" + "9" * 35 + "M",
+            "PT" + "9" * 35 + "S",
+            "PT" + "9" * 35 + ".5S",
+            "PT1H" + "9" * 35 + "M",
         ],
     )
     def test_too_large(self, s) -> None:
-        with pytest.raises(ValueError, match="range"):
+        with pytest.raises(ValueError, match=f"^{RANGE_MSG}$"):
             TimeDelta.parse_iso(s)
 
-    def test_intermediate_overflow(self) -> None:
-        with pytest.raises(ValueError):
-            TimeDelta.parse_iso("PT999999999999999999999999999H")
+    def test_digit_limit(self) -> None:
+        assert TimeDelta.parse_iso("PT" + "0" * 34 + "1H") == hours(1)
+        s = "PT" + "0" * 35 + "1H"
+        with pytest.raises(
+            ValueError, match=f"^invalid ISO 8601 string: {s!r}$"
+        ):
+            TimeDelta.parse_iso(s)
 
 
 class TestEquality:
@@ -706,6 +746,10 @@ class TestMultiply:
         assert nanoseconds(-7) * 0.5 == nanoseconds(-4)
         assert nanoseconds(3) * 0.5 == nanoseconds(2)
         assert 0.5 * nanoseconds(7) == nanoseconds(4)
+        # the float product of the whole nanosecond count, on long deltas too
+        assert nanoseconds(
+            -163_204_499_416_938_994_927
+        ) * 0.001 == nanoseconds(-163_204_499_416_939_008)
 
     def test_bool_is_int(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
@@ -762,6 +806,9 @@ class TestDivision:
         assert TimeDelta.MIN / -1 == TimeDelta.MAX
         # a huge divisor is not narrowed to a float
         assert TimeDelta.MAX / (1 << 80) == TimeDelta.ZERO
+        # nor is a divisor beyond 128 bits rejected
+        assert hours(1) / (1 << 200) == TimeDelta.ZERO
+        assert hours(-1) / -(1 << 200) == TimeDelta.ZERO
 
     def test_by_float_rounds_half_even(self):
         assert nanoseconds(7) / 2.0 == nanoseconds(4)
@@ -982,13 +1029,21 @@ class TestOtherOperands:
         with pytest.raises(TypeError):
             divmod(hours(1), hours(1))  # type: ignore[operator]
 
-    def test_zero_delta_plain_datetime_addition_warns_from_both_sides(self):
+    def test_plain_datetime_addition_warns_from_both_sides(self):
         dt = PlainDateTime(2021, 1, 31)
-        delta = TimeDelta.ZERO
-        with pytest.warns(Warning):
-            dt + delta
-        with pytest.warns(Warning):
-            delta + dt
+        with pytest.warns(NaiveArithmeticWarning):
+            dt + hours(1)
+        with pytest.warns(NaiveArithmeticWarning):
+            hours(1) + dt
+
+    def test_zero_delta_plain_datetime_arithmetic_does_not_warn(self):
+        # A zero shift assumes nothing, as add() and subtract() have it
+        dt = PlainDateTime(2021, 1, 31)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert dt + TimeDelta.ZERO == dt
+            assert TimeDelta.ZERO + dt == dt
+            assert dt - TimeDelta.ZERO == dt
 
     @pytest.mark.parametrize(
         "dt",
@@ -1408,6 +1463,19 @@ class TestRound:
 
 
 class TestTotal:
+    @pytest.mark.parametrize(
+        "unit", ["hours", "nanoseconds", "days", "months"]
+    )
+    @pytest.mark.parametrize(
+        "relative_to", [None, "2020-01-01", 3, Instant.from_timestamp(0)]
+    )
+    def test_relative_to_checked_for_every_unit(self, unit, relative_to):
+        with pytest.raises(
+            TypeError,
+            match="relative_to must be a ZonedDateTime, PlainDateTime, or OffsetDateTime",
+        ):
+            hours(1).total(unit, relative_to=relative_to)
+
     def test_exact_units(self):
         d = TimeDelta(hours=1, minutes=2, seconds=0.003, nanoseconds=4)
         assert d.total("nanoseconds") == approx(
@@ -1768,6 +1836,78 @@ class TestTotal:
 
 
 class TestInUnits:
+    @pytest.mark.parametrize("mode, up, down", ROUND_MODES_AT_A_TIE)
+    def test_every_round_mode_at_a_tie(self, mode, up, down):
+        delta = TimeDelta(hours=2, minutes=30)
+        assert delta.in_units(["hours"], round_mode=mode) == ItemizedDelta(
+            hours=up
+        )
+        assert (-delta).in_units(["hours"], round_mode=mode) == ItemizedDelta(
+            hours=down
+        )
+
+    @pytest.mark.parametrize(
+        "delta, units, increment, trunc, ceil",
+        [
+            (
+                TimeDelta(minutes=5, seconds=20),
+                ["minutes", "seconds"],
+                61,
+                ItemizedDelta(minutes=5, seconds=0),
+                ItemizedDelta(minutes=6, seconds=0),
+            ),
+            (
+                TimeDelta(hours=5, minutes=20),
+                ["hours", "minutes"],
+                90,
+                ItemizedDelta(hours=5, minutes=0),
+                ItemizedDelta(hours=6, minutes=0),
+            ),
+            # an increment equal to the next unit
+            (
+                TimeDelta(hours=5, minutes=20),
+                ["hours", "minutes"],
+                60,
+                ItemizedDelta(hours=5, minutes=0),
+                ItemizedDelta(hours=6, minutes=0),
+            ),
+            # rounding up carries into every larger unit at once
+            (
+                TimeDelta(hours=47, minutes=59),
+                ["days", "hours", "minutes"],
+                15,
+                ItemizedDelta(days=1, hours=23, minutes=45),
+                ItemizedDelta(days=2, hours=0, minutes=0),
+            ),
+            # the next requested unit need not be adjacent
+            (
+                TimeDelta(hours=2, minutes=59, seconds=59),
+                ["hours", "seconds"],
+                7,
+                ItemizedDelta(hours=2, seconds=3598),
+                ItemizedDelta(hours=3, seconds=0),
+            ),
+            # a single unit rounds its total
+            (
+                TimeDelta(hours=5, minutes=20),
+                ["minutes"],
+                90,
+                ItemizedDelta(minutes=270),
+                ItemizedDelta(minutes=360),
+            ),
+        ],
+    )
+    def test_smallest_component_is_the_multiple(
+        self, delta, units, increment, trunc, ceil
+    ):
+        kwargs: dict[str, Any] = dict(
+            round_increment=increment, days_assumed_24h_ok=True
+        )
+        assert delta.in_units(units, round_mode="trunc", **kwargs) == trunc
+        assert delta.in_units(units, round_mode="ceil", **kwargs) == ceil
+        assert (-delta).in_units(units, round_mode="trunc", **kwargs) == -trunc
+        assert (-delta).in_units(units, round_mode="floor", **kwargs) == -ceil
+
     @pytest.mark.parametrize(
         "delta, units, kwargs, expected",
         [
@@ -1980,7 +2120,7 @@ class TestInUnits:
                 TimeDelta(hours=49, minutes=121),
                 ("days", "seconds", "nanoseconds"),
                 {"round_increment": 826549200},
-                ItemizedDelta(days=2, seconds=10859, nanoseconds=232_240_000),
+                ItemizedDelta(days=2, seconds=10860, nanoseconds=0),
             ),
             # TEST round single units with large values
         ],
@@ -2006,7 +2146,7 @@ class TestInUnits:
 
     def test_missing_units(self):
         d = hours(1)
-        with pytest.raises(ValueError, match="^units must not be empty$"):
+        with pytest.raises(ValueError, match="^in_units must not be empty$"):
             d.in_units([])
 
     def test_units_out_of_order(self):
@@ -2017,7 +2157,7 @@ class TestInUnits:
     def test_units_repeated(self):
         d = hours(1)
         # DOC: clarify error message
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="cannot contain duplicates"):
             d.in_units(["hours", "hours", "minutes"])
 
     def test_nanoseconds_but_no_seconds(self):
@@ -2067,22 +2207,35 @@ class TestInUnits:
         assert isinstance(result, ItemizedDelta)
         assert result["months"] == 4
 
+    def test_carry_past_the_range(self):
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            # MAX is 522804 weeks and 6 days; the days round up to 8
+            TimeDelta.MAX.in_units(
+                ["weeks", "days"],
+                round_increment=4,
+                round_mode="ceil",
+                days_assumed_24h_ok=True,
+            )
+
     def test_very_large_increment(self):
         # round_increment=1<<65 ns exceeds i64::MAX; should not OverflowError
         with suppress(DaysAssumed24HoursWarning):
-            d = TimeDelta(days=592)
-        # trunc mode: value < 1*(1<<65), rounds down to zero
+            d = TimeDelta(days=592, nanoseconds=1)
+        # trunc mode: the nanoseconds component rounds down to zero
         assert d.in_units(
             ["seconds", "nanoseconds"],
             round_increment=1 << 65,
             round_mode="trunc",
-        ) == ItemizedDelta(seconds=0)
-        # ceil mode: rounds up to 1*(1<<65) = 36_893_488_147s + 419_103_232ns
+        ) == ItemizedDelta(seconds=51_148_800, nanoseconds=0)
+        # ceil mode: 1<<65 ns (36_893_488_147.419103232s) carries into the
+        # seconds, and the nanoseconds stay a multiple of the increment
         assert d.in_units(
             ["seconds", "nanoseconds"],
             round_increment=1 << 65,
             round_mode="ceil",
-        ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
+        ) == ItemizedDelta(seconds=36_944_636_947, nanoseconds=0)
 
     def test_relative_to_plain_datetime(self):
         # 140 days from 2024-02-29 = 4 months + 20 days
@@ -2132,7 +2285,7 @@ class TestMessages:
             (
                 lambda: _H.in_units([]),
                 ValueError,
-                "units must not be empty",
+                "in_units must not be empty",
             ),
             (
                 lambda: _H.total("months"),
@@ -2257,11 +2410,13 @@ class TestMessages:
                 _H.in_units(["years", "days"])
             with pytest.raises(TypeError):
                 _H.add(days=1, foo=2)
-            with pytest.raises(ValueError):
+            with pytest.raises(
+                ValueError, match="increment must be a positive integer"
+            ):
                 _H.round("day", increment=0)
             with pytest.raises(TypeError):
                 _H.round("day", increment=1.5)
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="invalid mode"):
                 _H.round("day", mode="bogus")
             with pytest.raises(TypeError):
                 _H.round(TimeDelta(seconds=7), increment=2)
@@ -2351,6 +2506,22 @@ class TestReferenceEscapes:
 
 
 class TestAssume24hDaysKwarg:
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda: TimeDelta(days=0),
+            lambda: TimeDelta(weeks=0, hours=1),
+            lambda: TimeDelta(days=0.0),
+            lambda: hours(1).add(days=0),
+            lambda: hours(1).subtract(weeks=0),
+            lambda: Instant.from_timestamp(0).add(days=0),
+        ],
+    )
+    def test_zero_days_assume_nothing(self, call):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            call()
+
     def test_init(self):
         with warnings.catch_warnings():
             warnings.simplefilter("error")

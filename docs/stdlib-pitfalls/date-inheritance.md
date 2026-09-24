@@ -38,5 +38,5 @@ This means you can catch mistakes with a type checker, and all comparisons behav
 >>> d > dt  # type checker will catch this
 Traceback (most recent call last):
   ...
-TypeError: '>' not supported between instances of 'Date' and 'PlainDateTime'
+TypeError: '>' not supported between instances of 'whenever.Date' and 'whenever.PlainDateTime'
 ```

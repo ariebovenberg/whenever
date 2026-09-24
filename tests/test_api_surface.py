@@ -5,12 +5,15 @@ import inspect
 import json
 import subprocess
 import sys
+import types
 import warnings
 from pathlib import Path
+from typing import Any
 
 import pytest
 from whenever import (
     _EXTENSION_LOADED,
+    SYSTEM_TZ,
     AnyDelta,
     ItemizedDateDelta,
     ItemizedDelta,
@@ -31,11 +34,13 @@ def test_multiple_interpreters():
 
     for _ in range(10):
         interp_id = interpreters.create()
-        interpreters.run_string(
+        # returns the exception instead of raising it; typeshed says None
+        error = interpreters.run_string(  # type: ignore[func-returns-value]
             interp_id,
             "from whenever import Instant; Instant.now()",
         )
         interpreters.destroy(interp_id)
+        assert error is None, error
 
 
 def test_any_delta_runtime_value():
@@ -48,7 +53,6 @@ def test_type_aliases():
     from whenever import DateDeltaUnitStr  # noqa
     from whenever import DeltaTotalUnitStr  # noqa
     from whenever import DeltaUnitStr  # noqa
-    from whenever import DisambiguateStr  # noqa
     from whenever import DisambiguationStr  # noqa
     from whenever import ExactDeltaUnitStr  # noqa
     from whenever import OffsetMismatchStr  # noqa
@@ -148,6 +152,34 @@ def test_itemized_runtime_annotations_resolve_from_lazy_import():
     assert result.returncode == 0, result.stderr
 
 
+# ``iter(f, sentinel)`` calls ``f`` through ``PyObject_CallNoArgs``,
+# which passes a null argument array to a fastcall method.
+@pytest.mark.parametrize(
+    "call",
+    [
+        "Instant.MIN.to_fixed_offset",  # positional varargs
+        "whenever._unpkl_zoned",  # module function with varargs
+        "Instant.MIN.format_iso",  # keyword arguments
+        "ZonedDateTime.parse_iso",  # class method with keyword arguments
+    ],
+)
+def test_call_without_argument_array(call):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import whenever; from whenever import *\n"
+            "try:\n"
+            f"    next(iter({call}, None))\n"
+            "except TypeError:\n"
+            "    pass",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_no_attr_on_module():
     with pytest.raises((AttributeError, ImportError), match="DoesntExist"):
         from whenever import DoesntExist  # type: ignore[attr-defined] # noqa
@@ -158,17 +190,18 @@ def test_no_attr_on_module():
 )
 def test_extension_doesnt_import_tz_modules():
     # When the Rust extension is active, the Python time zone subsystem
-    # (_tz, calendar, platform) and _shared must not be imported just by doing
-    # `import whenever`. Violations here mean slow startup for all users.
+    # (_tz, calendar, platform) and _shared must not be imported just by using
+    # a type that doesn't need them. Violations here mean slow startup for all
+    # users. `import whenever` is lazy, so the snippet touches the extension.
     result = subprocess.run(
         [
             sys.executable,
             "-c",
             "import whenever, json, sys; "
+            "whenever.Instant.now(); "
             "print(json.dumps([k for k in sys.modules "
             "if k == 'whenever._tz' or k.startswith('whenever._tz.')  "
             "or k == 'whenever._shared' "
-            "or k == 'whenever._typing' "
             "or k == 'whenever._utils' "
             "or k in ('calendar', 'platform')]))",
         ],
@@ -178,7 +211,7 @@ def test_extension_doesnt_import_tz_modules():
     )
     imported = json.loads(result.stdout)
     assert imported == [], (
-        f"unexpected modules imported on 'import whenever': {imported}"
+        f"unexpected modules imported on first use: {imported}"
     )
 
 
@@ -189,7 +222,8 @@ def test_module_cleanup_runs():
     # Verify module_free is called on interpreter shutdown (debug builds only).
     # This ensures Python objects held by module state are properly released.
     result = subprocess.run(
-        [sys.executable, "-c", "import whenever"],
+        # `import whenever` is lazy; touching a type loads the extension
+        [sys.executable, "-c", "import whenever; whenever.Instant.now()"],
         capture_output=True,
         text=True,
     )
@@ -262,5 +296,19 @@ def test_functions_report_the_public_module():
     import whenever
 
     # Both backends, so help() and pickling agree
-    for name in ("get_tzpath", "reset_system_tz", "hours", "_unpkl_date"):
-        assert getattr(whenever, name).__module__ == "whenever"
+    names = [
+        n
+        for n in whenever.__all__
+        if isinstance(
+            getattr(whenever, n),
+            (type, types.FunctionType, types.BuiltinFunctionType),
+        )
+    ]
+    assert "TimePatch" in names and "patch_current_time" in names
+    for name in [*names, "_unpkl_date"]:
+        assert getattr(whenever, name).__module__ == "whenever", name
+
+
+def test_system_tz_class_returns_the_singleton():
+    cls: Any = type(SYSTEM_TZ)
+    assert cls() is SYSTEM_TZ

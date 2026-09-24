@@ -4,7 +4,7 @@ use crate::{
     domain::local::{LocalMapping, LocalSeconds},
     domain::scalar::*,
     domain::units::*,
-    tz::posix::{TzAbbrev, TzMetaResult, TzStr},
+    tz::posix::{TzMetaResult, TzStr},
 };
 use std::{cmp::Ordering, fmt};
 
@@ -35,6 +35,13 @@ pub struct TimeZone {
     // Invariant: if posix TZ isn't given, there must be at least one entry in each of the above
     // slices.
     end: Option<TzStr>,
+    // Where the POSIX TZ string takes over from the last recorded offset: its
+    // first transition after the file's last record, which may be a marker
+    // that changes nothing (zic's "slim" files). Before it, the last recorded
+    // offset holds. The local variant is where that transition's gap or
+    // fold begins.
+    footer_from: EpochSecs,
+    footer_local_from: LocalSeconds,
     // Time zone metadata (parallel to offsets_by_utc: same length, same indexing)
     meta_by_utc: Box<[TransitionMeta]>,
     // NUL-terminated abbreviation strings from TZif
@@ -61,17 +68,9 @@ impl TimeZone {
         bisect(&self.offsets_by_utc, t)
             .map(|i| self.offsets_by_utc[i.saturating_sub(1)].1)
             // If the time is after the last transition, use the POSIX TZ string
-            .or_else(|| self.end.map(|tz| tz.offset_for_instant(t)))
-            // If there's no POSIX TZ string, use the last offset.
-            // There's not much else we can do.
-            .unwrap_or_else(|| {
-                self.offsets_by_utc
-                    .last()
-                    // Safe: We've ensured during parsing that there's at least one entry
-                    // if there's no POSIX TZ string.
-                    .unwrap()
-                    .1
-            })
+            .or_else(|| self.footer_at(t).map(|tz| tz.offset_for_instant(t)))
+            // Otherwise, the last offset holds.
+            .unwrap_or_else(|| self.last_offset())
     }
 
     /// Get the UTC offset at the given local time (expressed in epoch seconds).
@@ -102,24 +101,32 @@ impl TimeZone {
                 }
             })
             // If the time is after the last transition, use the POSIX TZ string
-            .or_else(|| self.end.map(|tz| tz.mapping_for_local(t)))
-            // If there's no POSIX TZ string, use the last offset.
-            // There's not much else we can do.
-            .unwrap_or_else(|| {
-                let (prev_offset, last_shift) = self
-                    .offsets_by_local
-                    .last()
-                    // SAFETY: We've ensured during parsing that there's at least one entry
-                    // if there's no POSIX TZ string.
-                    .unwrap()
-                    .1;
-                LocalMapping::Unique {
-                    offset: prev_offset
-                        .shift(last_shift)
-                        // SAFETY: last_shift was calculated from prev_offset itself
-                        .unwrap(),
-                }
+            .or_else(|| {
+                self.end
+                    .as_ref()
+                    .filter(|_| t >= self.footer_local_from)
+                    .map(|tz| tz.mapping_for_local(t))
             })
+            // Otherwise, the last offset holds.
+            .unwrap_or_else(|| LocalMapping::Unique {
+                offset: self.last_offset(),
+            })
+    }
+
+    /// The POSIX TZ string, if it governs the instant `t` after the last
+    /// recorded transition.
+    fn footer_at(&self, t: EpochSecs) -> Option<&TzStr> {
+        self.end.as_ref().filter(|_| t >= self.footer_from)
+    }
+
+    fn last_offset(&self) -> Offset {
+        self.offsets_by_utc
+            .last()
+            // Safe: a parsed file has at least the entry before its
+            // first transition, and without a POSIX TZ string we
+            // didn't come from `parse_posix`.
+            .unwrap()
+            .1
     }
 
     pub(crate) fn parse_posix(s: &str) -> Option<Self> {
@@ -128,13 +135,15 @@ impl TimeZone {
             offsets_by_utc: Box::default(),
             offsets_by_local: Box::default(),
             end: Some(TzStr::parse(s.as_bytes())?),
+            footer_from: EpochSecs::MIN,
+            footer_local_from: LocalSeconds::clamp(EpochSecs::MIN.get()),
             meta_by_utc: Box::default(),
             abbrev_data: Box::default(),
         })
     }
 
     /// Get time zone metadata (dst_saving, abbreviation) at the given instant.
-    pub(crate) fn meta_for_instant(&self, t: EpochSecs) -> TzMetaResult {
+    pub(crate) fn meta_for_instant(&self, t: EpochSecs) -> TzMetaResult<'_> {
         bisect(&self.offsets_by_utc, t)
             .map(|i| {
                 let meta = &self.meta_by_utc[i.saturating_sub(1)];
@@ -143,7 +152,7 @@ impl TimeZone {
                     abbrev: abbrev_from_data(&self.abbrev_data, meta.abbrev_idx),
                 }
             })
-            .or_else(|| self.end.map(|tz| tz.meta_for_instant(t)))
+            .or_else(|| self.footer_at(t).map(|tz| tz.meta_for_instant(t)))
             .unwrap_or_else(|| {
                 let meta = self.meta_by_utc.last().unwrap();
                 TzMetaResult {
@@ -157,15 +166,21 @@ impl TimeZone {
     pub(crate) fn next_transition(&self, t: EpochSecs) -> Option<(EpochSecs, Offset)> {
         bisect(&self.offsets_by_utc, t)
             .map(|i| self.offsets_by_utc[i])
-            .or_else(|| self.end.and_then(|tz| tz.next_transition(t)))
+            .or_else(|| {
+                // The first transition of the POSIX TZ string that counts
+                // is the one at `footer_from`.
+                self.end
+                    .as_ref()?
+                    .next_transition(t.max(self.footer_from.saturating_add_i32(-1)))
+            })
     }
 
     /// The previous transition record strictly before `t`, or None.
     pub(crate) fn prev_transition(&self, t: EpochSecs) -> Option<(EpochSecs, Offset)> {
         // If past all recorded transitions, check POSIX first
-        if let Some(tz) = self.end
-            && self.offsets_by_utc.last().is_none_or(|&(last, _)| t > last)
+        if let Some(tz) = self.footer_at(t)
             && let Some(result) = tz.prev_transition(t)
+            && result.0 >= self.footer_from
         {
             return Some(result);
         }
@@ -252,32 +267,42 @@ fn parse_header(s: &mut Scan) -> Option<Header> {
 }
 
 fn parse_v2_transitions(header: Header, s: &mut Scan) -> Option<Vec<EpochSecs>> {
-    let mut result = Vec::with_capacity(header.timecnt);
     const I64_SIZE: usize = std::mem::size_of::<i64>();
-    let values = s.take(header.timecnt * I64_SIZE)?;
-    // NOTE: we assume the values are sorted
-    for i in 0..header.timecnt {
-        // NOTE: we clamp any values that are out of range.
-        // This will still generate correct results within our supported range.
-        result.push(EpochSecs::clamp(i64::from_be_bytes(
-            values[i * I64_SIZE..(i + 1) * I64_SIZE].try_into().unwrap(),
-        )));
-    }
-    Some(result)
+    let values: Vec<i64> = s
+        .take(header.timecnt * I64_SIZE)?
+        .as_chunks::<I64_SIZE>()
+        .0
+        .iter()
+        .map(|&b| i64::from_be_bytes(b))
+        .collect();
+    // RFC 8536 requires ascending times
+    values.is_sorted_by(|a, b| a < b).then(|| {
+        values
+            .into_iter()
+            // NOTE: we clamp any values that are out of range.
+            // This will still generate correct results within our supported range.
+            .map(EpochSecs::clamp)
+            .collect()
+    })
 }
 
 fn parse_v1_transitions(header: Header, s: &mut Scan) -> Option<Vec<EpochSecs>> {
-    let mut result = Vec::with_capacity(header.timecnt);
     const I32_SIZE: usize = std::mem::size_of::<i32>();
-    let values = s.take(header.timecnt * I32_SIZE)?;
-    // NOTE: we assume the values are sorted
-    for i in 0..header.timecnt {
-        // Safe: i32 is always in range of EpochSecs
-        result.push(EpochSecs::from_i32(i32::from_be_bytes(
-            values[i * I32_SIZE..(i + 1) * I32_SIZE].try_into().unwrap(),
-        )));
-    }
-    Some(result)
+    let values: Vec<i32> = s
+        .take(header.timecnt * I32_SIZE)?
+        .as_chunks::<I32_SIZE>()
+        .0
+        .iter()
+        .map(|&b| i32::from_be_bytes(b))
+        .collect();
+    // RFC 8536 requires ascending times
+    values.is_sorted_by(|a, b| a < b).then(|| {
+        values
+            .into_iter()
+            // Safe: i32 is always in range of EpochSecs
+            .map(EpochSecs::from_i32)
+            .collect()
+    })
 }
 
 fn parse_offset_indices(header: Header, s: &mut Scan) -> Option<Vec<u8>> {
@@ -320,26 +345,57 @@ fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult
     }
     let (types, abbrev_data) =
         parse_type_info(header.typecnt, header.charcnt, s).ok_or(ErrorCause::Body)?;
-    let (offsets_by_utc, meta_by_utc) =
+    let (offsets_by_utc, mut meta_by_utc) =
         load_transitions(&transition_times, &types, &offset_indices).ok_or(ErrorCause::Body)?;
 
     let end = if header.version >= 2 {
         // Skip unused metadata and newline before tz string
         s.take(header.isutcnt + header.isstdcnt + header.leapcnt * 12 + 1)
             .ok_or(ErrorCause::Body)?;
-        Some(parse_posix_tz(s).ok_or(ErrorCause::TzString)?)
+        parse_posix_tz(s)?
     } else {
         None
     };
-    if end.is_none() && offsets_by_utc.is_empty() {
-        // There doesn't seem to be any transition data in the file!
-        return Err(ErrorCause::Body);
+    // DST records with no standard record after them pair with the standard
+    // offset of the POSIX TZ string, the next one to come (Indiana/Winamac
+    // moved from Central standard time to Eastern DST in 2007).
+    if let Some(tz) = &end {
+        for (meta, &(_, offset)) in meta_by_utc
+            .iter_mut()
+            .zip(&offsets_by_utc)
+            .rev()
+            .take_while(|(meta, _)| meta.dst_saving != 0)
+        {
+            let saving = offset.get() - tz.std().get();
+            if saving != 0 {
+                meta.dst_saving = saving;
+            }
+        }
     }
+    // The last record, even one that changes nothing, marks where the POSIX
+    // TZ string takes over (RFC 8536 section 3.3). Without records, it
+    // governs the whole range.
+    let last_offset = offsets_by_utc.last().unwrap().1;
+    let (footer_from, footer_local_from) = match (&end, transition_times.last()) {
+        (Some(tz), Some(&last)) => match tz.next_transition(last) {
+            Some((t, offset)) => (
+                t,
+                LocalSeconds::from_instant_saturating(t, offset.min(last_offset)),
+            ),
+            None => (
+                last,
+                LocalSeconds::from_instant_saturating(last, last_offset),
+            ),
+        },
+        _ => (EpochSecs::MIN, LocalSeconds::clamp(EpochSecs::MIN.get())),
+    };
     Ok(TimeZone {
         key: key.map(Box::from),
         offsets_by_local: local_transitions(&offsets_by_utc).into_boxed_slice(),
         offsets_by_utc: offsets_by_utc.into_boxed_slice(),
         end,
+        footer_from,
+        footer_local_from,
         meta_by_utc: meta_by_utc.into_boxed_slice(),
         abbrev_data: abbrev_data.into_boxed_slice(),
     })
@@ -399,17 +455,27 @@ fn load_transitions(
         abbrev_idx: first_type.abbrev_idx,
     });
 
-    for (&idx, &epoch) in indices.iter().zip(transition_times) {
+    for (i, (&idx, &epoch)) in indices.iter().zip(transition_times).enumerate() {
         let typ = types.get(usize::from(idx))?;
         if typ == prev_type {
             continue;
         }
+        let follows_dst = prev_type.isdst;
         prev_type = typ;
         offsets.push((epoch, typ.offset));
 
         let dst_saving = if !typ.isdst {
             last_std_offset = typ.offset;
             0
+        } else if follows_dst
+            // One DST type straight after another (Pacific/Apia crossing the
+            // date line): pair it with the standard type that follows it
+            // directly, as CPython does.
+            && let Some(next) = indices.get(i + 1).and_then(|&idx| types.get(usize::from(idx)))
+            && !next.isdst
+            && next.offset != typ.offset
+        {
+            typ.offset.get() - next.offset.get()
         } else if typ.offset == last_std_offset {
             // Standard time moved and DST began at the same moment, so the
             // saving cannot be read off the previous standard offset.
@@ -427,24 +493,22 @@ fn load_transitions(
     Some((offsets, meta))
 }
 
-fn abbrev_from_data(data: &[u8], idx: u8) -> TzAbbrev {
-    let start = idx as usize;
-    if start >= data.len() {
-        return TzAbbrev::EMPTY;
-    }
-    let end = data[start..]
-        .iter()
-        .position(|&b| b == 0)
-        .map(|p| start + p)
-        .unwrap_or(data.len());
-    TzAbbrev::from_bytes(&data[start..end]).unwrap_or(TzAbbrev::EMPTY)
+fn abbrev_from_data(data: &[u8], idx: u8) -> &[u8] {
+    let rest = data.get(usize::from(idx)..).unwrap_or_default();
+    rest.split(|&b| b == 0).next().unwrap_or_default()
 }
 
-fn parse_posix_tz(s: &mut Scan) -> Option<TzStr> {
-    TzStr::parse(match s.take_until(|b| b == b'\n') {
+/// The POSIX TZ string of the footer. RFC 8536 allows an empty one: then
+/// there is none.
+fn parse_posix_tz(s: &mut Scan) -> ParseResult<Option<TzStr>> {
+    let footer = match s.take_until(|b| b == b'\n') {
         Some(x) => x,
         None => s.rest(),
-    })
+    };
+    if footer.is_empty() {
+        return Ok(None);
+    }
+    TzStr::parse(footer).map(Some).ok_or(ErrorCause::TzString)
 }
 
 #[derive(PartialEq)]
@@ -474,8 +538,11 @@ fn parse_type_info(
             abbrev_idx,
         });
     }
-    let abbrev_data = s.take(charcnt)?.to_vec();
-    Some((types, abbrev_data))
+    let abbrev_data = s.take(charcnt)?;
+    // RFC 8536 has abbreviations in ASCII, which `abbrev_text` relies on
+    abbrev_data
+        .is_ascii()
+        .then(|| (types, abbrev_data.to_vec()))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -503,6 +570,8 @@ pub(crate) fn is_tz_id_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'+' | b'.')
 }
 
+pub(crate) const MAX_KEY_LEN: usize = 100;
+
 pub(crate) fn is_valid_key(key: &str) -> bool {
     let Some(&first) = key.as_bytes().first() else {
         return false; // empty is invalid
@@ -512,7 +581,7 @@ pub(crate) fn is_valid_key(key: &str) -> bool {
     // There's no standard limit on IANA tz IDs, but we have to draw
     // the line somewhere to prevent abuse, since we'll be using them
     // to traverse the filesystem.
-    key.len() < 100
+    key.len() < MAX_KEY_LEN
         // Here we eliminate most "nasty" characters like null bytes,
         // or invalid path characters.
         // Note this is a more relaxed check than the TZDB uses.
@@ -711,6 +780,22 @@ mod tests {
         );
         assert_eq!(
             mapping(&tzif, EpochSecs::new_unchecked(3155760000)),
+            unique_i32(3600)
+        );
+    }
+
+    #[test]
+    fn test_v1_without_transitions() {
+        // One type and no transitions, as older zic wrote fixed zones
+        const TZ_FIXED: &[u8] = include_bytes!("../../tests/tzif/Fixed_v1.tzif");
+        let tzif = TimeZone::parse_tzif(TZ_FIXED, None).unwrap();
+        assert_eq!(tzif.end, None);
+        assert_eq!(
+            tzif.offset_for_instant(EpochSecs::new_unchecked(0)),
+            3600.try_into().unwrap()
+        );
+        assert_eq!(
+            mapping(&tzif, EpochSecs::new_unchecked(0)),
             unique_i32(3600)
         );
     }

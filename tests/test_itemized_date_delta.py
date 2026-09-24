@@ -186,7 +186,7 @@ class TestInit:
         assert ItemizedDateDelta("P1Y6M").strict_eq(
             ItemizedDateDelta(years=1, months=6)
         )
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             ItemizedDateDelta("not valid")
 
 
@@ -417,6 +417,23 @@ class TestParseIso:
             match=r"^(invalid ISO 8601 string: "
             + re.escape(repr(s))
             + "|delta out of range)$",
+        ):
+            ItemizedDateDelta.parse_iso(s)
+
+    @pytest.mark.parametrize(
+        "s", ["P999999999Y", "P" + "9" * 35 + "D", "P1Y" + "9" * 20 + "M"]
+    )
+    def test_well_formed_out_of_range(self, s: str):
+        with pytest.raises(ValueError, match="^delta out of range$"):
+            ItemizedDateDelta.parse_iso(s)
+
+    def test_digit_limit(self):
+        assert ItemizedDateDelta.parse_iso("P" + "0" * 34 + "1D").strict_eq(
+            ItemizedDateDelta(days=1)
+        )
+        s = "P" + "0" * 35 + "1D"
+        with pytest.raises(
+            ValueError, match=f"^invalid ISO 8601 string: {s!r}$"
         ):
             ItemizedDateDelta.parse_iso(s)
 
@@ -683,9 +700,11 @@ class TestShift:
         assert result.strict_eq(ItemizedDateDelta(years=2, months=0))
 
     def test_add_nothing_changes_units(self):
-        ItemizedDateDelta(years=2).add(
-            relative_to=Date("2021-12-31"), in_units=["months", "days"]
-        ).strict_eq(ItemizedDateDelta(months=24, days=0))
+        assert (
+            ItemizedDateDelta(years=2)
+            .add(relative_to=Date("2021-12-31"), in_units=["months", "days"])
+            .strict_eq(ItemizedDateDelta(months=24, days=0))
+        )
 
     def test_invalid_unit_kwarg(self):
         with pytest.raises(TypeError, match="foo"):
@@ -696,7 +715,7 @@ class TestShift:
             )
 
     def test_overflows(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             ItemizedDateDelta(years=5_000).add(
                 years=5_000,
                 relative_to=Date("2021-12-31"),
@@ -704,7 +723,7 @@ class TestShift:
             )
 
         # Overflow due to relative_to
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             ItemizedDateDelta(years=5).add(
                 months=29,
                 relative_to=Date("9994-12-31"),
@@ -1034,12 +1053,12 @@ class TestTotal:
             ItemizedDateDelta(years=2).total("months")  # type: ignore[call-arg]
 
     def test_relative_to_overflows(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             ItemizedDateDelta(years=2).total(
                 "months", relative_to=Date("9998-04-30")
             )
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="out of range"):
             ItemizedDateDelta(years=-2).total(
                 "months", relative_to=Date("0001-12-31")
             )
@@ -1084,7 +1103,7 @@ class TestMessages:
             (
                 lambda: _D.in_units([], relative_to=_DATE),
                 ValueError,
-                "units must not be empty",
+                "in_units must not be empty",
             ),
             (
                 lambda: _D.in_units(["foo"], relative_to=_DATE),

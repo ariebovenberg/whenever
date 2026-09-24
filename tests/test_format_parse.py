@@ -1,7 +1,10 @@
 """Tests for custom format/parse patterns."""
 
+import enum
 import re
 import warnings
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 from whenever import (
@@ -30,7 +33,7 @@ from whenever import (
 )
 from whenever._format import compile_pattern, format_fields
 
-from .common import warns_here
+from .common import StrSubclass, warns_here
 
 
 class TestCompilePattern:
@@ -67,6 +70,32 @@ class TestCompilePattern:
         """'' is an escaped quote, not an empty literal."""
         d = Date(2024, 3, 15)
         assert d.format("YYYY''-MM") == "2024'-03"
+
+    @pytest.mark.parametrize(
+        "pattern, text",
+        [
+            ("YYYY'it''s'", "2024it's"),
+            ("'it''s' YYYY", "it's 2024"),
+            ("YYYY'a''b''c'", "2024a'b'c"),
+            ("YYYY'a'''", "2024a'"),
+            ("'x''''y'YYYY", "x''y2024"),
+        ],
+    )
+    def test_doubled_quote_inside_quoted_run(self, pattern, text):
+        d = Date(2024, 3, 15)
+        assert d.format(pattern) == text
+        assert Date.parse(f"{text}-03-15", pattern=f"{pattern}-MM-DD") == d
+
+    def test_doubled_quote_does_not_close_quoted_run(self):
+        with pytest.raises(ValueError, match="unterminated"):
+            Date(2024, 1, 1).format("YYYY'a''")
+
+    def test_tab_and_newline_literals(self):
+        d = Date(2024, 3, 15)
+        assert d.format("YYYY\tMM\nDD") == "2024\t03\n15"
+        assert Date.parse("2024\t03\n15", pattern="YYYY\tMM\nDD") == d
+        with pytest.raises(ValueError, match="unexpected character"):
+            d.format("YYYY\rMM")
 
     def test_nonletter_literal(self):
         d = Date(2024, 3, 15)
@@ -459,16 +488,31 @@ class TestDateParse:
         d = Date.parse("2024-03-15", pattern="YYYY-MM-DD")
         assert d == Date(2024, 3, 15)
 
+    # The pure-Python backend raises the stdlib's message, which varies by
+    # Python version
+    @pytest.mark.parametrize(
+        "s, pattern",
+        [
+            ("2024-13-03", "YYYY-MM-DD"),
+            ("2024-00-03", "YYYY-MM-DD"),
+            ("2024-13-03", "YYYY-M-DD"),
+            ("0000-02-01", "YYYY-MM-DD"),
+        ],
+    )
+    def test_field_out_of_range(self, s, pattern):
+        with pytest.raises(ValueError):
+            Date.parse(s, pattern=pattern)
+
     def test_unpadded_month_day(self):
         assert Date.parse("2024-3-5", pattern="YYYY-M-D") == Date(2024, 3, 5)
         assert Date.parse("2024-12-25", pattern="YYYY-M-D") == Date(
             2024, 12, 25
         )
         # MM requires exactly 2 digits — single digit fails
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="expected 2 digits"):
             Date.parse("2024-3-05", pattern="YYYY-MM-DD")
         # DD requires exactly 2 digits
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="expected 2 digits"):
             Date.parse("2024-03-5", pattern="YYYY-MM-DD")
 
     @pytest.mark.parametrize(
@@ -671,7 +715,7 @@ class TestTimeParse:
         # Two-digit (also accepted by h)
         assert Time.parse("14:30", pattern="H:mm") == Time(14, 30)
         # HH requires exactly 2 digits
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="expected 2 digits"):
             Time.parse("4:30", pattern="HH:mm")
         # Non-digit input
         with pytest.raises(ValueError, match="1-2 digits"):
@@ -680,13 +724,13 @@ class TestTimeParse:
     def test_unpadded_minute(self):
         assert Time.parse("14:5", pattern="HH:m") == Time(14, 5)
         assert Time.parse("14:30", pattern="HH:m") == Time(14, 30)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="expected 2 digits"):
             Time.parse("14:5", pattern="HH:mm")
 
     def test_unpadded_second(self):
         assert Time.parse("14:30:5", pattern="HH:mm:s") == Time(14, 30, 5)
         assert Time.parse("14:30:45", pattern="HH:mm:s") == Time(14, 30, 45)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="expected 2 digits"):
             Time.parse("14:30:5", pattern="HH:mm:ss")
 
     def test_optional_seconds(self):
@@ -743,7 +787,7 @@ class TestTimeParse:
         assert Time.parse("12:00 AM", pattern="i:mm aa") == Time(0, 0)
         assert Time.parse("1:00 AM", pattern="i:mm aa") == Time(1, 0)
         # ii requires exactly 2 digits
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="expected 2 digits"):
             Time.parse("2:30 PM", pattern="ii:mm aa")
         # Out-of-range hour with single i
         with pytest.raises(ValueError, match="1..12"):
@@ -1119,7 +1163,8 @@ class TestZonedDateTimeParse:
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
             )
 
-    def test_offset_mismatch(self):
+    @pytest.mark.parametrize("kwargs", [{}, {"offset_mismatch": "raise"}])
+    def test_offset_mismatch(self, kwargs):
         """Offset doesn't match time zone: should raise."""
         with pytest.raises(
             InvalidOffsetError,
@@ -1128,6 +1173,7 @@ class TestZonedDateTimeParse:
             ZonedDateTime.parse(
                 "2024-03-15 14:30+05:00[Europe/Paris]",
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
+                **kwargs,
             )
 
     def test_minute_precision_offset_matching(self):
@@ -1137,7 +1183,9 @@ class TestZonedDateTimeParse:
         )
         assert result.offset == TimeDelta(seconds=-(25 * 60 + 21))
 
-        with pytest.raises(InvalidOffsetError):
+        with pytest.raises(
+            InvalidOffsetError, match="does not match time zone"
+        ):
             ZonedDateTime.parse(
                 "1900-01-01 00:00-00:25:00[Europe/Dublin]",
                 pattern="YYYY-MM-DD HH:mmxxxxx'['VV']'",
@@ -1259,7 +1307,7 @@ class TestZonedDateTimeParse:
         ],
     )
     def test_keep_local_raise(self, value, error):
-        with pytest.raises(error):
+        with pytest.raises(error, match="is (skipped|repeated)"):
             ZonedDateTime.parse(
                 value,
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
@@ -1349,6 +1397,35 @@ class TestZonedDateTimeParse:
             ZonedDateTime.parse(
                 "Mon 2024-03-15 14:30+01:00[Europe/Paris]",
                 pattern="EEE YYYY-MM-DD HH:mmxxx'['VV']'",
+            )
+
+    @pytest.mark.parametrize(
+        "s, pattern",
+        [
+            # the skipped day in Apia resolves to the next day
+            ("2011-12-30 12:00[Pacific/Apia]", "YYYY-MM-DD HH:mm'['VV']'"),
+            # a UTC time that is the next day in Tokyo
+            ("2024-03-15 23:30Z[Asia/Tokyo]", "YYYY-MM-DD HH:mmXXX'['VV']'"),
+        ],
+    )
+    def test_weekday_is_checked_against_the_written_date(self, s, pattern):
+        resolved = ZonedDateTime.parse(
+            s, pattern=pattern, disambiguation="compatible"
+        )
+        assert resolved.date().day_of_week() is Weekday.SATURDAY
+        assert (
+            ZonedDateTime.parse(
+                f"Fri {s}",
+                pattern=f"EEE {pattern}",
+                disambiguation="compatible",
+            )
+            == resolved
+        )
+        with pytest.raises(ValueError, match="^weekday does not match"):
+            ZonedDateTime.parse(
+                f"Sat {s}",
+                pattern=f"EEE {pattern}",
+                disambiguation="compatible",
             )
 
 
@@ -1471,7 +1548,7 @@ class TestSecurityEdgeCases:
             Date.parse("2024", pattern=pattern)
 
     def test_empty_input(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="expected 4 digits"):
             Date.parse("", pattern="YYYY-MM-DD")
 
     def test_empty_pattern_on_empty_input(self):
@@ -1836,3 +1913,82 @@ class TestDunderFormat:
         assert f"{x}" == str(x)
         with pytest.raises(TypeError):
             format(x, "YYYY")
+
+
+_PATTERN_CASES: list[tuple[Any, str]] = [
+    (Date(2024, 3, 15), "YYYY-MM-DD"),
+    (Time(14, 30), "HH:mm"),
+    (PlainDateTime(2024, 3, 15, 14, 30), "YYYY-MM-DD HH:mm"),
+    (
+        OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(2)),
+        "YYYY-MM-DD HH:mmxxx",
+    ),
+    (
+        ZonedDateTime(2024, 3, 15, 14, 30, tz="Europe/Paris"),
+        "YYYY-MM-DD HH:mmxxx'['VV']'",
+    ),
+    (Instant.from_utc(2024, 3, 15, 14, 30), "YYYY-MM-DD HH:mmXXX"),
+]
+
+
+class _Pattern(str, enum.Enum):
+    # A str mixin enum, like StrEnum, which is not in Python 3.10
+    DATE = "YYYY-MM-DD"
+    TIME = "HH:mm"
+    PLAIN = "YYYY-MM-DD HH:mm"
+    OFFSET = "YYYY-MM-DD HH:mmxxx"
+    ZONED = "YYYY-MM-DD HH:mmxxx'['VV']'"
+    INSTANT = "YYYY-MM-DD HH:mmXXX"
+
+
+@pytest.mark.parametrize("value, pattern", _PATTERN_CASES)
+@pytest.mark.parametrize("wrap", [StrSubclass, _Pattern])
+def test_str_subclasses_are_accepted(value, pattern, wrap):
+    text = value.format(pattern)
+    assert value.format(wrap(pattern)) == text
+    assert format(value, wrap(pattern)) == text
+    assert type(value).parse(StrSubclass(text), pattern=wrap(pattern)) == value
+
+
+def _pattern_calls(value: Any, pattern: str) -> list[Callable[[str], object]]:
+    cls = type(value)
+    text = value.format(pattern)
+    iso = str(value)
+    return [
+        lambda x: value.format(pattern + x),
+        lambda x: cls.parse(text + x, pattern=pattern),
+        lambda x: cls.parse(text, pattern=pattern + x),
+        lambda x: cls.parse_iso(iso + x),
+        lambda x: cls(iso + x),
+    ]
+
+
+_SURROGATE_CASES = [
+    *(c for v, p in _PATTERN_CASES for c in _pattern_calls(v, p)),
+    lambda x: TimeDelta.parse_iso("PT1H" + x),
+    lambda x: ItemizedDelta.parse_iso("P1D" + x),
+    lambda x: ItemizedDateDelta.parse_iso("P1D" + x),
+    lambda x: OffsetDateTime.parse_rfc2822(
+        "Tue, 13 Jul 2021 09:45:00 -090" + x
+    ),
+    lambda x: Instant.parse_rfc2822("Tue, 13 Jul 2021 09:45:00 -090" + x),
+]
+
+
+@pytest.mark.parametrize("call", _SURROGATE_CASES)
+def test_lone_surrogate_is_rejected(call):
+    # The Rust extension raises the codec's UnicodeEncodeError, a ValueError
+    with pytest.raises(ValueError):
+        call("\ud800")
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: ZonedDateTime(2024, 1, 1, tz="Europe/Pari\ud800"),
+        lambda: Instant.from_utc(2024, 1, 1).to_tz("Europe/Pari\ud800"),
+    ],
+)
+def test_lone_surrogate_names_no_time_zone(call):
+    with pytest.raises(TimeZoneNotFoundError):
+        call()

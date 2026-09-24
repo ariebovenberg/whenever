@@ -22,11 +22,17 @@ from ._common import (
     add_alternate_constructors,
     expect_int,
     final,
+    replace_fields,
     unpack_pickle,
     warn_deprecated,
 )
 from ._math import days_in_month, is_leap
-from ._parse import _strict_int, monthday_from_iso, yearmonth_from_iso
+from ._parse import (
+    _parse_err,
+    _strict_int,
+    monthday_from_iso,
+    yearmonth_from_iso,
+)
 
 # Avoid circular import: Date is referenced in type annotations only
 if TYPE_CHECKING:
@@ -199,7 +205,7 @@ class YearMonth(_Base):
             raise TypeError(
                 "replace() got an unexpected keyword argument 'day'"
             )
-        return YearMonth._from_py_unchecked(self._py.replace(**kwargs))
+        return YearMonth._from_py_unchecked(replace_fields(self._py, **kwargs))
 
     def add(self, *, years: int = 0, months: int = 0) -> YearMonth:
         """Shift this year-month by a number of years and months.
@@ -347,7 +353,10 @@ class YearMonth(_Base):
 # to the pickling format in the future
 @no_type_check
 def _unpkl_ym(data: bytes) -> YearMonth:
-    return YearMonth(*unpack_pickle("<HB", data))
+    try:
+        return YearMonth(*unpack_pickle("<HB", data))
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
 
 
 YearMonth.MIN = YearMonth._from_py_unchecked(_date.min)
@@ -467,7 +476,7 @@ class MonthDay(_Base):
             )
         try:
             py = self._py.replace(**kwargs)
-        except ValueError:
+        except (ValueError, OverflowError):
             # the stdlib message would name the dummy leap year
             raise ValueError("invalid date") from None
         return MonthDay._from_py_unchecked(py)
@@ -570,7 +579,10 @@ class MonthDay(_Base):
 # to the pickling format in the future
 @no_type_check
 def _unpkl_md(data: bytes) -> MonthDay:
-    return MonthDay(*unpack_pickle("<BB", data))
+    try:
+        return MonthDay(*unpack_pickle("<BB", data))
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
 
 
 MonthDay.MIN = MonthDay._from_py_unchecked(
@@ -829,30 +841,34 @@ class IsoWeekDate(_Base):
 @no_type_check
 def _unpkl_iwd(data: bytes) -> IsoWeekDate:
     year, week, day = unpack_pickle("<hBB", data)
-    return IsoWeekDate(year, week, Weekday(day))
+    try:
+        return IsoWeekDate(year, week, Weekday(day))
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
 
 
 def _parse_iso_week_date(s: str) -> tuple[int, int, int]:
     """Parse an ISO 8601 week date string like '2024-W01-1' or '2024W011'"""
     if not s.isascii():
-        raise ValueError(f"invalid ISO 8601 string: {s!r}")
-    if len(s) == 10 and s[4] == "-" and s[5] in "Ww" and s[8] == "-":
-        # Extended format: YYYY-Www-D
-        year = _strict_int(s[:4])
-        week = _strict_int(s[6:8])
-        day = _strict_int(s[9])
-    elif len(s) == 8 and s[4] in "Ww":
-        # Basic format: YYYYWwwD
-        year = _strict_int(s[:4])
-        week = _strict_int(s[5:7])
-        day = _strict_int(s[7])
-    else:
-        raise ValueError(f"invalid ISO 8601 string: {s!r}")
-    if not 1 <= day <= 7:
-        raise ValueError(f"invalid ISO weekday: {day}")
-    max_weeks = 53 if _is_long_year(year) else 52
-    if not 1 <= week <= max_weeks:
-        raise ValueError(f"invalid ISO week: {week}")
+        _parse_err(s)
+    try:
+        if len(s) == 10 and s[4] == "-" and s[5] in "Ww" and s[8] == "-":
+            # Extended format: YYYY-Www-D
+            year = _strict_int(s[:4])
+            week = _strict_int(s[6:8])
+            day = _strict_int(s[9])
+        elif len(s) == 8 and s[4] in "Ww":
+            # Basic format: YYYYWwwD
+            year = _strict_int(s[:4])
+            week = _strict_int(s[5:7])
+            day = _strict_int(s[7])
+        else:
+            _parse_err(s)
+        # The stdlib checks the week against the year, and the date against
+        # the supported range.
+        _date.fromisocalendar(year, week, day)
+    except ValueError:
+        _parse_err(s)
     return year, week, day
 
 

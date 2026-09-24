@@ -72,6 +72,9 @@ pub(crate) fn exc_os_error() -> PyObj {
 pub(crate) fn exc_runtime_error() -> PyObj {
     unsafe { PyObj::from_ptr_unchecked(PyExc_RuntimeError) }
 }
+pub(crate) fn exc_unicode_encode_error() -> PyObj {
+    unsafe { PyObj::from_ptr_unchecked(PyExc_UnicodeEncodeError) }
+}
 pub(crate) fn exc_zero_division_error() -> PyObj {
     unsafe { PyObj::from_ptr_unchecked(PyExc_ZeroDivisionError) }
 }

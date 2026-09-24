@@ -174,7 +174,8 @@ offset mismatch
 offset-preserving resolution
   How `replace()` and calendar arithmetic on a `ZonedDateTime` resolve their
   result: the current offset is kept when it is still valid for the new local
-  time, and disambiguation applies otherwise.
+  time, whatever the disambiguation policy says, and the policy applies
+  otherwise.
   Also called *keep offset* and *sticky offset*.
   See {ref}`offset-preserving`.
 

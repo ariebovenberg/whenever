@@ -85,7 +85,8 @@ ItemizedDelta("P3y5m14d")
 `until()` is the direction-reversed counterpart of `since()`:
 `a.until(b)` is equivalent to `b.since(a)`.
 
-Both methods work with exact units (`hours`, `minutes`, `seconds`, `nanoseconds`)
+Both methods work with exact units (`hours`, `minutes`, `seconds`, `nanoseconds`,
+and for `total=` also `milliseconds` and `microseconds`)
 *and* calendar units (`years`, `months`, `weeks`, `days`).
 The `-` operator only returns exact elapsed time.
 
@@ -243,14 +244,18 @@ When adding calendar units, the result may land in a DST transition.
 Pass `disambiguation` explicitly to control how this is resolved:
 
 ```python
->>> d = ZonedDateTime(2024, 10, 3, 1, 15, tz="America/Denver")
+>>> d = ZonedDateTime(2024, 2, 10, 2, 30, tz="America/Denver")
 >>> d.add(months=1, disambiguation="compatible")
-ZonedDateTime("2024-11-03 01:15:00-06:00[America/Denver]")
+ZonedDateTime("2024-03-10 03:30:00-06:00[America/Denver]")
 >>> d.add(months=1, disambiguation="raise")
 Traceback (most recent call last):
   ...
-whenever.RepeatedTime: 2024-11-03 01:15:00 is repeated in time zone 'America/Denver'
+whenever.SkippedTime: 2024-03-10 02:30:00 is skipped in time zone 'America/Denver'
 ```
+
+In a repeated hour, the result keeps the value's offset when that offset
+still occurs, whatever `disambiguation` says;
+see {ref}`offset-preserving`.
 
 The difference between `days` and `hours` is most visible during a DST transition:
 

@@ -8,11 +8,12 @@ from whenever import (
 
 
 class TestInit:
-    def test_valid(self):
-        assert MonthDay(12, 3) is not None
-        assert MonthDay(1, 1) is not None
-        assert MonthDay(12, 31) is not None
-        assert MonthDay(2, 29) is not None
+    @pytest.mark.parametrize(
+        "month, day", [(12, 3), (1, 1), (12, 31), (2, 29)]
+    )
+    def test_valid(self, month, day):
+        md = MonthDay(month, day)
+        assert (md.month, md.day) == (month, day)
 
     @pytest.mark.parametrize(
         "month, day",

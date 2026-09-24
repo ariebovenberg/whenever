@@ -133,11 +133,16 @@ For `x` and `X`, widths `xx` and `xxx` round offset seconds to the nearest
 minute, with half values rounded away from zero. Widths `x` and `X` apply the
 same rounding but require the result to be a whole number of hours; otherwise
 formatting raises {class}`ValueError`. Widths `xxxx` and `xxxxx` include offset
-seconds when nonzero and therefore preserve them exactly.
+seconds when nonzero and therefore preserve them exactly. An offset that
+rounds to 24 hours, such as `+23:59:45` written as `xxx`, raises
+{class}`ValueError`.
 
 When parsing a {class}`ZonedDateTime`, an offset without seconds is matched
-against the time zone offset rounded in the same way. An offset that includes
-seconds, and `Z`, must match exactly.
+against the time zone offset rounded in the same way, and an offset that
+includes seconds must match exactly. `Z` isn't matched against the time zone:
+it states a UTC instant, which is converted to the time zone.
+`"14:30Z Europe/Paris"` parses as 16:30+02:00, where `"14:30+00:00 Europe/Paris"`
+raises {class}`InvalidOffsetError`.
 
 `VV` requires a time zone ID. Formatting a time zone without one raises
 {class}`ValueError`.
@@ -177,7 +182,7 @@ ZonedDateTime("2024-07-15 14:30:00+02:00[Europe/Paris]")
 ## Literal text
 
 Common non-letter characters (`:`, `-`, `/`, `.`, `,`, `;`,
-`_`, `(`, `)`, digits, spaces, and other ASCII
+`_`, `(`, `)`, digits, spaces, tabs, newlines, and other ASCII
 punctuation) are treated as literals by default:
 
 ```python
@@ -194,11 +199,14 @@ open for future specifiers:
 '2024xx03'
 ```
 
-To include a literal single quote, use `''`:
+To include a literal single quote, use `''`,
+inside a quoted run or outside one:
 
 ```python
 >>> Date(2024, 3, 15).format("YYYY''MM")
 "2024'03"
+>>> Date(2024, 3, 15).format("'it''s' YYYY")
+"it's 2024"
 ```
 
 ### Restrictions
@@ -210,6 +218,8 @@ To include a literal single quote, use `''`:
 - **No duplicate specifiers**: A pattern cannot contain two specifiers that
   set the same value. For example, `MM` and `MMM` both set the month,
   so `"DD MM MMM YYYY"` is invalid.
+- **No AM/PM with the 24-hour clock**: `H` or `HH` together with `a` or `aa`
+  raises {class}`ValueError`. Use `i` or `ii` with AM/PM.
 
 ## Parsing requirements
 
@@ -217,7 +227,9 @@ Parsed input strings must contain only ASCII characters.
 
 Variable-width numeric specifiers must be separated from following digits. The
 same rule applies to specifiers that omit optional digits, such as trimmed
-fractions and the seconds component of `xxxx`/`xxxxx` offsets. `VV` must be
+fractions and the optional seconds of an `xxxx` offset. The optional seconds
+of an `xxxxx` offset start with a colon instead, so `xxxxx` can't be followed
+by a colon. `VV` must be
 the final specifier or be followed by a literal delimiter that cannot occur in a
 time zone ID. A dotted trimmed fraction cannot be followed by another
 dot, and when parsing it takes the dot only together with a digit:
@@ -233,6 +245,10 @@ Some types require specific specifiers in the parse pattern:
 
 All types that include a date require a year, a month, and a day, in any of
 their spellings; `DD MMM YYYY` is complete.
+
+Month names, weekday names, and AM/PM are matched case-insensitively:
+`jan`, `JANUARY`, and `pm` all parse. The 12-hour clock `ii` accepts hours
+1 to 12 only.
 
 A second value of ``60`` (leap second) is accepted and normalized to ``59``.
 See [](faq-leap-seconds) for details.

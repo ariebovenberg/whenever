@@ -69,7 +69,8 @@ A {class}`Date` also finds dates near it:
 - {meth}`~Date.nth_weekday_of_month` finds the n-th occurrence of a weekday
   in the date's month; negative `n` counts from the end.
 - {meth}`~Date.start_of` and {meth}`~Date.end_of` give the first and last
-  day of the date's year, month, or week; see {ref}`rounding`.
+  day of the date's year or month, or of its week with `"week_mon"` or
+  `"week_sun"`; see {ref}`rounding`.
 
 ## Time
 

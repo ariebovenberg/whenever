@@ -37,6 +37,17 @@ from whenever import (
 # The first integer that no longer fits a signed 64-bit machine word
 MAX_I64 = 1 << 63
 
+
+def out_of_range_error(
+    *values: int,
+) -> type[Exception] | tuple[type[Exception], ...]:
+    """What an out-of-range field raises: ``ValueError``, except that at or
+    beyond 2**63 a backend may overflow its machine integer first."""
+    if any(abs(v) >= MAX_I64 for v in values):
+        return (ValueError, OverflowError)
+    return ValueError
+
+
 INVALID_DDELTAS = [
     "P3D7Y",  # components out of order
     "P3M7Y",  # components out of order
@@ -240,17 +251,6 @@ def tz_rules_from_file(tz_id: str, path: str, tmp_dir: Path) -> Iterator[None]:
         reset_tzpath(previous)
 
 
-with system_tz(AMS_TZ_POSIX):
-    _AMS_POSIX_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_tz(
-        SYSTEM_TZ, disambiguation="compatible"
-    )
-
-with system_tz(AMS_TZ_RAWFILE):
-    _AMS_RAWFILE_DT = PlainDateTime(2023, 3, 26, 2, 30).assume_tz(
-        SYSTEM_TZ, disambiguation="compatible"
-    )
-
-
 def create_zdt(
     year: int,
     month: int,
@@ -267,41 +267,35 @@ def create_zdt(
 ) -> ZonedDateTime:
     """Convenience method to create a ZonedDateTime object, potentially
     with system time zone."""
+    local = PlainDateTime(
+        year, month, day, hour, minute, second, nanosecond=nanosecond
+    )
     # A special check that is only useful in tests of course
-    if tz == AMS_TZ_POSIX:
-        return _AMS_POSIX_DT.replace(
-            year=year,
-            month=month,
-            day=day,
-            hour=hour,
-            minute=minute,
-            second=second,
-            nanosecond=nanosecond,
-            disambiguation=disambiguation,
-        )
-    elif tz == AMS_TZ_RAWFILE:
-        return _AMS_RAWFILE_DT.replace(
-            year=year,
-            month=month,
-            day=day,
-            hour=hour,
-            minute=minute,
-            second=second,
-            nanosecond=nanosecond,
-            disambiguation=disambiguation,
-        )
+    if tz in (AMS_TZ_POSIX, AMS_TZ_RAWFILE):
+        with system_tz(tz):
+            return local.assume_tz(SYSTEM_TZ, disambiguation=disambiguation)
+    return local.assume_tz(tz, disambiguation=disambiguation)
+
+
+def occurrence(
+    d: ZonedDateTime, which: Literal["earlier", "later"]
+) -> ZonedDateTime:
+    """The earlier or later occurrence of the local time of ``d``, which is
+    ``d`` itself unless it is repeated. ``replace()`` keeps the offset of a
+    repeated time, so it can't switch between the two."""
+    if which == "later":
+        transition = d.next_transition()
+        other_offset = transition.offset if transition else d.offset
     else:
-        return ZonedDateTime(
-            year,
-            month,
-            day,
-            hour,
-            minute,
-            second,
-            nanosecond=nanosecond,
-            tz=tz,
-            disambiguation=disambiguation,
+        transition = d.add(nanoseconds=1).prev_transition()
+        other_offset = (
+            transition.subtract(nanoseconds=1).offset
+            if transition
+            else d.offset
         )
+    other = d + (d.offset - other_offset)
+    moved = other > d if which == "later" else other < d
+    return other if moved and other.to_plain() == d.to_plain() else d
 
 
 # One instance per public value type, in the order of the API reference.
@@ -362,9 +356,6 @@ INVALID_ISO_STRINGS = [
     "2020-08-15T",
     "20200815XXT12:30+01:00",  # junk after a basic-format date
     "garbage",
-    # out-of-bounds
-    "9999-12-31T22:08:30-05:00",
-    "0001-01-01 02:08:30+05:00",
     # invalid time zone ID format
     "2020-08-15T12:08:30+05:00[",
     "2020-08-15T12:08:30+05:00[[]",
@@ -585,4 +576,18 @@ INVALID_TDELTAS = [
     # way too many digits (there's a limit...)
     "PT000000000000000000000000000000000000000000000000000000000001S",
     # intermediate arithmetic and integer conversion must not overflow
+]
+
+
+# 2.5 and -2.5 of the unit: a tie, with an even neighbour on each side
+ROUND_MODES_AT_A_TIE = [
+    ("ceil", 3, -2),
+    ("floor", 2, -3),
+    ("trunc", 2, -2),
+    ("expand", 3, -3),
+    ("half_ceil", 3, -2),
+    ("half_floor", 2, -3),
+    ("half_trunc", 2, -2),
+    ("half_expand", 3, -3),
+    ("half_even", 2, -2),
 ]

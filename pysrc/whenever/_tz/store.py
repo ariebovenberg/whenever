@@ -214,7 +214,8 @@ def _scan_tzdir(path: str) -> _TzDirIndex | None:
                     # the filesystem enumerates first.
                     index.setdefault(n.lower(), n)
         return index
-    except OSError:
+    # ValueError: an embedded NUL, which no directory can have
+    except (OSError, ValueError):
         return None
 
 
@@ -350,36 +351,51 @@ def reset_system_tz() -> None:
 
 
 def _read_system_tz() -> TimeZone:
-    tz_type, tz_value = system.get_tz()
-    if not tz_value:
-        # An empty TZ is UTC, as the C library reads it: the database's
-        # entry when a source has it, else the POSIX string.
-        try:
-            return get_tz("UTC")
-        except TimeZoneNotFoundError:
-            return TimeZone.parse_posix("UTC0")
-    if tz_type == 0:  # IANA TZID
-        return get_tz(tz_value)
-    elif tz_type == 2:  # IANA TZID or Posix string (we don't know which)
-        try:
-            return get_tz(tz_value)
-        except TimeZoneNotFoundError:
-            # If the key is not found, it might be a PosixTz string
+    match system.get_tz():
+        case (_, ""):
+            # An empty TZ is UTC, as the C library reads it: the database's
+            # entry when a source has it, else the POSIX string.
             try:
-                return TimeZone.parse_posix(tz_value)
-            except ValueError:
-                raise TimeZoneNotFoundError(
-                    f"{tz_value!r} is not a time zone ID or POSIX TZ string"
-                ) from None
-    else:  # file-based time zone (no key)
-        assert tz_type == 1, "Unknown system time zone type"
-        try:
-            with open(tz_value, "rb") as f:
-                return TimeZone.parse_tzif(f.read())
-        except (OSError, ValueError):
-            raise TimeZoneNotFoundError(
-                f"no time zone found at path {tz_value!r}"
-            ) from None
+                return get_tz("UTC")
+            except TimeZoneNotFoundError:
+                return TimeZone.parse_posix("UTC0")
+        case (0, tzid):
+            return get_tz(tzid)
+        case (2, value):  # a zone ID or a POSIX TZ string (unknown which)
+            try:
+                return get_tz(value)
+            except TimeZoneNotFoundError:
+                try:
+                    return TimeZone.parse_posix(value)
+                except ValueError:
+                    raise TimeZoneNotFoundError(
+                        f"{value!r} is not a time zone ID or POSIX TZ string"
+                    ) from None
+        case (1, path, tzid):
+            return _read_system_tz_file(path, tzid)
+    raise AssertionError("unknown system time zone type")  # pragma: no cover
+
+
+def _read_system_tz_file(path: str, tzid: str) -> TimeZone:
+    try:
+        # Only a regular file: reading a FIFO would block
+        if not os.path.isfile(path):
+            raise FileNotFoundError()
+        with open(path, "rb") as f:
+            data = f.read()
+        tz = TimeZone.parse_tzif(data)
+    except (OSError, ValueError):
+        raise TimeZoneNotFoundError(
+            f"no time zone found at path {path!r}"
+        ) from None
+    # The suggested ID holds only if the database agrees on the rules.
+    try:
+        known = get_tz(tzid) if tzid else None
+    except TimeZoneNotFoundError:
+        known = None
+    if known is not None and TimeZone.parse_tzif(data, known.key) == known:
+        return known
+    return tz
 
 
 class TimeZoneNotFoundError(ValueError):

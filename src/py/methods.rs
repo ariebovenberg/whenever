@@ -168,7 +168,7 @@ macro_rules! method_vararg(
                         catch_panic!($meth(
                             unsafe {slf.type_().assume_class::<$typ>().into()},
                             FromWrapped::from_wrapped(wrapped),
-                            unsafe {std::slice::from_raw_parts(args.cast::<PyObj>(), nargs as usize)},
+                            unsafe {crate::py::args_slice(args, nargs)},
                         ).to_py_owned_ptr())
                     }
                     _wrap
@@ -201,7 +201,7 @@ macro_rules! modmethod_vararg(
                                 .as_ref()
                                 .unwrap()
                             },
-                            unsafe {std::slice::from_raw_parts(args.cast::<PyObj>(), nargs as usize)},
+                            unsafe {crate::py::args_slice(args, nargs)},
                         )
                         .to_py_owned_ptr())
                     }
@@ -234,7 +234,7 @@ macro_rules! method_kwargs(
                         catch_panic!($meth(
                             unsafe {slf.type_().assume_class::<$typ>().into()},
                             FromWrapped::from_wrapped(wrapped),
-                            unsafe {std::slice::from_raw_parts(args_raw.cast::<PyObj>(), nargs as usize)},
+                            unsafe {crate::py::args_slice(args_raw, nargs)},
                             &mut unsafe {IterKwargs::new(kwnames, args_raw.offset(nargs as isize))},
                         ).to_py_owned_ptr())
                     }
@@ -262,7 +262,7 @@ macro_rules! classmethod_kwargs(
                         let nargs = unsafe {PyVectorcall_NARGS(nargsf as usize)};
                         catch_panic!($meth(
                             unsafe {PyType::from_ptr_unchecked(cls).assume_class::<$typ>().into()},
-                            unsafe {std::slice::from_raw_parts(args_raw.cast::<PyObj>(), nargs as usize)},
+                            unsafe {crate::py::args_slice(args_raw, nargs)},
                             &mut unsafe {IterKwargs::new(kwnames, args_raw.offset(nargs as isize))},
                         ).to_py_owned_ptr())
                     }
@@ -387,6 +387,23 @@ macro_rules! getter(
         }
     };
 );
+
+/// The positional arguments of a fastcall function as a slice.
+/// CPython may pass a null `args` when `nargs` is zero
+/// (e.g. through `PyObject_CallNoArgs`), which `from_raw_parts` doesn't allow.
+///
+/// # Safety
+/// `args` must point to `nargs` valid objects, or `nargs` must be zero.
+pub(crate) unsafe fn args_slice<'a>(
+    args: *const *mut pyo3_ffi::PyObject,
+    nargs: pyo3_ffi::Py_ssize_t,
+) -> &'a [crate::py::PyObj] {
+    if nargs == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(args.cast::<crate::py::PyObj>(), nargs as usize) }
+    }
+}
 
 macro_rules! catch_panic {
     ($e:expr) => {

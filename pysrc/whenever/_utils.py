@@ -8,7 +8,7 @@ from threading import RLock
 from typing import Any, Iterable, Iterator, Protocol
 from warnings import warn
 
-from ._common import DAYS_NOT_ALWAYS_24H_MSG, UNSET
+from ._common import DAYS_NOT_ALWAYS_24H_MSG, SPHINX_RUNNING, UNSET
 from ._core import (
     DaysAssumed24HoursWarning,
     Instant,
@@ -383,3 +383,16 @@ def _is_tzifile(p: str) -> bool:
             return f.read(4) == b"TZif"
     except OSError:  # pragma: no cover
         return False
+
+
+# Report the public module, so help() and pickling don't point at this one
+if not SPHINX_RUNNING:  # pragma: no branch
+    for _obj in (
+        TimePatch,
+        patch_current_time,
+        reset_tzpath,
+        clear_tzcache,
+        available_timezones,
+    ):
+        _obj.__module__ = "whenever"
+    del _obj

@@ -43,7 +43,8 @@ from ._common import (
     _MAX_SUBSEC_NANOS,
     DAYS_NOT_ALWAYS_24H_MSG,
     DUMMY_LEAP_YEAR,
-    EPOCH_ORDINAL,
+    EPOCH_SECS_MAX,
+    EPOCH_SECS_MIN,
     NS_PER_DAY,
     OFFSET_DATETIME_DOCS_MSG,
     OFFSET_SHIFT_STALE_MSG,
@@ -74,6 +75,7 @@ from ._common import (
     invalid,
     mk_fixed_tzinfo,
     normalize_renamed_keyword,
+    replace_fields,
     split_timestamp,
     timestamp_from_parts,
     tzid_display,
@@ -310,9 +312,10 @@ def _resolve_disambiguation(
 ) -> tuple[_datetime, bool]:
     """Resolve the naive ``dt`` in ``tz``, and whether the default decided.
 
-    An omitted ``disambiguation`` is ``"compatible"``, except that a repeated
-    local time keeps ``preferred_offset`` (the value's current offset) while
-    it still applies. The flag is set where that default had to choose: the
+    A repeated local time keeps ``preferred_offset`` (the value's current
+    offset) while it still applies, whatever ``disambiguation`` says; only
+    otherwise does ``disambiguation`` decide, and an omitted one is
+    ``"compatible"``. The flag is set where that default had to choose: the
     public method then emits ``ImplicitDisambiguationWarning`` from its own
     frame, and a derived value's caller ignores it.
     """
@@ -320,18 +323,18 @@ def _resolve_disambiguation(
     implicit = False
     if disambiguation is UNSET:
         disambiguation = "compatible"
-        match ambiguity:
-            case Unique():
-                pass
-            case Fold(_, earlier_offset, later_offset) if preferred_offset in (
-                earlier_offset,
-                later_offset,
-            ):
-                disambiguation = (
-                    "later" if preferred_offset == later_offset else "earlier"
-                )
-            case _:
-                implicit = True
+        implicit = not isinstance(ambiguity, Unique)
+    else:
+        check_disambiguation(disambiguation)
+    match ambiguity:
+        case Fold(_, earlier_offset, later_offset) if preferred_offset in (
+            earlier_offset,
+            later_offset,
+        ):
+            disambiguation = (
+                "later" if preferred_offset == later_offset else "earlier"
+            )
+            implicit = False
     return resolve_ambiguity(
         dt, tz, disambiguation, ambiguity, nanos
     ), implicit
@@ -855,6 +858,8 @@ class Date(_Base):
         You can use methods like :meth:`~PlainDateTime.assume_utc`
         or :meth:`~PlainDateTime.assume_tz` to find the corresponding exact time.
         """
+        if not isinstance(time, Time):
+            raise TypeError("at() argument must be a Time")
         return PlainDateTime._from_py_unchecked(
             _datetime.combine(self._py_date, time._py), time._nanos
         )
@@ -866,7 +871,9 @@ class Date(_Base):
     def _init_from_py(self, d: _date) -> None:
         # Rebuilding from the fields drops a subclass (and a datetime's time)
         self._py_date = (
-            d if type(d) is _date else _date(d.year, d.month, d.day)
+            d
+            if type(d) is _date
+            else _date(*_base_fields(d, _date, ("year", "month", "day")))
         )
         warn_lossy_stdlib_subclass(d, _date)
 
@@ -982,7 +989,7 @@ class Date(_Base):
         >>> d.replace(day=4)
         Date("2021-01-04")
         """
-        return Date._from_py_unchecked(self._py_date.replace(**kwargs))
+        return Date._from_py_unchecked(replace_fields(self._py_date, **kwargs))
 
     @overload
     def add(self, delta: ItemizedDateDelta, /) -> Date: ...
@@ -1135,6 +1142,8 @@ class Date(_Base):
             If ``total`` is specified, as a float number of the specified unit.
 
         """
+        if not isinstance(other, Date):
+            raise TypeError("since() argument must be a Date")
         total, units, effective_round_mode, effective_increment = (
             _parse_difference_kwargs(
                 total, in_units, round_mode, round_increment, date_only=True
@@ -1197,6 +1206,8 @@ class Date(_Base):
         """Companion to :meth:`since` that calculates the difference until another date.
         See :meth:`since` for more information.
         """
+        if not isinstance(other, Date):
+            raise TypeError("until() argument must be a Date")
         return other.since(  # type: ignore[call-overload, no-any-return]
             self,
             total=total,
@@ -1282,7 +1293,10 @@ class Date(_Base):
 # to the pickling format in the future
 @no_type_check
 def _unpkl_date(data: bytes) -> Date:
-    return Date(*unpack_pickle("<HBB", data))
+    try:
+        return Date(*unpack_pickle("<HBB", data))
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
 
 
 Date.MIN = Date._from_py_unchecked(_date.min)
@@ -1404,6 +1418,8 @@ class Time(_Base):
         >>> t.on(Date(2021, 1, 2)).assume_tz("America/New_York")
         ZonedDateTime("2021-01-02 12:30:00-05:00[America/New_York]")
         """
+        if not isinstance(date, Date):
+            raise TypeError("on() argument must be a Date")
         return PlainDateTime._from_py_unchecked(
             _datetime.combine(date._py_date, self._py),
             self._nanos,
@@ -1420,12 +1436,13 @@ class Time(_Base):
         return self._py.replace(microsecond=self._nanos // 1_000)
 
     def _init_from_py(self, t: _time, /) -> None:
-        if t.tzinfo is not None:
-            raise ValueError(f"time must be naive, got tzinfo={t.tzinfo!r}")
-        # Rebuilding from the fields drops a subclass and the fold
-        return self._init_from_inner(
-            (_time(t.hour, t.minute, t.second), t.microsecond * 1_000)
+        hour, minute, second, us, tzinfo = _base_fields(
+            t, _time, ("hour", "minute", "second", "microsecond", "tzinfo")
         )
+        if tzinfo is not None:
+            raise ValueError(f"time must be naive, got tzinfo={tzinfo!r}")
+        # Rebuilding from the fields drops a subclass and the fold
+        return self._init_from_inner((_time(hour, minute, second), us * 1_000))
 
     def format_iso(
         self,
@@ -1555,7 +1572,9 @@ class Time(_Base):
         Time("12:03:00.000004")
         """
         nanos = _pop_replace_nanos(kwargs, self._nanos)
-        return Time._from_py_unchecked(self._py.replace(**kwargs), nanos)
+        return Time._from_py_unchecked(
+            replace_fields(self._py, **kwargs), nanos
+        )
 
     def _to_ns_since_midnight(self) -> int:
         return (
@@ -1703,7 +1722,10 @@ class Time(_Base):
 # to the pickling format in the future
 def _unpkl_time(data: bytes) -> Time:
     *args, nanos = unpack_pickle("<BBBI", data)
-    return Time(*args, nanosecond=nanos)
+    try:
+        return Time(*args, nanosecond=nanos)
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
 
 
 Time.MIN = Time()
@@ -1798,7 +1820,9 @@ class TimeDelta(_Base):
     or :class:`~whenever.ItemizedDateDelta` for date-only deltas.
 
     The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
-    for example.
+    for example. Float inputs convert exactly down to the nanosecond, and
+    a fraction below one nanosecond is truncated toward zero:
+    ``seconds=1.5e-9`` is 1 nanosecond.
 
     >>> d = TimeDelta(hours=1, minutes=90)
     TimeDelta("PT2h30m")
@@ -1876,14 +1900,14 @@ class TimeDelta(_Base):
             microseconds=microseconds,
             nanoseconds=nanoseconds,
         )
+        if abs(ns) > _MAX_DELTA_NANOS:
+            raise ValueError(RANGE_MSG)
         if (weeks or days) and not days_assumed_24h_ok:
             warn(
                 DAYS_NOT_ALWAYS_24H_MSG,
                 DaysAssumed24HoursWarning,
                 stacklevel=3,  # extra frame from add_alternate_constructors
             )
-        if abs(ns) > _MAX_DELTA_NANOS:
-            raise ValueError(RANGE_MSG)
 
     __init__ = add_alternate_constructors(__init__, _timedelta)
 
@@ -1932,9 +1956,10 @@ class TimeDelta(_Base):
             it, days and weeks are taken as 24 and 168 hours. A
             :class:`ZonedDateTime` emits no warning. A :class:`PlainDateTime`
             ignores time zone transitions, and emits
-            :class:`NaiveArithmeticWarning`. An :class:`OffsetDateTime` holds
-            its offset fixed for the whole calculation, and emits
-            :class:`StaleOffsetWarning`.
+            :class:`NaiveArithmeticWarning` for a calendar unit. An
+            :class:`OffsetDateTime` holds its offset fixed for the whole
+            calculation, and emits :class:`StaleOffsetWarning` for a
+            calendar unit. An exact unit doesn't use the reference.
         days_assumed_24h_ok
             Accepts the :class:`~whenever.DaysAssumed24HoursWarning` of a
             day or week total without a reference.
@@ -1969,18 +1994,19 @@ class TimeDelta(_Base):
                 trunc_zdt = relative_to._with_date(
                     Date._from_py_unchecked(resolve_leap_day(trunc_date))
                 )
-
+                span = (
+                    relative_to._with_date(
+                        Date._from_py_unchecked(
+                            resolve_leap_day(expanded_date)
+                        )
+                    )
+                    - trunc_zdt
+                )
+                # A skipped day can make the two endpoints coincide. The
+                # truncated amount is then the whole total.
                 result = (
                     trunc_amount
-                    + (shifted - trunc_zdt)
-                    / (
-                        relative_to._with_date(
-                            Date._from_py_unchecked(
-                                resolve_leap_day(expanded_date)
-                            )
-                        )
-                        - trunc_zdt
-                    )
+                    + ((shifted - trunc_zdt) / span if span else 0.0)
                 ) * sign
                 if warning is not None:
                     warn(warning, stacklevel=2)
@@ -1994,7 +2020,13 @@ class TimeDelta(_Base):
                     )
             else:
                 raise TypeError("relative_to is required for years and months")
-        elif unit == "nanoseconds":
+        elif relative_to is not UNSET:
+            # An exact unit doesn't need the reference, but checks it as
+            # in_units() does.
+            _ideltas._reference_and_warning(
+                relative_to, True, False, naive_arithmetic_ok, stale_offset_ok
+            )
+        if unit == "nanoseconds":
             return self._total_ns
         try:
             return self._total_ns / NS_PER_UNIT_PLURAL[unit]
@@ -2113,15 +2145,39 @@ class TimeDelta(_Base):
         round_mode: RoundModeStr,
         round_increment: int,
     ) -> dict[ExactDeltaUnitStr, int]:
-
-        self = self.round(
-            # trim the last 's' from the smallest unit to get the singular form
-            units[-1][:-1],  # type: ignore[arg-type]
-            increment=round_increment,
-            mode=round_mode,
-            days_assumed_24h_ok=True,
-        )
-        remaining_ns = abs(self._total_ns)
+        """Split into the units, rounding the smallest to the increment.
+        Below a larger unit, only the component under that unit is rounded,
+        and rounding up carries into it: the smallest component stays a
+        multiple of the increment, below the next unit."""
+        # trim the last 's' from the smallest unit to get the singular form
+        smallest = units[-1][:-1]
+        if len(units) == 1:
+            remaining_ns = abs(
+                self.round(
+                    smallest,  # type: ignore[arg-type]
+                    increment=round_increment,
+                    mode=round_mode,
+                    days_assumed_24h_ok=True,
+                )._total_ns
+            )
+        else:
+            increment_ns = increment_to_ns_for_delta(smallest, round_increment)
+            next_ns = NS_PER_UNIT_PLURAL[units[-2]]
+            magnitude = abs(self._total_ns)
+            component = magnitude % next_ns
+            quotient, remainder = divmod(component, increment_ns)
+            remaining_ns = magnitude - remainder
+            if rounds_up(
+                round_mode,
+                remainder,
+                increment_ns,
+                quotient % 2 == 1,
+                1 if self._total_ns >= 0 else -1,
+            ):
+                remaining_ns += increment_ns
+                remaining_ns -= remaining_ns % next_ns % increment_ns
+            if remaining_ns > _MAX_DELTA_NANOS:
+                raise ValueError(RANGE_MSG)
         values = {}
         for u in units:
             values[u], remaining_ns = divmod(
@@ -2145,10 +2201,11 @@ class TimeDelta(_Base):
         return _timedelta(microseconds=self._total_ns // 1_000)
 
     def _init_from_py(self, td: _timedelta, /) -> None:
+        days, secs, us = _base_fields(
+            td, _timedelta, ("days", "seconds", "microseconds")
+        )
         self._total_ns = ns = (
-            td.microseconds * 1_000
-            + td.seconds * 1_000_000_000
-            + td.days * 24 * 3_600_000_000_000
+            us * 1_000 + secs * 1_000_000_000 + days * 24 * 3_600_000_000_000
         )
         if abs(ns) > _MAX_DELTA_NANOS:
             raise ValueError(RANGE_MSG)
@@ -2473,7 +2530,8 @@ class TimeDelta(_Base):
 
         The result is rounded half-even to the nearest nanosecond; an
         integer operand is exact, a ``float`` operand carries float
-        precision.
+        precision. Float keywords, as in ``TimeDelta(seconds=1.5e-9)``,
+        truncate below the nanosecond instead.
 
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d * 2.5
@@ -2619,7 +2677,10 @@ def _unpkl_tdelta(data: bytes) -> TimeDelta:
     s, ns = unpack_pickle("<qI", data)
     if ns >= 1_000_000_000:
         raise ValueError("invalid pickle data")
-    return TimeDelta(seconds=s, nanoseconds=ns)
+    try:
+        return TimeDelta(seconds=s, nanoseconds=ns)
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
 
 
 TimeDelta.ZERO = TimeDelta()
@@ -2870,12 +2931,13 @@ class _ExactTime(_BasicConversions):
             # mypy doesn't know that offset is never None
             _timezone(self._py_dt.utcoffset())  # type: ignore[arg-type]
             if offset is UNSET
-            else _load_offset(offset, warning_stacklevel=3)
+            else _load_offset(offset)
         )
         try:
             shifted = self._py_dt.astimezone(tzinfo)
         except OverflowError:
             raise ValueError(RANGE_MSG) from None
+        _warn_integer_offset(offset, stacklevel=3)
         return OffsetDateTime._from_py_unchecked(shifted, self._nanos)
 
     def to_tz(self, tz: str | _SystemTZ, /) -> ZonedDateTime:
@@ -2941,11 +3003,12 @@ class _ExactTime(_BasicConversions):
         .. deprecated:: 0.11
            Use :meth:`strict_eq` instead.
         """
+        result = self.strict_eq(other)
         warn_deprecated(
             "exact_eq() is deprecated; use strict_eq() instead",
             stacklevel=2,
         )
-        return self.strict_eq(other)
+        return result
 
     def difference(
         self,
@@ -3203,10 +3266,11 @@ class Instant(_ExactTime):
         >>> Instant.from_utc(2022, 10, 24, hour=17)
         Instant("2022-10-24 17:00:00Z")
         """
-        return cls._from_py_unchecked(
-            _datetime(year, month, day, hour, minute, second, 0, _UTC),
-            check_nanos(nanosecond),
-        )
+        try:
+            py_dt = _datetime(year, month, day, hour, minute, second, 0, _UTC)
+        except OverflowError:  # a field beyond a C int
+            raise ValueError(RANGE_MSG) from None
+        return cls._from_py_unchecked(py_dt, check_nanos(nanosecond))
 
     @classmethod
     def now(cls) -> Instant:
@@ -3246,11 +3310,12 @@ class Instant(_ExactTime):
 
         The inverse of the ``timestamp_millis()`` method.
         """
+        result = cls.from_timestamp(value, unit="millisecond")
         warn_deprecated(
             "from_timestamp_millis() is deprecated; use from_timestamp(..., unit='millisecond') instead",
             stacklevel=2,
         )
-        return cls.from_timestamp(value, unit="millisecond")
+        return result
 
     @classmethod
     def from_timestamp_nanos(cls, value: int, /) -> Instant:
@@ -3261,17 +3326,19 @@ class Instant(_ExactTime):
 
         The inverse of the ``timestamp_nanos()`` method.
         """
+        result = cls.from_timestamp(value, unit="nanosecond")
         warn_deprecated(
             "from_timestamp_nanos() is deprecated; use from_timestamp(..., unit='nanosecond') instead",
             stacklevel=2,
         )
-        return cls.from_timestamp(value, unit="nanosecond")
+        return result
 
     def _init_from_py(self, d: _datetime) -> None:
-        if d.tzinfo is None or d.utcoffset() is None:
+        py_dt = _strip_subclasses(d)
+        if py_dt.utcoffset() is None:
             raise ValueError("datetime is naive; use PlainDateTime() instead")
-        as_utc = check_utc_bounds(d).astimezone(_UTC)
-        self._py_dt = _strip_subclasses(as_utc.replace(microsecond=0))
+        as_utc = check_utc_bounds(py_dt).astimezone(_UTC)
+        self._py_dt = as_utc.replace(microsecond=0, fold=0)
         self._nanos = as_utc.microsecond * 1_000
         warn_lossy_stdlib_subclass(d, _datetime)
 
@@ -3550,7 +3617,8 @@ class Instant(_ExactTime):
         ``"day"`` is rejected: an instant has no calendar, so a day has no
         midnight to start at. ``round("hour", increment=24)`` gives periods
         of exactly 24 hours, counted from midnight UTC like every increment
-        on an :class:`Instant`.
+        on an :class:`Instant`. ``"half_even"`` also breaks a tie toward
+        the even multiple counted from that midnight, not from the epoch.
         """
         if unit == "day":
             raise ValueError(CANNOT_ROUND_DAY_MSG)
@@ -3619,10 +3687,13 @@ class Instant(_ExactTime):
 def _unpkl_utc(data: bytes) -> Instant:
     secs, nanos = unpack_pickle("<qL", data)
     if nanos >= 1_000_000_000:
-        raise ValueError(f"nanosecond out of range: {nanos}")
-    return Instant._from_py_unchecked(
-        _from_epoch_utc(secs - 62_135_683_200), nanos
-    )
+        raise ValueError("invalid pickle data")
+    try:
+        return Instant._from_py_unchecked(
+            _from_epoch_utc(secs - 62_135_683_200), nanos
+        )
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -3630,8 +3701,11 @@ def _unpkl_utc(data: bytes) -> Instant:
 def _unpkl_inst(data: bytes) -> Instant:
     secs, nanos = unpack_pickle("<qL", data)
     if nanos >= 1_000_000_000:
-        raise ValueError(f"nanosecond out of range: {nanos}")
-    return Instant._from_py_unchecked(_from_epoch_utc(secs), nanos)
+        raise ValueError("invalid pickle data")
+    try:
+        return Instant._from_py_unchecked(_from_epoch_utc(secs), nanos)
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
 
 
 @final
@@ -3705,19 +3779,12 @@ class OffsetDateTime(_ExactAndLocalTime):
         nanosecond: int = 0,
         offset: TimeDelta,
     ) -> None:
+        tzinfo = _load_offset(offset)
         self._py_dt = check_utc_bounds(
-            _datetime(
-                year,
-                month,
-                day,
-                hour,
-                minute,
-                second,
-                0,
-                _load_offset(offset, warning_stacklevel=4),
-            )
+            _datetime(year, month, day, hour, minute, second, 0, tzinfo)
         )
         self._nanos = check_nanos(nanosecond)
+        _warn_integer_offset(offset, stacklevel=4)
 
     __init__ = add_alternate_constructors(__init__, _datetime)
 
@@ -3741,19 +3808,20 @@ class OffsetDateTime(_ExactAndLocalTime):
         <https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance>`_.
         Pass ``stale_offset_ok=True`` when the fixed offset is intentional.
         """
+        tzinfo = _load_offset(offset)
+        secs, nanos = divmod(time_ns(), 1_000_000_000)
+        offset_secs = int(tzinfo.utcoffset(None).total_seconds())
+        result = cls._from_py_unchecked(
+            _from_epoch_offset(secs, offset_secs), nanos
+        )
+        _warn_integer_offset(offset, stacklevel=3)
         if not stale_offset_ok:
             warn(
                 OFFSET_NOW_STALE_MSG,
                 StaleOffsetWarning,
                 stacklevel=2,
             )
-        secs, nanos = divmod(time_ns(), 1_000_000_000)
-        return cls._from_py_unchecked(
-            _from_epoch_utc(secs).astimezone(
-                _load_offset(offset, warning_stacklevel=3)
-            ),
-            nanos,
-        )
+        return result
 
     def format_iso(
         self,
@@ -3910,11 +3978,12 @@ class OffsetDateTime(_ExactAndLocalTime):
     ) -> OffsetDateTime:
         # Validate and compute first: a call that raises emits no warning.
         secs, nanos = split_timestamp(value, unit)
-        tzinfo = _load_offset(offset, warning_stacklevel=4)
+        tzinfo = _load_offset(offset)
         try:
             local = _from_epoch_utc(secs).astimezone(tzinfo)
         except OverflowError:
             raise ValueError(RANGE_MSG) from None
+        _warn_integer_offset(offset, stacklevel=4)
         warn_deprecated(deprecation, stacklevel=3)
         if not stale_offset_ok:
             warn(
@@ -3926,16 +3995,15 @@ class OffsetDateTime(_ExactAndLocalTime):
 
     def _init_from_py(self, d: _datetime, **kwargs: Any) -> None:
         check_no_kwargs(kwargs, "OffsetDateTime")
-        if d.tzinfo is None or (offset := d.utcoffset()) is None:
+        py_dt = _strip_subclasses(d)
+        if (offset := py_dt.utcoffset()) is None:
             raise ValueError("datetime is naive; use PlainDateTime() instead")
         elif offset.microseconds:
             raise ValueError("offset must be a whole number of seconds")
         self._py_dt = check_utc_bounds(
-            _strip_subclasses(
-                d.replace(microsecond=0, tzinfo=_timezone(offset))
-            )
+            py_dt.replace(microsecond=0, tzinfo=_timezone(offset), fold=0)
         )
-        self._nanos = d.microsecond * 1_000
+        self._nanos = py_dt.microsecond * 1_000
         warn_lossy_stdlib_subclass(d, _datetime)
 
     if not TYPE_CHECKING:  # for a nicer autodoc
@@ -3978,17 +4046,13 @@ class OffsetDateTime(_ExactAndLocalTime):
         OffsetDateTime("2024-03-10 12:00:00-07:00")
         """
         nanos = _pop_replace_nanos(kwargs, self._nanos)
-        try:
-            kwargs["tzinfo"] = _load_offset(
-                kwargs.pop("offset"), warning_stacklevel=3
-            )
-        except KeyError:
-            offset_stated = False
-        else:
-            offset_stated = True
+        offset = kwargs.pop("offset", UNSET)
+        if offset_stated := offset is not UNSET:
+            kwargs["tzinfo"] = _load_offset(offset)
         result = self._from_py_unchecked(
-            check_utc_bounds(self._py_dt.replace(**kwargs)), nanos
+            check_utc_bounds(replace_fields(self._py_dt, **kwargs)), nanos
         )
+        _warn_integer_offset(offset, stacklevel=3)
         if not (offset_stated or stale_offset_ok):
             warn(
                 OFFSET_REPLACE_STALE_MSG,
@@ -4013,6 +4077,8 @@ class OffsetDateTime(_ExactAndLocalTime):
         >>> d.replace_date(Date(2024, 12, 25), stale_offset_ok=True)
         OffsetDateTime("2024-12-25 12:00:00-07:00")
         """
+        if not isinstance(date, Date):
+            raise TypeError("replace_date() argument must be a Date")
         result = self._from_py_unchecked(
             check_utc_bounds(
                 _datetime.combine(date._py_date, self._py_dt.timetz())
@@ -4043,6 +4109,8 @@ class OffsetDateTime(_ExactAndLocalTime):
         >>> d.replace_time(Time(8, 30), stale_offset_ok=True)
         OffsetDateTime("2024-03-09 08:30:00-07:00")
         """
+        if not isinstance(time, Time):
+            raise TypeError("replace_time() argument must be a Time")
         result = self._from_py_unchecked(
             check_utc_bounds(
                 _datetime.combine(
@@ -4149,18 +4217,19 @@ class OffsetDateTime(_ExactAndLocalTime):
         time zone.
         """
         if isinstance(delta, TimeDelta):
+            delta_secs, nanos = divmod(
+                delta._total_ns + self._nanos, 1_000_000_000
+            )
+            result = self._from_py_unchecked(
+                check_utc_bounds(_add_seconds(self._py_dt, delta_secs)),
+                nanos,
+            )
             warn(
                 OFFSET_SHIFT_STALE_MSG,
                 StaleOffsetWarning,
                 stacklevel=2,
             )
-            delta_secs, nanos = divmod(
-                delta._total_ns + self._nanos, 1_000_000_000
-            )
-            return self._from_py_unchecked(
-                check_utc_bounds(_add_seconds(self._py_dt, delta_secs)),
-                nanos,
-            )
+            return result
         return NotImplemented
 
     @overload
@@ -4185,18 +4254,19 @@ class OffsetDateTime(_ExactAndLocalTime):
         Measuring the difference to another exact time is silent.
         """
         if isinstance(other, TimeDelta):
+            delta_secs, nanos = divmod(
+                -other._total_ns + self._nanos, 1_000_000_000
+            )
+            result = self._from_py_unchecked(
+                check_utc_bounds(_add_seconds(self._py_dt, delta_secs)),
+                nanos,
+            )
             warn(
                 OFFSET_SHIFT_STALE_MSG,
                 StaleOffsetWarning,
                 stacklevel=2,
             )
-            delta_secs, nanos = divmod(
-                -other._total_ns + self._nanos, 1_000_000_000
-            )
-            return self._from_py_unchecked(
-                check_utc_bounds(_add_seconds(self._py_dt, delta_secs)),
-                nanos,
-            )
+            return result
         return super()._subtract_operator(other)
 
     def format_rfc2822(self) -> str:
@@ -4209,7 +4279,9 @@ class OffsetDateTime(_ExactAndLocalTime):
         "Sat, 15 Aug 2020 23:12:00 +0200"
         """
         offset = self._current_offset_secs()
-        offset_sign = "-" if offset < 0 else "+"
+        # -0000 means the offset is unknown; a known one under a minute
+        # truncates to +0000.
+        offset_sign = "-" if offset <= -60 else "+"
         offset = abs(offset)
         offset_h = offset // 3600
         offset_m = (offset % 3600) // 60
@@ -4547,16 +4619,20 @@ class OffsetDateTime(_ExactAndLocalTime):
             raise invalid("offset_mismatch", offset_mismatch)
         if disambiguation is not UNSET:
             check_disambiguation(disambiguation)
-        result = self.to_tz(tz)
-        if (
-            offset_mismatch == "keep_instant"
-            or result._py_dt.utcoffset() == self._py_dt.utcoffset()
-        ):
-            return result
-        elif offset_mismatch == "raise":
-            raise InvalidOffsetError._for_tz(
-                self._current_offset_secs(), result.tz_id
+        _tz = _load_tz(tz)
+        # Compare offsets before converting: the instant may have no local
+        # time in the time zone while the local time is valid there.
+        offset = self._current_offset_secs()
+        if _tz.offset_for_instant(int(self._py_dt.timestamp())) == offset:
+            return ZonedDateTime._from_py_unchecked(
+                self._py_dt, self._nanos, _tz
             )
+        elif offset_mismatch == "keep_instant":
+            return ZonedDateTime._from_py_unchecked(
+                _tz.convert(self._py_dt), self._nanos, _tz
+            )
+        elif offset_mismatch == "raise":
+            raise InvalidOffsetError._for_tz(offset, _tz.key)
         else:  # offset_mismatch == "keep_local":
             result, implicit = self.to_plain()._assume_tz(tz, disambiguation)
             if implicit:
@@ -4697,11 +4773,14 @@ class OffsetDateTime(_ExactAndLocalTime):
 # Also, it allows backwards-compatible changes to the pickling format.
 def _unpkl_offset(data: bytes) -> OffsetDateTime:
     *args, nanos, offset_secs = unpack_pickle("<HBBBBBil", data)
-    return OffsetDateTime(
-        *args,
-        nanosecond=nanos,
-        offset=TimeDelta(seconds=offset_secs),
-    )
+    try:
+        return OffsetDateTime(
+            *args,
+            nanosecond=nanos,
+            offset=TimeDelta(seconds=offset_secs),
+        )
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
 
 
 @final
@@ -5180,15 +5259,18 @@ class ZonedDateTime(_ExactAndLocalTime):
             )
         if state.year is None or state.month is None or state.day is None:
             raise ValueError("pattern must include a year, a month, and a day")
+        local = _datetime(
+            state.year,
+            state.month,
+            state.day,
+            state.hour or 0,
+            state.minute or 0,
+            state.second or 0,
+        )
+        if state.weekday is not None and local.weekday() != state.weekday:
+            raise ValueError("weekday does not match the date")
         written = ZonedInput(
-            _datetime(
-                state.year,
-                state.month,
-                state.day,
-                state.hour or 0,
-                state.minute or 0,
-                state.second or 0,
-            ),
+            local,
             state.nanos,
             get_tz(state.tz_id),
             (
@@ -5209,8 +5291,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._py_dt = resolved
         self._nanos = written.nanos
         self._tz = written.tz
-        if state.weekday is not None and resolved.weekday() != state.weekday:
-            raise ValueError("weekday does not match the date")
         if implicit:
             _warn_implicit_disambiguation(stacklevel=2)
         warn_pattern(elements, stacklevel=3)
@@ -5303,28 +5383,30 @@ class ZonedDateTime(_ExactAndLocalTime):
         check_no_kwargs(kwargs, "ZonedDateTime")
         if disambiguation is not UNSET:
             check_disambiguation(disambiguation)
-        if d.tzinfo is None:
+        py_dt = _strip_subclasses(d)
+        tzinfo = py_dt.tzinfo
+        if tzinfo is None:
             raise ValueError("datetime is naive; use PlainDateTime() instead")
-        if not isinstance(d.tzinfo, ZoneInfo):
-            raise ValueError(f"tzinfo must be a ZoneInfo, got {d.tzinfo!r}")
-        if d.tzinfo.key is None:
+        if not isinstance(tzinfo, ZoneInfo):
+            raise ValueError(f"tzinfo must be a ZoneInfo, got {tzinfo!r}")
+        if tzinfo.key is None:
             raise ValueError(ZONEINFO_NO_KEY_MSG)
-        if not isinstance(d.tzinfo.key, str):
+        if not isinstance(tzinfo.key, str):
             raise TypeError("ZoneInfo key must be a string")
 
         # The datetime is read the way its own tzinfo reads it: local fields,
         # the offset ZoneInfo computes for them, and a time zone ID. That is the
         # same shape as an ISO string with an offset and a time zone ID, so it
         # goes through the same resolution flow.
-        offset = d.utcoffset()
+        offset = py_dt.utcoffset()
         assert offset is not None
         if offset.microseconds:  # pragma: no cover
             # Unreachable via ZoneInfo: the TZif format stores whole seconds.
             raise ValueError("offset must be a whole number of seconds")
         written = ZonedInput(
-            _strip_subclasses(d.replace(tzinfo=None, microsecond=0, fold=0)),
-            d.microsecond * 1_000,
-            get_tz(d.tzinfo.key),
+            py_dt.replace(tzinfo=None, microsecond=0, fold=0),
+            py_dt.microsecond * 1_000,
+            get_tz(tzinfo.key),
             _timezone(offset),
             True,
         )
@@ -5356,6 +5438,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> d.replace_date(Date(2023, 10, 30))
         ZonedDateTime("2023-10-30 02:30:00+01:00[Europe/Paris]")
         """
+        if not isinstance(date, Date):
+            raise TypeError("replace_date() argument must be a Date")
         disambiguation, renamed = _normalize_disambiguation(
             disambiguation,
             kwargs,
@@ -5407,6 +5491,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> d.replace_time(Time(12))
         ZonedDateTime("2023-10-29 12:00:00+01:00[Europe/Paris]")
         """
+        if not isinstance(time, Time):
+            raise TypeError("replace_time() argument must be a Time")
         disambiguation, renamed = _normalize_disambiguation(
             disambiguation,
             kwargs,
@@ -5462,18 +5548,19 @@ class ZonedDateTime(_ExactAndLocalTime):
         ---------
         Replacing fields keeps the current offset while it is valid for the
         new local time (**offset-preserving resolution**), so a repeated
-        local time stays on its side of the transition. A skipped local
-        time, a changed ``tz=``, or an offset that no longer applies falls
-        to ``disambiguation=``, which is ``"compatible"`` with
-        :class:`ImplicitDisambiguationWarning` when omitted. A stated ``tz=``
-        keeps the local fields and moves the instant; :meth:`to_tz` keeps
-        the instant. See :ref:`offset-preserving`.
+        local time stays on its side of the transition, whatever
+        ``disambiguation=`` says. A skipped local time, a changed ``tz=``,
+        or an offset that no longer applies falls to ``disambiguation=``,
+        which is ``"compatible"`` with :class:`ImplicitDisambiguationWarning`
+        when omitted. A stated ``tz=`` keeps the local fields and moves the
+        instant; :meth:`to_tz` keeps the instant. See
+        :ref:`offset-preserving`.
 
         >>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz="Europe/Paris", disambiguation="later")
         >>> d.replace(minute=45)  # still the second occurrence
         ZonedDateTime("2023-10-29 02:45:00+01:00[Europe/Paris]")
-        >>> d.replace(minute=45, disambiguation="earlier")
-        ZonedDateTime("2023-10-29 02:45:00+02:00[Europe/Paris]")
+        >>> d.replace(minute=45, disambiguation="earlier")  # the offset still decides
+        ZonedDateTime("2023-10-29 02:45:00+01:00[Europe/Paris]")
 
         Pass ``SYSTEM_TZ`` as ``tz=`` for the system time zone.
 
@@ -5498,7 +5585,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         else:
             tz = _load_tz(tzid)
         resolved, implicit = _resolve_disambiguation(
-            self._py_dt.replace(**kwargs, tzinfo=None),
+            replace_fields(self._py_dt, **kwargs, tzinfo=None),
             tz,
             disambiguation,
             nanos,
@@ -5922,10 +6009,10 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         Note
         ----
-        Some time zones have unusual DST rules. For example,
-        Europe/Dublin defines its standard time as IST (UTC+1) and uses
-        "negative DST" in winter. In such cases, this method
-        returns a negative value during winter.
+        Some time zones have unusual DST rules. For example, some builds
+        of the time zone database define Europe/Dublin's standard time as
+        IST (UTC+1), with "negative DST" in winter. With such data, this
+        method returns a negative value during winter.
 
         The value can differ from ``zoneinfo``'s ``dst()``, which falls back
         to one hour when it cannot pair a DST period with a standard one.
@@ -5969,8 +6056,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         can't drift from the boundaries it measures."""
         midnight = self._day_midnight()
         return (
-            self._resolve_derived_local(midnight, None),
-            self._resolve_derived_local(_shift_days(midnight, 1), None),
+            self._resolve_derived_local(midnight),
+            self._resolve_derived_local(_shift_days(midnight, 1)),
         )
 
     def _day_midnight(self) -> _datetime:
@@ -5981,71 +6068,113 @@ class ZonedDateTime(_ExactAndLocalTime):
         midnight = _datetime.combine(self._py_dt.date(), _time.min)
         try:
             next_midnight = midnight + _timedelta(days=1)
-            next_start = self._resolve_derived_local(next_midnight, None)
+            next_start = self._resolve_derived_local(next_midnight)
         except (OverflowError, ValueError):
             return midnight
         return next_midnight if self._py_dt >= next_start else midnight
 
-    def _resolve_derived_local(
-        self, naive: _datetime, current: tuple[int, int] | None, /
-    ) -> _datetime:
-        """Resolve a local time this value derived—a unit boundary or a
-        rounded result—rather than one the caller wrote.
-
-        ``current`` is the value's offset in seconds paired with the unit's
-        length in nanoseconds. A repeated local time keeps that offset while
-        it is still valid and the fold is at least as long as the unit, and
-        takes the earlier occurrence otherwise: a fold shorter than the unit
-        lies inside one unit interval, so both occurrences share a boundary.
-        Pass ``None`` for a boundary that every value on the date must share,
-        so that the value's own offset cannot influence it. A skipped local
-        time snaps to the edge of the gap, so that successive intervals stay
-        contiguous.
-        """
+    def _resolve_derived_local(self, naive: _datetime, /) -> _datetime:
+        """Resolve a calendar-unit boundary this value derived, which every
+        value on the date must share: a repeated one takes the earlier
+        occurrence, and a skipped one snaps to the end of the gap, so that
+        successive intervals stay contiguous."""
         match self._tz.ambiguity_for_local(naive):
             case Unique(offset):
                 pass
-            case Fold(_, earlier_offset, later_offset):
-                offset = (
-                    later_offset
-                    if current is not None
-                    and current[0] == later_offset
-                    and (earlier_offset - later_offset) * 1_000_000_000
-                    >= current[1]
-                    else earlier_offset
-                )
+            case Fold(_, earlier_offset, _):
+                offset = earlier_offset
             case Gap(end, later_offset, _):  # pragma: no branch
                 return _from_epoch_offset(end - later_offset, later_offset)
         # Raise for a local time that is valid but whose instant is not.
         return check_utc_bounds(naive.replace(tzinfo=mk_fixed_tzinfo(offset)))
 
-    def _resolve_end_of_time_unit(
-        self, naive: _datetime, unit: str
-    ) -> _datetime:
-        local_epoch = int(naive.replace(tzinfo=_UTC).timestamp())
-        match self._tz._ambiguity_for_local_epoch(local_epoch):
-            case Unique(offset):
-                pass
-            case Fold(end, earlier_offset, later_offset):
-                current_offset = self._current_offset_secs()
-                unit_seconds = _TIME_UNIT_SECS[unit]
-                # A fold shorter than the unit is part of the same local-clock
-                # unit, so include it when it ends exactly at the boundary.
-                offset = (
-                    later_offset
-                    if current_offset == later_offset
-                    or (
-                        local_epoch + 1 == end
-                        and earlier_offset - later_offset < unit_seconds
-                    )
-                    else earlier_offset
-                )
-            case Gap(end, later_offset, earlier_offset):  # pragma: no branch
-                # A skipped endpoint ends at the instant before the gap.
-                return _from_epoch_offset(
-                    end - later_offset - 1, earlier_offset
-                )
-        return naive.replace(tzinfo=mk_fixed_tzinfo(offset))
+    def _time_unit_bounds(self, unit_ns: int, /) -> tuple[int, int, bool]:
+        """The boundaries of a unit shorter than a day around this value, in
+        epoch nanoseconds: the latest at or before it, and the earliest after
+        it. Also whether the first is an odd multiple of the unit within its
+        local day, for a tie.
+
+        ADR 0003 defines the boundaries: each multiple of the unit on the
+        local clock, at both occurrences in a fold at least as long as the
+        unit, at the earlier one in a shorter fold, and at the end of a gap.
+        Where a multiple around the value occurs only at the value's own
+        offset, it is the boundary on that side: another would take two
+        transitions within a unit.
+        """
+        tz = self._tz
+        t = int(self._py_dt.timestamp()) * 1_000_000_000 + self._nanos
+        offset = self._current_offset_secs()
+        local = t + offset * 1_000_000_000
+        floor = local - local % unit_ns
+        start: tuple[int, int] | None = None  # (instant, local)
+        after: int | None = None
+        match tz._ambiguity_for_local_epoch(floor // 1_000_000_000):
+            case Unique(o) if o == offset:
+                start = (floor - offset * 1_000_000_000, floor)
+        match tz._ambiguity_for_local_epoch(
+            (floor + unit_ns) // 1_000_000_000
+        ):
+            case Unique(o) if o == offset:
+                after = floor + unit_ns - offset * 1_000_000_000
+
+        if start is None or after is None:
+            # Near a transition, the boundaries around the instant are
+            # multiples on the clock of one of the offsets around it. The
+            # floor under each is not enough: the instant may read as a
+            # multiple that lies after it, and a transition within a unit
+            # after it moves the first multiple of the new offset past the
+            # next one of the old.
+            boundaries: list[tuple[int, int]] = []  # (instant, local)
+            for o in {
+                offset,
+                tz.offset_for_instant((t - unit_ns) // 1_000_000_000),
+                tz.offset_for_instant((t + unit_ns) // 1_000_000_000),
+            }:
+                local = t + o * 1_000_000_000
+                local -= local % unit_ns
+                for multiple in (
+                    local - unit_ns,
+                    local,
+                    local + unit_ns,
+                    local + 2 * unit_ns,
+                ):
+                    match tz._ambiguity_for_local_epoch(
+                        multiple // 1_000_000_000
+                    ):
+                        case Unique(unique):
+                            boundaries.append(
+                                (multiple - unique * 1_000_000_000, multiple)
+                            )
+                        case Fold(_, earlier, later):
+                            boundaries.append(
+                                (multiple - earlier * 1_000_000_000, multiple)
+                            )
+                            if (earlier - later) * 1_000_000_000 >= unit_ns:
+                                boundaries.append(
+                                    (
+                                        multiple - later * 1_000_000_000,
+                                        multiple,
+                                    )
+                                )
+                        case Gap(end_local, later, _):  # pragma: no branch
+                            boundaries.append(
+                                ((end_local - later) * 1_000_000_000, multiple)
+                            )
+            if start is None:
+                start = max(b for b in boundaries if b[0] <= t)
+            if after is None:
+                after = min(b for b, _ in boundaries if b > t)
+        return (
+            start[0],
+            after,
+            (start[1] % NS_PER_DAY) // unit_ns % 2 == 1,
+        )
+
+    def _from_epoch_ns(self, ns: int, /) -> ZonedDateTime:
+        secs, nanos = divmod(ns, 1_000_000_000)
+        return self._from_py_unchecked(
+            _from_epoch(secs, self._tz), nanos, self._tz
+        )
 
     def start_of(
         self,
@@ -6068,30 +6197,30 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").start_of("hour")
         ZonedDateTime("2024-08-15 14:00:00-04:00[America/New_York]")
 
-        A boundary skipped by a transition snaps to the edge of the gap, so
-        that successive intervals stay contiguous.
+        A boundary in a gap snaps to the end of the gap, so that successive
+        intervals stay contiguous.
 
-        For ``"hour"``, ``"minute"``, and ``"second"``, a repeated boundary
-        keeps the current offset if that offset is still valid; in a
-        fall-back shorter than the unit, it is the first occurrence. For
-        ``"day"``, ``"week_mon"``, ``"week_sun"``, ``"month"``, and
-        ``"year"``, a repeated boundary always takes the earlier occurrence.
-        A value past it lies in the day that has started, also where the
-        clock reads the evening before for a second time.
+        In a fold, a boundary on the clock occurs twice. For ``"hour"``,
+        ``"minute"``, and ``"second"``, both occurrences start a unit if the
+        fold is at least as long as the unit; in a shorter fold, only the
+        first does, and that unit runs longer. The result is the latest start
+        at or before the value. For ``"day"`` and longer units, only the
+        first occurrence of a repeated midnight starts a unit: where a fold
+        repeats the evening before, its second pass belongs to the new day.
         """
         if unit in _TIME_UNIT_SECS:
-            resolved = self._resolve_derived_local(
-                _start_of_dt(self._py_dt.replace(tzinfo=None), unit),
-                (
-                    self._current_offset_secs(),
-                    _TIME_UNIT_SECS[unit] * 1_000_000_000,
-                ),
+            return self._from_epoch_ns(
+                self._time_unit_bounds(_TIME_UNIT_SECS[unit] * 1_000_000_000)[
+                    0
+                ]
             )
-        else:
-            resolved = self._resolve_derived_local(
-                _start_of_dt(self._day_midnight(), unit), None
-            )
-        return self._from_py_unchecked(resolved, 0, self._tz)
+        return self._from_py_unchecked(
+            self._resolve_derived_local(
+                _start_of_dt(self._day_midnight(), unit)
+            ),
+            0,
+            self._tz,
+        )
 
     def end_of(
         self,
@@ -6112,24 +6241,20 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime(2024, 8, 15, 14, 30, tz="America/New_York").end_of("day")
         ZonedDateTime("2024-08-15 23:59:59.999999999-04:00[America/New_York]")
 
-        See also :meth:`start_of`. A boundary skipped by a transition snaps to
-        the edge of the gap, so that successive intervals stay contiguous.
-        A repeated boundary is whatever the next :meth:`start_of` resolves
-        to; in a fall-back shorter than the unit, that is the later offset.
+        The end is one nanosecond before the start of the next unit, as
+        :meth:`start_of` defines it.
         """
-        if unit not in _TIME_UNIT_SECS:
-            naive = _start_of_next_dt(self._day_midnight(), unit)
-            return self._from_py_unchecked(
-                self._resolve_derived_local(naive, None), 0, self._tz
-            ).subtract(nanoseconds=1)
-
-        new_dt = _end_of_dt(self._py_dt, unit)
-        naive = new_dt.replace(tzinfo=None)
+        if unit in _TIME_UNIT_SECS:
+            return self._from_epoch_ns(
+                self._time_unit_bounds(_TIME_UNIT_SECS[unit] * 1_000_000_000)[
+                    1
+                ]
+                - 1
+            )
+        naive = _start_of_next_dt(self._day_midnight(), unit)
         return self._from_py_unchecked(
-            self._resolve_end_of_time_unit(naive, unit),
-            _MAX_SUBSEC_NANOS,
-            self._tz,
-        )
+            self._resolve_derived_local(naive), 0, self._tz
+        ).subtract(nanoseconds=1)
 
     def round(
         self,
@@ -6164,11 +6289,11 @@ class ZonedDateTime(_ExactAndLocalTime):
 
         Notes
         -----
-        * A rounded time that is repeated keeps the current offset if that
-          offset is still valid, and takes the earlier one otherwise; in a
-          fall-back shorter than the increment, it is the first occurrence.
-          A rounded time that is skipped becomes the first instant after
-          the gap.
+        * The result is one of the boundaries :meth:`start_of` knows, with
+          the increment as the unit: the latest at or before the value, or
+          the earliest after it. So ``floor`` never returns a later instant,
+          and ``ceil`` never an earlier one. A rounded time that is skipped
+          becomes the first instant after the gap.
         * Rounding to a day compares the time elapsed since the start of the
           day with the day's length. On the 23-hour day of 2023-03-26 in
           Amsterdam, 11:31 therefore rounds down and 12:31 rounds up.
@@ -6177,14 +6302,12 @@ class ZonedDateTime(_ExactAndLocalTime):
         if unit == "day":
             return self._round_day(mode)
 
-        rounded_local = self.to_plain()._round_unchecked(increment_ns, mode)
-        return self._from_py_unchecked(
-            self._resolve_derived_local(
-                rounded_local._py_dt,
-                (self._current_offset_secs(), increment_ns),
-            ),
-            rounded_local._nanos,
-            self._tz,
+        start, end, odd = self._time_unit_bounds(increment_ns)
+        elapsed = (
+            int(self._py_dt.timestamp()) * 1_000_000_000 + self._nanos - start
+        )
+        return self._from_epoch_ns(
+            end if rounds_up(mode, elapsed, end - start, odd, 1) else start
         )
 
     def _round_day(self, mode: str) -> ZonedDateTime:
@@ -6285,11 +6408,12 @@ class ZonedDateTime(_ExactAndLocalTime):
         .. deprecated:: 0.11
            Use :meth:`strict_eq` instead.
         """
+        result = self.strict_eq(other)
         warn_deprecated(
             "exact_eq() is deprecated; use strict_eq() instead",
             stacklevel=2,
         )
-        return self.strict_eq(other)
+        return result
 
     # An override with shortcut for efficiency if the time zone stays the same
     def to_tz(self, tz: str | _SystemTZ, /) -> ZonedDateTime:
@@ -6355,11 +6479,14 @@ class ZonedDateTime(_ExactAndLocalTime):
 # Also, it allows backwards-compatible changes to the pickling format.
 def _unpkl_zoned(data: bytes, tzid: str) -> ZonedDateTime:
     *args, nanos, offset_secs = unpack_pickle("<HBBBBBil", data)
-    if nanos >= 1_000_000_000:
-        raise ValueError(f"nanosecond out of range: {nanos}")
-    stored = check_utc_bounds(
-        _datetime(*args, tzinfo=mk_fixed_tzinfo(offset_secs))  # type: ignore[misc]
-    )
+    if not 0 <= nanos < 1_000_000_000:
+        raise ValueError("invalid pickle data")
+    try:
+        stored = check_utc_bounds(
+            _datetime(*args, tzinfo=mk_fixed_tzinfo(offset_secs))  # type: ignore[misc]
+        )
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
     tz = get_tz(tzid)
     resolved = tz.convert(stored)
     result = ZonedDateTime._from_py_unchecked(resolved, nanos, tz)
@@ -6582,12 +6709,13 @@ class PlainDateTime(_LocalTime):
 
     def _init_from_py(self, d: _datetime, **kwargs: Any) -> None:
         check_no_kwargs(kwargs, "PlainDateTime")
-        if d.tzinfo is not None:
+        py_dt = _strip_subclasses(d)
+        if py_dt.tzinfo is not None:
             raise ValueError(
-                f"datetime must be naive, got tzinfo={d.tzinfo!r}"
+                f"datetime must be naive, got tzinfo={py_dt.tzinfo!r}"
             )
-        self._py_dt = _strip_subclasses(d.replace(microsecond=0, fold=0))
-        self._nanos = d.microsecond * 1_000
+        self._py_dt = py_dt.replace(microsecond=0, fold=0)
+        self._nanos = py_dt.microsecond * 1_000
         warn_lossy_stdlib_subclass(d, _datetime)
 
     if not TYPE_CHECKING:  # for a nicer autodoc
@@ -6615,7 +6743,9 @@ class PlainDateTime(_LocalTime):
         PlainDateTime("2021-02-28 12:30:00")
         """
         nanos = _pop_replace_nanos(kwargs, self._nanos)
-        return self._from_py_unchecked(self._py_dt.replace(**kwargs), nanos)
+        return self._from_py_unchecked(
+            replace_fields(self._py_dt, **kwargs), nanos
+        )
 
     def replace_date(self, date: Date, /) -> PlainDateTime:
         """Create a new instance with the date replaced
@@ -6624,6 +6754,8 @@ class PlainDateTime(_LocalTime):
         >>> d.replace_date(Date(2024, 2, 29))
         PlainDateTime("2024-02-29 12:30:00")
         """
+        if not isinstance(date, Date):
+            raise TypeError("replace_date() argument must be a Date")
         return self._from_py_unchecked(
             _datetime.combine(date._py_date, self._py_dt.time()), self._nanos
         )
@@ -6635,6 +6767,8 @@ class PlainDateTime(_LocalTime):
         >>> d.replace_time(Time(8, 15, nanosecond=1))
         PlainDateTime("2021-01-02 08:15:00.000000001")
         """
+        if not isinstance(time, Time):
+            raise TypeError("replace_time() argument must be a Time")
         return self._from_py_unchecked(
             _datetime.combine(self._py_dt.date(), time._py), time._nanos
         )
@@ -6755,17 +6889,19 @@ class PlainDateTime(_LocalTime):
         standard warning filters to suppress.
         """
         if isinstance(delta, TimeDelta):
-            warn(
-                PLAIN_SHIFT_UNAWARE_MSG,
-                NaiveArithmeticWarning,
-                stacklevel=2,
-            )
             delta_secs, nanos = divmod(
                 delta._total_ns + self._nanos, 1_000_000_000
             )
-            return self._from_py_unchecked(
+            result = self._from_py_unchecked(
                 _add_seconds(self._py_dt, delta_secs), nanos
             )
+            if delta._total_ns:
+                warn(
+                    PLAIN_SHIFT_UNAWARE_MSG,
+                    NaiveArithmeticWarning,
+                    stacklevel=2,
+                )
+            return result
         return NotImplemented
 
     @overload
@@ -6792,17 +6928,19 @@ class PlainDateTime(_LocalTime):
         no keyword.
         """
         if isinstance(other, TimeDelta):
-            warn(
-                PLAIN_SHIFT_UNAWARE_MSG,
-                NaiveArithmeticWarning,
-                stacklevel=2,
-            )
             delta_secs, nanos = divmod(
                 -other._total_ns + self._nanos, 1_000_000_000
             )
-            return self._from_py_unchecked(
+            result = self._from_py_unchecked(
                 _add_seconds(self._py_dt, delta_secs), nanos
             )
+            if other._total_ns:
+                warn(
+                    PLAIN_SHIFT_UNAWARE_MSG,
+                    NaiveArithmeticWarning,
+                    stacklevel=2,
+                )
+            return result
         elif isinstance(other, PlainDateTime):
             warn(
                 PLAIN_DIFF_UNAWARE_MSG,
@@ -7083,17 +7221,17 @@ class PlainDateTime(_LocalTime):
             microseconds,
             nanoseconds,
         )
+        delta_secs, nanos = divmod(delta_ns + self._nanos, 1_000_000_000)
+        result = self._from_py_unchecked(
+            _add_seconds(py_dt_with_new_date, delta_secs), nanos
+        )
         if delta_ns != 0 and not naive_arithmetic_ok:
             warn(
                 PLAIN_SHIFT_UNAWARE_MSG,
                 NaiveArithmeticWarning,
                 stacklevel=4,
             )
-
-        delta_secs, nanos = divmod(delta_ns + self._nanos, 1_000_000_000)
-        return self._from_py_unchecked(
-            _add_seconds(py_dt_with_new_date, delta_secs), nanos
-        )
+        return result
 
     def assume_utc(self) -> Instant:
         """Assume the datetime is in UTC, creating an ``Instant``.
@@ -7113,14 +7251,12 @@ class PlainDateTime(_LocalTime):
         >>> PlainDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(hours(2))
         OffsetDateTime("2020-08-15 23:12:00+02:00")
         """
-        return OffsetDateTime._from_py_unchecked(
-            check_utc_bounds(
-                self._py_dt.replace(
-                    tzinfo=_load_offset(offset, warning_stacklevel=3)
-                )
-            ),
+        result = OffsetDateTime._from_py_unchecked(
+            check_utc_bounds(self._py_dt.replace(tzinfo=_load_offset(offset))),
             self._nanos,
         )
+        _warn_integer_offset(offset, stacklevel=3)
+        return result
 
     def assume_tz(
         self,
@@ -7281,7 +7417,10 @@ class PlainDateTime(_LocalTime):
 @no_type_check
 def _unpkl_local(data: bytes) -> PlainDateTime:
     *args, nanos = unpack_pickle("<HBBBBBi", data)
-    return PlainDateTime(*args, nanosecond=nanos)
+    try:
+        return PlainDateTime(*args, nanosecond=nanos)
+    except ValueError:
+        raise ValueError("invalid pickle data") from None
 
 
 class PotentialDstBugWarning(WheneverWarning):
@@ -7455,7 +7594,7 @@ OFFSET_FROM_TIMESTAMP_STALE_MSG = (
     "You are converting a timestamp using a fixed UTC offset. The result is "
     "correct for that offset, but the offset may be stale relative to the "
     "region you intend at this timestamp. If you "
-    "mean a named time zone, use ZonedDateTime.from_timestamp(ts, tz='<tz>'); "
+    "mean a named time zone, use Instant.from_timestamp(ts).to_tz('<tz>'); "
     "if you only need the instant, use Instant.from_timestamp(ts). If the fixed "
     "offset is intentional, pass `stale_offset_ok=True`. "
     + OFFSET_DATETIME_DOCS_MSG
@@ -7544,11 +7683,17 @@ FORMAT_ISO_NO_TZ_MSG = (
 )
 
 
-_MAX_ORDINAL = _date.max.toordinal()
 _EPOCH_DT = _datetime(1970, 1, 1, tzinfo=_UTC)
 
 
+def _check_epoch(ts: int, /) -> None:
+    if not EPOCH_SECS_MIN <= ts <= EPOCH_SECS_MAX:
+        raise ValueError(RANGE_MSG)
+
+
 def _from_epoch(ts: int, tz: TimeZone) -> _datetime:
+    # Before the offset lookup: a POSIX rule has no year past 9999
+    _check_epoch(ts)
     return _from_epoch_offset(ts, tz.offset_for_instant(ts))
 
 
@@ -7557,14 +7702,15 @@ def _from_epoch_utc(ts: int) -> _datetime:
 
 
 def _from_epoch_offset(ts: int, offset: int) -> _datetime:
-    # Check ts (UTC), not local_ts below, because a negative UTC offset can
-    # make local_ts land inside the valid datetime range even when ts itself
-    # is out of range — meaning fromtimestamp() would silently succeed and
-    # return a datetime that exceeds Instant.MAX.
-    ordinal = ts // S_PER_DAY + EPOCH_ORDINAL
-    if ordinal < 1 or ordinal > _MAX_ORDINAL:
-        raise ValueError(RANGE_MSG)
+    # Both are checked: the instant can be in range while its local time is
+    # not, and a negative offset can bring the local time of an instant past
+    # Instant.MAX back into range.
     local_ts = ts + offset
+    if not (
+        EPOCH_SECS_MIN <= ts <= EPOCH_SECS_MAX
+        and EPOCH_SECS_MIN <= local_ts <= EPOCH_SECS_MAX
+    ):
+        raise ValueError(RANGE_MSG)
     # datetime.fromtimestamp() is faster than manual arithmetic, but may fail
     # for dates outside the platform's time_t range (e.g. year 1 or year 9999
     # on 32-bit Windows). Fall back to the portable ordinal approach in that case.
@@ -7578,17 +7724,10 @@ def _from_epoch_offset(ts: int, offset: int) -> _datetime:
         )
 
 
-def _load_offset(
-    offset: int | TimeDelta,
-    /,
-    *,
-    warning_stacklevel: int,
-) -> _timezone:
+def _load_offset(offset: int | TimeDelta, /) -> _timezone:
+    """Read an offset; a caller that succeeds then calls
+    :func:`_warn_integer_offset`, so a call that raises emits no warning."""
     if isinstance(offset, int):
-        warn_deprecated(
-            INTEGER_OFFSET_DEPRECATION_MSG,
-            stacklevel=warning_stacklevel,
-        )
         secs = offset * 3_600
     elif isinstance(offset, TimeDelta):
         if offset._total_ns % 1_000_000_000:
@@ -7599,6 +7738,13 @@ def _load_offset(
     if not -86_400 < secs < 86_400:
         raise ValueError("offset must be between -24 and 24 hours")
     return mk_fixed_tzinfo(secs)
+
+
+def _warn_integer_offset(
+    offset: int | TimeDelta, /, *, stacklevel: int
+) -> None:
+    if isinstance(offset, int):
+        warn_deprecated(INTEGER_OFFSET_DEPRECATION_MSG, stacklevel=stacklevel)
 
 
 # Helpers that pre-compute/lookup as much as possible
@@ -7924,16 +8070,36 @@ def _zoned_difference(
 def _zoned_target_date(
     a: ZonedDateTime, b: ZonedDateTime, sign: Literal[1, -1], /
 ) -> Date:
-    """The date of ``a``, stepped so that ``b`` on that date does not lie
-    past ``a``: the exact remainder then has the sign of the difference.
-    The loop handles the rare case of a 24h+ gap, e.g. Samoa in 2011."""
+    """The date on which ``b`` comes closest to ``a`` without passing it:
+    the exact remainder then has the sign of the difference.
+
+    It is usually the date of ``a`` or the one next to it. A gap of a day
+    or more (Samoa, 2011) steps further away, and a fold across midnight
+    (St. John's, 2010) steps past the date of ``a``: past a repeated
+    midnight, the second pass of the evening before lies in the day that
+    has already started.
+    """
+
+    def past(shifted: ZonedDateTime) -> bool:
+        return shifted > a if sign == 1 else shifted < a
+
     target_date = a.date()
-    if sign == 1:
-        while b._with_date(target_date) > a:
-            target_date = target_date.subtract(days=1)
+    shifted = b._with_date(target_date)
+    if past(shifted):
+        target_date = target_date._add_days(-sign)
+        while past(b._with_date(target_date)):
+            target_date = target_date._add_days(-sign)
     else:
-        while b._with_date(target_date) < a:
-            target_date = target_date.add(days=1)
+        while True:
+            try:
+                next_date = target_date._add_days(sign)
+            except ValueError:  # a date past the range is past ``a`` too
+                break
+            next_shifted = b._with_date(next_date)
+            # A skipped day resolves to the same time as the next
+            if past(next_shifted) or next_shifted == shifted:
+                break
+            target_date, shifted = next_date, next_shifted
     return target_date
 
 
@@ -7982,10 +8148,13 @@ def _zoned_difference_in_units(
                 rounded_up = endpoint
     # Round is expensive, so only do it if needed
     elif round_mode != "trunc":
-        if rounds_up(
+        span = abs((expand - trunc)._total_ns)
+        # A skipped day can make the two endpoints coincide. The truncated
+        # value is then already rounded.
+        if span and rounds_up(
             round_mode,
             abs((a - trunc)._total_ns),
-            abs((expand - trunc)._total_ns),
+            span,
             result[smallest_unit] // round_increment % 2 == 1,
             sign,
         ):
@@ -8017,21 +8186,31 @@ def _split_calendar_and_exact_units(
 
 # Use this to strip any incoming datetime classes down to instances
 # of the datetime.datetime class exactly.
-def _strip_subclasses(dt: _datetime) -> _datetime:
+def _base_fields(obj: Any, base: type, names: tuple[str, ...], /) -> list[Any]:
+    """Read fields through the stdlib base type, leaving a subclass's
+    overrides unread: the "Stdlib overloads" rule."""
+    return [getattr(base, n).__get__(obj) for n in names]
+
+
+_DATETIME_FIELDS = (
+    "year",
+    "month",
+    "day",
+    "hour",
+    "minute",
+    "second",
+    "microsecond",
+    "tzinfo",
+)
+
+
+def _strip_subclasses(dt: _datetime, /) -> _datetime:
     if type(dt) is _datetime:
         return dt
-    else:
-        return _datetime(
-            dt.year,
-            dt.month,
-            dt.day,
-            dt.hour,
-            dt.minute,
-            dt.second,
-            dt.microsecond,
-            dt.tzinfo,
-            fold=dt.fold,
-        )
+    return _datetime(
+        *_base_fields(dt, _datetime, _DATETIME_FIELDS),
+        fold=_datetime.fold.__get__(dt),
+    )
 
 
 Instant.MIN = Instant._from_py_unchecked(

@@ -7,7 +7,6 @@ use crate::{
             DifferenceUnit, DifferenceUnitSet, ExactUnit, TotalUnit,
         },
         round,
-        time_delta::TimeDelta,
     },
     py::*,
     pymodule::State,
@@ -43,10 +42,10 @@ where
     G: FnMut(U),
 {
     if PyStr::isinstance(v) || is_bytes(v) {
-        raise_type_err("units must be a sequence of strings, not a single string")?;
+        raise_type_err("in_units must be a sequence of strings, not a single string")?;
     }
     if is_set(v) {
-        raise_type_err("units must be a sequence of strings, not a set")?;
+        raise_type_err("in_units must be a sequence of strings, not a set")?;
     }
     let mut prev = None;
     let mut empty = true;
@@ -54,10 +53,10 @@ where
         let unit = parse(item)?;
         if let Some(p) = prev {
             if p == unit {
-                raise_value_err("units cannot contain duplicates")?;
+                raise_value_err("in_units cannot contain duplicates")?;
             }
             if p > unit {
-                raise_value_err("units must be in decreasing order of size")?;
+                raise_value_err("in_units must be in decreasing order of size")?;
             }
         }
         insert(unit);
@@ -75,7 +74,7 @@ impl CalendarUnitSet {
         let mut units = Self::EMPTY;
         parse_ordered_units(
             v,
-            "units must not be empty",
+            "in_units must not be empty",
             |item| CalendarUnit::from_py(item, state),
             |unit| units.insert(unit),
         )?;
@@ -92,29 +91,24 @@ impl DifferenceUnit {
 }
 
 impl ExactUnit {
-    pub(crate) fn parse_py_number(self, v: PyObj) -> PyResult<TimeDelta> {
+    /// The nanoseconds in a keyword's value, not yet range-checked: keyword
+    /// components are summed first, as pure Python does.
+    pub(crate) fn parse_py_nanos(self, v: PyObj) -> PyResult<i128> {
         if self == Self::Nanoseconds {
-            self.parse_py_int(*v.expect_int("nanoseconds")?)
+            v.expect_int("nanoseconds")?.to_i128()
         } else if let Some(i) = v.cast_allow_subclass::<PyInt>() {
-            self.parse_py_int(i)
+            i.to_i128()?
+                .checked_mul(self.in_nanos() as i128)
+                .ok_or_range_err()
         } else if let Some(f) = v.cast_allow_subclass::<PyFloat>() {
-            self.parse_py_float(f)
+            let nanos = f.to_f64()? * self.in_nanos() as f64;
+            // A float past this bound is far out of range, and `as` would saturate.
+            (nanos.abs() < 2f64.powi(120))
+                .then_some(nanos as i128)
+                .ok_or_range_err()
         } else {
             raise_type_err(format!("{} must be an integer or float", self.name()))
         }
-    }
-
-    pub(crate) fn parse_py_int(self, i: PyInt) -> PyResult<TimeDelta> {
-        TimeDelta::from_nanos(
-            i.to_i128()?
-                .checked_mul(self.in_nanos() as i128)
-                .ok_or_range_err()?,
-        )
-        .ok_or_range_err()
-    }
-
-    pub(crate) fn parse_py_float(self, f: PyFloat) -> PyResult<TimeDelta> {
-        TimeDelta::from_nanos_f64(f.to_f64()? * self.in_nanos() as f64).ok_or_range_err()
     }
 }
 
@@ -123,7 +117,7 @@ impl DifferenceUnitSet {
         let mut units = Self::EMPTY;
         parse_ordered_units(
             v,
-            "units must not be empty",
+            "in_units must not be empty",
             |item| DifferenceUnit::from_py(item, state),
             |unit| units.insert(unit),
         )?;

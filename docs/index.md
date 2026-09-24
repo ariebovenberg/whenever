@@ -57,8 +57,8 @@ In short, it's designed to be:
   what would otherwise be a production bug.
 
 **{octicon}`zap` Fast**
-: In common operations, whenever is 10-100× faster than Pendulum and
-  Arrow---and 2-4× as fast as the standard library.
+: Way faster than other third-party libraries, and usually faster than the
+  standard library as well.
   Rather not depend on a Rust extension? A pure-Python backend is available too.
 
 ---

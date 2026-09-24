@@ -62,17 +62,17 @@ def normalize_units(
     names in decreasing order, a bare string and a set excepted."""
     if isinstance(units, (str, bytes)):
         raise TypeError(
-            "units must be a sequence of strings, not a single string"
+            "in_units must be a sequence of strings, not a single string"
         )
     if isinstance(units, (set, frozenset)):
-        raise TypeError("units must be a sequence of strings, not a set")
+        raise TypeError("in_units must be a sequence of strings, not a set")
     units = tuple(units)
     if not units:
-        raise ValueError("units must not be empty")
+        raise ValueError("in_units must not be empty")
     if sorted(units, key=lambda u: unit_index(u, valid_units)) != list(units):
-        raise ValueError("units must be in decreasing order of size")
+        raise ValueError("in_units must be in decreasing order of size")
     if len(set(units)) != len(units):
-        raise ValueError("units cannot contain duplicates")
+        raise ValueError("in_units cannot contain duplicates")
     if "nanoseconds" in units and "seconds" not in units:
         raise ValueError(
             "nanoseconds can only be specified together with seconds"
@@ -193,6 +193,9 @@ def days_diff(
             b + _timedelta((diff + increment) * sign),
         )
     except OverflowError:
+        # The expanded endpoint can lie past the range while the difference
+        # itself doesn't. Rust keeps such intermediates and returns a total
+        # here; aligning would need dates past the range.
         raise ValueError(RANGE_MSG) from None
 
 
@@ -324,13 +327,14 @@ _NS_PER_DATETIME_ROUND_UNIT = {
 def _increment_to_ns(
     unit: str, increment: int, ns_per_unit: Mapping[str, int]
 ) -> int:
+    try:
+        unit_ns = ns_per_unit[unit]
+    except KeyError:
+        raise invalid("unit", unit) from None
     increment = expect_int("increment", increment)
     if increment < 1:
         raise ValueError("increment must be a positive integer")
-    try:
-        return ns_per_unit[unit] * increment
-    except KeyError:
-        raise invalid("unit", unit) from None
+    return unit_ns * increment
 
 
 def increment_to_ns_for_delta(unit: str, increment: int) -> int:

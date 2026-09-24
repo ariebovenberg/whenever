@@ -21,6 +21,7 @@ from whenever import (
     Instant,
     OffsetDateTime,
     PlainDateTime,
+    TimeDelta,
     TimeZoneNotFoundError,
     ZonedDateTime,
     available_timezones,
@@ -32,7 +33,7 @@ from whenever import (
 )
 from whenever._tz.system import _tzid_from_path, get_tz
 
-from .common import AMS_TZ_RAWFILE, system_tz
+from .common import AMS_TZ_RAWFILE, system_tz, tz_rules_from_file
 
 try:
     import tzdata  # noqa
@@ -163,7 +164,7 @@ class TestTzIdRejection:
     @pytest.mark.parametrize("call", TZ_ENTRY_POINTS)
     @pytest.mark.parametrize(
         "bad",
-        [3, None, b"UTC", 3.5, ["UTC"], hours(34), type(SYSTEM_TZ)()],  # type: ignore[call-arg]
+        [3, None, b"UTC", 3.5, ["UTC"], hours(34)],
     )
     def test_non_string(self, call, bad):
         with pytest.raises(
@@ -321,7 +322,7 @@ class TestTzCache:
         clear_tzcache()
         monkeypatch.setattr("builtins.open", blocked_open)
         try:
-            with pytest.raises(TimeZoneNotFoundError):
+            with pytest.raises(TimeZoneNotFoundError, match="not found"):
                 ZonedDateTime(2020, 8, 15, 5, 12, tz="Europe/Amsterdam")
         finally:
             clear_tzcache()
@@ -355,7 +356,7 @@ class TestTzCache:
         reset_tzpath([tmp_path])
         clear_tzcache()
         try:
-            with pytest.raises(TimeZoneNotFoundError):
+            with pytest.raises(TimeZoneNotFoundError, match="not found"):
                 ZonedDateTime(2020, 8, 15, 5, 12, tz="EST5EDT")
         finally:
             clear_tzcache()
@@ -400,7 +401,7 @@ class TestTzCache:
             assert store._tzdir_cache == {}
 
             for _ in range(2):
-                with pytest.raises(TimeZoneNotFoundError):
+                with pytest.raises(TimeZoneNotFoundError, match="not found"):
                     store.get_tz("Europe/Missing")
             assert store._tzdir_cache == {}
             local_scans = [p for p in scanned if p.startswith(str(tmp_path))]
@@ -412,7 +413,7 @@ class TestTzCache:
             ]
 
             (tmp_path / "Broken").write_bytes(b"not a TZif")
-            with pytest.raises(TimeZoneNotFoundError):
+            with pytest.raises(TimeZoneNotFoundError, match="not found"):
                 store.get_tz("Broken")
             assert store._tzdir_cache == {}
         finally:
@@ -494,23 +495,22 @@ class TestTzCache:
         reset_tzpath([TEST_DIR / "tzif"])
         assert get_tzpath() == (str(TEST_DIR / "tzif"),)
         try:
-            # Available time zones should now be different
-            assert (
-                available_timezones()
-                != zoneinfo_available_timezones().difference(["localtime"])
-            )
+            # The scan finds the test files and skips the one that isn't TZif
+            available = available_timezones()
+            assert {"Iceland", "Asia/Amman", "Amsterdam.tzif"} <= available
+            assert "Asia/NOT_A_TZIF" not in available
             # Cached zones remain available after changing TZPATH.
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
             clear_tzcache(only_keys=[nyc])
             if not HAS_TZDATA:
-                with pytest.raises(TimeZoneNotFoundError):
+                with pytest.raises(TimeZoneNotFoundError, match="not found"):
                     ZonedDateTime(1982, 8, 15, 5, 12, tz=nyc)
 
             assert ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
             clear_tzcache()
             if not HAS_TZDATA:
-                with pytest.raises(TimeZoneNotFoundError):
+                with pytest.raises(TimeZoneNotFoundError, match="not found"):
                     ZonedDateTime(1982, 8, 15, 5, 12, tz=ams)
 
             # We can still use the old instance without problems
@@ -534,7 +534,7 @@ class TestTzCache:
         # The custom time zone remains cached until it is explicitly cleared.
         assert ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
         clear_tzcache()
-        with pytest.raises(TimeZoneNotFoundError):
+        with pytest.raises(TimeZoneNotFoundError, match="not found"):
             ZonedDateTime(1982, 8, 15, 5, 12, tz="Amsterdam.tzif")
 
         # strict equality is impacted
@@ -703,6 +703,14 @@ class TestResetTzpath:
         # nothing was set
         assert get_tzpath() != (str(tmp_path),)
 
+    def test_entry_with_nul_is_skipped(self, tmp_path):
+        with tz_rules_from_file("Europe/Amsterdam", AMS_TZ_RAWFILE, tmp_path):
+            reset_tzpath([f"{tmp_path}\0x", tmp_path])
+            clear_tzcache()
+            assert ZonedDateTime(
+                2020, 1, 1, tz="Europe/Amsterdam"
+            ).offset == hours(1)
+
 
 class TestEmptyTzIsUtc:
     def test_from_the_database(self):
@@ -741,10 +749,10 @@ class TestEmptyTzIsUtc:
 
 
 def test_get_system_tz():
-
-    tz_type, tz_value = get_tz()
+    tz_type, tz_value, *suggested_id = get_tz()
     assert tz_type in (0, 1, 2)
     assert isinstance(tz_value, str)
+    assert len(suggested_id) == (tz_type == 1)
 
 
 @system_tz("Europe/Amsterdam")
@@ -797,84 +805,204 @@ class TestUnresolvableSystemTz:
 @pytest.mark.parametrize(
     "path, expect",
     [
-        ("/usr/share/foo", None),
-        ("", None),
-        ("/etc/timezone", None),
+        ("/usr/share/foo", ""),
+        ("", ""),
+        ("/etc/timezone", ""),
         ("/usr/share/zoneinfo/Europe/Amsterdam", "Europe/Amsterdam"),
         ("/usr/share/zoneinfo.default/America/New_York", "America/New_York"),
         ("/usr/share/zoneinfo.default/", ""),
         ("/usr/share/zoneinfo/zoneinfo.default/UTC", "UTC"),
-        ("/usr/share/zoneinfo", None),
+        ("/usr/share/zoneinfo", ""),
     ],
 )
 def test_tzid_from_path(path, expect):
     assert _tzid_from_path(path) == expect
 
 
+HONOLULU_TZ_RAWFILE = str(TEST_DIR / "tzif" / "Honolulu.tzif")
+
+
+def _system_tz_offset_and_id() -> tuple[TimeDelta, str | None]:
+    z = Instant.from_utc(2020, 1, 1).to_tz(SYSTEM_TZ)
+    return z.offset, z.tz_id
+
+
+@pytest.fixture
+def zoneinfo_dir(tmp_path: Path):
+    """A database with the Amsterdam rules, as the only search path entry."""
+    with tz_rules_from_file(
+        "Europe/Amsterdam", AMS_TZ_RAWFILE, tmp_path / "zoneinfo"
+    ):
+        yield tmp_path / "zoneinfo"
+
+
 @pytest.mark.skipif(
     sys.platform not in ("linux", "darwin"), reason="a unix convention"
 )
-class TestLocaltimeCopy:
-    """A copied /etc/localtime has no symlink to name it; /etc/timezone may."""
+class TestLocaltime:
+    """/etc/localtime is read as a file; its symlink target or
+    /etc/timezone may suggest an ID, kept if the database agrees."""
 
     @pytest.fixture
-    def root(self, monkeypatch, tmp_path: Path):
+    def localtime(self, monkeypatch, tmp_path: Path, zoneinfo_dir: Path):
         from whenever._tz import system
 
-        shutil.copyfile(AMS_TZ_RAWFILE, tmp_path / "localtime")
-        europe = tmp_path / "zoneinfo" / "Europe"
-        europe.mkdir(parents=True)
-        shutil.copyfile(AMS_TZ_RAWFILE, europe / "Amsterdam")
-        (europe / "Berlin").write_bytes(b"TZif2 with other rules")
         monkeypatch.setattr(system, "LOCALTIME", str(tmp_path / "localtime"))
         monkeypatch.setattr(
             system, "TIMEZONE_FILE", str(tmp_path / "timezone")
         )
-        monkeypatch.setattr(system, "ZONEINFO_DIR", str(tmp_path / "zoneinfo"))
         monkeypatch.delenv("TZ", raising=False)
-        yield tmp_path
+        yield tmp_path / "localtime"
         monkeypatch.undo()
         reset_system_tz()
 
-    def test_name_matches(self, root: Path) -> None:
-        (root / "timezone").write_text("Europe/Amsterdam\n")
-        assert get_tz() == (0, "Europe/Amsterdam")
-        reset_system_tz()
-        assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
-
     @pytest.mark.parametrize(
-        "contents",
+        "rules, timezone_file, expect",
         [
-            b"Europe/Berlin\n",  # stale: names other rules
-            b"Europe/Nowhere\n",  # names no database file
-            b"Europe\n",  # a directory
-            b"",
-            b"\xff\xfe not text",
-            None,  # no such file
+            (
+                AMS_TZ_RAWFILE,
+                "Europe/Amsterdam\n",
+                (hours(1), "Europe/Amsterdam"),
+            ),
+            # stale: names other rules
+            (HONOLULU_TZ_RAWFILE, "Europe/Amsterdam\n", (hours(-10), None)),
+            (AMS_TZ_RAWFILE, "Europe/Nowhere\n", (hours(1), None)),
+            (AMS_TZ_RAWFILE, "Europe\n", (hours(1), None)),  # a directory
+            (AMS_TZ_RAWFILE, "", (hours(1), None)),
+            (AMS_TZ_RAWFILE, None, (hours(1), None)),  # no such file
         ],
     )
-    def test_no_usable_name(self, root: Path, contents: bytes | None) -> None:
-        if contents is not None:
-            (root / "timezone").write_bytes(contents)
-        assert get_tz() == (1, os.path.realpath(root / "localtime"))
+    def test_copy(
+        self,
+        localtime: Path,
+        rules: str,
+        timezone_file: str | None,
+        expect: tuple[TimeDelta, str | None],
+    ) -> None:
+        shutil.copyfile(rules, localtime)
+        if timezone_file is not None:
+            (localtime.parent / "timezone").write_text(timezone_file)
         reset_system_tz()
-        assert ZonedDateTime.now(SYSTEM_TZ).tz_id is None
+        assert _system_tz_offset_and_id() == expect
+
+    def test_binary_timezone_file(self, localtime: Path) -> None:
+        shutil.copyfile(AMS_TZ_RAWFILE, localtime)
+        (localtime.parent / "timezone").write_bytes(b"\xff\xfe not text")
+        reset_system_tz()
+        assert _system_tz_offset_and_id() == (hours(1), None)
+
+    def test_absolute_path_in_timezone_file(self, localtime: Path) -> None:
+        shutil.copyfile(AMS_TZ_RAWFILE, localtime)
+        (localtime.parent / "timezone").write_text(f"{localtime}\n")
+        reset_system_tz()
+        assert _system_tz_offset_and_id() == (hours(1), None)
+
+    @pytest.mark.parametrize(
+        "target, rules, expect",
+        [
+            (
+                "Europe/Amsterdam",
+                AMS_TZ_RAWFILE,
+                (hours(1), "Europe/Amsterdam"),
+            ),
+            # a real zone's name, other rules
+            ("Europe/Amsterdam", HONOLULU_TZ_RAWFILE, (hours(-10), None)),
+            ("Custom/Zone", HONOLULU_TZ_RAWFILE, (hours(-10), None)),
+        ],
+    )
+    def test_symlink(
+        self,
+        localtime: Path,
+        tmp_path: Path,
+        target: str,
+        rules: str,
+        expect: tuple[TimeDelta, str | None],
+    ) -> None:
+        # a zoneinfo directory other than the database
+        zone = tmp_path / "other" / "zoneinfo" / target
+        zone.parent.mkdir(parents=True)
+        shutil.copyfile(rules, zone)
+        localtime.symlink_to(zone)
+        reset_system_tz()
+        assert _system_tz_offset_and_id() == expect
+
+    def test_fifo(self, localtime: Path) -> None:
+        os.mkfifo(localtime)
+        with pytest.raises(
+            TimeZoneNotFoundError, match="^no time zone found at path"
+        ):
+            reset_system_tz()
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="posix paths")
 class TestTzEnvPath:
-    def test_into_zoneinfo_dir_names_the_zone(self, tmp_path: Path) -> None:
-        zone = tmp_path / "zoneinfo" / "Europe" / "Amsterdam"
-        zone.parent.mkdir(parents=True)
-        shutil.copyfile(AMS_TZ_RAWFILE, zone)
-        with system_tz(str(zone)):
-            assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"
+    """`TZ` naming a file means that file's rules, as in the C library. The
+    ID its path suggests is kept only if the database agrees."""
 
-    def test_elsewhere_has_no_id(self, tmp_path: Path) -> None:
-        zone = tmp_path / "Amsterdam"
-        shutil.copyfile(AMS_TZ_RAWFILE, zone)
+    @pytest.mark.parametrize(
+        "path, rules, expect",
+        [
+            # the database's own file
+            (
+                "zoneinfo/Europe/Amsterdam",
+                AMS_TZ_RAWFILE,
+                (hours(1), "Europe/Amsterdam"),
+            ),
+            # a zoneinfo directory other than the database
+            (
+                "other/zoneinfo/Europe/Amsterdam",
+                AMS_TZ_RAWFILE,
+                (hours(1), "Europe/Amsterdam"),
+            ),
+            (
+                "other/zoneinfo/Europe/Amsterdam",
+                HONOLULU_TZ_RAWFILE,
+                (hours(-10), None),
+            ),
+            (
+                "other/my-zoneinfo/Europe/Amsterdam",
+                HONOLULU_TZ_RAWFILE,
+                (hours(-10), None),
+            ),
+            ("other/zoneinfo/Custom/Zone", AMS_TZ_RAWFILE, (hours(1), None)),
+            ("other/Amsterdam", AMS_TZ_RAWFILE, (hours(1), None)),
+        ],
+    )
+    def test_file(
+        self,
+        zoneinfo_dir: Path,
+        path: str,
+        rules: str,
+        expect: tuple[TimeDelta, str | None],
+    ) -> None:
+        zone = zoneinfo_dir.parent / path
+        zone.parent.mkdir(parents=True, exist_ok=True)
+        if not zone.exists():
+            shutil.copyfile(rules, zone)
         with system_tz(str(zone)):
-            assert ZonedDateTime.now(SYSTEM_TZ).tz_id is None
+            assert _system_tz_offset_and_id() == expect
+
+    @pytest.mark.skipif(
+        _EXTENSION_LOADED and HAS_TZDATA,
+        reason="the extension caches the tzdata location",
+    )
+    def test_database_file_not_in_search_path(
+        self, monkeypatch, tmp_path: Path, zoneinfo_dir: Path
+    ) -> None:
+        monkeypatch.setitem(sys.modules, "tzdata", None)
+        monkeypatch.setitem(sys.modules, "tzdata.zoneinfo", None)
+        reset_tzpath([])
+        clear_tzcache()
+        with system_tz(str(zoneinfo_dir / "Europe" / "Amsterdam")):
+            assert _system_tz_offset_and_id() == (hours(1), None)
+
+    def test_fifo(self, tmp_path: Path) -> None:
+        os.mkfifo(tmp_path / "fifo")
+        with pytest.raises(
+            TimeZoneNotFoundError, match="^no time zone found at path"
+        ):
+            with system_tz(str(tmp_path / "fifo")):
+                pass  # pragma: no cover
 
 
 class TestTzlocalBackend:
@@ -918,10 +1046,11 @@ class TestTzlocalBackend:
                 "Can not find Windows timezone configuration",
             ),
             (ZoneInfoNotFoundError("Foo Standard Time"), "Foo Standard Time"),
+            (ZoneInfoNotFoundError(), None),
         ],
     )
     def test_failure_raises_and_keeps_cache(
-        self, tzlocal, monkeypatch, exc: LookupError, message: str
+        self, tzlocal, monkeypatch, exc: LookupError, message: str | None
     ) -> None:
         monkeypatch.setenv("TZ", "Europe/Amsterdam")
         reset_system_tz()
@@ -933,7 +1062,8 @@ class TestTzlocalBackend:
         tzlocal.reload_localzone = fail
         with pytest.raises(
             TimeZoneNotFoundError,
-            match=f"^cannot determine the system time zone: {message}$",
+            match="^cannot determine the system time zone"
+            + (f": {message}$" if message else "$"),
         ):
             reset_system_tz()
         assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "Europe/Amsterdam"

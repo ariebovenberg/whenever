@@ -102,7 +102,9 @@ TimeDelta("PT48h")
 so a day has no midnight to start at.
 To round to periods of exactly 24 hours, pass `"hour"` with `increment=24`, or `hours(24)`.
 As with every increment on an {class}`~whenever.Instant`,
-the periods are counted from midnight UTC.
+the periods are counted from midnight UTC,
+and `half_even` breaks a tie toward the even multiple counted from that midnight,
+not from the epoch.
 
 ## Increment
 
@@ -159,6 +161,12 @@ TimeDelta("PT25h")
 
 For values near a time zone transition,
 see the {meth}`~whenever.ZonedDateTime.start_of` and {meth}`~whenever.ZonedDateTime.end_of` docstrings.
+
+On an {class}`~whenever.OffsetDateTime`, `round()`, `start_of()`, and `end_of()`
+keep the offset, which may be stale at the new time,
+so they emit {class}`~whenever.StaleOffsetWarning`;
+pass `stale_offset_ok=True` to accept it.
+To stay correct across transitions, round a {class}`~whenever.ZonedDateTime` instead.
 
 [^1]: This assumes days are always 24 hours long, which is not always the case in practice due to daylight saving time changes.
       Thus, a {class}`~whenever.DaysAssumed24HoursWarning` is issued

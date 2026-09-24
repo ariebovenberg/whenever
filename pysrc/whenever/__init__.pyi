@@ -2310,7 +2310,26 @@ class _LocalTime:
     ) -> Self: ...
 
 @type_check_only
-class _ExactTime:
+class _PyDateTimeMixin(_ISOMixin):
+    def to_stdlib(self) -> _datetime: ...
+    def format_iso(
+        self,
+        *,
+        unit: Literal[
+            "hour",
+            "minute",
+            "second",
+            "millisecond",
+            "microsecond",
+            "nanosecond",
+            "auto",
+        ] = "auto",
+        basic: bool = False,
+        sep: Literal["T", " "] = "T",
+    ) -> str: ...
+
+@type_check_only
+class _ExactTime(_PyDateTimeMixin):
     def timestamp(
         self,
         *,
@@ -2365,27 +2384,8 @@ class _ExactAndLocalTime(_ExactTime, _LocalTime):
     @property
     def offset(self) -> TimeDelta: ...
 
-@type_check_only
-class _PyDateTimeMixin(_ISOMixin):
-    def to_stdlib(self) -> _datetime: ...
-    def format_iso(
-        self,
-        *,
-        unit: Literal[
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-            "auto",
-        ] = "auto",
-        basic: bool = False,
-        sep: Literal["T", " "] = "T",
-    ) -> str: ...
-
 @final
-class Instant(_PyDateTimeMixin, _ExactTime):
+class Instant(_ExactTime):
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
     @overload
@@ -2520,7 +2520,7 @@ class Instant(_PyDateTimeMixin, _ExactTime):
     ) -> Self: ...
 
 @final
-class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
+class OffsetDateTime(_ExactAndLocalTime):
     @overload
     def __init__(self, py_datetime: _datetime, /) -> None: ...
     @overload
@@ -2922,7 +2922,7 @@ class OffsetDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     ) -> ItemizedDelta: ...
 
 @final
-class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
+class ZonedDateTime(_ExactAndLocalTime):
     @overload
     def __init__(
         self,
@@ -3381,6 +3381,20 @@ class ZonedDateTime(_PyDateTimeMixin, _ExactAndLocalTime):
     ) -> ZonedDateTime: ...
     @overload
     @classmethod
+    @deprecated("use disambiguation= instead")
+    def parse(
+        cls,
+        s: str,
+        /,
+        *,
+        pattern: str,
+        offset_mismatch: Literal[
+            "raise", "keep_instant", "keep_local"
+        ] = "raise",
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
+    ) -> ZonedDateTime: ...
+    @overload
+    @classmethod
     @deprecated("use pattern= instead")
     def parse(
         cls,
@@ -3470,6 +3484,7 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> ZonedDateTime: ...
+    @overload
     @deprecated("use assume_tz(SYSTEM_TZ) instead")
     def assume_system_tz(
         self,
@@ -3477,6 +3492,13 @@ class PlainDateTime(_PyDateTimeMixin, _DateOrTimeMixin, _LocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
+    ) -> ZonedDateTime: ...
+    @overload
+    @deprecated("use assume_tz(SYSTEM_TZ, disambiguation=...) instead")
+    def assume_system_tz(
+        self,
+        *,
+        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     def format(self, pattern: str, /) -> str: ...
     def __format__(self, spec: str, /) -> str: ...

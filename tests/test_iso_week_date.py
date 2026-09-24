@@ -50,7 +50,7 @@ class TestInit:
 
     def test_one_day_past_max(self):
         assert IsoWeekDate(9999, 52, FRIDAY).date() == Date.MAX
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid date"):
             IsoWeekDate(9999, 52, SATURDAY)
 
     def test_from_string(self):
@@ -70,15 +70,15 @@ class TestInit:
         assert iwd.week == 53
 
     def test_invalid_week_0(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="week must be between"):
             IsoWeekDate(2024, 0, MONDAY)
 
     def test_invalid_week_53_short_year(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="week must be between"):
             IsoWeekDate(2024, 53, MONDAY)
 
     def test_invalid_week_54(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="week must be between"):
             IsoWeekDate(2004, 54, MONDAY)
 
     def test_invalid_weekday_type(self):
@@ -93,31 +93,31 @@ class TestInit:
             IsoWeekDate(2024.0, 1, MONDAY)  # type: ignore[call-overload]
 
     def test_invalid_string(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             IsoWeekDate("2024-01-01")
 
     def test_invalid_string_missing_weekday(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             IsoWeekDate("2024-W01")
 
     def test_invalid_string_abc(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             IsoWeekDate("abc")
 
     def test_invalid_string_empty(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             IsoWeekDate("")
 
     def test_invalid_string_week_0(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             IsoWeekDate("2024-W00-1")
 
     def test_invalid_string_bad_day(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             IsoWeekDate("2024-W01-0")
 
     def test_invalid_string_day_8(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             IsoWeekDate("2024-W01-8")
 
     @pytest.mark.parametrize(
@@ -131,7 +131,7 @@ class TestInit:
         ],
     )
     def test_invalid_string_non_digits(self, s):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="invalid ISO 8601 string"):
             IsoWeekDate(s)
 
 
@@ -221,6 +221,8 @@ class TestParseIso:
             ("2024W011", IsoWeekDate(2024, 1, MONDAY)),
             ("2023-w52-5", IsoWeekDate(2023, 52, FRIDAY)),
             ("2023w525", IsoWeekDate(2023, 52, FRIDAY)),
+            ("0001-W01-1", IsoWeekDate.MIN),
+            ("9999-W52-5", IsoWeekDate.MAX),
         ],
     )
     def test_valid(self, s, expect):
@@ -233,11 +235,21 @@ class TestParseIso:
             "2024-01-01",  # a calendar date, not a week date
             "2024-W01-8",  # weekday out of range
             "2024-W54-1",  # week out of range
+            "2024-W53-1",  # week 53 in a year with 52
+            "2024-W00-1",
+            "9999-W52-6",  # past MAX
+            "0000-W01-1",  # before MIN
+            "+720-W06-4",
+            " 720-W06-4",
+            "2024-W-1-1",
             "2024-W01-\u0661",  # non-ASCII
         ],
     )
     def test_invalid(self, s):
-        with pytest.raises(ValueError, match=re.escape(repr(s)) + "|ISO week"):
+        with pytest.raises(
+            ValueError,
+            match=f"^invalid ISO 8601 string: {re.escape(repr(s))}$",
+        ):
             IsoWeekDate.parse_iso(s)
 
     def test_invalid_names_the_format(self):
@@ -325,7 +337,7 @@ class TestReplace:
         )
 
     def test_replace_invalid(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="week must be between"):
             IsoWeekDate(2024, 52, MONDAY).replace(week=53)
 
     def test_replace_year_makes_week53_invalid(self):
