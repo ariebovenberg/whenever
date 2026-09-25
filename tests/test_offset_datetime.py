@@ -733,6 +733,25 @@ class TestShift:
             d - hours(4)
         assert len(w) == 1
 
+    @pytest.mark.parametrize(
+        "shift",
+        [
+            lambda d: d + TimeDelta.ZERO,
+            lambda d: d - TimeDelta.ZERO,
+            lambda d: d + ItemizedDelta(hours=0),
+            lambda d: d - ItemizedDateDelta(days=0),
+            lambda d: d.add(),
+            lambda d: d.add(hours=0),
+            lambda d: d.subtract(years=1, months=-12),
+            lambda d: d.add(weeks=1, days=-7, minutes=0),
+            lambda d: d.add(TimeDelta.ZERO),
+            lambda d: d.subtract(ItemizedDelta(days=0)),
+        ],
+    )
+    def test_zero_shift_doesnt_warn(self, shift):
+        d = OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2))
+        assert shift(d).strict_eq(d)
+
     @suppress(StaleOffsetWarning)
     def test_operators_out_of_range(self):
         # UTC equivalent must stay within bounds even when local time is in range
@@ -844,7 +863,6 @@ class TestShift:
     @pytest.mark.parametrize(
         "call",
         [
-            lambda d: d.add(),
             lambda d: d.add(hours=1),
             lambda d: d.subtract(hours=1),
             lambda d: d.add(days=1),
@@ -1116,6 +1134,9 @@ class TestSince:
             lambda a, b: a.until(b, in_units=["months", "days", "minutes"]),
             lambda a, b: a.since(b, total="days"),
             lambda a, b: a.until(b, total="years"),
+            # rounding reads the remainder too
+            lambda a, b: a.since(b, in_units=["days"], round_mode="half_even"),
+            lambda a, b: a.until(b, in_units=["months"], round_mode="floor"),
         ],
     )
     def test_exact_remainder_warns(self, call):
@@ -1132,12 +1153,16 @@ class TestSince:
         "call",
         [
             lambda a, b: a.since(b, in_units=["years", "months", "days"]),
+            lambda a, b: a.since(b, in_units=["days"], round_mode="trunc"),
             lambda a, b: a.since(b, in_units=["hours", "minutes"]),
             lambda a, b: a.until(b, total="hours"),
             lambda a, b: a.since(b, total="nanoseconds"),
             lambda a, b: a.since(b, total="days", stale_offset_ok=True),
             lambda a, b: a.until(
                 b, in_units=["days", "hours"], stale_offset_ok=True
+            ),
+            lambda a, b: a.until(
+                b, in_units=["days"], round_mode="ceil", stale_offset_ok=True
             ),
         ],
     )
@@ -1181,64 +1206,73 @@ class TestSince:
         assert a.since(b, in_units=iter(["hours"])) == ItemizedDelta(hours=24)  # type: ignore[call-overload]
 
     @pytest.mark.parametrize(
-        ("kwargs", "message"),
+        ("kwargs", "exc", "message"),
         [
-            ({"in_units": []}, "in_units must not be empty"),
+            ({"in_units": []}, ValueError, "in_units must not be empty"),
             (
                 {"in_units": ["hours", "hours"]},
+                ValueError,
                 "in_units cannot contain duplicates",
             ),
-            ({"in_units": ["foo"]}, "invalid unit: 'foo'"),
+            ({"in_units": ["foo"]}, ValueError, "invalid unit: 'foo'"),
             (
                 {"in_units": ["minutes", "hours"]},
+                ValueError,
                 "in_units must be in decreasing order of size",
             ),
             (
                 {"in_units": "hours"},
+                TypeError,
                 "in_units must be a sequence of strings, not a single string",
             ),
             (
                 {"in_units": ["hours", "nanoseconds"]},
+                ValueError,
                 "nanoseconds can only be specified together with seconds",
             ),
             (
                 {"in_units": ["hours"], "round_mode": "bad"},
+                ValueError,
                 "invalid round_mode: 'bad'",
             ),
             (
                 {"in_units": ["days"], "round_increment": 0},
+                ValueError,
                 "round_increment must be a positive integer in range",
             ),
             (
                 {"in_units": ["hours"], "round_increment": -1},
+                ValueError,
                 "round_increment must be a positive integer in range",
             ),
             (
                 {"in_units": ["hours"], "round_increment": 1.5},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["hours"], "round_increment": "1"},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["hours"], "round_increment": None},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["hours"], "round_increment": 2**63},
+                ValueError,
                 "value or calculation out of range",
             ),
-            ({"total": "foo"}, "invalid unit: 'foo'"),
+            ({"total": "foo"}, ValueError, "invalid unit: 'foo'"),
         ],
     )
     @pytest.mark.parametrize("method", ["since", "until"])
-    def test_invalid_units_and_rounding(self, method, kwargs, message):
+    def test_invalid_units_and_rounding(self, method, kwargs, exc, message):
         a = OffsetDateTime(2023, 2, 15, offset=hours(2))
         b = OffsetDateTime(2023, 2, 14, offset=hours(2))
-        with pytest.raises(
-            (TypeError, ValueError), match="^" + re.escape(message) + "$"
-        ):
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
             getattr(a, method)(b, **kwargs)
 
     def test_until_is_inverse(self):

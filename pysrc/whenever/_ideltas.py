@@ -111,7 +111,8 @@ def _shift_datetime_operator(
             warning = (PLAIN_SHIFT_UNAWARE_MSG, NaiveArithmeticWarning)
         kwargs = {"naive_arithmetic_ok": True}
     elif isinstance(datetime, OffsetDateTime):
-        warning = (OFFSET_SHIFT_STALE_MSG, StaleOffsetWarning)
+        if delta:
+            warning = (OFFSET_SHIFT_STALE_MSG, StaleOffsetWarning)
         kwargs = {"stale_offset_ok": True}
     elif isinstance(datetime, ZonedDateTime):
         # add()/subtract() would attribute their warnings to this frame, so

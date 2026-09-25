@@ -409,6 +409,13 @@ _PICKLES_0_10_5 = [
 # Captured under earlier releases without a version note; the Instant payload
 # naming ``_unpkl_utc`` predates 0.8.0.
 _PICKLES_EARLIER = [
+    # the pure-Python backend from 0.8.0 to 0.10.0 named its own module
+    (
+        b"\x80\x04\x95;\x00\x00\x00\x00\x00\x00\x00\x8c\x14whenever._pywh"
+        b"enever\x94\x8c\x0b_unpkl_inst\x94\x93\x94C\x0c\x80\x080\xed\xff"
+        b"\xff\xff\xff\x01\x00\x00\x00\x94\x85\x94R\x94.",
+        w.Instant.from_utc(1960, 1, 1, nanosecond=1),
+    ),
     (
         b"\x80\x04\x95'\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
         b"kl_date\x94\x93\x94C\x04\xe5\x07\x01\x02\x94\x85\x94R\x94.",

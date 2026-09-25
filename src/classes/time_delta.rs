@@ -9,14 +9,12 @@ use crate::{
         instant::Instant,
         offset_datetime::OffsetDateTime,
         plain_datetime::{plain_since_inner, resolve_local_relative_to, total_calendar_plain},
-        zoned_datetime::{ZonedDateTime, zoned_since_in_units, zoned_target},
+        zoned_datetime::{ZonedDateTime, zoned_calendar_total, zoned_since_in_units, zoned_target},
     },
     common::{compat::warn_lossy_stdlib_subclass, pickle, round_args as round},
     docstrings as doc,
     domain::{
-        difference::{
-            self, CalendarIncrement, DifferenceSpec, DifferenceUnitSet, ExactUnit, TotalUnit,
-        },
+        difference::{self, DifferenceSpec, DifferenceUnitSet, ExactUnit, TotalUnit},
         scalar::*,
         time_delta::ParseError,
         units::*,
@@ -810,30 +808,9 @@ pub(crate) fn total_calendar(
     let target_date =
         zoned_target(shifted.date, shifted_inst, relative_to, neg).ok_or_range_err()?;
 
-    let (trunc_amount, trunc_date, expand_date) = difference::date_diff_single_unit(
-        target_date,
-        relative_to.date,
-        CalendarIncrement::MIN,
-        unit,
-        neg,
-    )
-    .ok_or_range_err()?;
-
-    let trunc_odt = relative_to.with_date(trunc_date.into()).ok_or_range_err()?;
-    let expand_odt = relative_to
-        .with_date(expand_date.into())
-        .ok_or_range_err()?;
-
-    let r = shifted_inst.diff(trunc_odt.to_instant()).abs();
-    let e = expand_odt.to_instant().diff(trunc_odt.to_instant());
-    // A skipped day can make the two endpoints coincide. The truncated
-    // amount is then the whole total.
-    let fraction = if e.is_zero() {
-        0.0
-    } else {
-        r.to_nanos_f64() / e.to_nanos_f64()
-    };
-    (trunc_amount as f64 + fraction).to_py()
+    zoned_calendar_total(shifted_inst, relative_to, target_date, unit, neg)
+        .ok_or_range_err()?
+        .to_py()
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[

@@ -135,10 +135,9 @@ build-release:
 .PHONY: bench
 bench: build-release
 	uv $(UV_ARGS) run pytest $(BENCH_PYTEST_ARGS) benchmarks/ \
-		--benchmark-group-by=group \
 		--benchmark-columns=median,stddev \
 		--benchmark-autosave \
-		--benchmark-group-by=fullname \
+		--benchmark-group-by=fullname
 
 .PHONY: bench-compare
 bench-compare:

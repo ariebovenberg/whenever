@@ -219,11 +219,26 @@ def test_offset_rejections(convert, offset, exc, message):
 
 
 @pytest.mark.parametrize(
-    "cls", [Date, Time, TimeDelta, PlainDateTime, Instant]
+    "cls, lo, hi",
+    [
+        (Date, py_date.min, py_date.max),
+        (Time, py_time.min, py_time.max),
+        (
+            TimeDelta,
+            py_timedelta(days=-9999 * 366),
+            py_timedelta(days=9999 * 366),
+        ),
+        (PlainDateTime, py_datetime.min, py_datetime.max),
+        (
+            Instant,
+            py_datetime.min.replace(tzinfo=py_timezone.utc),
+            py_datetime.max.replace(tzinfo=py_timezone.utc),
+        ),
+    ],
 )
-def test_to_stdlib_extremes_convert(cls):
-    cls.MIN.to_stdlib()
-    cls.MAX.to_stdlib()
+def test_to_stdlib_extremes_convert(cls, lo, hi):
+    assert cls.MIN.to_stdlib() == lo
+    assert cls.MAX.to_stdlib() == hi
 
 
 def test_to_stdlib_tzinfo():
@@ -348,9 +363,19 @@ def _overriding(base: type) -> type:
     }
     if hasattr(base, "tzinfo"):
         lies["tzinfo"] = property(lambda self: None)
-    for name in ("replace", "astimezone", "date", "time", "timetz"):
+    for name in (
+        "replace",
+        "astimezone",
+        "date",
+        "time",
+        "timetz",
+        "total_seconds",
+    ):
         if hasattr(base, name):
             lies[name] = fail
+    if hasattr(base, "toordinal"):
+        # January: across an offset change from the August values below
+        lies["toordinal"] = lambda self: py_date(2020, 1, 1).toordinal()
     if base is py_datetime:
         lies["utcoffset"] = lambda self: py_timedelta(hours=5)
     return type(f"Overriding{base.__name__}", (base,), lies)
@@ -388,12 +413,79 @@ class TestSubclassIsReadThroughBase:
                 OffsetDateTime(2020, 8, 15, 12, offset=hours(2)),
             ),
             (
+                lambda: Instant(
+                    _overriding(py_datetime)(
+                        2020, 8, 15, 12, tzinfo=ZoneInfo("Europe/Amsterdam")
+                    )
+                ),
+                Instant.from_utc(2020, 8, 15, 10),
+            ),
+            (
+                lambda: OffsetDateTime(
+                    _overriding(py_datetime)(
+                        2020, 8, 15, 12, tzinfo=ZoneInfo("Europe/Amsterdam")
+                    )
+                ),
+                OffsetDateTime(2020, 8, 15, 12, offset=hours(2)),
+            ),
+            (
                 lambda: ZonedDateTime(
                     _overriding(py_datetime)(
                         2020, 8, 15, 12, tzinfo=ZoneInfo("Europe/Amsterdam")
                     )
                 ),
                 ZonedDateTime(2020, 8, 15, 12, tz="Europe/Amsterdam"),
+            ),
+            # the second occurrence of a repeated time: the base fold counts
+            (
+                lambda: ZonedDateTime(
+                    _overriding(py_datetime)(
+                        2023,
+                        10,
+                        29,
+                        2,
+                        30,
+                        tzinfo=ZoneInfo("Europe/Amsterdam"),
+                        fold=1,
+                    )
+                ),
+                ZonedDateTime(
+                    2023,
+                    10,
+                    29,
+                    2,
+                    30,
+                    tz="Europe/Amsterdam",
+                    disambiguation="later",
+                ),
+            ),
+            (
+                lambda: Instant(
+                    _overriding(py_datetime)(
+                        2023,
+                        10,
+                        29,
+                        2,
+                        30,
+                        tzinfo=ZoneInfo("Europe/Amsterdam"),
+                        fold=1,
+                    )
+                ),
+                Instant.from_utc(2023, 10, 29, 1, 30),
+            ),
+            (
+                lambda: OffsetDateTime(
+                    _overriding(py_datetime)(
+                        2023,
+                        10,
+                        29,
+                        2,
+                        30,
+                        tzinfo=ZoneInfo("Europe/Amsterdam"),
+                        fold=1,
+                    )
+                ),
+                OffsetDateTime(2023, 10, 29, 2, 30, offset=hours(1)),
             ),
             (
                 lambda: PlainDateTime(
@@ -418,18 +510,19 @@ class TestSubclassIsReadThroughBase:
         if hasattr(expect, "strict_eq"):
             assert result.strict_eq(expect)
 
-    def test_tzinfo_may_return_a_timedelta_subclass(self):
-        class Delta(py_timedelta):
-            pass
-
+    @pytest.mark.parametrize(
+        "delta_type",
+        [type("Delta", (py_timedelta,), {}), _overriding(py_timedelta)],
+    )
+    def test_tzinfo_may_return_a_timedelta_subclass(self, delta_type):
         class MyTz(py_tzinfo):
             def utcoffset(self, _):
-                return Delta(hours=2)
+                return delta_type(hours=2)
 
         d = py_datetime(2020, 8, 15, 12, tzinfo=MyTz())  # type: ignore[abstract]
-        assert OffsetDateTime(d) == OffsetDateTime(
-            2020, 8, 15, 12, offset=hours(2)
-        )
+        odt = OffsetDateTime(d)
+        assert odt.strict_eq(OffsetDateTime(2020, 8, 15, 12, offset=hours(2)))
+        assert type(odt.to_stdlib().utcoffset()) is py_timedelta
         assert Instant(d) == Instant.from_utc(2020, 8, 15, 10)
 
     @pytest.mark.parametrize("cls", [Instant, OffsetDateTime])

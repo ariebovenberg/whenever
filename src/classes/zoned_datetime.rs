@@ -21,7 +21,7 @@ use crate::{
     },
     docstrings as doc,
     domain::{
-        difference::{self, CalendarIncrement, DifferenceSpec},
+        difference::{self, DifferenceSpec},
         local::{LocalMapping, ResolveError, ResolvePolicy},
         scalar::*,
         shift::DateTimeShift,
@@ -39,8 +39,8 @@ use pyo3_ffi::*;
 use std::{ffi::CString, sync::Arc};
 
 pub(crate) use crate::domain::zoned_datetime::{
-    OffsetInIsoString, TzFormat, ZonedDateTime, read_offset_and_tzname, zoned_since_in_units,
-    zoned_target,
+    OffsetInIsoString, TzFormat, ZonedDateTime, read_offset_and_tzname, zoned_calendar_total,
+    zoned_since_in_units, zoned_target,
 };
 
 impl ZonedDateTime {
@@ -1370,34 +1370,9 @@ fn zoned_since_float(
             }
         }
         Err(calendar_unit) => {
-            let (result, trunc_raw, expand_raw) = difference::date_diff_single_unit(
-                target_date,
-                b.date,
-                CalendarIncrement::MIN,
-                calendar_unit,
-                neg,
-            )
-            .ok_or_range_err()?;
-            let trunc = b
-                .with_date(trunc_raw.into())
+            zoned_calendar_total(a.to_instant(), b, target_date, calendar_unit, neg)
                 .ok_or_range_err()?
-                .to_instant();
-            let expand = b
-                .with_date(expand_raw.into())
-                .ok_or_range_err()?
-                .to_instant();
-            // result is signed; take absolute value and restore sign at the end.
-            // num/denom ratio is always positive (same sign).
-            // A skipped day can make the two endpoints coincide. The
-            // truncated amount is then the whole total.
-            let fraction = if expand == trunc {
-                0.0
-            } else {
-                a.to_instant().diff(trunc).total_nanos() as f64
-                    / expand.diff(trunc).total_nanos() as f64
-            };
-            let sign: f64 = if neg { -1.0 } else { 1.0 };
-            ((result.abs() as f64 + fraction) * sign).to_py()
+                .to_py()
         }
     }
 }
@@ -1419,14 +1394,18 @@ fn zoned_since(
     let kwargs = DifferenceSpec::parse(fname, kwargs, state)?;
 
     if kwargs.has_calendar() && !slf.same_tz(other) {
-        let tz_id = |z: &ZonedDateTime| match z.tz.key.as_ref() {
-            Some(key) => format!("'{key}'"),
-            None => "None".to_string(),
+        let got = match (slf.tz.key.as_deref(), other.tz.key.as_deref()) {
+            (None, None) => "two different time zones without an ID".to_string(),
+            (Some(a), Some(b)) if a == b => {
+                format!("'{a}' from two different time zone databases")
+            }
+            (a, b) => {
+                let fmt = |k: Option<&str>| k.map_or("None".to_string(), |s| format!("'{s}'"));
+                format!("{} and {}", fmt(a), fmt(b))
+            }
         };
         raise_value_err(format!(
-            "calendar units require the same time zone, got {} and {}",
-            tz_id(slf),
-            tz_id(other)
+            "calendar units require the same time zone, got {got}"
         ))?;
     }
     let (a, b) = if flip { (other, slf) } else { (slf, other) };

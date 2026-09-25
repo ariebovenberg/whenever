@@ -1,7 +1,7 @@
 //! Functionality related to patching the current time
 use crate::{
     classes::instant::Instant,
-    domain::{scalar::*, time_delta::TimeDelta, units::NS_PER_SECOND},
+    domain::{scalar::*, time_delta::TimeDelta},
     py::*,
     pymodule::State,
 };
@@ -84,13 +84,6 @@ impl Instant {
             subsec: SubSecNanos::new_unchecked(d.subsec_nanos() as _),
         })
     }
-
-    fn from_nanos_i64(ns: i64) -> Option<Self> {
-        Some(Instant {
-            epoch: EpochSecs::new(ns / i64::from(NS_PER_SECOND))?,
-            subsec: SubSecNanos::from_remainder(ns),
-        })
-    }
 }
 
 fn duration_nanos(d: Duration) -> PyResult<i128> {
@@ -131,9 +124,8 @@ impl State {
         let ns = ts
             .cast_exact::<PyInt>()
             .ok_or_raise(exc_runtime_error(), "time_ns() returned a non-integer")?
-            // FUTURE: i64 nanoseconds overflow in 2262.
-            .to_i64()?;
-        Instant::from_nanos_i64(ns).ok_or_raise(exc_os_error(), "system time out of range")
+            .to_i128()?;
+        Instant::from_timestamp_nanos(ns).ok_or_raise(exc_os_error(), "system time out of range")
     }
 
     fn time_ns_rust(&self) -> PyResult<Instant> {

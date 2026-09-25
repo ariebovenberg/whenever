@@ -350,9 +350,9 @@ For deltas including months or days, use :class:`~ItemizedDelta`,
 or :class:`~whenever.ItemizedDateDelta` for date-only deltas.
 
 The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
-for example. Float inputs convert exactly down to the nanosecond, and
-a fraction below one nanosecond is truncated toward zero:
-``seconds=1.5e-9`` is 1 nanosecond.
+for example. A float input is multiplied into nanoseconds in double
+precision, then truncated toward zero: ``seconds=1.5e-9`` is
+1 nanosecond.
 
 >>> d = TimeDelta(hours=1, minutes=90)
 TimeDelta(\"PT2h30m\")
@@ -1265,9 +1265,10 @@ both datetimes must have the same offset.
 
 Warning
 -------
-Whole calendar units are exact, but a remainder in exact units
-after them (``in_units`` mixing the two kinds, or ``total=`` of a
-calendar unit) is computed with the offset held fixed, which emits
+Whole calendar units are exact, but the remainder in exact units
+after them is computed with the offset held fixed. A result that
+depends on it (``in_units`` mixing the two kinds, a ``round_mode``
+other than ``\"trunc\"``, or ``total=`` of a calendar unit) emits
 :class:`~whenever.StaleOffsetWarning`. Pass ``stale_offset_ok=True``
 when the fixed offset is intentional.
 ";
@@ -1911,7 +1912,10 @@ format_iso($self, *, unit='auto', basic=False, sep='T', tz_id_display=...)
 Format as an ISO 8601 string, such as
 ``2020-08-15T23:12:00+01:00[Europe/London]``.
 
-Inverse of :meth:`parse_iso`.
+Inverse of :meth:`parse_iso` at the default ``unit``.
+A coarser ``unit`` truncates the written fields,
+so :meth:`parse_iso` may reject the result:
+a truncated local time can fall in a gap next to its offset.
 
 >>> zdt = ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz=\"Europe/London\")
 >>> zdt.format_iso(unit=\"minute\", basic=True)
@@ -2532,7 +2536,7 @@ pub(crate) const FORMAT_ISO_NO_TZ_MSG: &CStr = c"the time zone has no ID; use tz
 pub(crate) const IMPLICIT_DISAMBIGUATION_MSG: &CStr = c"resolving a local datetime that is repeated or skipped by a time zone transition without an explicit disambiguation policy can silently select the wrong instant; pass disambiguation='compatible', 'earlier', 'later', or 'raise'. See https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html";
 pub(crate) const INTEGER_OFFSET_DEPRECATION_MSG: &CStr = c"integer offsets are deprecated because their unit is implicit; pass a TimeDelta instead, for example hours(2)";
 pub(crate) const OFFSET_DATETIME_DOCS_MSG: &CStr = c"For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples.";
-pub(crate) const OFFSET_DIFFERENCE_STALE_MSG: &CStr = c"You are calculating a difference in calendar units between OffsetDateTimes with a remainder in exact units. The whole calendar units are correct in any time zone, but the remainder after the last whole unit is computed with the offset held fixed, and a time zone transition inside that final partial unit shifts it by the transition length. Use a ZonedDateTime for a difference that accounts for the time zone. If the fixed-offset assumption is intentional, pass `stale_offset_ok=True` to `since()` or `until()`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
+pub(crate) const OFFSET_DIFFERENCE_STALE_MSG: &CStr = c"You are calculating a difference in calendar units between OffsetDateTimes that depends on the remainder in exact units. The whole calendar units are correct in any time zone, but the remainder after the last whole unit is computed with the offset held fixed, and a time zone transition inside that final partial unit shifts it by the transition length. Use a ZonedDateTime for a difference that accounts for the time zone. If the fixed-offset assumption is intentional, pass `stale_offset_ok=True` to `since()` or `until()`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_FROM_TIMESTAMP_STALE_MSG: &CStr = c"You are converting a timestamp using a fixed UTC offset. The result is correct for that offset, but the offset may be stale relative to the region you intend at this timestamp. If you mean a named time zone, use Instant.from_timestamp(ts).to_tz('<tz>'); if you only need the instant, use Instant.from_timestamp(ts). If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_NOW_STALE_MSG: &CStr = c"You are getting the current time using a fixed UTC offset. A fixed offset has no time zone rules, so it may be stale relative to the region you intend after a DST or other rule change. If you mean a named time zone, use ZonedDateTime.now('<tz>'); if you only need the current instant, use Instant.now(). If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";
 pub(crate) const OFFSET_REPLACE_STALE_MSG: &CStr = c"Replacing fields of an OffsetDateTime is valid and preserves its observed UTC offset. That offset may be stale relative to the source time zone if the result is in a different DST or time zone rule period (e.g. after replacing the month on a datetime in a European time zone). Convert to ZonedDateTime first (using .assume_tz()) for field replacement that accounts for the time zone. If the fixed offset is intentional, pass `stale_offset_ok=True`. For comprehensive OffsetDateTime guidance, see https://whenever.readthedocs.io/en/latest/guide/choosing-a-type.html#offset-datetime-guidance for details and examples. For project-wide warning configuration, see https://whenever.readthedocs.io/en/latest/guide/warnings.html";

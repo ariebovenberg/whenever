@@ -24,11 +24,21 @@ from .common import StrSubclass
     sys.implementation.name == "pypy",
     reason="time-machine doesn't support PyPy",
 )
-def test_time_machine():
+@pytest.mark.parametrize(
+    "instant",
+    [
+        Instant("1980-03-02 02:00Z"),
+        Instant("1969-12-31 23:59:59.5Z"),
+        Instant("1900-06-01 12:00:00.25Z"),
+        Instant("2300-01-01 00:00Z"),
+    ],
+)
+def test_time_machine(instant: Instant):
     time_machine = pytest.importorskip("time_machine")
 
-    with time_machine.travel("1980-03-02T02:00+00:00"):
-        assert Instant.now() == Instant.from_utc(1980, 3, 2, hour=2)
+    with time_machine.travel(instant.to_stdlib(), tick=False):
+        assert Instant.now() == instant
+        assert ZonedDateTime.now("UTC").date() == instant.to_tz("UTC").date()
 
 
 @pytest.mark.parametrize(

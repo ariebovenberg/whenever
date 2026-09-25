@@ -1505,7 +1505,7 @@ class TestStrftimeParity:
         d = Date(2024, 3, 15)
         assert d.format("DD.MM.YYYY") == "15.03.2024"
 
-    def test_iso_datetime(self):
+    def test_iso_string_like(self):
         """Equivalent to %Y-%m-%dT%H:%M:%S"""
         pdt = PlainDateTime(2024, 3, 15, 14, 30, 5)
         assert pdt.format("YYYY-MM-DD'T'HH:mm:ss") == "2024-03-15T14:30:05"
@@ -1948,6 +1948,13 @@ def test_str_subclasses_are_accepted(value, pattern, wrap):
     assert value.format(wrap(pattern)) == text
     assert format(value, wrap(pattern)) == text
     assert type(value).parse(StrSubclass(text), pattern=wrap(pattern)) == value
+
+
+@pytest.mark.parametrize("value, pattern", _PATTERN_CASES)
+def test_parse_rejects_bytes(value, pattern):
+    text = value.format(pattern).encode()
+    with pytest.raises(TypeError, match="parse\\(\\) argument must be a str"):
+        type(value).parse(text, pattern=pattern)
 
 
 def _pattern_calls(value: Any, pattern: str) -> list[Callable[[str], object]]:

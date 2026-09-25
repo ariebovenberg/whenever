@@ -1494,6 +1494,8 @@ def parse_fields(
     s: str,
 ) -> _ParseState:
     """Parse a string using compiled pattern elements."""
+    if not isinstance(s, str):
+        raise TypeError("parse() argument must be a string")
     if not s.isascii():
         raise ValueError("input must be ASCII-only")
     if len(s) > 1000:

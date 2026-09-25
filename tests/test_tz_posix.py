@@ -722,6 +722,61 @@ class TestSystemTzString:
             assert d.offset == hours(offset)
             assert d.tz_abbrev() == abbrev
 
+    @pytest.mark.parametrize(
+        "tz, utc, offset",
+        [
+            # 2023 starts and ends DST at the same instant: standard time
+            # holds until 2024 starts DST, after it ends DST on Mar 24
+            ("EST5EDT,M3.5.0,M3.4.0/3", (2024, 1, 9, 23), -5),
+            ("EST5EDT,M3.5.0,M3.4.0/3", (2024, 1, 10, 1), -5),
+            ("EST5EDT,M3.5.0,M3.4.0/3", (2024, 3, 24, 12), -5),
+            ("EST5EDT,M3.5.0,M3.4.0/3", (2024, 4, 5), -4),
+            # J62 comes after M3.1.0 in 1998 and before it in 2001
+            ("AAA3BBB,J62/0,M3.1.0/0", (1999, 1, 5), -2),
+            ("AAA3BBB,J62/0,M3.1.0/0", (1999, 1, 20), -2),
+            ("AAA3BBB,J62/0,M3.1.0/0", (2002, 1, 5), -3),
+            ("AAA3BBB,J62/0,M3.1.0/0", (2002, 1, 20), -3),
+        ],
+    )
+    def test_start_and_end_swap_order_between_years(self, tz, utc, offset):
+        # Expected values from libc
+        with system_tz(tz):
+            d = Instant.from_utc(*utc).to_tz(SYSTEM_TZ)
+            assert d.offset == hours(offset)
+
+    @pytest.mark.parametrize(
+        "tz, utc, offset, prev, next",
+        [
+            # DST ends 100 hours before the year's first Sunday, so in the
+            # previous December
+            (
+                "AAA3BBB,M6.1.0,M1.1.0/-100",
+                (1992, 12, 30, 12),
+                -3,
+                "1992-12-29T19:00:00-03:00",
+                "1993-06-06T03:00:00-02:00",
+            ),
+            (
+                "AAA3BBB,M6.1.0,M1.1.0/-100",
+                (1992, 1, 1),
+                -3,
+                "1991-12-31T19:00:00-03:00",
+                "1992-06-07T03:00:00-02:00",
+            ),
+        ],
+    )
+    def test_rule_time_moves_a_transition_into_the_previous_year(
+        self, tz, utc, offset, prev, next
+    ):
+        # Expected values from tzcode's zdump
+        with system_tz(tz):
+            d = Instant.from_utc(*utc).to_tz(SYSTEM_TZ)
+            assert d.offset == hours(offset)
+            p, n = d.prev_transition(), d.next_transition()
+            assert p is not None and n is not None
+            assert str(p.to_fixed_offset()) == prev
+            assert str(n.to_fixed_offset()) == next
+
     @system_tz("CET-1CEST,M3.5.0,M10.5.0/3")
     def test_prev_transition_in_year_1(self):
         d = ZonedDateTime(1, 6, 1, tz=SYSTEM_TZ).prev_transition()

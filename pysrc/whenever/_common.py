@@ -508,7 +508,8 @@ def add_alternate_constructors(
                 self._init_from_iso(iso_string, **kwargs)
             case [obj] if py_type is not None and isinstance(obj, py_type):
                 self._init_from_py(obj, **kwargs)
-            case [obj] if not isinstance(obj, int):
+            # An integer is the first field: Time's hour
+            case [obj] if not hasattr(type(obj), "__index__"):
                 raise TypeError(f"{type(self).__name__}() requires {accepted}")
             case _:
                 try:

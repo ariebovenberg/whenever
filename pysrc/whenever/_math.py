@@ -437,8 +437,10 @@ def rounds_up(
     below it, and ``span`` the distance to the next one. They need not be in
     the unit that is rounded: months round by the days between two dates.
     ``quotient_odd`` is the parity of the multiple below, for a tie.
+    ``remainder`` reaches ``span`` only where a skipped day resolves the
+    next multiple onto the magnitude itself.
     """
-    assert 0 <= remainder < span
+    assert 0 <= remainder <= span
     if sign < 0:
         mode = _NEGATED_MODES.get(mode, mode)
     match mode:

@@ -311,8 +311,8 @@ naive value as "already in whatever time zone you name".
 
 ```python
 >>> n = pendulum.naive(2024, 1, 1)
->>> n.tzname()                              # inherited: no time zone
-None
+>>> n.tzname() is None                      # inherited: no time zone
+True
 >>> n.astimezone(pendulum.UTC)              # inherited: local (e.g. New York)
 DateTime(2024, 1, 1, 5, 0, 0, tzinfo=Timezone('UTC'))
 >>> pendulum.instance(datetime(2024, 1, 1)) # doubled-down: it is UTC

@@ -230,6 +230,8 @@ class TimeZone:
                 and self._local_epochs == other._local_epochs
                 and self._local_values == other._local_values
                 and self._end == other._end
+                and self._footer_from == other._footer_from
+                and self._footer_local_from == other._footer_local_from
                 and self._meta_by_utc == other._meta_by_utc
                 and self._abbrev_data == other._abbrev_data
             )
@@ -454,6 +456,9 @@ def _parse_content(
     if end is not None and transition_times:
         last = transition_times[-1]
         last_offset = offsets_by_utc[-1][1]
+        # RFC 8536 section 3.3: the POSIX TZ string agrees with the last record
+        if end.offset_for_instant(last) != last_offset:
+            raise ValueError("Invalid TZif data")
         if (nxt := end.next_transition(last)) is not None:
             footer_from, offset = nxt
             footer_local_from = clamp_epoch_secs(
@@ -570,6 +575,17 @@ def _load_transitions(
             continue
         follows_dst = prev_type[1]
         prev_type = utoff, isdst, abbrind = types[idx]
+        prev_epoch, prev_offset = offsets[-1]
+        # Real data changes by 24 hours at most (Alaska in 1867), which
+        # lets a day's bounds lie at most one day away. A gap or fold that
+        # overlaps the previous one maps local times to an offset its
+        # instant doesn't have.
+        if abs(utoff - prev_offset) > 86_400 or (
+            len(offsets) > 1
+            and epoch + min(utoff, prev_offset)
+            < prev_epoch + max(offsets[-2][1], prev_offset)
+        ):
+            raise ValueError("Invalid TZif data")
         offsets.append((epoch, utoff))
 
         if not isdst:
@@ -605,8 +621,9 @@ def _local_transitions(
     assert transitions  # we've ensured there's at least one transition
 
     (_, offset_prev), *remaining = transitions
+    # `_load_transitions` has rejected overlapping gaps and folds among the
+    # records, so their local times ascend
     for epoch, offset in remaining:
-        # NOTE: we don't check for "impossible" gaps or folds
         local_time = epoch + max(offset_prev, offset)
         # Saturating add to be consistent with Rust version
         local_time = max(EPOCH_SECS_MIN, min(EPOCH_SECS_MAX, local_time))

@@ -27,6 +27,9 @@ whether you pass it an ISO string or a standard library datetime, and to
 {meth}`~whenever.OffsetDateTime.assume_tz`. A local time derived from an
 existing value follows a related rule, described in
 {ref}`offset-preserving resolution <offset-preserving>`.
+A standard library datetime with a local time in a gap already names one
+instant under [PEP 495](https://peps.python.org/pep-0495/), which its `fold`
+selects, so `disambiguation=` doesn't apply to it.
 
 (offset-mismatch)=
 ## The complete resolution flow

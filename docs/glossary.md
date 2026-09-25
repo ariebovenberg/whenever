@@ -229,7 +229,8 @@ optional seconds
 
 12-hour clock
   Hours 1 through 12 together with an AM/PM specifier, written with `i`/`ii`
-  and `a`/`aa`. A pattern with one but not the other warns.
+  and `a`/`aa`. A pattern with `i`/`ii` but no AM/PM specifier warns; an
+  AM/PM specifier without `i`/`ii` doesn't.
   Also called *12-hour format*, *12-hour time*, and *AM/PM time*.
   See {ref}`pattern-format`.
 
@@ -285,7 +286,7 @@ Rust extension
 
 pure-Python backend
   The fallback that loads when the Rust extension is absent, and the
-  reference the extension mirrors. Behaviour is the same; speed is not.
+  reference the Rust extension mirrors. Behaviour is the same; speed is not.
   Also called *pure-Python version*, *pure-Python implementation*,
   *pure-Python option*, *pure-Python fallback*, and *pure-Python wheel*.
   See {ref}`faq-pure-python`.

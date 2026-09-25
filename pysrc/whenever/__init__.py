@@ -48,11 +48,7 @@ def __getattr__(name: str) -> object:
 # Ensures not-yet-imported names are still included in dir() output
 def __dir__() -> list[str]:
     return sorted(
-        (
-            globals().keys()
-            | _LAZY_NAMES.keys()
-            | {"TZPATH", "DisambiguateStr", "AnyDelta", "__version__"}
-        )
+        (globals().keys() | _LAZY_NAMES.keys() | {"AnyDelta", "__version__"})
         - {"_LAZY_MODULES", "_LAZY_NAMES"}
     )
 

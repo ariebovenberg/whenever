@@ -3,20 +3,23 @@ myst:
   html_meta:
     description: >-
       How equality and ordering work in whenever: exact types compare by moment in
-      time, values of different types never mix, itemized deltas do not order,
+      time, values of different types mix only within the exact family,
+      itemized deltas do not order,
       plus strict_eq() and nanosecond precision caveats.
 ---
 
 # Comparison and equality
 
-Every type supports `==`. Every type but the itemized deltas supports
-ordering (`<`, `<=`, `>`, `>=`): a calendar unit has no fixed length, so
-compare {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta`
-after `in_units()` or `total()` with a `relative_to`.
-Values of different types are equal only within the exact family
+Every type supports `==`. Every type but {class}`~whenever.Weekday` and the
+itemized deltas supports ordering (`<`, `<=`, `>`, `>=`): a calendar unit has
+no fixed length, so compare {class}`~whenever.ItemizedDelta` and
+{class}`~whenever.ItemizedDateDelta` after `in_units()` or `total()` with a
+`relative_to`.
+Values of different types are equal and order only within the exact family
 ({class}`~whenever.Instant`, {class}`~whenever.OffsetDateTime`,
-{class}`~whenever.ZonedDateTime`) and never order: `<` across types raises
-{exc}`TypeError`. No *whenever* value equals a standard-library value, and an
+{class}`~whenever.ZonedDateTime`): outside the exact family, `==` across types
+is `False` and `<` raises {exc}`TypeError`.
+No *whenever* value equals a standard-library value, and an
 itemized delta, though a {class}`~collections.abc.Mapping`, never equals a
 `dict`.
 `hash()` agrees with `==` on every type: values that compare equal hash alike,

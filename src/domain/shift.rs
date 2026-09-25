@@ -47,6 +47,9 @@ impl DateTimeShift {
             time: self.time.negate_if(negate),
         }
     }
+    pub(crate) fn is_zero(self) -> bool {
+        self.calendar.is_zero() && self.time.is_zero()
+    }
 }
 
 impl TimeDelta {

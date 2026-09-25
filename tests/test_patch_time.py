@@ -148,11 +148,13 @@ def test_patch_current_time_rejects_non_exact_time():
 def test_time_patch_rejects_invalid_shift_arguments():
     i = Instant.from_utc(1980, 3, 2, hour=2)
     with patch_current_time(i, keep_ticking=False) as handle:
-        with pytest.raises(TypeError, match="must be a TimeDelta"):
+        with pytest.raises(
+            TypeError, match=r"^shift\(\) argument must be a TimeDelta$"
+        ):
             handle.shift(ItemizedDelta(days=1))  # type: ignore[call-overload]
         with pytest.raises(TypeError, match="unexpected keyword"):
             handle.shift(years=1)  # type: ignore[call-overload]
-        with pytest.raises(TypeError, match="[Cc]annot mix"):
+        with pytest.raises(TypeError, match=r"^shift\(\) cannot mix"):
             handle.shift(hours(1), minutes=1)  # type: ignore[call-overload]
         with warnings.catch_warnings():
             warnings.simplefilter("error")

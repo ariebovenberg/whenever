@@ -24,3 +24,9 @@ updates:
     interval: "weekly"
   commit-message:
     prefix: "🤖 "
+- package-ecosystem: "rust-toolchain"
+  directory: "/"
+  schedule:
+    interval: "weekly"
+  commit-message:
+    prefix: "🤖 "

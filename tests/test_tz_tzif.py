@@ -4,7 +4,9 @@
 import os
 import struct
 from datetime import datetime, timedelta, timezone
+from importlib.util import find_spec
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from whenever import (
@@ -22,6 +24,12 @@ from whenever._tz.tzif import TimeZone, bisect
 from .common import hhmm, tz_rules_from_file, ymdhms
 
 TZIF_DIR = Path(__file__).parent / "tzif"
+# slim files, and the only source on Windows
+TZDATA_DIR = (
+    Path(spec.origin).parent / "zoneinfo"
+    if (spec := find_spec("tzdata")) and spec.origin
+    else None
+)
 UTC_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
@@ -364,30 +372,41 @@ class TestTZifFiles:
         assert ambiguity(AMS, t) == expected
 
 
-def test_smoke():
-    """Test parsing various TZif files without crashing"""
-    tzdir = "/usr/share/zoneinfo"
-
+@pytest.mark.parametrize(
+    "tzdir",
+    [Path("/usr/share/zoneinfo"), TZDATA_DIR],
+)
+def test_smoke(tzdir: Path | None):
+    """Every TZif file parses and agrees with zoneinfo"""
+    if tzdir is None or not tzdir.is_dir():
+        pytest.skip(f"no {tzdir}")
+    count = 0
     for root, _, files in os.walk(tzdir):
         # Special directories we should ignore
-        if "right/" in root or "posix/" in root:
+        if "right" in root or "posix" in root:
             continue
 
         for file in files:
-            path = os.path.join(root, file)
-
-            # Skip unreadable files
-            try:
-                with open(path, "rb") as f:
-                    data = f.read()
-            except (PermissionError, IsADirectoryError):
-                continue
-
+            path = Path(root, file)
+            data = path.read_bytes()
             # Skip non-TZif files
             if not data.startswith(b"TZif"):
                 continue
 
-            assert TimeZone.parse_tzif(data) is not None
+            count += 1
+            tz = TimeZone.parse_tzif(data)
+            with path.open("rb") as f:
+                expect = ZoneInfo.from_file(f)
+            for t in range(-2_500_000_000, 4_200_000_000, 77_777_777):
+                # Not fromtimestamp(): Windows rejects negative timestamps
+                offset = (
+                    (UTC_EPOCH + timedelta(seconds=t))
+                    .astimezone(expect)
+                    .utcoffset()
+                )
+                assert offset is not None
+                assert tz.offset_for_instant(t) == offset.total_seconds(), path
+    assert count > 300
 
 
 def tzif(
@@ -554,14 +573,14 @@ class TestDegenerateFiles:
         # standard time: the saving stays one hour until the footer governs
         data = tzif(
             version=2,
-            times=(1590969600,),  # 2020-06-01
+            times=(1577836800,),  # 2020-01-01
             idxs=(1,),
             types=((0, 0, 0), (3600, 1, 4)),
             abbrevs=b"LMT\x00XDT\x00",
             footer=b"CET-1CEST,M3.5.0,M10.5.0/3",
         )
         with self._zone(tmp_path, data):
-            d = ZonedDateTime(2020, 7, 1, tz="Test/Zone")
+            d = ZonedDateTime(2020, 2, 1, tz="Test/Zone")
             assert d.offset == hours(1)
             assert d.dst_offset() == hours(1)
             assert d.tz_abbrev() == "XDT"
@@ -584,6 +603,51 @@ class TestDegenerateFiles:
                 assert ZonedDateTime(
                     year, 1, 15, tz="Test/Zone"
                 ).offset == hours(1)
+
+    def test_marker_past_2050(self, tmp_path: Path):
+        # A slim-style file whose last record, a no-op marker in 2060, lies
+        # past the years pure Python computes ahead: the record before the
+        # marker holds until it, as in zoneinfo
+        data = tzif(
+            version=2,
+            times=(946684800, 2840140800),  # 2000-01-01, 2060-01-01
+            idxs=(1, 1),
+            types=((0, 0, 0), (3600, 0, 4)),
+            abbrevs=b"LMT\x00CET\x00",
+            footer=b"CET-1CEST,M3.5.0,M10.5.0/3",
+        )
+        with self._zone(tmp_path, data):
+            d = Instant.from_utc(2055, 7, 1).to_tz("Test/Zone")
+            assert d.offset == hours(1)
+            assert d.tz_abbrev() == "CET"
+            assert d.dst_offset() == TimeDelta.ZERO
+            # the footer's gap doesn't apply yet
+            assert ZonedDateTime(
+                2055, 3, 28, 2, 30, tz="Test/Zone", disambiguation="raise"
+            ).offset == hours(1)
+            assert d.next_transition() == ZonedDateTime(
+                "2060-03-28 03:00:00+02:00[Test/Zone]"
+            )
+            assert d.prev_transition() == ZonedDateTime(
+                "2000-01-01 01:00:00+01:00[Test/Zone]"
+            )
+            assert Instant.from_utc(2061, 1, 1).to_tz(
+                "Test/Zone"
+            ).prev_transition() == ZonedDateTime(
+                "2060-10-31 02:00:00+01:00[Test/Zone]"
+            )
+
+    def test_ascii_version_zero_is_version_1(self, tmp_path: Path):
+        data = tzif(
+            version=1,
+            times=(),
+            idxs=(),
+            types=((3600, 0, 0),),
+            abbrevs=b"CET\x00",
+            footer=b"",
+        )
+        with self._zone(tmp_path, data[:4] + b"0" + data[5:]):
+            assert ZonedDateTime(2024, 7, 1, tz="Test/Zone").offset == hours(1)
 
     def test_long_abbreviation(self, tmp_path: Path):
         data = tzif(
@@ -632,6 +696,18 @@ class TestDegenerateFiles:
                 ),
                 1000,
             ),
+            # a v1 leap second record cut off
+            _with_leap_count(
+                tzif(
+                    version=1,
+                    times=(),
+                    idxs=(),
+                    types=((3600, 0, 0),),
+                    abbrevs=b"CET\x00",
+                    footer=b"",
+                ),
+                1,
+            ),
             # a type index beyond the types
             tzif(
                 version=2,
@@ -659,6 +735,15 @@ class TestDegenerateFiles:
                 abbrevs=b"C\xc3\xa9T\x00",
                 footer=b"",
             ),
+            # an abbreviation outside ASCII that no type refers to
+            tzif(
+                version=2,
+                times=(-5364662400,),
+                idxs=(1,),
+                types=((0, 0, 0), (7200, 0, 4)),
+                abbrevs=b"LMT\x00EET\x00\xff\x00",
+                footer=b"EET-2",
+            ),
             # a footer whose rule time was cut off
             tzif(
                 version=2,
@@ -667,6 +752,42 @@ class TestDegenerateFiles:
                 types=((3600, 0, 0),),
                 abbrevs=b"CET\x00",
                 footer=b"CET-1CEST,M3.5.0,M10.5.0/",
+            ),
+            # an offset change of more than 24 hours
+            tzif(
+                version=2,
+                times=(0,),
+                idxs=(1,),
+                types=((43200, 0, 0), (-43201, 0, 4)),
+                abbrevs=b"AAA\x00BBB\x00",
+                footer=b"",
+            ),
+            # a gap that overlaps the fold after it
+            tzif(
+                version=2,
+                times=(1_000_000_000, 1_000_000_001),
+                idxs=(1, 0),
+                types=((0, 0, 0), (7200, 0, 4)),
+                abbrevs=b"AAA\x00BBB\x00",
+                footer=b"AAA0",
+            ),
+            # a footer at another offset than the last record
+            tzif(
+                version=2,
+                times=(-640713491,),
+                idxs=(1,),
+                types=((-2700, 0, 0), (18000, 0, 4)),
+                abbrevs=b"AAA\x00BBB\x00",
+                footer=b"<STD>+23:59:59<DST>+23:59:59,241/25:00:00,J215/-24:00:00",
+            ),
+            # a footer in DST where the last record is standard time
+            tzif(
+                version=2,
+                times=(1709967600, 1720000000),
+                idxs=(1, 0),
+                types=((-18000, 0, 0), (-14400, 1, 4)),
+                abbrevs=b"EST\x00EDT\x00",
+                footer=b"EST5EDT,M3.2.0,M11.1.0",
             ),
         ],
     )

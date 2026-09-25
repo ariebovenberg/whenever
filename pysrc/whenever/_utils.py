@@ -104,7 +104,7 @@ class _TimePatch:
             _patch_time_frozen(pin)
         self._pin = pin
 
-    def shift(self, *args: Any, **kwargs: Any) -> None:
+    def shift(self, delta: Any = UNSET, /, **kwargs: Any) -> None:
         """Move the patched clock by an elapsed time, given as a
         ``TimeDelta`` or as the keywords of ``Instant.add()``.
         ``days=`` and ``weeks=`` count 24-hour days and warn with
@@ -112,7 +112,7 @@ class _TimePatch:
         ``days_assumed_24h_ok=True``. A ticking patch shifts from the
         current instant.
         """
-        if not args:
+        if delta is UNSET:
             # Build the delta here rather than in Instant.add(), so that the
             # days-are-24-hours warning points at the caller of shift().
             ok = kwargs.pop("days_assumed_24h_ok", False)
@@ -123,11 +123,16 @@ class _TimePatch:
                     DaysAssumed24HoursWarning,
                     stacklevel=2,
                 )
-            args, kwargs = (delta,), {}
+        elif kwargs:
+            raise TypeError(
+                "shift() cannot mix positional and keyword arguments"
+            )
+        elif not isinstance(delta, TimeDelta):
+            raise TypeError("shift() argument must be a TimeDelta")
         with _patch_lock:
             self._check_active()
             current = Instant.now() if self._keep_ticking else self._pin
-            self._apply(current.add(*args, **kwargs))
+            self._apply(current.add(delta))
 
     def move_to(
         self,
@@ -163,7 +168,9 @@ def patch_current_time(
     **ticking** patch (``keep_ticking=True``) advances from it.
     Works as a context manager or as a decorator. Patches do not nest:
     creating one while another is active raises :exc:`RuntimeError`.
-    The decorator form does not pass the handle to the decorated function.
+    The decorator form does not pass the handle to the decorated function,
+    and doesn't cover the body of an ``async def`` function: enter
+    ``with patch_current_time(...)`` inside the coroutine instead.
 
     Important
     ---------

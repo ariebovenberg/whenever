@@ -808,8 +808,8 @@ pub(crate) fn round_by_time(
     neg: bool,
 ) -> i32 {
     // Only run the rounding logic if the rounding mode isn't already trunc
-    // since that mode doesn't require any work. A skipped day can make the
-    // two endpoints coincide; the truncated value is then already rounded.
+    // since that mode doesn't require any work. The endpoints coincide only
+    // where the target is the truncated value.
     if mode == round::AbsMode::Trunc || expand == trunc {
         // Truncated value (the common case)
         value

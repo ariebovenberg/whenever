@@ -114,12 +114,20 @@ mod gil_enabled {
         #[inline]
         pub(crate) fn get(&self) -> PyResult<Arc<T>> {
             // SAFETY: only accessed under CPython's own synchronization (the GIL)
-            let slot = unsafe { &mut *self.value.get() };
-            if slot.is_none() {
-                *slot = Some(Arc::new((self.init)()?));
+            if let Some(arc) = unsafe { &*self.value.get() } {
+                return Ok(arc.clone());
             }
-            // SAFETY: We just ensured it's Some
-            Ok(unsafe { slot.as_ref().unwrap_unchecked() }.clone())
+            self.get_slow()
+        }
+
+        /// Slow path: `init` may run Python code that releases the GIL, so
+        /// no reference to the slot lives across it. Another thread may have
+        /// initialized or `set()` the slot meanwhile; its value wins.
+        #[cold]
+        fn get_slow(&self) -> PyResult<Arc<T>> {
+            let val = Arc::new((self.init)()?);
+            // SAFETY: only accessed under CPython's own synchronization (the GIL)
+            Ok(unsafe { &mut *self.value.get() }.get_or_insert(val).clone())
         }
 
         /// Get the value if already initialized (e.g. for GC traverse).

@@ -280,11 +280,11 @@ how to suppress it.
 For `since()`/`until()`, calendar units (`years`, `months`, `weeks`, `days`) require
 both datetimes to carry the same UTC offset — or a {exc}`ValueError` is raised.
 Exact units work freely across different offsets.
-Whole calendar units are correct in any time zone, but a remainder in exact
-units after them (`in_units` mixing the two kinds, or `total=` of a calendar
-unit) is computed with the offset held fixed, so those forms emit
-{class}`StaleOffsetWarning`; whole-unit `in_units`, an exact `total=`, `-`,
-and `difference()` stay silent.
+Whole calendar units are correct in any time zone, but the remainder in exact
+units after them is computed with the offset held fixed, so the forms that depend
+on it emit {class}`StaleOffsetWarning`: `in_units` mixing the two kinds,
+a `round_mode` other than `"trunc"`, and `total=` of a calendar unit.
+Truncated whole-unit `in_units`, an exact `total=`, `-`, and `difference()` stay silent.
 Pass `stale_offset_ok=True` when the fixed offset is intentional:
 
 ```python

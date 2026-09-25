@@ -122,6 +122,12 @@ There are some restrictions on the allowed increments:
   but not to the nearest 7 seconds.
   {meth}`TimeDelta.round() <whenever.TimeDelta.round>` has no such rule.
 
+In `in_units()`, `since()`, and `until()`, `round_increment=` applies to the
+smallest component, and the `half_*` modes measure nearness to that
+component's multiples before any carry: 5 hours 59 minutes in hours and
+minutes with `round_increment=7` and `round_mode="half_expand"` is `PT5h56m`
+(3 minutes away), not the carried `PT6h0m` (1 minute away).
+
 ## Boundaries
 
 Where `round()` moves a value to the nearest increment of a unit,

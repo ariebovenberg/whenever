@@ -5,9 +5,9 @@ Note this isn't a unit test, because it relies on a clean cache
 """
 
 import sys
+import threading
 import time
 from os import environ
-from threading import Thread
 
 from whenever import SYSTEM_TZ, PlainDateTime, reset_system_tz
 
@@ -65,6 +65,18 @@ def set_system_tz(tzs):
         del zdt
 
 
+# A worker's exception only prints its traceback; collect them to fail the run
+FAILURES = []
+
+
+def collect_failure(args):
+    FAILURES.append(args.exc_value)
+    threading.__excepthook__(args)
+
+
+threading.excepthook = collect_failure
+
+
 def main(func):
     print(f"Starting test: {func.__name__}")
     threads = []
@@ -72,7 +84,7 @@ def main(func):
     start_time = time.time()
 
     for n in range(NUM_THREADS):
-        thread = Thread(target=func, args=(TZS[n::NUM_THREADS],))
+        thread = threading.Thread(target=func, args=(TZS[n::NUM_THREADS],))
         threads.append(thread)
         thread.start()
 
@@ -86,3 +98,5 @@ def main(func):
 if __name__ == "__main__":
     main(touch_timezones)
     main(set_system_tz)
+    if FAILURES:
+        sys.exit(f"{len(FAILURES)} worker thread(s) failed")

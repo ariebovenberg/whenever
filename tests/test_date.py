@@ -543,18 +543,21 @@ class TestDifference:
         assert a.until(b, **kwargs) == ItemizedDateDelta(days=up * 2)
 
     @pytest.mark.parametrize(
-        ("kwargs", "message"),
+        ("kwargs", "exc", "message"),
         [
             (
                 {"in_units": ["days"], "round_mode": "bad"},
+                ValueError,
                 "invalid round_mode: 'bad'",
             ),
             (
                 {"in_units": ["days"], "round_increment": 0},
+                ValueError,
                 "round_increment must be a positive integer in range",
             ),
             (
                 {"in_units": ["days"], "round_increment": -1},
+                ValueError,
                 "round_increment must be a positive integer in range",
             ),
             (
@@ -563,37 +566,41 @@ class TestDifference:
                     "round_increment": -1,
                     "round_mode": "ceil",
                 },
+                ValueError,
                 "round_increment must be a positive integer in range",
             ),
             (
                 {"in_units": ["months"], "round_increment": 10**9},
+                ValueError,
                 "round_increment must be a positive integer in range",
             ),
             (
                 {"in_units": ["days"], "round_increment": 1.5},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["days"], "round_increment": "1"},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["days"], "round_increment": None},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["days"], "round_increment": Fraction(1, 2)},
+                TypeError,
                 "round_increment must be an integer",
             ),
         ],
     )
     @pytest.mark.parametrize("method", ["since", "until"])
-    def test_invalid_rounding(self, method, kwargs, message):
+    def test_invalid_rounding(self, method, kwargs, exc, message):
         d1 = Date(2021, 1, 1)
         d2 = Date(2020, 1, 1)
-        with pytest.raises(
-            (TypeError, ValueError), match="^" + re.escape(message) + "$"
-        ):
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
             getattr(d1, method)(d2, **kwargs)
 
     def test_units_may_be_any_iterable(self):

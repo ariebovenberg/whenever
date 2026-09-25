@@ -8,6 +8,7 @@ from datetime import (
     timezone as py_timezone,
 )
 from fractions import Fraction
+from itertools import product
 from pathlib import Path
 from typing import Any, Literal, Sequence, cast
 from zoneinfo import (
@@ -51,6 +52,7 @@ from .common import (
     AMS_TZ_POSIX,
     AMS_TZ_RAWFILE,
     AMS_TZ_RAWFILE_DST_LATE,
+    ROUND_MODES_AT_A_TIE,
     DatetimeSubclass,
     Idx,
     create_zdt,
@@ -72,6 +74,14 @@ TEST_DIR = Path(__file__).parent
 
 _NEEDS_TZDATA = pytest.mark.skipif(
     not HAS_TZDATA, reason="tzdata not installed"
+)
+
+HALF_MODES = (
+    "half_ceil",
+    "half_floor",
+    "half_trunc",
+    "half_expand",
+    "half_even",
 )
 _NEEDS_CASABLANCA = pytest.mark.skipif(
     not HAS_TZDATA
@@ -2857,7 +2867,7 @@ class TestReplace:
 
     def test_date_invalid(self):
         d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
-        with pytest.raises((TypeError, AttributeError)):
+        with pytest.raises(TypeError, match="must be a Date"):
             d.replace_date(object(), disambiguation="compatible")  # type: ignore[call-overload]
 
         with pytest.raises(ValueError, match="disambig"):
@@ -2976,7 +2986,7 @@ class TestReplace:
 
     def test_time_invalid(self):
         d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
-        with pytest.raises((TypeError, AttributeError)):
+        with pytest.raises(TypeError, match="must be a Time"):
             d.replace_time(object(), disambiguation="later")  # type: ignore[call-overload]
 
         with pytest.raises(ValueError, match="disambig"):
@@ -4188,6 +4198,36 @@ class TestSince:
         ):
             call(a, b)
 
+    @pytest.mark.parametrize(
+        "rules, got",
+        [
+            (
+                ("EST5EDT,M3.2.0,M11.1.0", "JST-9"),
+                "two different time zones without an ID",
+            ),
+            (
+                (Path(AMS_TZ_RAWFILE), Path(AMS_TZ_RAWFILE_DST_LATE)),
+                "'Europe/Amsterdam' from two different time zone databases",
+            ),
+        ],
+    )
+    def test_cal_units_with_same_id_other_rules(
+        self, rules: tuple[str, str] | tuple[Path, Path], got: str, tmp_path
+    ):
+        def load(r: str | Path) -> ZonedDateTime:
+            if isinstance(r, str):  # a system time zone without an ID
+                with system_tz(r):
+                    return ZonedDateTime(2024, 3, 9, 12, tz=SYSTEM_TZ)
+            with tz_rules_from_file("Europe/Amsterdam", str(r), tmp_path):
+                return ZonedDateTime(2024, 3, 9, 12, tz="Europe/Amsterdam")
+
+        a, b = map(load, rules)
+        with pytest.raises(
+            ValueError,
+            match=f"^calendar units require the same time zone, got {got}$",
+        ):
+            a.since(b, in_units=["days", "hours"])
+
     @pytest.mark.parametrize("method", ["since", "until"])
     @pytest.mark.parametrize(
         "other",
@@ -4250,64 +4290,73 @@ class TestSince:
         )
 
     @pytest.mark.parametrize(
-        ("kwargs", "message"),
+        ("kwargs", "exc", "message"),
         [
-            ({"in_units": []}, "in_units must not be empty"),
+            ({"in_units": []}, ValueError, "in_units must not be empty"),
             (
                 {"in_units": ["hours", "hours"]},
+                ValueError,
                 "in_units cannot contain duplicates",
             ),
-            ({"in_units": ["foo"]}, "invalid unit: 'foo'"),
+            ({"in_units": ["foo"]}, ValueError, "invalid unit: 'foo'"),
             (
                 {"in_units": ["minutes", "hours"]},
+                ValueError,
                 "in_units must be in decreasing order of size",
             ),
             (
                 {"in_units": "hours"},
+                TypeError,
                 "in_units must be a sequence of strings, not a single string",
             ),
             (
                 {"in_units": ["hours", "nanoseconds"]},
+                ValueError,
                 "nanoseconds can only be specified together with seconds",
             ),
             (
                 {"in_units": ["hours"], "round_mode": "bad"},
+                ValueError,
                 "invalid round_mode: 'bad'",
             ),
             (
                 {"in_units": ["days"], "round_increment": 0},
+                ValueError,
                 "round_increment must be a positive integer in range",
             ),
             (
                 {"in_units": ["hours"], "round_increment": -1},
+                ValueError,
                 "round_increment must be a positive integer in range",
             ),
             (
                 {"in_units": ["hours"], "round_increment": 1.5},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["hours"], "round_increment": "1"},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["hours"], "round_increment": None},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["hours"], "round_increment": 2**63},
+                ValueError,
                 "value or calculation out of range",
             ),
-            ({"total": "foo"}, "invalid unit: 'foo'"),
+            ({"total": "foo"}, ValueError, "invalid unit: 'foo'"),
         ],
     )
     @pytest.mark.parametrize("method", ["since", "until"])
-    def test_invalid_units_and_rounding(self, method, kwargs, message):
+    def test_invalid_units_and_rounding(self, method, kwargs, exc, message):
         a = ZonedDateTime(2023, 2, 15, tz="Asia/Tokyo")
         b = ZonedDateTime(2023, 2, 14, tz="Asia/Tokyo")
-        with pytest.raises(
-            (TypeError, ValueError), match="^" + re.escape(message) + "$"
-        ):
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
             getattr(a, method)(b, **kwargs)
 
     @pytest.mark.parametrize(
@@ -4430,8 +4479,8 @@ class TestSince:
             a.since(b, **kwargs)
 
     # Stepping back from ``b`` by one day and by two lands on the same
-    # instant, because the second step lands in the skipped day. The
-    # truncated result is then already rounded.
+    # instant, because the second step lands in the skipped day. Rounding
+    # away from zero steps on to the third day, which lies past ``a``.
     @pytest.mark.parametrize(
         "a, b",
         [
@@ -4467,10 +4516,11 @@ class TestSince:
         a, b = ZonedDateTime(a), ZonedDateTime(b)
         delta = ItemizedDelta(hours=-35)
         assert a - b == TimeDelta(hours=-35)
+        days = -3 if mode in ("floor", "expand") else -1
         cases: list[tuple[list[DeltaUnitStr], ItemizedDelta]] = [
-            (["days"], ItemizedDelta(days=-1)),
-            (["weeks", "days"], ItemizedDelta(weeks=0, days=-1)),
-            (["months", "days"], ItemizedDelta(months=0, days=-1)),
+            (["days"], ItemizedDelta(days=days)),
+            (["weeks", "days"], ItemizedDelta(weeks=0, days=days)),
+            (["months", "days"], ItemizedDelta(months=0, days=days)),
         ]
         for units, expect in cases:
             assert b.until(a, in_units=units, round_mode=mode).strict_eq(
@@ -4483,9 +4533,164 @@ class TestSince:
                 units, relative_to=b, round_mode=mode
             ).strict_eq(expect)
 
-        assert b.until(a, total="days") == -1.0
-        assert delta.total("days", relative_to=b) == -1.0
-        assert (a - b).total("days", relative_to=b) == -1.0
+        # 11 of the 24 hours from the first day to the third
+        total = pytest.approx(-1 - 2 * 11 / 24)
+        assert b.until(a, total="days") == total
+        assert delta.total("days", relative_to=b) == total
+        assert (a - b).total("days", relative_to=b) == total
+
+    # The date one increment past the truncated value is skipped, or
+    # resolves short of the target: rounding away from zero steps on.
+    @pytest.mark.parametrize(
+        "a, b, units, increment, total, near, far, away",
+        [
+            (
+                "2011-12-31 12:00+14:00[Pacific/Apia]",
+                "2011-12-31 11:59:59+14:00[Pacific/Apia]",
+                ["days"],
+                1,
+                -2 / 86_400,
+                ItemizedDelta(days=0),
+                ItemizedDelta(days=-2),
+                {"floor", "expand"},
+            ),
+            (
+                "2011-12-31 12:00+14:00[Pacific/Apia]",
+                "2011-12-31 00:00+14:00[Pacific/Apia]",
+                ["days"],
+                1,
+                -1.0,
+                ItemizedDelta(days=0),
+                ItemizedDelta(days=-2),
+                {"floor", "expand", "half_floor", "half_expand"},
+            ),
+            (
+                "2012-01-02 14:32:53+14:00[Pacific/Apia]",
+                "2011-12-31 06:57:44+14:00[Pacific/Apia]",
+                ["days"],
+                3,
+                -2.632152777777778,
+                ItemizedDelta(days=0),
+                ItemizedDelta(days=-6),
+                {"floor", "expand"},
+            ),
+            (
+                "2012-01-02 14:32:53+14:00[Pacific/Apia]",
+                "2011-12-31 06:57:44+14:00[Pacific/Apia]",
+                ["months", "days"],
+                3,
+                -2.632152777777778,
+                ItemizedDelta(months=0, days=0),
+                ItemizedDelta(months=0, days=-6),
+                {"floor", "expand"},
+            ),
+            (
+                "2002-10-05 13:00+12:00[Pacific/Kwajalein]",
+                "1993-08-22 07:08:59+12:00[Pacific/Kwajalein]",
+                ["days"],
+                7,
+                -3331.4875231481483,
+                ItemizedDelta(days=-3325),
+                ItemizedDelta(days=-3339),
+                {"floor", "expand"},
+            ),
+            (
+                "2014-04-30 02:00+13:00[Pacific/Apia]",
+                "2012-01-02 16:24:46+14:00[Pacific/Apia]",
+                ["months"],
+                1,
+                -27.913315586419753,
+                ItemizedDelta(months=-27),
+                ItemizedDelta(months=-28),
+                {"floor", "expand", *HALF_MODES},
+            ),
+            (
+                "2013-06-30 06:00+13:00[Pacific/Apia]",
+                "2011-12-31 01:14:40+14:00[Pacific/Apia]",
+                ["months"],
+                1,
+                -18.006604938271604,
+                ItemizedDelta(months=-17),
+                ItemizedDelta(months=-19),
+                {"floor", "expand", *HALF_MODES},
+            ),
+            # The carry lands on the skipped day
+            (
+                "2012-09-28 19:00+13:00[Pacific/Apia]",
+                "2011-12-31 00:46:58+14:00[Pacific/Apia]",
+                ["weeks", "days"],
+                10,
+                -273.51810185185184,
+                ItemizedDelta(weeks=-38, days=0),
+                ItemizedDelta(weeks=-40, days=0),
+                {"floor", "expand", *HALF_MODES},
+            ),
+        ],
+    )
+    def test_rounding_next_to_a_skipped_day(
+        self, a, b, units, increment, total, near, far, away
+    ):
+        a, b = ZonedDateTime(a), ZonedDateTime(b)
+        assert a.until(b, total=units[-1]) == pytest.approx(total)
+        assert (b - a).total(units[-1], relative_to=a) == pytest.approx(total)
+        for mode, *_ in ROUND_MODES_AT_A_TIE:
+            expect = far if mode in away else near
+            assert a.until(
+                b, in_units=units, round_mode=mode, round_increment=increment
+            ).strict_eq(expect)
+            assert b.since(
+                a, in_units=units, round_mode=mode, round_increment=increment
+            ).strict_eq(expect)
+
+    @pytest.mark.parametrize(
+        "noon",
+        [
+            "2011-12-31 12:00+14:00[Pacific/Apia]",
+            "1995-01-01 12:00+14:00[Pacific/Kiritimati]",
+            "1993-08-22 12:00+12:00[Pacific/Kwajalein]",
+        ],
+    )
+    def test_rounding_laws_next_to_a_skipped_day(self, noon):
+        noon = ZonedDateTime(noon)
+        points = [
+            noon.add(hours=h, seconds=s)
+            for h, s in [(-80, 7), (-37, 0), (-13, 1), (-1, 0), (0, -1)]
+            + [(0, 0), (5, 0), (36, 30), (900, 0), (-1500, 3)]
+        ]
+        units_sets: list[list[DeltaUnitStr]] = [
+            ["days"],
+            ["weeks", "days"],
+            ["months"],
+            ["months", "days"],
+        ]
+        for a, b, units, increment in product(
+            points, points, units_sets, (1, 3)
+        ):
+            ends = {
+                m: a.add(
+                    a.until(
+                        b,
+                        in_units=units,
+                        round_mode=m,
+                        round_increment=increment,
+                    ),
+                    disambiguation="compatible",
+                )
+                for m in ("floor", "ceil", "trunc", "expand")
+            }
+            # a + result lies on the side of b the mode promises
+            assert ends["floor"] <= b <= ends["ceil"]
+            if b >= a:
+                assert ends["trunc"] <= b <= ends["expand"]
+            else:
+                assert ends["expand"] <= b <= ends["trunc"]
+            if increment == 1 and len(units) == 1:
+                [unit] = units
+                floor, ceil = (
+                    a.until(b, in_units=units, round_mode=m)[unit]
+                    for m in ("floor", "ceil")
+                )
+                assert floor <= a.until(b, total=unit) <= ceil
 
     # St. John's and Goose Bay fell back an hour from 00:01 to 23:01 of the
     # evening before, so a later instant can have an earlier local date.
@@ -5003,6 +5208,27 @@ class TestRound:
             unit, mode="floor", **kwargs
         ).strict_eq(
             ZonedDateTime(2023, 10, 1, 2, 40, tz="Australia/Lord_Howe")
+        )
+
+    # Cambridge Bay 1920-01-01: 00:00+00:00 back to 17:00-07:00, a fold of
+    # 7 hours. The first 2-hour multiple after 22:04+00:00 is 18:00-07:00.
+    @pytest.mark.parametrize(
+        "d, unit, increment, mode, expect",
+        [
+            (
+                "1919-12-31T22:04:00+00:00[America/Cambridge_Bay]",
+                "hour",
+                2,
+                "ceil",
+                "1919-12-31T18:00:00-07:00[America/Cambridge_Bay]",
+            ),
+        ],
+    )
+    def test_round_into_a_long_fold(self, d, unit, increment, mode, expect):
+        assert (
+            ZonedDateTime.parse_iso(d)
+            .round(unit, increment=increment, mode=mode)
+            .strict_eq(ZonedDateTime.parse_iso(expect))
         )
 
     @pytest.mark.parametrize(
@@ -5694,6 +5920,25 @@ class TestEndOf:
                     disambiguation="earlier",
                 )
             )
+        )
+
+    # Nairobi 1930-01-05: 00:00+03:00 back to 23:30+02:30. The minute
+    # before the change ends at the change, not on the later offset's grid.
+    @pytest.mark.parametrize(
+        "d, unit, expect",
+        [
+            (
+                "1930-01-04T23:59:59+03:00[Africa/Nairobi]",
+                "minute",
+                "1930-01-04T23:59:59.999999999+03:00[Africa/Nairobi]",
+            ),
+        ],
+    )
+    def test_unit_ending_at_an_offset_change(self, d, unit, expect):
+        assert (
+            ZonedDateTime.parse_iso(d)
+            .end_of(unit)
+            .strict_eq(ZonedDateTime.parse_iso(expect))
         )
 
     def test_range_edges(self):

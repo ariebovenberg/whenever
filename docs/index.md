@@ -42,7 +42,7 @@ ZonedDateTime("2023-03-25 17:00:00-04:00[America/New_York]")
 >>> Instant.now()
 Instant("2024-07-04 10:36:56Z")
 
-# Plain (naive) datetimes are a distinct type; impossible to mix with aware
+# Plain datetimes are a distinct type; impossible to mix with exact ones
 >>> PlainDateTime(2023, 3, 26, 7) < bedtime  # caught by your type checker!
 ```
 

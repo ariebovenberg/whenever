@@ -8,7 +8,7 @@ use super::{
     offset_datetime::OffsetDateTime,
     plain_datetime::PlainDateTime,
     round,
-    scalar::{EpochSecs, Offset, SubSecNanos},
+    scalar::{EpochSecs, NegateIf, Offset, SubSecNanos},
     time::{Time, TimeBoundaryUnit},
     units::{NS_PER_DAY, NS_PER_SECOND, S_PER_DAY},
 };
@@ -100,13 +100,17 @@ impl ZonedDateTime {
         let day_ns = next_day_start
             .to_instant()
             .diff(day_start.to_instant())
-            .total_nanos() as u64;
-        debug_assert!(day_ns > 1);
+            .total_nanos();
         let elapsed_ns = self
             .to_fixed_offset()
             .to_instant()
             .diff(day_start.to_instant())
-            .total_nanos() as u64;
+            .total_nanos();
+        // The value lies within its day: the loader rejects offset changes
+        // of more than 24 hours and overlapping gaps and folds
+        // (`load_transitions`), so `day_bounds()` steps one day at most.
+        debug_assert!(day_ns > 1 && (0..day_ns).contains(&elapsed_ns));
+        let (day_ns, elapsed_ns) = (day_ns as u64, elapsed_ns as u64);
         // The start of the day is the even multiple
         let expand = mode.to_abs(false).rounds_up(
             elapsed_ns > 0,
@@ -351,7 +355,10 @@ impl ZonedDateTime {
                 }
             }
         }
-        // The multiples of the value's own clock reading bracket it
+        // The multiples of the value's own clock reading bracket it. Safe:
+        // `mapping_for_local` agrees with `offset_for_instant`, since the
+        // loader rejects overlapping gaps and folds (`load_transitions`) and
+        // a POSIX TZ string that disagrees with the last record.
         let (start, _, nanos, start_offset) = start.unwrap();
         let next = next.unwrap();
         TimeUnitBounds {
@@ -505,6 +512,52 @@ pub(crate) fn zoned_target(
     Some(target_date)
 }
 
+/// The difference from `b` to `a` in a calendar unit, with the fraction of
+/// the way from the truncated amount to the next.
+pub(crate) fn zoned_calendar_total(
+    a_inst: Instant,
+    b: &ZonedDateTime,
+    target_date: Date,
+    unit: difference::CalendarUnit,
+    negative: bool,
+) -> Option<f64> {
+    let (trunc_amount, trunc_date, mut expand_date) = difference::date_diff_single_unit(
+        target_date,
+        b.date,
+        CalendarIncrement::MIN,
+        unit,
+        negative,
+    )?;
+    let trunc = b.with_date(trunc_date.into())?.to_instant();
+    let mut expand = b.with_date(expand_date.into())?.to_instant();
+    let mut expand_amount = trunc_amount + 1.negate_if(negative);
+    // A skipped day can resolve the expanded endpoint onto the truncated
+    // one, or short of `a`: step it on until it reaches `a`.
+    while if negative {
+        expand > a_inst
+    } else {
+        expand < a_inst
+    } {
+        let (amount, _, next) = difference::date_diff_single_unit(
+            expand_date.resolve(),
+            b.date,
+            CalendarIncrement::MIN,
+            unit,
+            negative,
+        )?;
+        expand_amount = amount + 1.negate_if(negative);
+        expand_date = next;
+        expand = b.with_date(expand_date.into())?.to_instant();
+    }
+    // The endpoints coincide only where `a` is the truncated value
+    let fraction = if expand == trunc {
+        0.0
+    } else {
+        a_inst.diff(trunc).total_nanos() as f64 / expand.diff(trunc).total_nanos() as f64
+    };
+    Some(trunc_amount as f64 + (expand_amount - trunc_amount) as f64 * fraction)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn zoned_since_in_units(
     a: OffsetDateTime,
@@ -529,51 +582,62 @@ pub(crate) fn zoned_since_in_units(
     };
 
     let trunc = b.with_date(trunc_date.into())?.to_instant();
-    let expand = b.with_date(expand_date.into())?;
-    // Rounding that moves away from the truncated value ends up here
-    let rounded_up = if exact_units.is_empty() {
-        ddelta
-            .round_by_time(
-                calendar_units.smallest(),
-                a_inst,
-                trunc,
-                expand.to_instant(),
-                round_mode.to_abs(negative),
-                round_increment.to_calendar()?,
-                negative,
-            )
-            .then_some(expand)
-    } else {
-        let diff = a_inst.diff(trunc);
-        let rounded = diff.round_in_units(exact_units, round_increment, round_mode)?;
-        if calendar_units.is_empty() || rounded.abs() <= diff.abs() {
-            let mut result = rounded.itemize(exact_units)?;
-            result.fill_calendar_units(ddelta);
-            return Some(result);
+    if exact_units.is_empty() {
+        let increment = round_increment.to_calendar()?;
+        let mode = round_mode.to_abs(negative);
+        let short_of_a = |t: Instant| if negative { t > a_inst } else { t < a_inst };
+        let diff_to = |d: difference::InterimDate| {
+            difference::date_diff(d.resolve(), b.date, increment, calendar_units, negative)
+        };
+        let mut expand_date = expand_date;
+        let mut expand = b.with_date(expand_date.into())?.to_instant();
+        // A skipped day can resolve the expanded endpoint onto the truncated
+        // one, or short of `a`: step it on until it reaches `a`.
+        while mode != round::AbsMode::Trunc && short_of_a(expand) {
+            expand_date = diff_to(expand_date)?.2;
+            expand = b.with_date(expand_date.into())?.to_instant();
         }
-        Some(trunc.shift(rounded)?.to_offset_in(&b.tz)?)
-    };
-
-    match rounded_up {
-        // The larger units take the carry, and the smallest stays a multiple
-        // of the increment
-        Some(endpoint) => {
-            let endpoint_inst = endpoint.to_instant();
-            zoned_since_in_units(
-                endpoint,
-                endpoint_inst,
-                b,
-                zoned_target(endpoint.date, endpoint_inst, b, negative)?,
-                units,
-                round::Mode::Trunc,
-                round_increment,
-                negative,
-            )
+        if ddelta.round_by_time(
+            calendar_units.smallest(),
+            a_inst,
+            trunc,
+            expand,
+            mode,
+            increment,
+            negative,
+        ) {
+            // The larger units take the carry, and the smallest stays a
+            // multiple of the increment. Counted on the dates, and stepped
+            // on where a skipped day resolves the carried date short of `a`.
+            let (mut carried, mut carried_date, mut next) = diff_to(expand_date)?;
+            while short_of_a(b.with_date(carried_date.into())?.to_instant()) {
+                (carried, carried_date, next) = diff_to(next)?;
+            }
+            ddelta = carried;
         }
-        None => {
-            let mut result = ItemizedDelta::UNSET;
-            result.fill_calendar_units(ddelta);
-            Some(result)
-        }
+        let mut result = ItemizedDelta::UNSET;
+        result.fill_calendar_units(ddelta);
+        return Some(result);
     }
+    let diff = a_inst.diff(trunc);
+    let rounded = diff.round_in_units(exact_units, round_increment, round_mode)?;
+    if calendar_units.is_empty() || rounded.abs() <= diff.abs() {
+        let mut result = rounded.itemize(exact_units)?;
+        result.fill_calendar_units(ddelta);
+        return Some(result);
+    }
+    // Rounded up: the larger units take the carry, and the smallest stays a
+    // multiple of the increment
+    let endpoint = trunc.shift(rounded)?.to_offset_in(&b.tz)?;
+    let endpoint_inst = endpoint.to_instant();
+    zoned_since_in_units(
+        endpoint,
+        endpoint_inst,
+        b,
+        zoned_target(endpoint.date, endpoint_inst, b, negative)?,
+        units,
+        round::Mode::Trunc,
+        round_increment,
+        negative,
+    )
 }

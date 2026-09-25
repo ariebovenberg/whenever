@@ -6,7 +6,13 @@ This test can surface refcounting issues when many time zones are loaded and unl
 
 import os
 
-from whenever import SYSTEM_TZ, PlainDateTime, reset_system_tz
+from whenever import (
+    SYSTEM_TZ,
+    PlainDateTime,
+    hours,
+    minutes,
+    reset_system_tz,
+)
 
 f = PlainDateTime(2023, 10, 1, 12, 0, 0)
 
@@ -40,17 +46,20 @@ def main():
     reset_system_tz()
     f.assume_tz(SYSTEM_TZ)
     os.environ["TZ"] = "America/New_York"
-    f.assume_tz(SYSTEM_TZ)
+    reset_system_tz()
+    assert f.assume_tz(SYSTEM_TZ).offset == hours(-4)
     f.assume_tz("Europe/Amsterdam")
 
     # A posix time zone
     os.environ["TZ"] = "IST-5:30"
-    f.assume_tz(SYSTEM_TZ)
+    reset_system_tz()
+    assert f.assume_tz(SYSTEM_TZ).offset == hours(5) + minutes(30)
 
     # A path time zone
     path = os.environ["TZ"] = "/usr/share/zoneinfo/Asia/Tokyo"
     if os.path.exists(path):
         reset_system_tz()
+        assert f.assume_tz(SYSTEM_TZ).offset == hours(9)
     else:
         print("Path time zone not found, skipping that part of the test")
 

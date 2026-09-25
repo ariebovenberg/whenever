@@ -55,6 +55,12 @@ class TestInit:
         with pytest.raises(ValueError):
             Time(0, 0, 0, nanosecond=1_000_000_000)
 
+    @pytest.mark.parametrize(
+        "hour, expect", [(9, Time(9, 0)), (Idx(), Time(5, 0))]
+    )
+    def test_single_integer_is_the_hour(self, hour, expect):
+        assert Time(hour) == expect
+
     def test_single_argument_wrong_type(self):
         with pytest.raises(
             TypeError,

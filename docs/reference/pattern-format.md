@@ -182,7 +182,7 @@ ZonedDateTime("2024-07-15 14:30:00+02:00[Europe/Paris]")
 ## Literal text
 
 Common non-letter characters (`:`, `-`, `/`, `.`, `,`, `;`,
-`_`, `(`, `)`, digits, spaces, tabs, newlines, and other ASCII
+`_`, `(`, `)`, digits, spaces, tabs, line feeds (`\n`), and other ASCII
 punctuation) are treated as literals by default:
 
 ```python

@@ -2,8 +2,7 @@
 
 Requires the ``zdump`` of tzcode 2026b or later. On macOS, install it with
 ``brew install tzdb``. Another ``zdump``, such as the one glibc ships on
-Linux, reports no tzcode version: it is used when it supports ``-i``, and
-the check is skipped otherwise.
+Linux, reports no tzcode version: it is used when it supports ``-i``.
 """
 
 from __future__ import annotations
@@ -13,16 +12,17 @@ import ast
 import os
 import re
 import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-import whenever
 from whenever import (
     Instant,
     ZonedDateTime,
     available_timezones,
     clear_tzcache,
+    get_tzpath,
     reset_tzpath,
 )
 
@@ -227,7 +227,7 @@ def check_system_database(
 ) -> tuple[int, int]:
     reset_tzpath()
     clear_tzcache()
-    paths = tuple(Path(path).resolve() for path in whenever.TZPATH)
+    paths = tuple(Path(path).resolve() for path in get_tzpath())
     if tzdata := tzdata_path():
         paths += (tzdata,)
     return check_database(
@@ -269,7 +269,7 @@ def unusable_zdump() -> str | None:
         stderr=subprocess.STDOUT,
         text=True,
     )
-    if probe.returncode != 0 or not probe.stdout.startswith("TZ="):
+    if probe.returncode != 0 or not probe.stdout.lstrip().startswith("TZ="):
         return f"{version!r} does not support -i"
     return None
 
@@ -286,8 +286,7 @@ def main() -> None:
         parser.error("--workers must be positive")
 
     if (reason := unusable_zdump()) is not None:
-        print(f"zdump is unusable ({reason}); skipping")
-        return
+        sys.exit(f"zdump is unusable ({reason})")
 
     system_zones, system_transitions = check_system_database(
         args.start_year, args.end_year, args.workers

@@ -89,7 +89,6 @@ def test_dir_includes_public_names():
 
     expected = {
         *whenever.__all__,
-        "TZPATH",
         "__version__",
         "_EXTENSION_LOADED",
         "RoundModeStr",
@@ -111,6 +110,16 @@ def test_dir_includes_public_names():
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_dir_names_resolve_without_deprecation_warnings():
+    # help(whenever) reads every name dir() lists
+    import whenever
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", WheneverDeprecationWarning)
+        for n in dir(whenever):
+            getattr(whenever, n)
 
 
 def test_star_import_includes_utilities():

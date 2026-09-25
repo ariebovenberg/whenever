@@ -696,7 +696,7 @@ class TestReplace:
         assert d.replace_date(Date(1996, 2, 19)) == PlainDateTime(
             1996, 2, 19, 3, 12, 9, nanosecond=987_654
         )
-        with pytest.raises((TypeError, AttributeError)):
+        with pytest.raises(TypeError, match="must be a Date"):
             d.replace_date(42)  # type: ignore[arg-type]
 
     def test_time(self):
@@ -705,7 +705,7 @@ class TestReplace:
         assert d.replace_time(Time(1, 2, 3, nanosecond=4)) == PlainDateTime(
             2020, 8, 15, 1, 2, 3, nanosecond=4
         )
-        with pytest.raises((TypeError, AttributeError)):
+        with pytest.raises(TypeError, match="must be a Time"):
             d.replace_time(42)  # type: ignore[arg-type]
 
 
@@ -736,7 +736,7 @@ class TestShift:
         with pytest.raises(ValueError, match="range|year"):
             d.add(hours=-24 * 365 * 3000)
 
-        with pytest.raises((TypeError, AttributeError)):
+        with pytest.raises(TypeError, match="must be a TimeDelta"):
             d.add(4)  # type: ignore[call-overload]
 
         # mixing args/kwargs
@@ -1011,73 +1011,85 @@ class TestSince:
             assert a.since(b, total=unit) == expected
 
     @pytest.mark.parametrize(
-        ("kwargs", "message"),
+        ("kwargs", "exc", "message"),
         [
             (
                 {"in_units": ["hours"], "round_mode": "bad"},
+                ValueError,
                 "invalid round_mode: 'bad'",
             ),
             (
                 {"in_units": ["days"], "round_increment": 0},
+                ValueError,
                 "round_increment must be a positive integer in range",
             ),
             (
                 {"in_units": ["hours"], "round_increment": -1},
+                ValueError,
                 "round_increment must be a positive integer in range",
             ),
             (
                 {"in_units": ["hours"], "round_increment": 1.5},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["hours"], "round_increment": None},
+                TypeError,
                 "round_increment must be an integer",
             ),
             (
                 {"in_units": ["hours", "nanoseconds"]},
+                ValueError,
                 "nanoseconds can only be specified together with seconds",
             ),
-            ({"total": "foo"}, "invalid unit: 'foo'"),
-            ({"in_units": ["foos"]}, "invalid unit: 'foos'"),
-            ({"in_units": ()}, "in_units must not be empty"),
-            ({}, "must specify either 'total' or 'in_units'"),
+            ({"total": "foo"}, ValueError, "invalid unit: 'foo'"),
+            ({"in_units": ["foos"]}, ValueError, "invalid unit: 'foos'"),
+            ({"in_units": ()}, ValueError, "in_units must not be empty"),
+            ({}, TypeError, "must specify either 'total' or 'in_units'"),
             (
                 {"total": "years", "in_units": ("days",)},
+                TypeError,
                 "cannot specify both 'total' and 'in_units'",
             ),
             (
                 {"in_units": ["years", "days", "days"]},
+                ValueError,
                 "in_units cannot contain duplicates",
             ),
             (
                 {"in_units": ["hours", "days"]},
+                ValueError,
                 "in_units must be in decreasing order of size",
             ),
             # round_mode and round_increment are not supported with total=,
             # not even round_increment=1
             (
                 {"total": "years", "round_mode": "floor"},
+                TypeError,
                 "'round_mode' and 'round_increment' cannot be used with "
                 "'total'",
             ),
             (
                 {"total": "years", "round_increment": 1},
+                TypeError,
                 "'round_mode' and 'round_increment' cannot be used with "
                 "'total'",
             ),
             (
                 {"in_units": ["years"], "round_mode": "foobar"},
+                ValueError,
                 "invalid round_mode: 'foobar'",
             ),
         ],
     )
     @pytest.mark.parametrize("method", ["since", "until"])
-    def test_rejected_argument_does_not_warn(self, method, kwargs, message):
+    def test_rejected_argument_does_not_warn(
+        self, method, kwargs, exc, message
+    ):
         a = PlainDateTime(2023, 2, 15)
         b = PlainDateTime(2023, 2, 14)
-        with pytest.raises(
-            (TypeError, ValueError), match="^" + re.escape(message) + "$"
-        ):
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
             getattr(a, method)(b, **kwargs)
 
     @pytest.mark.parametrize(

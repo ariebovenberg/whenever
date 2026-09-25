@@ -84,7 +84,10 @@ so both go through the same
 {ref}`resolution flow <resolving-local-times>`. The constructor accepts
 `offset_mismatch=` and `disambiguation=`, and raises
 {exc}`~whenever.InvalidOffsetError` by default when the standard library's
-rules and *whenever*'s own rules disagree.
+rules and *whenever*'s own rules disagree. A local time in a gap is the
+exception: under [PEP 495](https://peps.python.org/pep-0495/) the datetime
+still names one instant, which its `fold` selects, and *whenever* takes that
+instant without applying `disambiguation=`.
 
 {class}`~zoneinfo.ZoneInfo` subclasses are accepted. `timezone.utc`, pytz,
 and dateutil tzinfos are rejected with {exc}`ValueError`, because they carry

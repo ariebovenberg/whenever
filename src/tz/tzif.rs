@@ -54,6 +54,8 @@ impl PartialEq for TimeZone {
             && self.offsets_by_utc == other.offsets_by_utc
             && self.offsets_by_local == other.offsets_by_local
             && self.end == other.end
+            && self.footer_from == other.footer_from
+            && self.footer_local_from == other.footer_local_from
             && self.meta_by_utc == other.meta_by_utc
             && self.abbrev_data == other.abbrev_data
     }
@@ -234,7 +236,7 @@ fn check_magic_bytes(s: &mut Scan) -> bool {
 
 fn parse_version(s: &mut Scan) -> Option<u8> {
     let version = match &s.take(1)? {
-        [0] => 1,
+        [0 | b'0'] => 1,
         [n] if n.is_ascii_digit() => n - b'0',
         _ => None?,
     };
@@ -354,6 +356,9 @@ fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult
             .ok_or(ErrorCause::Body)?;
         parse_posix_tz(s)?
     } else {
+        // The unused metadata ends the file, and a truncated file is corrupt
+        s.take(header.isutcnt + header.isstdcnt + header.leapcnt * 8)
+            .ok_or(ErrorCause::Body)?;
         None
     };
     // DST records with no standard record after them pair with the standard
@@ -377,6 +382,10 @@ fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult
     // governs the whole range.
     let last_offset = offsets_by_utc.last().unwrap().1;
     let (footer_from, footer_local_from) = match (&end, transition_times.last()) {
+        // RFC 8536 section 3.3: the POSIX TZ string agrees with the last record
+        (Some(tz), Some(&last)) if tz.offset_for_instant(last) != last_offset => {
+            return Err(ErrorCause::Body);
+        }
         (Some(tz), Some(&last)) => match tz.next_transition(last) {
             Some((t, offset)) => (
                 t,
@@ -410,8 +419,9 @@ fn local_transitions(
     }
 
     let (_, mut offset_prev) = transitions[0];
+    // `load_transitions` has rejected overlapping gaps and folds, so the
+    // local times ascend
     for &(epoch, offset) in transitions[1..].iter() {
-        // NOTE: we don't check for "impossible" gaps or folds
         result.push((
             LocalSeconds::from_instant_saturating(epoch, offset_prev.max(offset)),
             (offset_prev, offset.sub(offset_prev)),
@@ -462,6 +472,20 @@ fn load_transitions(
         }
         let follows_dst = prev_type.isdst;
         prev_type = typ;
+        // Safe: the entry before the first record is there
+        let &(prev_epoch, prev_offset) = offsets.last().unwrap();
+        // Real data changes by 24 hours at most (Alaska in 1867), which
+        // lets a day's bounds lie at most one day away. A gap or fold that
+        // overlaps the previous one maps local times to an offset its
+        // instant doesn't have.
+        if (typ.offset.get() - prev_offset.get()).abs() > S_PER_DAY
+            || offsets.len() > 1
+                && epoch.get() + i64::from(typ.offset.min(prev_offset).get())
+                    < prev_epoch.get()
+                        + i64::from(offsets[offsets.len() - 2].1.max(prev_offset).get())
+        {
+            return None;
+        }
         offsets.push((epoch, typ.offset));
 
         let dst_saving = if !typ.isdst {

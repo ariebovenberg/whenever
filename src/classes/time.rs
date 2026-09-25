@@ -159,8 +159,8 @@ fn __new__(cls: PyClass<Time>, args: PyTuple, kwargs: Option<PyDict>) -> PyRetur
             }
             return Time::from_stdlib_time(t).to_obj(cls);
         }
-        // An integer is the hour of the field constructor
-        if obj.cast_allow_subclass::<PyInt>().is_none() {
+        // An integer (through `__index__`) is the hour of the field constructor
+        if unsafe { PyIndex_Check(obj.as_ptr()) } == 0 {
             return raise_type_err("Time() requires an ISO 8601 string or datetime.time");
         }
     }

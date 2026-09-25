@@ -13,6 +13,7 @@ jobs:
   check-tag:
     name: Check tag correctness
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # A manual run builds and tests without a tag; only a tag releases
@@ -95,6 +96,7 @@ jobs:
             test: true
 
     runs-on: ${{ matrix.runner || format('{0}-latest', (matrix.os == 'linux' && 'ubuntu') || matrix.os) }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -118,7 +120,6 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --strip --out dist --interpreter '3.10 3.11 3.12 3.13 3.14 3.14t 3.15 3.15t'
           manylinux: ${{ matrix.manylinux || 'auto' }}
-          rust-toolchain: "1.93"
       - run: uv run twine check --strict dist/*
       - name: Export the test requirements
         if: matrix.test
@@ -129,7 +130,7 @@ jobs:
         shell: bash
         run: |
           for version in 3.10 3.14 3.14t; do
-            request="cpython-$version${{ matrix.python-architecture == 'x86' && '-windows-x86' || '' }}"
+            request="cpython-${version}${{ matrix.python-architecture == 'x86' && '-windows-x86' || '' }}"
             uv python install "$request"
             scripts/test_wheel.sh "$(uv python find --managed-python "$request")" wheel True test-requirements.txt
           done
@@ -151,12 +152,10 @@ jobs:
   pure-python:
     needs: [check-tag]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.13'
       - run: uv sync --locked --all-groups --no-install-project
       - name: Build sdist and pure-Python wheel
         run: |
@@ -187,6 +186,7 @@ jobs:
     if: "startsWith(github.ref, 'refs/tags/')"
     needs: [binary, pure-python]
     environment: Release
+    timeout-minutes: 10
     permissions:
       id-token: write
     steps:

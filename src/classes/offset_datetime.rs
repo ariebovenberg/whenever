@@ -204,7 +204,9 @@ fn __add__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
             return Ok(None);
         };
         let result = slf.shift(tdelta).ok_or_range_err()?;
-        offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+        if !tdelta.is_zero() {
+            offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+        }
         Ok(Some(result.to_obj(cls)?))
     })
 }
@@ -225,7 +227,9 @@ fn __sub__(obj_a: PyObj, obj_b: PyObj) -> PyReturn {
         let state = cls.state();
         if let Some(tdelta) = other.extract(*state.time_delta_type) {
             let result = slf.shift(-tdelta).ok_or_range_err()?;
-            offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+            if !tdelta.is_zero() {
+                offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
+            }
             return Ok(Some(result.to_obj(slf.class())?));
         }
         let Some(inst_b) = extract_instant(other, state) else {
@@ -722,7 +726,7 @@ fn shift_method(
     };
 
     let result = slf.shift_by(shift.negate_if(negate)).ok_or_range_err()?;
-    if !suppress_stale {
+    if !suppress_stale && !shift.is_zero() {
         offset_stale_warning(state, doc::OFFSET_SHIFT_STALE_MSG)?;
     }
     result.to_obj(cls)
@@ -978,7 +982,8 @@ fn offset_since(
             match (units.has_calendar(), same_offset) {
                 // same offset: use the plain datetime rounding logic (days are always 24h)
                 (true, true) => {
-                    if units.has_exact() && !suppress_stale {
+                    // Rounding reads the remainder after the calendar units, too
+                    if (units.has_exact() || mode != round::Mode::Trunc) && !suppress_stale {
                         offset_stale_warning(state, doc::OFFSET_DIFFERENCE_STALE_MSG)?;
                     }
                     plain_datetime::plain_since_inner(

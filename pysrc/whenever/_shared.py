@@ -9,6 +9,7 @@ They aren't performance-critical anyway.
 from __future__ import annotations
 
 import enum
+from _thread import allocate_lock
 from datetime import date as _date
 from struct import pack
 from typing import TYPE_CHECKING, Any, ClassVar, no_type_check, overload
@@ -895,6 +896,11 @@ if not SPHINX_RUNNING:  # pragma: no branch
     del _obj
 
 
+# Before Python 3.12, concurrent first calls to sysconfig.get_config_var()
+# can return None. The Rust store's lazy init may run on many threads at once.
+_TZPATH_LOCK = allocate_lock()
+
+
 def _tzpath_from_env() -> tuple[str, ...]:
     import os
 
@@ -903,7 +909,8 @@ def _tzpath_from_env() -> tuple[str, ...]:
     except KeyError:
         import sysconfig
 
-        env_var = sysconfig.get_config_var("TZPATH")
+        with _TZPATH_LOCK:
+            env_var = sysconfig.get_config_var("TZPATH")
 
     if not env_var:
         return ()

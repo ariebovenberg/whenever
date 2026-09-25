@@ -673,14 +673,15 @@ class TestAddSubtract:
 
     def test_out_of_range(self):
         d = TimeDelta(hours=1, minutes=2, seconds=3, microseconds=4)
+        ns = TimeDelta(nanoseconds=1)
         with pytest.raises(ValueError, match="range"):
-            d + TimeDelta(hours=366 * 24 * 10000)
+            TimeDelta.MAX + ns
+
+        with pytest.raises(ValueError, match="range"):
+            TimeDelta.MIN - ns
 
         with pytest.raises(ValueError, match="range"):
             d.add(hours=366 * 24 * 10000)
-
-        with pytest.raises(ValueError, match="range"):
-            d - TimeDelta(hours=-366 * 24 * 10000)
 
         with pytest.raises(ValueError, match="range"):
             d.subtract(hours=-366 * 24 * 10000)
@@ -1907,6 +1908,48 @@ class TestInUnits:
         assert delta.in_units(units, round_mode="ceil", **kwargs) == ceil
         assert (-delta).in_units(units, round_mode="trunc", **kwargs) == -trunc
         assert (-delta).in_units(units, round_mode="floor", **kwargs) == -ceil
+
+    # Where the increment divides the next unit, a tie goes to the even
+    # multiple of the total, not of the component
+    @pytest.mark.parametrize(
+        "delta, units, increment, expected",
+        [
+            (
+                TimeDelta(hours=252),  # 10 days and 12 hours
+                ["weeks", "days"],
+                1,
+                ItemizedDelta(weeks=1, days=3),
+            ),
+            (
+                TimeDelta(minutes=1, seconds=10),
+                ["minutes", "seconds"],
+                20,
+                ItemizedDelta(minutes=1, seconds=20),
+            ),
+            (
+                TimeDelta(hours=1, minutes=30),
+                ["hours", "minutes"],
+                60,
+                ItemizedDelta(hours=2, minutes=0),
+            ),
+            (
+                TimeDelta(hours=1, minutes=2, seconds=30),
+                ["hours", "minutes"],
+                1,
+                ItemizedDelta(hours=1, minutes=2),
+            ),
+        ],
+    )
+    def test_half_even_ties_to_an_even_total(
+        self, delta, units, increment, expected
+    ):
+        kwargs: dict[str, Any] = dict(
+            round_mode="half_even",
+            round_increment=increment,
+            days_assumed_24h_ok=True,
+        )
+        assert delta.in_units(units, **kwargs) == expected
+        assert (-delta).in_units(units, **kwargs) == -expected
 
     @pytest.mark.parametrize(
         "delta, units, kwargs, expected",

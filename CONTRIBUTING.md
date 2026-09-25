@@ -54,7 +54,7 @@ Below are some points to keep in mind when making changes to the codebase:
     Additional advantages of ``pyo3_ffi`` are:
 
     - Its API is more stable than PyO3's, which is still evolving.
-    - The extension declares per-interpreter GIL and free-threading support
+    - The Rust extension declares per-interpreter GIL and free-threading support
       itself, in ``src/pymodule/def.rs``, and free-threaded wheels are built
       and tested.
 

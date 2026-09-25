@@ -98,6 +98,7 @@ from ._math import (
     EXACT_TOTAL_UNITS,
     NS_PER_UNIT_PLURAL,
     TOTAL_UNITS,
+    InterimDate,
     Sign,
     date_diff,
     days_in_month,
@@ -1820,9 +1821,9 @@ class TimeDelta(_Base):
     or :class:`~whenever.ItemizedDateDelta` for date-only deltas.
 
     The inputs are normalized, so 90 minutes becomes 1 hour and 30 minutes,
-    for example. Float inputs convert exactly down to the nanosecond, and
-    a fraction below one nanosecond is truncated toward zero:
-    ``seconds=1.5e-9`` is 1 nanosecond.
+    for example. A float input is multiplied into nanoseconds in double
+    precision, then truncated toward zero: ``seconds=1.5e-9`` is
+    1 nanosecond.
 
     >>> d = TimeDelta(hours=1, minutes=90)
     TimeDelta("PT2h30m")
@@ -1994,19 +1995,33 @@ class TimeDelta(_Base):
                 trunc_zdt = relative_to._with_date(
                     Date._from_py_unchecked(resolve_leap_day(trunc_date))
                 )
-                span = (
-                    relative_to._with_date(
+                expanded_amount = trunc_amount + 1
+                expanded_zdt = relative_to._with_date(
+                    Date._from_py_unchecked(resolve_leap_day(expanded_date))
+                )
+                # A skipped day can resolve the expanded endpoint onto the
+                # truncated one, or short of the target: step it on until
+                # it reaches the target.
+                while sign * (shifted - expanded_zdt)._total_ns > 0:
+                    expanded_amount, _, expanded_date = DIFF_FUNCS[unit](
+                        resolve_leap_day(expanded_date),
+                        relative_to._py_dt.date(),
+                        1,
+                        sign,
+                    )
+                    expanded_amount += 1
+                    expanded_zdt = relative_to._with_date(
                         Date._from_py_unchecked(
                             resolve_leap_day(expanded_date)
                         )
                     )
-                    - trunc_zdt
-                )
-                # A skipped day can make the two endpoints coincide. The
-                # truncated amount is then the whole total.
+                span = expanded_zdt - trunc_zdt
+                # The endpoints coincide only where the target is the
+                # truncated one
                 result = (
                     trunc_amount
-                    + ((shifted - trunc_zdt) / span if span else 0.0)
+                    + (expanded_amount - trunc_amount)
+                    * ((shifted - trunc_zdt) / span if span else 0.0)
                 ) * sign
                 if warning is not None:
                     warn(warning, stacklevel=2)
@@ -2164,7 +2179,11 @@ class TimeDelta(_Base):
             increment_ns = increment_to_ns_for_delta(smallest, round_increment)
             next_ns = NS_PER_UNIT_PLURAL[units[-2]]
             magnitude = abs(self._total_ns)
-            component = magnitude % next_ns
+            # Where the increment divides the next unit, rounding the
+            # component is rounding the total, whose parity breaks a tie.
+            component = (
+                magnitude % next_ns if next_ns % increment_ns else magnitude
+            )
             quotient, remainder = divmod(component, increment_ns)
             remaining_ns = magnitude - remainder
             if rounds_up(
@@ -2531,7 +2550,7 @@ class TimeDelta(_Base):
         The result is rounded half-even to the nearest nanosecond; an
         integer operand is exact, a ``float`` operand carries float
         precision. Float keywords, as in ``TimeDelta(seconds=1.5e-9)``,
-        truncate below the nanosecond instead.
+        are truncated toward zero instead.
 
         >>> d = TimeDelta(hours=1, minutes=30)
         >>> d * 2.5
@@ -3996,9 +4015,15 @@ class OffsetDateTime(_ExactAndLocalTime):
     def _init_from_py(self, d: _datetime, **kwargs: Any) -> None:
         check_no_kwargs(kwargs, "OffsetDateTime")
         py_dt = _strip_subclasses(d)
-        if (offset := py_dt.utcoffset()) is None:
+        if (tz_offset := py_dt.utcoffset()) is None:
             raise ValueError("datetime is naive; use PlainDateTime() instead")
-        elif offset.microseconds:
+        # The tzinfo may return a timedelta subclass
+        offset = _timedelta(
+            *_base_fields(
+                tz_offset, _timedelta, ("days", "seconds", "microseconds")
+            )
+        )
+        if offset.microseconds:
             raise ValueError("offset must be a whole number of seconds")
         self._py_dt = check_utc_bounds(
             py_dt.replace(microsecond=0, tzinfo=_timezone(offset), fold=0)
@@ -4224,11 +4249,12 @@ class OffsetDateTime(_ExactAndLocalTime):
                 check_utc_bounds(_add_seconds(self._py_dt, delta_secs)),
                 nanos,
             )
-            warn(
-                OFFSET_SHIFT_STALE_MSG,
-                StaleOffsetWarning,
-                stacklevel=2,
-            )
+            if delta:
+                warn(
+                    OFFSET_SHIFT_STALE_MSG,
+                    StaleOffsetWarning,
+                    stacklevel=2,
+                )
             return result
         return NotImplemented
 
@@ -4261,11 +4287,12 @@ class OffsetDateTime(_ExactAndLocalTime):
                 check_utc_bounds(_add_seconds(self._py_dt, delta_secs)),
                 nanos,
             )
-            warn(
-                OFFSET_SHIFT_STALE_MSG,
-                StaleOffsetWarning,
-                stacklevel=2,
-            )
+            if other:
+                warn(
+                    OFFSET_SHIFT_STALE_MSG,
+                    StaleOffsetWarning,
+                    stacklevel=2,
+                )
             return result
         return super()._subtract_operator(other)
 
@@ -4522,7 +4549,9 @@ class OffsetDateTime(_ExactAndLocalTime):
             microseconds,
             nanoseconds,
         )
-        if not stale_offset_ok:
+        if not stale_offset_ok and (
+            years * 12 + months or weeks * 7 + days or delta_ns
+        ):
             warn(
                 OFFSET_SHIFT_STALE_MSG,
                 StaleOffsetWarning,
@@ -4687,9 +4716,10 @@ class OffsetDateTime(_ExactAndLocalTime):
 
         Warning
         -------
-        Whole calendar units are exact, but a remainder in exact units
-        after them (``in_units`` mixing the two kinds, or ``total=`` of a
-        calendar unit) is computed with the offset held fixed, which emits
+        Whole calendar units are exact, but the remainder in exact units
+        after them is computed with the offset held fixed. A result that
+        depends on it (``in_units`` mixing the two kinds, a ``round_mode``
+        other than ``"trunc"``, or ``total=`` of a calendar unit) emits
         :class:`~whenever.StaleOffsetWarning`. Pass ``stale_offset_ok=True``
         when the fixed offset is intentional.
         """
@@ -5006,7 +5036,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         """Format as an ISO 8601 string, such as
         ``2020-08-15T23:12:00+01:00[Europe/London]``.
 
-        Inverse of :meth:`parse_iso`.
+        Inverse of :meth:`parse_iso` at the default ``unit``.
+        A coarser ``unit`` truncates the written fields,
+        so :meth:`parse_iso` may reject the result:
+        a truncated local time can fall in a gap next to its offset.
 
         >>> zdt = ZonedDateTime(2020, 8, 15, hour=23, minute=12, tz="Europe/London")
         >>> zdt.format_iso(unit="minute", basic=True)
@@ -5668,9 +5701,12 @@ class ZonedDateTime(_ExactAndLocalTime):
         return NotImplemented
 
     @overload
+    def add(self, d: TimeDelta, /) -> ZonedDateTime: ...
+
+    @overload
     def add(
         self,
-        d: AnyDelta,
+        d: ItemizedDelta | ItemizedDateDelta,
         /,
         *,
         disambiguation: DisambiguationStr = ...,
@@ -7639,8 +7675,8 @@ OFFSET_START_END_OF_STALE_MSG = (
 
 OFFSET_DIFFERENCE_STALE_MSG = (
     "You are calculating a difference in calendar units between OffsetDateTimes "
-    "with a remainder in exact units. The whole calendar units are correct in "
-    "any time zone, but the remainder after the last whole unit is computed "
+    "that depends on the remainder in exact units. The whole calendar units are "
+    "correct in any time zone, but the remainder after the last whole unit is computed "
     "with the offset held fixed, and a time zone transition inside that final "
     "partial unit shifts it by the transition length. Use a ZonedDateTime for "
     "a difference that accounts for the time zone. If the fixed-offset "
@@ -7979,7 +8015,10 @@ def _offset_since(
         exact_remainder = calendar_output
     else:
         calendar_output = units[0] in DATE_DELTA_UNITS
-        exact_remainder = calendar_output and units[-1] not in DATE_DELTA_UNITS
+        # Rounding reads the remainder after the calendar units, too.
+        exact_remainder = calendar_output and (
+            units[-1] not in DATE_DELTA_UNITS or round_mode != "trunc"
+        )
     if calendar_output and not same_offset:
         raise ValueError(
             "calendar units require the same offset, got "
@@ -8039,10 +8078,15 @@ def _zoned_since(
         if total is not None
         else units[0] in DATE_DELTA_UNITS
     )
-    if calendar_output and self.tz_id != other.tz_id:
+    if calendar_output and self._tz != other._tz:
+        if self.tz_id != other.tz_id:
+            got = f"{self.tz_id!r} and {other.tz_id!r}"
+        elif self.tz_id is None:
+            got = "two different time zones without an ID"
+        else:
+            got = f"{self.tz_id!r} from two different time zone databases"
         raise ValueError(
-            "calendar units require the same time zone, got "
-            f"{self.tz_id!r} and {other.tz_id!r}"
+            f"calendar units require the same time zone, got {got}"
         )
     return _zoned_difference(a, b, total, units, round_mode, round_increment)
 
@@ -8148,9 +8192,25 @@ def _zoned_difference_in_units(
                 rounded_up = endpoint
     # Round is expensive, so only do it if needed
     elif round_mode != "trunc":
+        b_date = b._py_dt.date()
+
+        def at(d: InterimDate) -> ZonedDateTime:
+            return b._with_date(Date._from_py_unchecked(resolve_leap_day(d)))
+
+        def diff_to(
+            d: InterimDate,
+        ) -> tuple[dict[DateDeltaUnitStr, int], InterimDate, InterimDate]:
+            return date_diff(
+                resolve_leap_day(d), b_date, round_increment, cal_units, sign
+            )
+
+        # A skipped day can resolve the expanded endpoint onto the truncated
+        # one, or short of ``a``: step it on until it reaches ``a``.
+        while sign * (a - expand)._total_ns > 0:
+            expand_date = diff_to(expand_date)[2]
+            expand = at(expand_date)
         span = abs((expand - trunc)._total_ns)
-        # A skipped day can make the two endpoints coincide. The truncated
-        # value is then already rounded.
+        # The endpoints coincide only where ``a`` is the truncated value
         if span and rounds_up(
             round_mode,
             abs((a - trunc)._total_ns),
@@ -8158,7 +8218,13 @@ def _zoned_difference_in_units(
             result[smallest_unit] // round_increment % 2 == 1,
             sign,
         ):
-            rounded_up = expand
+            # The larger units take the carry, and the smallest stays a
+            # multiple of the increment. Counted on the dates, and stepped
+            # on where a skipped day resolves the carried date short of ``a``.
+            carried, carried_date, expand_date = diff_to(expand_date)
+            while sign * (a - at(carried_date))._total_ns > 0:
+                carried, carried_date, expand_date = diff_to(expand_date)
+            return cast(dict[DeltaUnitStr, int], carried)
 
     if rounded_up is not None:
         # The larger units take the carry
@@ -8329,3 +8395,11 @@ final(_ExactTime)
 final(_LocalTime)
 final(_ExactAndLocalTime)
 final(_BasicConversions)
+
+# Pure-Python Instant pickles from 0.8.0 to 0.10.0 name this module's
+# `_unpkl_inst`. Where the extension is available, they load as its Instant.
+try:
+    from ._whenever import _unpkl_inst  # type: ignore[no-redef]
+except ModuleNotFoundError as e:
+    if e.name != "whenever._whenever":  # pragma: no cover
+        raise

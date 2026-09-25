@@ -388,8 +388,8 @@ Exact-only composition does not warn.
 on it alone, since scaling only makes sense for one exact duration.
 Multiplying or dividing by a number rounds half-even to the nearest
 nanosecond; an integer operand is exact, a `float` operand carries float
-precision. Float keywords to the constructor and `add()` convert exactly
-down to the nanosecond, and truncate only a fraction below it toward zero:
+precision. A float keyword to the constructor or `add()` is multiplied
+into nanoseconds in double precision, then truncated toward zero:
 `TimeDelta(seconds=1.5e-9)` is 1 nanosecond, where
 `TimeDelta(seconds=1) * 1.5e-9` rounds to 2. Dividing by another `TimeDelta` gives a `float`; `//` and `%`
 take a `TimeDelta` divisor only.

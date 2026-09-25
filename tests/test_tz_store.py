@@ -4,7 +4,10 @@ import os
 import pickle
 import re
 import shutil
+import struct
+import subprocess
 import sys
+import sysconfig
 from copy import copy, deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -712,6 +715,43 @@ class TestResetTzpath:
             ).offset == hours(1)
 
 
+@pytest.mark.skipif(
+    not sysconfig.get_config_var("TZPATH"),
+    reason="no system time zone database",
+)
+def test_first_lookups_from_many_threads():
+    # Before Python 3.12, sysconfig gave None to concurrent first callers,
+    # so the lazily-read TZPATH came out empty. tzdata is hidden because
+    # a failed lookup falls back to it.
+    script = f"""
+import sys, threading
+sys.modules["tzdata"] = None
+if {not _EXTENSION_LOADED}:
+    sys.modules["whenever._whenever"] = None
+from whenever import PlainDateTime
+
+zones = ["Europe/Vienna", "America/Guyana", "Asia/Tokyo", "Africa/Nairobi"] * 4
+barrier = threading.Barrier(len(zones))
+errors = []
+
+def lookup(z):
+    barrier.wait()
+    try:
+        PlainDateTime(2024, 6, 15, 12).assume_tz(z)
+    except Exception as e:
+        errors.append(repr(e))
+
+threads = [threading.Thread(target=lookup, args=(z,)) for z in zones]
+[t.start() for t in threads]
+[t.join() for t in threads]
+assert not errors, errors
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
 class TestEmptyTzIsUtc:
     def test_from_the_database(self):
         with system_tz(""):
@@ -982,6 +1022,38 @@ class TestTzEnvPath:
         with system_tz(str(zone)):
             assert _system_tz_offset_and_id() == expect
 
+    # a link outside any zoneinfo directory: its target suggests the ID
+    @pytest.mark.parametrize(
+        "target, rules, expect",
+        [
+            (
+                "zoneinfo/Europe/Amsterdam",
+                AMS_TZ_RAWFILE,
+                (hours(1), "Europe/Amsterdam"),
+            ),
+            (
+                "other/zoneinfo/Europe/Amsterdam",
+                HONOLULU_TZ_RAWFILE,
+                (hours(-10), None),
+            ),
+        ],
+    )
+    def test_symlink(
+        self,
+        zoneinfo_dir: Path,
+        target: str,
+        rules: str,
+        expect: tuple[TimeDelta, str | None],
+    ) -> None:
+        zone = zoneinfo_dir.parent / target
+        zone.parent.mkdir(parents=True, exist_ok=True)
+        if not zone.exists():
+            shutil.copyfile(rules, zone)
+        link = zoneinfo_dir.parent / "mylocaltime"
+        link.symlink_to(zone)
+        with system_tz(str(link)):
+            assert _system_tz_offset_and_id() == expect
+
     @pytest.mark.skipif(
         _EXTENSION_LOADED and HAS_TZDATA,
         reason="the extension caches the tzdata location",
@@ -1003,6 +1075,51 @@ class TestTzEnvPath:
         ):
             with system_tz(str(tmp_path / "fifo")):
                 pass  # pragma: no cover
+
+
+NORFOLK_SLIM = TEST_DIR / "tzif" / "slim" / "Pacific" / "Norfolk"
+
+
+def _without_last_record(data: bytes) -> bytes:
+    """A TZif file with an empty first block, minus its last record"""
+    typecnt, charcnt = struct.unpack(">2i", data[36:44])
+    h = 44 + 6 * typecnt + charcnt  # the second header
+    (timecnt,) = struct.unpack(">i", data[h + 32 : h + 36])
+    idxs = h + 44 + 8 * timecnt  # after the transition times
+    return (
+        data[: h + 32]
+        + struct.pack(">i", timecnt - 1)
+        + data[h + 36 : idxs - 8]
+        + data[idxs : idxs + timecnt - 1]
+        + data[idxs + timecnt :]
+    )
+
+
+@pytest.mark.parametrize(
+    "rules_from, tz",
+    [
+        (
+            lambda path, tmp: tz_rules_from_file("Pacific/Norfolk", path, tmp),
+            "Pacific/Norfolk",
+        ),
+        (lambda path, tmp: system_tz(path), SYSTEM_TZ),
+    ],
+)
+def test_same_rules_include_where_the_footer_takes_over(
+    rules_from, tz, tmp_path: Path
+):
+    # Without its last record, a marker, Norfolk's footer DST starts in
+    # 2015 instead of 2019
+    other = tmp_path / "other" / "zoneinfo" / "Pacific" / "Norfolk"
+    other.parent.mkdir(parents=True)
+    other.write_bytes(_without_last_record(NORFOLK_SLIM.read_bytes()))
+    with tz_rules_from_file(
+        "Pacific/Norfolk", str(NORFOLK_SLIM), tmp_path / "zoneinfo"
+    ):
+        d = Instant.from_utc(2016, 1, 15).to_tz("Pacific/Norfolk")
+        assert d.offset == hours(11)
+        with rules_from(str(other), tmp_path / "db"):
+            assert d.to_tz(tz).offset == hours(12)
 
 
 class TestTzlocalBackend:

@@ -205,15 +205,6 @@ impl TzStr {
         let mut best = this_year.and_then(|ts| ts.into_iter().rfind(|&(t, _)| t <= epoch));
         let stray_end = jan1(year).get() + STRAY;
         let stray_next = jan1(year + 1).get() - STRAY;
-        // Away from the turn of the year, no transition of an adjacent year
-        // comes near, so before this year's first one, the other state holds.
-        // This spares evaluating the previous year's rules.
-        if best.is_none()
-            && (stray_end..stray_next).contains(&epoch.get())
-            && let Some([(_, first_starts_dst), _]) = this_year
-        {
-            return !first_starts_dst;
-        }
         if best.is_none_or(|(t, _)| t.get() < stray_end)
             && let Some(prev) = latest(year - 1)
             && best.is_none_or(|(t, _)| prev.0 > t)

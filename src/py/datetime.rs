@@ -141,17 +141,14 @@ impl TypeTag for DateTimeTag {
 pub(crate) type PyDateTime = Typed<DateTimeTag>;
 
 impl Typed<DateTimeTag> {
-    #[allow(dead_code)]
     pub(crate) fn year(&self) -> i32 {
         unsafe { PyDateTime_GET_YEAR(self.as_ptr()) }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn month(&self) -> i32 {
         unsafe { PyDateTime_GET_MONTH(self.as_ptr()) }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn day(&self) -> i32 {
         unsafe { PyDateTime_GET_DAY(self.as_ptr()) }
     }
@@ -189,9 +186,31 @@ impl Typed<DateTimeTag> {
     /// result: `None` or a `timedelta` strictly within 24 hours.
     pub(crate) fn utcoffset(&self) -> PyReturn {
         // SAFETY: the datetime API is imported, since self is a datetime
-        let datetime_type =
-            unsafe { PyObj::from_ptr_unchecked((*PyDateTimeAPI()).DateTimeType.cast()) };
-        datetime_type.getattr(c"utcoffset")?.call1(*self)
+        let api = unsafe { &*PyDateTimeAPI() };
+        let datetime_type = unsafe { PyObj::from_ptr_unchecked(api.DateTimeType.cast()) };
+        let utcoffset = datetime_type.getattr(c"utcoffset")?;
+        if DateTimeTag::check_exact(self.as_py_obj()) {
+            return utcoffset.call1(*self);
+        }
+        // The tzinfo reads its argument through its methods (ZoneInfo calls
+        // `toordinal()`), so a subclass's overrides are hidden behind a copy.
+        // SAFETY: the fields come from a valid datetime; DateTimeType is exact.
+        let exact = unsafe {
+            (api.DateTime_FromDateAndTimeAndFold)(
+                self.year(),
+                self.month(),
+                self.day(),
+                self.hour(),
+                self.minute(),
+                self.second(),
+                self.microsecond(),
+                self.tzinfo().as_ptr(),
+                PyDateTime_DATE_GET_FOLD(self.as_ptr()).into(),
+                api.DateTimeType,
+            )
+        }
+        .own()?;
+        utcoffset.call1(*exact)
     }
 }
 
