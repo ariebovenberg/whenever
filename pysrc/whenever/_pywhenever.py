@@ -54,8 +54,6 @@ from ._common import (
     PLAIN_SHIFT_UNAWARE_MSG,
     RANGE_MSG,
     S_PER_DAY,
-    S_PER_HOUR,
-    S_PER_MINUTE,
     SPHINX_RUNNING,
     STALE_OFFSET_CALENDAR_MSG,  # noqa: F401
     SYSTEM_TZ,
@@ -97,14 +95,13 @@ from ._math import (
     DIFF_FUNCS,
     EXACT_TOTAL_UNITS,
     NS_PER_UNIT_PLURAL,
+    NS_PER_UNIT_SINGULAR,
     TOTAL_UNITS,
     InterimDate,
     Sign,
     date_diff,
     days_in_month,
     exact_units_to_nanos,
-    increment_to_ns_for_datetime,
-    increment_to_ns_for_delta,
     is_leap,
     normalize_units,
     resolve_date_rounding,
@@ -220,7 +217,7 @@ __all__ = (
 # Helpers that pre-compute/lookup as much as possible
 _UTC = _timezone.utc
 _object_new = object.__new__
-_TIME_UNIT_SECS = {"hour": S_PER_HOUR, "minute": S_PER_MINUTE, "second": 1}
+_TIME_UNITS = ("hour", "minute", "second")
 _Nanos = int  # type alias for subsecond nanoseconds
 _T = TypeVar("_T")
 time_ns = _physical_time_ns
@@ -465,18 +462,6 @@ def _shift_components(
 _ANY_DELTA_EXPECTED = "a TimeDelta, ItemizedDelta, or ItemizedDateDelta"
 
 
-_UNITS_FOR_START_END_OF = (
-    "year",
-    "month",
-    "week_mon",
-    "week_sun",
-    "day",
-    "hour",
-    "minute",
-    "second",
-)
-
-
 WEEK_UNIT_MSG = "invalid unit: 'week', use 'week_mon' or 'week_sun'"
 
 
@@ -532,18 +517,31 @@ def _round_increment_ns(
     unit: str | TimeDelta, increment: int, for_delta: bool
 ) -> int:
     """The nanoseconds of a ``round()`` increment: a count of a named unit,
-    or a ``TimeDelta`` passed as the unit itself."""
+    or a ``TimeDelta`` passed as the unit itself. Only a ``TimeDelta`` rounds
+    to weeks or to an increment that does not divide a 24-hour day."""
     if isinstance(unit, TimeDelta):
         if increment is not UNSET:
             raise TypeError(
                 "cannot specify an increment with a TimeDelta argument"
             )
-        return unit._to_round_increment_ns(for_delta)
-    if increment is UNSET:
-        increment = 1
+        if (increment_ns := unit._total_ns) <= 0:
+            raise ValueError("unit must be a positive TimeDelta")
+        if not for_delta and NS_PER_DAY % increment_ns:
+            raise ValueError("unit must divide a 24-hour day evenly")
+        return increment_ns
+    if unit not in NS_PER_UNIT_SINGULAR or (unit == "week" and not for_delta):
+        raise invalid("unit", unit)
+    increment = 1 if increment is UNSET else expect_int("increment", increment)
+    if increment < 1:
+        raise ValueError("increment must be a positive integer")
+    increment_ns = NS_PER_UNIT_SINGULAR[unit] * increment
     if for_delta:
-        return increment_to_ns_for_delta(unit, increment)
-    return increment_to_ns_for_datetime(unit, increment)
+        # The widest the Rust extension represents: whole seconds in 64 bits
+        if increment_ns // 1_000_000_000 >= 2**64:
+            raise ValueError(RANGE_MSG)
+    elif NS_PER_DAY % increment_ns:
+        raise ValueError("increment must divide a 24-hour day evenly")
+    return increment_ns
 
 
 @final
@@ -2176,7 +2174,7 @@ class TimeDelta(_Base):
                 )._total_ns
             )
         else:
-            increment_ns = increment_to_ns_for_delta(smallest, round_increment)
+            increment_ns = _round_increment_ns(smallest, round_increment, True)
             next_ns = NS_PER_UNIT_PLURAL[units[-2]]
             magnitude = abs(self._total_ns)
             # Where the increment divides the next unit, rounding the
@@ -2680,13 +2678,6 @@ class TimeDelta(_Base):
         new = _object_new(cls)
         new._total_ns = ns
         return new
-
-    def _to_round_increment_ns(self, for_delta: bool) -> int:
-        if (increment_ns := self._total_ns) <= 0:
-            raise ValueError("unit must be a positive TimeDelta")
-        if not for_delta and 86_400_000_000_000 % increment_ns:
-            raise ValueError("unit must divide a 24-hour day evenly")
-        return increment_ns
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -6081,19 +6072,21 @@ class ZonedDateTime(_ExactAndLocalTime):
         >>> ZonedDateTime(2023, 10, 29, tz="Europe/Amsterdam").day_length()
         TimeDelta("PT25h")
         """
-        start, end = self._day_bounds()
-        return TimeDelta._from_nanos_unchecked(
-            int((end - start).total_seconds()) * 1_000_000_000
-        )
+        start, end, _ = self._day_bounds()
+        return TimeDelta._from_nanos_unchecked(end - start)
 
-    def _day_bounds(self) -> tuple[_datetime, _datetime]:
-        """The start of the day this value lies in, and of the next. Both go
-        through the resolver ``start_of("day")`` uses, so the day's length
-        can't drift from the boundaries it measures."""
+    def _epoch_ns(self) -> int:
+        return int(self._py_dt.timestamp()) * 1_000_000_000 + self._nanos
+
+    def _day_bounds(self) -> tuple[int, int, bool]:
+        """``_time_unit_bounds()`` for a calendar day: its start and the
+        next day's, resolved as ``start_of("day")`` resolves them. A day
+        starts at an even multiple."""
         midnight = self._day_midnight()
         return (
             self._resolve_derived_local(midnight),
             self._resolve_derived_local(_shift_days(midnight, 1)),
+            False,
         )
 
     def _day_midnight(self) -> _datetime:
@@ -6107,22 +6100,24 @@ class ZonedDateTime(_ExactAndLocalTime):
             next_start = self._resolve_derived_local(next_midnight)
         except (OverflowError, ValueError):
             return midnight
-        return next_midnight if self._py_dt >= next_start else midnight
+        return next_midnight if self._epoch_ns() >= next_start else midnight
 
-    def _resolve_derived_local(self, naive: _datetime, /) -> _datetime:
-        """Resolve a calendar-unit boundary this value derived, which every
-        value on the date must share: a repeated one takes the earlier
-        occurrence, and a skipped one snaps to the end of the gap, so that
-        successive intervals stay contiguous."""
-        match self._tz.ambiguity_for_local(naive):
+    def _resolve_derived_local(self, naive: _datetime, /) -> int:
+        """Resolve a calendar-unit boundary this value derived to epoch
+        nanoseconds. Every value on the date must share it: a repeated one
+        takes the earlier occurrence, and a skipped one snaps to the end of
+        the gap, so that successive intervals stay contiguous."""
+        local = int(naive.replace(tzinfo=_UTC).timestamp())
+        match self._tz._ambiguity_for_local_epoch(local):
             case Unique(offset):
                 pass
             case Fold(_, earlier_offset, _):
                 offset = earlier_offset
             case Gap(end, later_offset, _):  # pragma: no branch
-                return _from_epoch_offset(end - later_offset, later_offset)
+                local, offset = end, later_offset
         # Raise for a local time that is valid but whose instant is not.
-        return check_utc_bounds(naive.replace(tzinfo=mk_fixed_tzinfo(offset)))
+        _check_epoch(local - offset)
+        return (local - offset) * 1_000_000_000
 
     def _time_unit_bounds(self, unit_ns: int, /) -> tuple[int, int, bool]:
         """The boundaries of a unit shorter than a day around this value, in
@@ -6138,7 +6133,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         transitions within a unit.
         """
         tz = self._tz
-        t = int(self._py_dt.timestamp()) * 1_000_000_000 + self._nanos
+        t = self._epoch_ns()
         offset = self._current_offset_secs()
         local = t + offset * 1_000_000_000
         floor = local - local % unit_ns
@@ -6244,19 +6239,13 @@ class ZonedDateTime(_ExactAndLocalTime):
         first occurrence of a repeated midnight starts a unit: where a fold
         repeats the evening before, its second pass belongs to the new day.
         """
-        if unit in _TIME_UNIT_SECS:
-            return self._from_epoch_ns(
-                self._time_unit_bounds(_TIME_UNIT_SECS[unit] * 1_000_000_000)[
-                    0
-                ]
-            )
-        return self._from_py_unchecked(
-            self._resolve_derived_local(
+        if unit in _TIME_UNITS:
+            start = self._time_unit_bounds(NS_PER_UNIT_SINGULAR[unit])[0]
+        else:
+            start = self._resolve_derived_local(
                 _start_of_dt(self._day_midnight(), unit)
-            ),
-            0,
-            self._tz,
-        )
+            )
+        return self._from_epoch_ns(start)
 
     def end_of(
         self,
@@ -6280,17 +6269,13 @@ class ZonedDateTime(_ExactAndLocalTime):
         The end is one nanosecond before the start of the next unit, as
         :meth:`start_of` defines it.
         """
-        if unit in _TIME_UNIT_SECS:
-            return self._from_epoch_ns(
-                self._time_unit_bounds(_TIME_UNIT_SECS[unit] * 1_000_000_000)[
-                    1
-                ]
-                - 1
+        if unit in _TIME_UNITS:
+            end = self._time_unit_bounds(NS_PER_UNIT_SINGULAR[unit])[1]
+        else:
+            end = self._resolve_derived_local(
+                _start_of_next_dt(self._day_midnight(), unit)
             )
-        naive = _start_of_next_dt(self._day_midnight(), unit)
-        return self._from_py_unchecked(
-            self._resolve_derived_local(naive), 0, self._tz
-        ).subtract(nanoseconds=1)
+        return self._from_epoch_ns(end - 1)
 
     def round(
         self,
@@ -6335,32 +6320,15 @@ class ZonedDateTime(_ExactAndLocalTime):
           Amsterdam, 11:31 therefore rounds down and 12:31 rounds up.
         """
         increment_ns = _round_increment_ns(unit, increment, False)
-        if unit == "day":
-            return self._round_day(mode)
-
-        start, end, odd = self._time_unit_bounds(increment_ns)
-        elapsed = (
-            int(self._py_dt.timestamp()) * 1_000_000_000 + self._nanos - start
+        start, end, odd = (
+            self._day_bounds()
+            if unit == "day"
+            else self._time_unit_bounds(increment_ns)
         )
         return self._from_epoch_ns(
-            end if rounds_up(mode, elapsed, end - start, odd, 1) else start
-        )
-
-    def _round_day(self, mode: str) -> ZonedDateTime:
-        # A day is not a fixed length, so the fraction to round is the time
-        # elapsed since the start of the day over the day's own length.
-        start, end = self._day_bounds()
-        day_ns = int((end - start).total_seconds()) * 1_000_000_000
-        elapsed_ns = (
-            int((self._py_dt - start).total_seconds()) * 1_000_000_000
-            + self._nanos
-        )
-        assert 0 <= elapsed_ns < day_ns
-        # The start of the day is the even multiple
-        return self._from_py_unchecked(
-            end if rounds_up(mode, elapsed_ns, day_ns, False, 1) else start,
-            0,
-            self._tz,
+            end
+            if rounds_up(mode, self._epoch_ns() - start, end - start, odd, 1)
+            else start
         )
 
     def to_stdlib(self) -> _datetime:

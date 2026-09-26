@@ -64,6 +64,10 @@ when the boundary they compute falls in a repeated or skipped local time.
   midnight avoids this; the earlier one is the convention. Temporal has no
   answer there: `round()` raises `RangeError` for the second pass, while
   `startOfDay()` and `hoursInDay` answer for Nov 6.
+- `round("day")` and `round(hours(24))` differ only in a fold of a whole
+  day (Sitka, 1867-10-18): the repeated date is one 48-hour day, while the
+  24-hour increment, a unit no longer than the fold, starts at both
+  midnights.
 - The gap snapping is documented on `start_of()`, `end_of()`, and `round()`
   only; the resolution guide covers the caller-supplied cases.
 - A future policy keyword on these methods is additive, and must keep the

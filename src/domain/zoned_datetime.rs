@@ -6,10 +6,11 @@ use super::{
     itemized_delta::ItemizedDelta,
     local::{Disambiguation, LocalMapping, LocalSeconds, ResolveError, ResolvePolicy},
     offset_datetime::OffsetDateTime,
-    plain_datetime::PlainDateTime,
+    plain_datetime::{DateTimeBoundaryUnit, PlainDateTime},
     round,
     scalar::{EpochSecs, NegateIf, Offset, SubSecNanos},
     time::{Time, TimeBoundaryUnit},
+    time_delta::TimeDelta,
     units::{NS_PER_DAY, NS_PER_SECOND, S_PER_DAY},
 };
 use crate::common::{
@@ -166,26 +167,21 @@ impl PlainDateTime {
 /// slow.
 type Point = (i64, i32);
 
-/// The boundaries of a unit shorter than a day around a value, each with the
-/// offset in effect there.
-struct TimeUnitBounds {
-    /// The latest boundary at or before the value
-    start: (Point, Offset),
-    /// The earliest boundary after the value
-    next: Point,
-    /// The offset one nanosecond before `next`
-    end_offset: Offset,
-    /// Whether `start` is an odd multiple of the unit within its local day
-    start_odd: bool,
+fn point_to_instant((secs, subsec): Point) -> Option<Instant> {
+    Some(Instant {
+        epoch: EpochSecs::new(secs)?,
+        subsec: SubSecNanos::new_unchecked(subsec),
+    })
 }
 
-fn point_to_datetime(((secs, subsec), offset): (Point, Offset)) -> Option<OffsetDateTime> {
-    Some(
-        EpochSecs::new(secs)?
-            .shift_by_offset(offset)?
-            .datetime(SubSecNanos::new_unchecked(subsec))
-            .assume_offset_unchecked(offset),
-    )
+/// The boundaries of a unit shorter than a day around a value
+struct TimeUnitBounds {
+    /// The latest boundary at or before the value
+    start: Point,
+    /// The earliest boundary after the value
+    next: Point,
+    /// Whether `start` is an odd multiple of the unit within its local day
+    start_odd: bool,
 }
 
 const NS: i64 = NS_PER_SECOND as i64;
@@ -213,6 +209,36 @@ fn is_odd_multiple(nanos: i64, unit: i64) -> bool {
 }
 
 impl ZonedDateTime {
+    /// The start of the unit this value lies in, as ADR 0003 defines it
+    pub(crate) fn start_of(&self, unit: DateTimeBoundaryUnit) -> Option<OffsetDateTime> {
+        match unit {
+            DateTimeBoundaryUnit::Time(unit) => self.start_of_time_unit(unit),
+            DateTimeBoundaryUnit::Date(_) | DateTimeBoundaryUnit::Day => self
+                .day()
+                .at(Time::MIN)
+                .start_of_unit(unit)?
+                .resolve_derived(&self.tz),
+        }
+    }
+
+    /// One nanosecond before the start of the next unit
+    pub(crate) fn end_of(&self, unit: DateTimeBoundaryUnit) -> Option<OffsetDateTime> {
+        match unit {
+            DateTimeBoundaryUnit::Time(unit) => self.end_of_time_unit(unit),
+            DateTimeBoundaryUnit::Date(_) | DateTimeBoundaryUnit::Day => self
+                .day()
+                .at(Time::MIN)
+                .end_of_unit(unit)?
+                .date
+                .tomorrow()?
+                .at(Time::MIN)
+                .resolve_derived(&self.tz)?
+                .to_instant()
+                .shift(-TimeDelta::RESOLUTION)?
+                .to_offset_in(&self.tz),
+        }
+    }
+
     // ADR 0003 defines the boundaries of a unit shorter than a day: each
     // multiple of the unit on the local clock, at both occurrences in a fold
     // at least as long as the unit, at the earlier one in a shorter fold,
@@ -233,34 +259,27 @@ impl ZonedDateTime {
         )
     }
 
-    pub(crate) fn start_of_time_unit(&self, unit: TimeBoundaryUnit) -> Option<OffsetDateTime> {
+    fn start_of_time_unit(&self, unit: TimeBoundaryUnit) -> Option<OffsetDateTime> {
         let start = self.time.start_of(unit);
         if self.only_at_own_offset(start.total_nanos()) {
             return self.date.at(start).assume_offset(self.offset);
         }
-        let unit_ns = unit.in_secs() as i64 * NS;
-        point_to_datetime(self.time_unit_bounds_near_transition(unit_ns).start)
+        let start = self.time_unit_bounds_near_transition(unit.ns()).start;
+        point_to_instant(start)?.to_offset_in(&self.tz)
     }
 
-    pub(crate) fn end_of_time_unit(&self, unit: TimeBoundaryUnit) -> Option<OffsetDateTime> {
+    fn end_of_time_unit(&self, unit: TimeBoundaryUnit) -> Option<OffsetDateTime> {
         let end = self.time.end_of(unit);
         if self.only_at_own_offset(end.total_nanos() + 1) {
             return self.date.at(end).assume_offset(self.offset);
         }
-        let unit_ns = unit.in_secs() as i64 * NS;
-        let TimeUnitBounds {
-            next: (secs, subsec),
-            end_offset,
-            ..
-        } = self.time_unit_bounds_near_transition(unit_ns);
-        point_to_datetime((
-            if subsec == 0 {
-                (secs - 1, NS as i32 - 1)
-            } else {
-                (secs, subsec - 1)
-            },
-            end_offset,
-        ))
+        let (secs, subsec) = self.time_unit_bounds_near_transition(unit.ns()).next;
+        let end = if subsec == 0 {
+            (secs - 1, NS as i32 - 1)
+        } else {
+            (secs, subsec - 1)
+        };
+        point_to_instant(end)?.to_offset_in(&self.tz)
     }
 
     /// Round to the boundary at or before this value, or the one after it
@@ -284,35 +303,30 @@ impl ZonedDateTime {
             start,
             next,
             start_odd,
-            ..
-        } = self.time_unit_bounds_near_transition(unit_ns as i64);
+        } = self.time_unit_bounds_near_transition(unit_ns);
         let Instant { epoch, subsec } = self.to_instant();
-        let elapsed = (epoch.get() - start.0.0) * NS + (subsec.get() - start.0.1) as i64;
-        let span = (next.0 - start.0.0) * NS + (next.1 - start.0.1) as i64;
-        if mode
-            .to_abs(false)
-            .rounds_up(elapsed > 0, elapsed.cmp(&(span - elapsed)), start_odd)
-        {
-            let offset = self.tz.offset_for_instant(EpochSecs::new(next.0)?);
-            point_to_datetime((next, offset))
-        } else {
-            point_to_datetime(start)
-        }
+        let elapsed = (epoch.get() - start.0) * NS + (subsec.get() - start.1) as i64;
+        let span = (next.0 - start.0) * NS + (next.1 - start.1) as i64;
+        let round_up =
+            mode.to_abs(false)
+                .rounds_up(elapsed > 0, elapsed.cmp(&(span - elapsed)), start_odd);
+        point_to_instant(if round_up { next } else { start })?.to_offset_in(&self.tz)
     }
 
     #[cold]
-    fn time_unit_bounds_near_transition(&self, unit: i64) -> TimeUnitBounds {
+    fn time_unit_bounds_near_transition(&self, unit_ns: u64) -> TimeUnitBounds {
         let tz = &*self.tz;
+        let unit = unit_ns as i64;
         let Instant { epoch, subsec } = self.to_instant();
         let t = (epoch.get(), subsec.get());
         let offset_at = |secs: i64| tz.offset_for_instant(EpochSecs::clamp(secs));
-        // (instant, multiple as a local point, its nanoseconds in the day, offset)
-        let mut start: Option<(Point, Point, i64, Offset)> = None;
+        // (instant, multiple as a local point, its nanoseconds in the day)
+        let mut start: Option<(Point, Point, i64)> = None;
         let mut next: Option<Point> = None;
-        let mut consider = |at: Point, local: Point, nanos: i64, offset: Offset| {
+        let mut consider = |at: Point, local: Point, nanos: i64| {
             if at <= t {
-                if start.is_none_or(|(s, l, _, _)| (at, local) > (s, l)) {
-                    start = Some((at, local, nanos, offset));
+                if start.is_none_or(|(s, l, _)| (at, local) > (s, l)) {
+                    start = Some((at, local, nanos));
                 }
             } else if next.is_none_or(|n| at < n) {
                 next = Some(at);
@@ -337,21 +351,16 @@ impl ZonedDateTime {
                 let local = local_point(day, nanos);
                 let at = |offset: Offset| (local.0 - offset.get() as i64, local.1);
                 match tz.mapping_for_local(LocalSeconds::clamp(local.0)) {
-                    LocalMapping::Unique { offset } => consider(at(offset), local, nanos, offset),
+                    LocalMapping::Unique { offset } => consider(at(offset), local, nanos),
                     LocalMapping::Fold { before, after, .. } => {
-                        consider(at(before), local, nanos, before);
+                        consider(at(before), local, nanos);
                         if before.sub(after).get() as i64 * NS >= unit {
-                            consider(at(after), local, nanos, after);
+                            consider(at(after), local, nanos);
                         }
                     }
                     LocalMapping::Gap {
                         transition, after, ..
-                    } => consider(
-                        (transition.get() - after.get() as i64, 0),
-                        local,
-                        nanos,
-                        after,
-                    ),
+                    } => consider((transition.get() - after.get() as i64, 0), local, nanos),
                 }
             }
         }
@@ -359,12 +368,10 @@ impl ZonedDateTime {
         // `mapping_for_local` agrees with `offset_for_instant`, since the
         // loader rejects overlapping gaps and folds (`load_transitions`) and
         // a POSIX TZ string that disagrees with the last record.
-        let (start, _, nanos, start_offset) = start.unwrap();
-        let next = next.unwrap();
+        let (start, _, nanos) = start.unwrap();
         TimeUnitBounds {
-            start: (start, start_offset),
-            next,
-            end_offset: offset_at(next.0 - (next.1 == 0) as i64),
+            start,
+            next: next.unwrap(),
             start_odd: is_odd_multiple(nanos, unit),
         }
     }

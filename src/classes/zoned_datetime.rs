@@ -588,48 +588,15 @@ fn in_leap_year(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
 }
 
 fn start_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
-    let unit = DateTimeBoundaryUnit::from_py(unit_obj, cls.state())?;
-
-    // Behavior differs:
-    // 1. Calendar units always consume folds. A unit is only "started" once
-    //    with the next "start of day/week/month/year".
-    // 2. Other units consume folds under certain conditions, but not always.
-    match unit {
-        DateTimeBoundaryUnit::Date(_) | DateTimeBoundaryUnit::Day => slf
-            .day()
-            .at(Time::MIN)
-            .start_of_unit(unit)
-            .ok_or_range_err()?
-            .resolve_derived(&slf.tz)
-            .ok_or_range_err()?
-            .into_zoned_obj_unchecked(slf.tz.clone(), cls),
-        DateTimeBoundaryUnit::Time(u) => slf
-            .start_of_time_unit(u)
-            .ok_or_range_err()?
-            .into_zoned_obj_unchecked(slf.tz.clone(), cls),
-    }
+    slf.start_of(DateTimeBoundaryUnit::from_py(unit_obj, cls.state())?)
+        .ok_or_range_err()?
+        .into_zoned_obj_unchecked(slf.tz.clone(), cls)
 }
 
 fn end_of(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, unit_obj: PyObj) -> PyReturn {
-    let unit = DateTimeBoundaryUnit::from_py(unit_obj, cls.state())?;
-    match unit {
-        // The start of the next unit, less one nanosecond
-        DateTimeBoundaryUnit::Date(_) | DateTimeBoundaryUnit::Day => slf
-            .day()
-            .at(Time::MIN)
-            .next_start_of_unit(unit)
-            .ok_or_range_err()?
-            .resolve_derived(&slf.tz)
-            .ok_or_range_err()?
-            .to_instant()
-            .shift(-TimeDelta::RESOLUTION)
-            .unwrap()
-            .into_zoned_obj(slf.tz.clone(), cls),
-        DateTimeBoundaryUnit::Time(u) => slf
-            .end_of_time_unit(u)
-            .ok_or_range_err()?
-            .into_zoned_obj_unchecked(slf.tz.clone(), cls),
-    }
+    slf.end_of(DateTimeBoundaryUnit::from_py(unit_obj, cls.state())?)
+        .ok_or_range_err()?
+        .into_zoned_obj_unchecked(slf.tz.clone(), cls)
 }
 
 fn replace_date(

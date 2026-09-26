@@ -7036,6 +7036,20 @@ class TestTimeUnitBoundariesAtFolds:
             ZonedDateTime(ceil)
         )
 
+    def test_fold_of_a_whole_day(self):
+        # Sitka repeated 1867-10-18 when Alaska changed hands. A calendar day
+        # starts at the earlier midnight only, so the second pass of the date
+        # lies in a 48-hour day, while a 24-hour increment is a unit no longer
+        # than the fold and starts at both midnights.
+        d = ZonedDateTime("1867-10-18 17:29:00-09:01:13[America/Sitka]")
+        assert d.day_length() == hours(48)
+        assert d.round("day").strict_eq(
+            ZonedDateTime("1867-10-19 00:00:00+14:58:47[America/Sitka]")
+        )
+        assert d.round(hours(24)).strict_eq(
+            ZonedDateTime("1867-10-19 00:00:00-09:01:13[America/Sitka]")
+        )
+
     def test_goose_bay_hours_do_not_overlap(self):
         starts = [
             Instant.from_utc(2010, 11, 7, h).to_tz("America/Goose_Bay")

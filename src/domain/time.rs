@@ -186,35 +186,6 @@ impl Time {
             },
         }
     }
-
-    pub(crate) fn next_start_of(self, unit: TimeBoundaryUnit) -> (Self, bool) {
-        match unit {
-            TimeBoundaryUnit::Hour => (
-                Time {
-                    hour: (self.hour + 1) % 24,
-                    ..Time::MIN
-                },
-                self.hour == 23,
-            ),
-            TimeBoundaryUnit::Minute => (
-                Time {
-                    hour: (self.hour + (self.minute == 59) as u8) % 24,
-                    minute: (self.minute + 1) % 60,
-                    ..Time::MIN
-                },
-                self.minute == 59 && self.hour == 23,
-            ),
-            TimeBoundaryUnit::Second => (
-                Time {
-                    hour: (self.hour + (self.minute == 59 && self.second == 59) as u8) % 24,
-                    minute: (self.minute + (self.second == 59) as u8) % 60,
-                    second: (self.second + 1) % 60,
-                    ..Time::MIN
-                },
-                self.second == 59 && self.minute == 59 && self.hour == 23,
-            ),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -225,11 +196,11 @@ pub(crate) enum TimeBoundaryUnit {
 }
 
 impl TimeBoundaryUnit {
-    pub(crate) fn in_secs(self) -> i32 {
+    pub(crate) const fn ns(self) -> u64 {
         match self {
-            TimeBoundaryUnit::Hour => S_PER_HOUR,
-            TimeBoundaryUnit::Minute => S_PER_MINUTE,
-            TimeBoundaryUnit::Second => 1,
+            TimeBoundaryUnit::Hour => NS_PER_HOUR,
+            TimeBoundaryUnit::Minute => NS_PER_MINUTE,
+            TimeBoundaryUnit::Second => NS_PER_SECOND as u64,
         }
     }
 }

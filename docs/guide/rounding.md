@@ -69,9 +69,9 @@ Allowed values depend on the type of the object being rounded:
 | Type | weeks | days | hours<br> and smaller |
 |------|:-----:|:----:|:-------:|
 | {class}`~whenever.TimeDelta` | ✅ [^1] | ✅ [^1] | ✅ |
-| {class}`~whenever.ZonedDateTime`, | ❌ | ✅ | ✅ |
-| {class}`~whenever.PlainDateTime`, | ❌ | ✅ | ✅ |
-| {class}`~whenever.OffsetDateTime`, | ❌ | ✅ | ✅ |
+| {class}`~whenever.ZonedDateTime` | ❌ | ✅ | ✅ |
+| {class}`~whenever.PlainDateTime` | ❌ | ✅ | ✅ |
+| {class}`~whenever.OffsetDateTime` | ❌ | ✅ | ✅ |
 | {class}`~whenever.Instant` | ❌ | ❌ [^2] | ✅ |
 | {class}`~whenever.Time` | ❌ | ❌ | ✅ [^3] |
 
@@ -149,7 +149,7 @@ The units are `"year"`, `"month"`, `"week_mon"`, `"week_sun"`, `"day"`,
 `"hour"`, `"minute"`, and `"second"`; a {class}`~whenever.Date` takes the first four.
 A week can start on Monday (ISO) or on Sunday, so the unit says which:
 a bare `"week"` is rejected.
-`start_of()` on a time unit is `round()` with `mode="floor"`,
+`start_of()` on `"day"` or a smaller unit is `round()` with `mode="floor"`,
 and {class}`~whenever.Date` has no `round()`, since it has nothing below a day to round.
 
 `end_of()` returns the last nanosecond of the unit,

@@ -302,10 +302,6 @@ impl Date {
         }
     }
 
-    pub(crate) fn next_start_of(self, unit: DateBoundaryUnit) -> Option<Date> {
-        self.end_of(unit)?.tomorrow()
-    }
-
     pub(crate) const fn at(self, time: Time) -> PlainDateTime {
         PlainDateTime { date: self, time }
     }

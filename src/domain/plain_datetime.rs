@@ -107,25 +107,6 @@ impl PlainDateTime {
         Some(PlainDateTime { date, time })
     }
 
-    pub(crate) fn next_start_of_unit(self, unit: DateTimeBoundaryUnit) -> Option<PlainDateTime> {
-        let (date, time) = match unit {
-            DateTimeBoundaryUnit::Date(unit) => (self.date.next_start_of(unit)?, Time::MIN),
-            DateTimeBoundaryUnit::Time(unit) => {
-                let (time, overflow) = self.time.next_start_of(unit);
-                (
-                    if overflow {
-                        self.date.tomorrow()?
-                    } else {
-                        self.date
-                    },
-                    time,
-                )
-            }
-            DateTimeBoundaryUnit::Day => (self.date.tomorrow()?, Time::MIN),
-        };
-        Some(PlainDateTime { date, time })
-    }
-
     pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
         if s.len() < 11 {
             return None;
