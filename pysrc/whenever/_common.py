@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-# Unused imports are necessary for sphinx autodoc due to
-# scoping issues introduced by add_alternate_constructors().
-from datetime import (  # noqa: F401
+# Autodoc also evaluates the annotations that add_alternate_constructors()
+# copies onto __init__ in this module, so these names must stay importable here.
+from datetime import (
     date as _date,
     datetime as _datetime,
-    time as _time,  # noqa: F401
+    time as _time,
     timedelta as _timedelta,
     timezone as _timezone,
 )
@@ -138,13 +138,8 @@ DAYS_NOT_ALWAYS_24H_MSG = (
     + WARNING_HANDLING_DOCS_MSG
 )
 
-# A self-set variable to detect if we're being run by sphinx autodoc
-try:
-    from sphinx import (  # type: ignore[attr-defined, import-not-found, unused-ignore]
-        SPHINX_RUNNING as SPHINX_RUNNING,
-    )
-except ImportError:
-    SPHINX_RUNNING = False
+# Set by the docs' conf.py before the other modules import it
+SPHINX_RUNNING = False
 
 # A sentinel value that looks nice in autodoc.
 # Used in cases where `None` would be a valid value, or where we want to

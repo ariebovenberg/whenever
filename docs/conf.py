@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import importlib.metadata
 import re
+import sys
 import warnings
 
-import sphinx
+import whenever._common
 
-sphinx.SPHINX_RUNNING = True
+# Document the pure-Python backend: autodoc and viewcode need its source.
+sys.modules["whenever._whenever"] = None
+# Keeps the internal modules from reporting their members as `whenever`'s,
+# which would hide their source from viewcode and their attribute docstrings
+# from autodoc (https://github.com/sphinx-doc/sphinx/issues/3673). It must be
+# set before the lazily imported modules read it.
+whenever._common.SPHINX_RUNNING = True
 
 # viewcode and autodoc resolve the deprecated ``TZPATH`` and
 # ``DisambiguateStr`` reference entries by attribute access, which is exactly
@@ -47,10 +54,6 @@ extensions = [
     "myst_parser",
 ]
 templates_path = ["_templates"]
-source_suffix = {
-    ".md": "markdown",
-    ".rst": "restructuredtext",
-}
 redirects = {
     "api": "reference/datetime.html",
     "benchmarks": "performance.html",
@@ -67,8 +70,7 @@ html_context = {"homepage_title": "Whenever — type-safe datetimes for Python"}
 # have to choose between the identical copies under /en/<version>/.
 html_baseurl = "https://whenever.readthedocs.io/en/latest/"
 
-master_doc = "index"
-exclude_patterns = ["_build", "adr", "internal", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", "adr", "internal"]
 myst_heading_anchors = 2
 myst_enable_extensions = [
     "colon_fence",

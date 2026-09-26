@@ -72,9 +72,8 @@ fix:
 	cargo fmt
 
 .PHONY: docs
-docs: clean-ext  # clean the extension since it messes with autodoc
-	uv $(UV_ARGS) run --no-sync $(MAKE) --no-print-directory -C docs/ \
-		SPHINXOPTS="$(SPHINXOPTS)" html
+docs:
+	uv $(UV_ARGS) run --no-sync sphinx-build -M html docs docs/_build $(SPHINXOPTS)
 
 .PHONY: check-readme
 check-readme:
