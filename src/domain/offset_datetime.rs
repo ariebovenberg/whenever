@@ -5,7 +5,8 @@ use super::{
     scalar::{Offset, Sign},
     shift::DateTimeShift,
     time::Time,
-    time_delta::TimeDelta,
+    time_delta::{ParseError, TimeDelta},
+    units::S_PER_HOUR,
 };
 use crate::{common::parse::Scan, tz::tzif::is_valid_key};
 
@@ -45,17 +46,17 @@ impl OffsetDateTime {
         self.to_plain().shift_by(shift)?.assume_offset(offset)
     }
 
-    pub(crate) fn parse_iso(s: &[u8]) -> Option<Self> {
-        Scan::new(s).parse_all(Self::read_iso)
-    }
-
-    pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
-        PlainDateTime::read_iso(s)?
-            .assume_offset(Offset::read_iso(s)?)
-            .and_then(|dt| {
+    /// A well-formed string whose value is out of range is `OutOfRange`.
+    pub(crate) fn parse_iso(s: &[u8]) -> Result<Self, ParseError> {
+        let (dt, offset) = Scan::new(s)
+            .parse_all(|s| {
+                let dt = PlainDateTime::read_iso(s)?;
+                let offset = Offset::read_iso(s)?;
                 skip_tzname(s)?;
-                Some(dt)
+                Some((dt, offset))
             })
+            .ok_or(ParseError::Invalid)?;
+        dt.assume_offset(offset).ok_or(ParseError::OutOfRange)
     }
 }
 
@@ -85,18 +86,24 @@ impl Instant {
 
 impl Offset {
     pub(crate) fn read_iso(s: &mut Scan) -> Option<Self> {
+        Self::read_iso_with_precision(s).map(|(offset, _)| offset)
+    }
+
+    pub(crate) fn read_iso_with_precision(s: &mut Scan) -> Option<(Self, bool)> {
         let sign = match s.next() {
             Some(b'+') => Sign::Plus,
             Some(b'-') => Sign::Minus,
-            Some(b'Z' | b'z') => return Some(Self::ZERO),
+            Some(b'Z' | b'z') => return Some((Self::ZERO, true)),
             _ => return None,
         };
-        let mut total = s.digits00_23()? as i32 * 3600;
+        let mut total = s.digits00_23()? as i32 * S_PER_HOUR;
+        let mut exact = false;
         match s.advance_on(b':') {
             Some(true) => {
                 total += s.digits00_59()? as i32 * 60;
                 if let Some(true) = s.advance_on(b':') {
                     total += s.digits00_59()? as i32;
+                    exact = true;
                 }
             }
             Some(false) => {
@@ -104,12 +111,13 @@ impl Offset {
                     total += minutes as i32 * 60;
                     if let Some(seconds) = s.digits00_59() {
                         total += seconds as i32;
+                        exact = true;
                     }
                 }
             }
             None => {}
         }
-        Some(Self::new_unchecked(total).with_sign(sign))
+        Some((Self::new_unchecked(total).with_sign(sign), exact))
     }
 }
 

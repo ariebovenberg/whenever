@@ -1,10 +1,11 @@
 use super::{
     date::{Date, DateBoundaryUnit},
     instant::Instant,
-    scalar::{DeltaDays, DeltaMonths, Month, OffsetDelta, S_PER_DAY, Year},
+    scalar::{DeltaDays, DeltaMonths, Month, OffsetDelta, Year},
     shift::DateTimeShift,
     time::{Time, TimeBoundaryUnit},
     time_delta::TimeDelta,
+    units::S_PER_DAY,
 };
 use crate::common::parse::Scan;
 
@@ -102,25 +103,6 @@ impl PlainDateTime {
             DateTimeBoundaryUnit::Date(unit) => (self.date.end_of(unit)?, Time::MAX),
             DateTimeBoundaryUnit::Time(unit) => (self.date, self.time.end_of(unit)),
             DateTimeBoundaryUnit::Day => (self.date, Time::MAX),
-        };
-        Some(PlainDateTime { date, time })
-    }
-
-    pub(crate) fn next_start_of_unit(self, unit: DateTimeBoundaryUnit) -> Option<PlainDateTime> {
-        let (date, time) = match unit {
-            DateTimeBoundaryUnit::Date(unit) => (self.date.next_start_of(unit)?, Time::MIN),
-            DateTimeBoundaryUnit::Time(unit) => {
-                let (time, overflow) = self.time.next_start_of(unit);
-                (
-                    if overflow {
-                        self.date.tomorrow()?
-                    } else {
-                        self.date
-                    },
-                    time,
-                )
-            }
-            DateTimeBoundaryUnit::Day => (self.date.tomorrow()?, Time::MIN),
         };
         Some(PlainDateTime { date, time })
     }

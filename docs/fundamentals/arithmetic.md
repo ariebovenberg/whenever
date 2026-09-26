@@ -77,6 +77,9 @@ changes due to DST. This is the behavior people expect when they say
 In contexts with no local time to preserve (such as
 {class}`~whenever.Instant` or
 {class}`~whenever.TimeDelta`), days can still be used but
-are treated as exactly 24 hours each—with a warning to make the assumption
-explicit.
+are treated as exactly 24 hours each—with a warning to make the conversion
+explicit. Acknowledging it with `days_assumed_24h_ok` also covers weeks of
+exactly seven 24-hour days; it does
+not enable calendar-day rounding on {class}`~whenever.Instant` (see
+{ref}`the rounding distinction <rounding-instant-day>`).
 ```

@@ -41,6 +41,8 @@ impl ItemizedDateDelta {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Round the given unit, and return whether that moved it away from
+    /// its truncated value.
     pub(crate) fn round_by_days(
         &mut self,
         unit: CalendarUnit,
@@ -50,20 +52,17 @@ impl ItemizedDateDelta {
         mode: round::AbsMode,
         increment: CalendarIncrement,
         neg: bool,
-    ) {
+    ) -> bool {
         let field = unit.field(self);
-        field.replace_unchecked(round_by_days(
-            field.as_option().unwrap(),
-            target,
-            trunc,
-            expand,
-            mode,
-            increment,
-            neg,
-        ));
+        let trunc_value = field.as_option().unwrap();
+        let rounded = round_by_days(trunc_value, target, trunc, expand, mode, increment, neg);
+        field.replace_unchecked(rounded);
+        rounded != trunc_value
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Round the given unit, and return whether that moved it away from
+    /// its truncated value.
     pub(crate) fn round_by_time(
         &mut self,
         unit: CalendarUnit,
@@ -73,16 +72,11 @@ impl ItemizedDateDelta {
         mode: round::AbsMode,
         increment: CalendarIncrement,
         neg: bool,
-    ) {
+    ) -> bool {
         let field = unit.field(self);
-        field.replace_unchecked(round_by_time(
-            field.as_option().unwrap(),
-            target,
-            trunc,
-            expand,
-            mode,
-            increment,
-            neg,
-        ));
+        let trunc_value = field.as_option().unwrap();
+        let rounded = round_by_time(trunc_value, target, trunc, expand, mode, increment, neg);
+        field.replace_unchecked(rounded);
+        rounded != trunc_value
     }
 }

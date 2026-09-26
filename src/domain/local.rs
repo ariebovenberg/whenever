@@ -1,5 +1,4 @@
 use super::{
-    date::Date,
     offset_datetime::OffsetDateTime,
     plain_datetime::PlainDateTime,
     scalar::{EpochSecs, Offset, SubSecNanos},
@@ -10,6 +9,10 @@ use super::{
 pub struct LocalSeconds(EpochSecs);
 
 impl LocalSeconds {
+    pub(crate) fn clamp(secs: i64) -> Self {
+        Self(EpochSecs::clamp(secs))
+    }
+
     #[inline]
     pub(crate) fn from_instant_saturating(epoch: EpochSecs, offset: Offset) -> Self {
         Self(epoch.saturating_shift_by_offset(offset))
@@ -42,7 +45,8 @@ impl LocalSeconds {
         self.0.datetime(subsec)
     }
 
-    pub(crate) fn date(self) -> Date {
+    #[cfg(test)]
+    pub(crate) fn date(self) -> super::date::Date {
         self.0.date()
     }
 }
@@ -82,7 +86,9 @@ pub(crate) enum Disambiguation {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum ResolvePolicy {
     Disambiguate(Disambiguation),
-    PreserveOffset(Offset),
+    /// Keep the offset in a fold where it identifies an occurrence; the
+    /// disambiguation decides otherwise, and in a gap.
+    PreserveOffset(Offset, Disambiguation),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -103,33 +109,27 @@ impl LocalMapping {
             Self::Unique { offset } => local.assume_offset(offset),
             Self::Fold { before, after, .. } => {
                 let offset = match policy {
-                    ResolvePolicy::Disambiguate(Disambiguation::Earlier)
-                    | ResolvePolicy::Disambiguate(Disambiguation::Compatible) => before,
-                    ResolvePolicy::Disambiguate(Disambiguation::Later) => after,
-                    ResolvePolicy::Disambiguate(Disambiguation::Reject) => {
-                        return Err(ResolveError::Fold);
+                    ResolvePolicy::PreserveOffset(preferred, _)
+                        if preferred == before || preferred == after =>
+                    {
+                        preferred
                     }
-                    ResolvePolicy::PreserveOffset(preferred) => {
-                        if preferred == after {
-                            after
-                        } else {
-                            before
-                        }
-                    }
+                    ResolvePolicy::Disambiguate(d) | ResolvePolicy::PreserveOffset(_, d) => match d
+                    {
+                        Disambiguation::Earlier | Disambiguation::Compatible => before,
+                        Disambiguation::Later => after,
+                        Disambiguation::Reject => return Err(ResolveError::Fold),
+                    },
                 };
                 local.assume_offset(offset)
             }
             Self::Gap { before, after, .. } => {
                 let shift = after.sub(before);
-                let (shift, offset) = match policy {
-                    ResolvePolicy::Disambiguate(Disambiguation::Earlier) => (-shift, before),
-                    ResolvePolicy::Disambiguate(Disambiguation::Reject) => {
-                        return Err(ResolveError::Gap);
-                    }
-                    ResolvePolicy::Disambiguate(
-                        Disambiguation::Compatible | Disambiguation::Later,
-                    )
-                    | ResolvePolicy::PreserveOffset(_) => (shift, after),
+                let (ResolvePolicy::Disambiguate(d) | ResolvePolicy::PreserveOffset(_, d)) = policy;
+                let (shift, offset) = match d {
+                    Disambiguation::Earlier => (-shift, before),
+                    Disambiguation::Reject => return Err(ResolveError::Gap),
+                    Disambiguation::Compatible | Disambiguation::Later => (shift, after),
                 };
                 local
                     .shift_by_offset(shift)
@@ -177,13 +177,44 @@ mod tests {
             mapping.resolve(local, ResolvePolicy::Disambiguate(Disambiguation::Reject)),
             Err(ResolveError::Fold)
         );
+        // A preferred offset that identifies an occurrence wins over every policy
+        for disambiguation in [
+            Disambiguation::Compatible,
+            Disambiguation::Earlier,
+            Disambiguation::Later,
+            Disambiguation::Reject,
+        ] {
+            for preferred in [before, after] {
+                assert_eq!(
+                    mapping.resolve(
+                        local,
+                        ResolvePolicy::PreserveOffset(preferred, disambiguation)
+                    ),
+                    Ok(local.assume_offset(preferred).unwrap())
+                );
+            }
+        }
+        // Otherwise the policy decides
         assert_eq!(
-            mapping.resolve(local, ResolvePolicy::PreserveOffset(after)),
+            mapping.resolve(
+                local,
+                ResolvePolicy::PreserveOffset(Offset::ZERO, Disambiguation::Compatible)
+            ),
+            Ok(local.assume_offset(before).unwrap())
+        );
+        assert_eq!(
+            mapping.resolve(
+                local,
+                ResolvePolicy::PreserveOffset(Offset::ZERO, Disambiguation::Later)
+            ),
             Ok(local.assume_offset(after).unwrap())
         );
         assert_eq!(
-            mapping.resolve(local, ResolvePolicy::PreserveOffset(Offset::ZERO)),
-            Ok(local.assume_offset(before).unwrap())
+            mapping.resolve(
+                local,
+                ResolvePolicy::PreserveOffset(Offset::ZERO, Disambiguation::Reject)
+            ),
+            Err(ResolveError::Fold)
         );
     }
 
@@ -202,7 +233,7 @@ mod tests {
         for policy in [
             ResolvePolicy::Disambiguate(Disambiguation::Compatible),
             ResolvePolicy::Disambiguate(Disambiguation::Later),
-            ResolvePolicy::PreserveOffset(before),
+            ResolvePolicy::PreserveOffset(before, Disambiguation::Compatible),
         ] {
             assert_eq!(
                 mapping.resolve(local, policy),
@@ -223,6 +254,13 @@ mod tests {
         );
         assert_eq!(
             mapping.resolve(local, ResolvePolicy::Disambiguate(Disambiguation::Reject)),
+            Err(ResolveError::Gap)
+        );
+        assert_eq!(
+            mapping.resolve(
+                local,
+                ResolvePolicy::PreserveOffset(before, Disambiguation::Reject)
+            ),
             Err(ResolveError::Gap)
         );
     }

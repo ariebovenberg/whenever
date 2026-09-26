@@ -1,14 +1,18 @@
-import pickle
 import re
 import warnings
 from datetime import datetime as py_datetime, timezone
-from typing import Any, Literal, Sequence
+from fractions import Fraction
+from typing import Any, Literal, Sequence, cast
 
 import pytest
 from hypothesis import given
 from hypothesis.strategies import floats, integers, text
 from whenever import (
+    MONDAY,
+    SATURDAY,
+    SYSTEM_TZ,
     Date,
+    ImplicitDisambiguationWarning,
     Instant,
     ItemizedDateDelta,
     ItemizedDelta,
@@ -19,31 +23,24 @@ from whenever import (
     SkippedTime,
     Time,
     TimeDelta,
-    WheneverDeprecationWarning,
+    TimeZoneNotFoundError,
     ZonedDateTime,
-    days,
     hours,
-    months,
     nanoseconds,
     seconds,
-    weeks,
-    years,
 )
 
 from .common import (
     AMS_TZ_POSIX,
-    AlwaysEqual,
-    AlwaysLarger,
-    AlwaysSmaller,
-    NeverEqual,
+    Idx,
+    StrSubclass,
     suppress,
     system_tz,
-    system_tz_ams,
+    warns_here,
 )
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
-)
+# Thursday, August 15
+_THURSDAY_AFTERNOON = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
 
 
 class TestInit:
@@ -73,6 +70,30 @@ class TestInit:
             2020, 8, 15, 5, 12, 30, nanosecond=450
         )
 
+    def test_single_argument_wrong_type(self):
+        with pytest.raises(
+            TypeError,
+            match=r"^PlainDateTime\(\) requires an ISO 8601 string or datetime.datetime$",
+        ):
+            PlainDateTime(None)  # type: ignore[call-overload]
+
+    def test_defaults(self):
+        assert PlainDateTime(2020, 8, 15) == PlainDateTime(
+            2020, 8, 15, 0, 0, 0, nanosecond=0
+        )
+
+    @pytest.mark.parametrize(
+        "args, kwargs",
+        [
+            ((2020, 8, 15, 5, 12, 30, 450), {}),
+            ((), {"iso_string": "2020-08-15T05:12:30"}),
+            ((), {"py_datetime": py_datetime(2020, 8, 15)}),
+        ],
+    )
+    def test_parameter_kinds(self, args, kwargs):
+        with pytest.raises(TypeError):
+            PlainDateTime(*args, **kwargs)
+
     def test_leap_seconds_parsing(self):
         # Leap second (60) should be parsed and normalized to 59
         assert PlainDateTime("2020-08-15T05:12:60") == PlainDateTime(
@@ -90,50 +111,106 @@ class TestInit:
             PlainDateTime(2020, 8, 15, 5, 12, 60)
 
 
-def test_components():
-    d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_123)
-    assert d.date() == Date(2020, 8, 15)
-    assert d.time() == Time(23, 12, 9, nanosecond=987_654_123)
+class TestInitFromPy:
+    def test_valid(self):
+        d = py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
+        assert PlainDateTime(d) == PlainDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r"^datetime must be naive, got tzinfo=datetime\.timezone\.utc$",
+        ):
+            PlainDateTime(
+                py_datetime(
+                    2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc
+                )
+            )
+
+        class MyDateTime(py_datetime):
+            pass
+
+        assert PlainDateTime(
+            MyDateTime(2020, 8, 15, 23, 12, 9, 987_654)
+        ) == PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
+
+    def test_keyword_rejected(self):
+        with pytest.raises(
+            TypeError,
+            match=r"^PlainDateTime\(\) got an unexpected keyword argument 'nanosecond'$",
+        ):
+            PlainDateTime(py_datetime(2020, 8, 15), nanosecond=1)  # type: ignore[call-overload]
+
+    def test_drops_fold(self):
+        # fold means nothing without a time zone, so it isn't carried
+        assert (
+            PlainDateTime(py_datetime(2023, 10, 29, 2, 30, fold=1))
+            .to_stdlib()
+            .fold
+            == 0
+        )
 
 
-def test_assume_utc():
-    assert PlainDateTime(2020, 8, 15, 23).assume_utc() == Instant.from_utc(
-        2020, 8, 15, 23
-    )
+class TestAccessors:
+    def test_components(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_123)
+        assert d.date() == Date(2020, 8, 15)
+        assert d.time() == Time(23, 12, 9, nanosecond=987_654_123)
+
+    def test_min_max(self):
+        assert PlainDateTime.MIN == PlainDateTime(1, 1, 1)
+        assert PlainDateTime.MAX == PlainDateTime(
+            9999, 12, 31, 23, 59, 59, nanosecond=999_999_999
+        )
+
+    def test_day_of_week(self):
+        assert PlainDateTime(2024, 3, 9, 22).day_of_week() is SATURDAY
+        assert PlainDateTime(2024, 12, 30).day_of_week() is MONDAY
 
 
-def test_assume_fixed_offset():
-    assert (
-        PlainDateTime(2020, 8, 15, 23)
-        .assume_fixed_offset(hours(5))
-        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=5))
-    )
-    assert (
-        PlainDateTime(2020, 8, 15, 23)
-        .assume_fixed_offset(-2)
-        .exact_eq(OffsetDateTime(2020, 8, 15, 23, offset=-2))
-    )
+class TestConversion:
+    def test_assume_utc(self):
+        assert PlainDateTime(2020, 8, 15, 23).assume_utc() == Instant.from_utc(
+            2020, 8, 15, 23
+        )
+
+    def test_assume_fixed_offset(self):
+        assert (
+            PlainDateTime(2020, 8, 15, 23)
+            .assume_fixed_offset(hours(5))
+            .strict_eq(OffsetDateTime(2020, 8, 15, 23, offset=hours(5)))
+        )
+        assert (
+            PlainDateTime(2020, 8, 15, 23)
+            .assume_fixed_offset(hours(-2))
+            .strict_eq(OffsetDateTime(2020, 8, 15, 23, offset=hours(-2)))
+        )
+
+    def test_to_stdlib(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_823)
+        assert d.to_stdlib() == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
 
 
 class TestAssumeTz:
     def test_typical(self):
         d = PlainDateTime(2020, 8, 15, 23)
-        assert d.assume_tz("Asia/Tokyo", disambiguate="raise").exact_eq(
+        assert d.assume_tz("Asia/Tokyo", disambiguation="raise").strict_eq(
             ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
         )
-        assert d.assume_tz("Asia/Tokyo").exact_eq(
+        assert d.assume_tz("Asia/Tokyo").strict_eq(
             ZonedDateTime(2020, 8, 15, 23, tz="Asia/Tokyo")
         )
 
-    def test_ambiguous(self):
+    def test_repeated_time(self):
         d = PlainDateTime(2023, 10, 29, 2, 15)
 
         with pytest.raises(RepeatedTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_tz("Europe/Amsterdam", disambiguate="raise")
+            d.assume_tz("Europe/Amsterdam", disambiguation="raise")
 
         assert d.assume_tz(
-            "Europe/Amsterdam", disambiguate="earlier"
-        ).exact_eq(
+            "Europe/Amsterdam", disambiguation="earlier"
+        ).strict_eq(
             ZonedDateTime(
                 2023,
                 10,
@@ -141,10 +218,12 @@ class TestAssumeTz:
                 2,
                 15,
                 tz="Europe/Amsterdam",
-                disambiguate="earlier",
+                disambiguation="earlier",
             )
         )
-        assert d.assume_tz("Europe/Amsterdam", disambiguate="later").exact_eq(
+        assert d.assume_tz(
+            "Europe/Amsterdam", disambiguation="later"
+        ).strict_eq(
             ZonedDateTime(
                 2023,
                 10,
@@ -152,19 +231,46 @@ class TestAssumeTz:
                 2,
                 15,
                 tz="Europe/Amsterdam",
-                disambiguate="later",
+                disambiguation="later",
             )
         )
 
-    def test_nonexistent(self):
+    @pytest.mark.parametrize(
+        "d",
+        [
+            PlainDateTime(2023, 10, 29, 2, 15),  # repeated
+            PlainDateTime(2023, 3, 26, 2, 15),  # skipped
+        ],
+    )
+    def test_implicit_disambiguation_warns(self, d):
+        with warns_here(ImplicitDisambiguationWarning):
+            implicit = d.assume_tz("Europe/Amsterdam")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            explicit = d.assume_tz(
+                "Europe/Amsterdam", disambiguation="compatible"
+            )
+        assert implicit.strict_eq(explicit)
+
+    def test_wrong_type(self):
+        with pytest.raises(
+            TypeError, match="^tz must be a string or SYSTEM_TZ$"
+        ):
+            PlainDateTime(2020, 8, 15).assume_tz(3)
+
+    def test_unknown_tz_id(self):
+        with pytest.raises(TimeZoneNotFoundError, match="not found"):
+            PlainDateTime(2020, 8, 15).assume_tz("Europe/Nowhere")
+
+    def test_skipped_time(self):
         d = PlainDateTime(2023, 3, 26, 2, 15)
 
         with pytest.raises(SkippedTime, match="02:15.*Europe/Amsterdam"):
-            d.assume_tz("Europe/Amsterdam", disambiguate="raise")
+            d.assume_tz("Europe/Amsterdam", disambiguation="raise")
 
         assert d.assume_tz(
-            "Europe/Amsterdam", disambiguate="earlier"
-        ).exact_eq(
+            "Europe/Amsterdam", disambiguation="earlier"
+        ).strict_eq(
             ZonedDateTime(
                 2023,
                 3,
@@ -172,7 +278,7 @@ class TestAssumeTz:
                 2,
                 15,
                 tz="Europe/Amsterdam",
-                disambiguate="earlier",
+                disambiguation="earlier",
             )
         )
 
@@ -190,13 +296,13 @@ class TestAssumeSystemTz:
             dt = PlainDateTime(2020, 8, 15, 23)
 
             with system_tz(tz):
-                zdt = dt.assume_system_tz(disambiguate="raise")
+                zdt = dt.assume_tz(SYSTEM_TZ, disambiguation="raise")
                 assert isinstance(zdt, ZonedDateTime)
                 assert zdt.to_plain() == dt
                 assert zdt.offset == hours(2)
 
                 if tz == "Europe/Amsterdam":
-                    assert zdt.tz == "Europe/Amsterdam"
+                    assert zdt.tz_id == "Europe/Amsterdam"
 
     @pytest.mark.parametrize(
         "tz",
@@ -205,32 +311,34 @@ class TestAssumeSystemTz:
             AMS_TZ_POSIX,
         ],
     )
-    def test_ambiguous(self, tz):
+    def test_repeated_time(self, tz):
         with system_tz(tz):
             d = PlainDateTime(2023, 10, 29, 2, 15)
 
             with pytest.raises(RepeatedTime, match="02:15.*is repeated"):
-                d.assume_system_tz(disambiguate="raise")
+                d.assume_tz(SYSTEM_TZ, disambiguation="raise")
 
-            zdt1 = d.assume_system_tz(disambiguate="earlier")
+            zdt1 = d.assume_tz(SYSTEM_TZ, disambiguation="earlier")
             assert isinstance(zdt1, ZonedDateTime)
             assert zdt1.to_plain() == d
             assert zdt1.offset == hours(2)
 
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt1.tz == "Europe/Amsterdam"
+                assert zdt1.tz_id == "Europe/Amsterdam"
 
-            assert d.assume_system_tz(disambiguate="compatible").exact_eq(zdt1)
+            assert d.assume_tz(
+                SYSTEM_TZ, disambiguation="compatible"
+            ).strict_eq(zdt1)
 
-            zdt2 = d.assume_system_tz(disambiguate="later")
+            zdt2 = d.assume_tz(SYSTEM_TZ, disambiguation="later")
             assert isinstance(zdt2, ZonedDateTime)
             assert zdt2.to_plain() == d
             assert zdt2.offset == hours(1)
 
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt2.tz == "Europe/Amsterdam"
+                assert zdt2.tz_id == "Europe/Amsterdam"
 
     @pytest.mark.parametrize(
         "tz",
@@ -240,36 +348,122 @@ class TestAssumeSystemTz:
         ],
     )
     @suppress(NaiveArithmeticWarning)
-    def test_nonexistent(self, tz):
+    def test_skipped_time(self, tz):
         with system_tz(tz):
             d = PlainDateTime(2023, 3, 26, 2, 15)
 
             with pytest.raises(SkippedTime, match="02:15.*is skipped"):
-                d.assume_system_tz(disambiguate="raise")
+                d.assume_tz(SYSTEM_TZ, disambiguation="raise")
 
-            zdt1 = d.assume_system_tz(disambiguate="earlier")
+            zdt1 = d.assume_tz(SYSTEM_TZ, disambiguation="earlier")
             assert isinstance(zdt1, ZonedDateTime)
             assert zdt1.to_plain() == d.subtract(hours=1)
             assert zdt1.offset == hours(1)
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt1.tz == "Europe/Amsterdam"
+                assert zdt1.tz_id == "Europe/Amsterdam"
 
-            zdt2 = d.assume_system_tz(disambiguate="later")
+            zdt2 = d.assume_tz(SYSTEM_TZ, disambiguation="later")
             assert isinstance(zdt2, ZonedDateTime)
             assert zdt2.to_plain() == d.add(hours=1)
             assert zdt2.offset == hours(2)
             # posix TZ string cannot be checked
             if tz == "Europe/Amsterdam":
-                assert zdt2.tz == "Europe/Amsterdam"
+                assert zdt2.tz_id == "Europe/Amsterdam"
 
-            assert d.assume_system_tz(disambiguate="compatible").exact_eq(zdt2)
+            assert d.assume_tz(
+                SYSTEM_TZ, disambiguation="compatible"
+            ).strict_eq(zdt2)
 
 
-def test_immutable():
-    d = PlainDateTime(2020, 8, 15)
-    with pytest.raises(AttributeError):
-        d.year = 2021  # type: ignore[misc]
+class TestFormatIso:
+    def test_default(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_650)
+        assert str(d) == "2020-08-15T23:12:09.00098765"
+        assert d.format_iso() == "2020-08-15T23:12:09.00098765"
+
+    @pytest.mark.parametrize(
+        "dt, kwargs, expected",
+        [
+            (
+                PlainDateTime(1993, 4, 1, 14),
+                {"unit": "nanosecond"},
+                "1993-04-01T14:00:00.000000000",
+            ),
+            (
+                PlainDateTime(2025, 11, 1, 14, nanosecond=40_000),
+                {"unit": "microsecond", "sep": " "},
+                "2025-11-01 14:00:00.000040",
+            ),
+            (
+                PlainDateTime(2025, 11, 1, 14, 59, 42, nanosecond=40_000),
+                {"unit": "millisecond", "basic": True},
+                "20251101T145942.000",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321),
+                {"unit": "second", "sep": "T", "basic": True},
+                "20200815T231209",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 12, 49),
+                {"unit": "minute"},
+                "2020-08-15T23:12",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 45),
+                {"unit": "hour", "basic": True},
+                "20200815T23",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, nanosecond=40_000),
+                {"unit": "auto", "basic": False},
+                "2020-08-15T00:00:00.00004",
+            ),
+            (
+                PlainDateTime(2020, 8, 15, 23, 45),
+                {"unit": "hour"},
+                "2020-08-15T23",
+            ),
+        ],
+    )
+    def test_variations(self, dt, kwargs, expected):
+        assert dt.format_iso(**kwargs) == expected
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{}, {"basic": True}, {"sep": " "}, {"unit": "hour"}],
+    )
+    def test_round_trip(self, kwargs):
+        d = PlainDateTime(2020, 8, 15, 23)
+        assert PlainDateTime.parse_iso(d.format_iso(**kwargs)) == d
+
+    def test_invalid(self):
+        dt = PlainDateTime(2020, 4, 9, 13)
+        with pytest.raises(ValueError, match="unit"):
+            dt.format_iso(unit="foo")  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="invalid unit"):
+            dt.format_iso(unit=True)  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="sep"):
+            dt.format_iso(sep="_")  # type: ignore[arg-type]
+
+        with pytest.raises(ValueError, match="invalid sep"):
+            dt.format_iso(sep=1)  # type: ignore[arg-type]
+
+        # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
+        with pytest.raises(TypeError, match="tz"):
+            dt.format_iso(tz="always")  # type: ignore[call-arg]
+
+    def test_repr(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        assert repr(d) == 'PlainDateTime("2020-08-15 23:12:09.000987654")'
+        # no fractional seconds
+        assert (
+            repr(PlainDateTime(2020, 8, 15, 23, 12))
+            == 'PlainDateTime("2020-08-15 23:12:00")'
+        )
 
 
 class TestParseIso:
@@ -387,228 +581,140 @@ class TestParseIso:
         ],
     )
     def test_invalid(self, s):
-        with pytest.raises(ValueError, match=re.escape(repr(s))):
+        with pytest.raises(
+            ValueError,
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
+        ):
             PlainDateTime.parse_iso(s)
 
     @given(text())
     def test_fuzzing(self, s: str):
-        with pytest.raises(ValueError, match=re.escape(repr(s))):
+        with pytest.raises(
+            ValueError,
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
+        ):
             PlainDateTime.parse_iso(s)
 
 
-def test_equality():
-    d = PlainDateTime(2020, 8, 15)
-    different = PlainDateTime(2020, 8, 16)
-    different2 = PlainDateTime(2020, 8, 15, nanosecond=1)
-    same = PlainDateTime(2020, 8, 15)
-    assert d == same
-    assert d != different
-    assert not d == different
-    assert d != different2
-    assert not d == different2
-    assert not d != same
+class TestEquality:
+    def test_same_and_different(self):
+        d = PlainDateTime(2020, 8, 15)
+        different = PlainDateTime(2020, 8, 16)
+        different2 = PlainDateTime(2020, 8, 15, nanosecond=1)
+        same = PlainDateTime(2020, 8, 15)
+        assert d == same
+        assert d != different
+        assert not d == different
+        assert d != different2
+        assert not d == different2
+        assert not d != same
 
-    assert hash(d) == hash(same)
-    assert hash(d) != hash(different)
-    assert hash(d) != hash(different2)
+        assert hash(d) == hash(same)
+        assert hash(d) != hash(different)
+        assert hash(d) != hash(different2)
 
-    assert d == AlwaysEqual()
-    assert d != NeverEqual()
-    assert not d == NeverEqual()
-    assert not d != AlwaysEqual()
+        # no mixing with aware types:
+        assert d != d.assume_utc()  # type: ignore[comparison-overlap]
+        assert d != d.assume_fixed_offset(hours(3))  # type: ignore[comparison-overlap]
 
-    assert d != 42  # type: ignore[comparison-overlap]
-    assert not d == 42  # type: ignore[comparison-overlap]
+        # A repeated local time in the system time zone doesn't affect equality
+        with system_tz("Europe/Amsterdam"):
+            assert PlainDateTime(2023, 10, 29, 2, 15) == PlainDateTime(
+                py_datetime(2023, 10, 29, 2, 15, fold=1)
+            )
 
-    # no mixing with aware types:
-    assert d != d.assume_utc()  # type: ignore[comparison-overlap]
-    assert d != d.assume_fixed_offset(+3)  # type: ignore[comparison-overlap]
 
-    # Ambiguity in system timezone doesn't affect equality
-    with system_tz_ams():
-        assert PlainDateTime(2023, 10, 29, 2, 15) == PlainDateTime(
-            py_datetime(2023, 10, 29, 2, 15, fold=1)
+class TestComparison:
+    def test_ordering(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        later = PlainDateTime(2020, 8, 16, 0, 0, 0)
+        later2 = d.replace(nanosecond=1)
+        assert d < later
+        assert d <= later
+        assert later > d
+        assert later >= d
+
+        assert d < later2
+        assert d <= later2
+        assert later2 > d
+        assert later2 >= d
+
+        with pytest.raises(TypeError):
+            d < 42  # type: ignore[operator]
+
+
+class TestReplace:
+    def test_fields(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        assert d.replace(year=2021) == PlainDateTime(
+            2021, 8, 15, 23, 12, 9, nanosecond=987_654
+        )
+        assert d.replace(month=9) == PlainDateTime(
+            2020, 9, 15, 23, 12, 9, nanosecond=987_654
+        )
+        assert d.replace(day=16) == PlainDateTime(
+            2020, 8, 16, 23, 12, 9, nanosecond=987_654
+        )
+        assert d.replace(hour=0) == PlainDateTime(
+            2020, 8, 15, 0, 12, 9, nanosecond=987_654
+        )
+        assert d.replace(minute=0) == PlainDateTime(
+            2020, 8, 15, 23, 0, 9, nanosecond=987_654
+        )
+        assert d.replace(second=0) == PlainDateTime(
+            2020, 8, 15, 23, 12, 0, nanosecond=987_654
+        )
+        assert d.replace(nanosecond=0) == PlainDateTime(
+            2020, 8, 15, 23, 12, 9, nanosecond=0
+        )
+        assert d.replace(day=31).replace(month=10) == PlainDateTime(
+            2020, 10, 31, 23, 12, 9, nanosecond=987_654
         )
 
+        # a result that is not a valid date
+        with pytest.raises(ValueError, match="date|day"):
+            d.replace(day=31).replace(month=4)
 
-def test_repr():
-    d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert repr(d) == 'PlainDateTime("2020-08-15 23:12:09.000987654")'
-    # no fractional seconds
-    assert (
-        repr(PlainDateTime(2020, 8, 15, 23, 12))
-        == 'PlainDateTime("2020-08-15 23:12:00")'
-    )
+        with pytest.raises(ValueError, match="date|day"):
+            d.replace(year=2023, month=2, day=29)
 
+        with pytest.raises(ValueError, match="nano|time"):
+            d.replace(nanosecond=1_000_000_000)
 
-class TestFormatIso:
-    def test_default(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_650)
-        assert str(d) == "2020-08-15T23:12:09.00098765"
-        assert d.format_iso() == "2020-08-15T23:12:09.00098765"
+        with pytest.raises(ValueError, match="nano|time"):
+            d.replace(nanosecond=-4)
 
-    @pytest.mark.parametrize(
-        "dt, kwargs, expected",
-        [
-            (
-                PlainDateTime(1993, 4, 1, 14),
-                {"unit": "nanosecond"},
-                "1993-04-01T14:00:00.000000000",
-            ),
-            (
-                PlainDateTime(2025, 11, 1, 14, nanosecond=40_000),
-                {"unit": "microsecond", "sep": " "},
-                "2025-11-01 14:00:00.000040",
-            ),
-            (
-                PlainDateTime(2025, 11, 1, 14, 59, 42, nanosecond=40_000),
-                {"unit": "millisecond", "basic": True},
-                "20251101T145942.000",
-            ),
-            (
-                PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_321),
-                {"unit": "second", "sep": "T", "basic": True},
-                "20200815T231209",
-            ),
-            (
-                PlainDateTime(2020, 8, 15, 23, 12, 49),
-                {"unit": "minute"},
-                "2020-08-15T23:12",
-            ),
-            (
-                PlainDateTime(2020, 8, 15, 23, 45),
-                {"unit": "hour", "basic": True},
-                "20200815T23",
-            ),
-            (
-                PlainDateTime(2020, 8, 15, nanosecond=40_000),
-                {"unit": "auto", "basic": False},
-                "2020-08-15T00:00:00.00004",
-            ),
-        ],
-    )
-    def test_variations(self, dt, kwargs, expected):
-        assert dt.format_iso(**kwargs) == expected
+        with pytest.raises(TypeError, match="nanosecond"):
+            d.replace(nanosecond=1.5)  # type: ignore[arg-type]
 
-    def test_invalid(self):
-        dt = PlainDateTime(2020, 4, 9, 13)
-        with pytest.raises(ValueError, match="unit"):
-            dt.format_iso(unit="foo")  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="tzinfo"):
+            d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
 
-        with pytest.raises(
-            (ValueError, TypeError, AttributeError), match="unit"
-        ):
-            dt.format_iso(unit=True)  # type: ignore[arg-type]
-
-        with pytest.raises(ValueError, match="sep"):
-            dt.format_iso(sep="_")  # type: ignore[arg-type]
-
-        with pytest.raises(
-            (ValueError, TypeError, AttributeError), match="sep"
-        ):
-            dt.format_iso(sep=1)  # type: ignore[arg-type]
-
-        with pytest.raises(TypeError, match="basic"):
-            dt.format_iso(basic=1)  # type: ignore[arg-type]
-
-        # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
-        with pytest.raises(TypeError, match="tz"):
-            dt.format_iso(tz="always")  # type: ignore[call-arg]
-
-
-def test_comparison():
-    d = PlainDateTime(2020, 8, 15, 23, 12, 9)
-    later = PlainDateTime(2020, 8, 16, 0, 0, 0)
-    later2 = d.replace(nanosecond=1)
-    assert d < later
-    assert d <= later
-    assert later > d
-    assert later >= d
-
-    assert d < later2
-    assert d <= later2
-    assert later2 > d
-    assert later2 >= d
-
-    assert d < AlwaysLarger()
-    assert d <= AlwaysLarger()
-    assert not d > AlwaysLarger()
-    assert not d >= AlwaysLarger()
-    assert not d < AlwaysSmaller()
-    assert not d <= AlwaysSmaller()
-    assert d > AlwaysSmaller()
-    assert d >= AlwaysSmaller()
-
-    with pytest.raises(TypeError):
-        d < 42  # type: ignore[operator]
-
-
-def test_to_stdlib():
-    d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_823)
-    assert d.to_stdlib() == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
-
-
-def test_init_from_py_datetime():
-    d = py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
-    assert PlainDateTime(d) == PlainDateTime(
-        2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
-    )
-
-    with pytest.raises(ValueError, match="utc"):
-        PlainDateTime(
-            py_datetime(2020, 8, 15, 23, 12, 9, 987_654, tzinfo=timezone.utc)
+    def test_date(self):
+        d = PlainDateTime(2020, 8, 15, 3, 12, 9, nanosecond=987_654)
+        # the datetime's nanoseconds are kept
+        assert d.replace_date(Date(1996, 2, 19)) == PlainDateTime(
+            1996, 2, 19, 3, 12, 9, nanosecond=987_654
         )
+        with pytest.raises(TypeError, match="must be a Date"):
+            d.replace_date(42)  # type: ignore[arg-type]
 
-    class MyDateTime(py_datetime):
-        pass
-
-    assert PlainDateTime(
-        MyDateTime(2020, 8, 15, 23, 12, 9, 987_654)
-    ) == PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
-
-
-def test_min_max():
-    assert PlainDateTime.MIN == PlainDateTime(1, 1, 1)
-    assert PlainDateTime.MAX == PlainDateTime(
-        9999, 12, 31, 23, 59, 59, nanosecond=999_999_999
-    )
+    def test_time(self):
+        d = PlainDateTime(2020, 8, 15, 3, 12, 9, nanosecond=987_654)
+        # the time's nanoseconds replace the datetime's
+        assert d.replace_time(Time(1, 2, 3, nanosecond=4)) == PlainDateTime(
+            2020, 8, 15, 1, 2, 3, nanosecond=4
+        )
+        with pytest.raises(TypeError, match="must be a Time"):
+            d.replace_time(42)  # type: ignore[arg-type]
 
 
-def test_replace():
-    d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert d.replace(year=2021) == PlainDateTime(
-        2021, 8, 15, 23, 12, 9, nanosecond=987_654
-    )
-    assert d.replace(month=9) == PlainDateTime(
-        2020, 9, 15, 23, 12, 9, nanosecond=987_654
-    )
-    assert d.replace(day=16) == PlainDateTime(
-        2020, 8, 16, 23, 12, 9, nanosecond=987_654
-    )
-    assert d.replace(hour=0) == PlainDateTime(
-        2020, 8, 15, 0, 12, 9, nanosecond=987_654
-    )
-    assert d.replace(minute=0) == PlainDateTime(
-        2020, 8, 15, 23, 0, 9, nanosecond=987_654
-    )
-    assert d.replace(second=0) == PlainDateTime(
-        2020, 8, 15, 23, 12, 0, nanosecond=987_654
-    )
-    assert d.replace(nanosecond=0) == PlainDateTime(
-        2020, 8, 15, 23, 12, 9, nanosecond=0
-    )
+class TestShift:
+    @suppress(NaiveArithmeticWarning)
+    def test_no_arguments(self):
+        d = PlainDateTime(2020, 8, 15)
+        assert d.add(naive_arithmetic_ok=True) == d
 
-    with pytest.raises(ValueError, match="nano|time"):
-        d.replace(nanosecond=1_000_000_000)
-
-    with pytest.raises(ValueError, match="nano|time"):
-        d.replace(nanosecond=-4)
-
-    with pytest.raises(TypeError, match="tzinfo"):
-        d.replace(tzinfo=timezone.utc)  # type: ignore[call-arg]
-
-
-class TestShiftMethods:
     @pytest.mark.parametrize(
         "delta, kwargs",
         [
@@ -621,93 +727,82 @@ class TestShiftMethods:
         d = PlainDateTime(2020, 8, 15, 23, 12, 9)
         assert d.add(delta) == d.add(**kwargs)
 
-    def test_warnings(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.warns(NaiveArithmeticWarning) as w:
-            d.add(months=2, hours=48, seconds=5, nanoseconds=3)
-        assert len(w) == 1
-
-        with pytest.warns(NaiveArithmeticWarning) as w:
-            d.subtract(months=2, hours=48, seconds=5, nanoseconds=3)
-        assert len(w) == 1
-
-        # calendar units don't trigger warning
-        d.subtract(days=10, months=3, years=1)
-        d.add(days=10, months=3, years=1)
-
-        # ignore_dst deprecated
-        with suppress(NaiveArithmeticWarning):
-            with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
-                d.add(hours=48, seconds=5, nanoseconds=3, ignore_dst=True)
-
-            with pytest.warns(WheneverDeprecationWarning, match="ignore_dst"):
-                d.subtract(hours=48, seconds=5, nanoseconds=3, ignore_dst=True)
-
-    @suppress(NaiveArithmeticWarning)
-    def test_valid(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        shifted = PlainDateTime(2020, 5, 27, 23, 12, 14, nanosecond=987_651)
-
-        assert d.add() == d
-
-        assert (
-            d.add(
-                months=-3,
-                days=10,
-                hours=48,
-                seconds=5,
-                nanoseconds=-3,
-            )
-            == shifted
-        )
-
-        # same result with deltas
-        assert (
-            d.add(hours(48) + seconds(5) + nanoseconds(-3))
-            .add(months(-3))
-            .add(days(10))
-        ) == shifted
-
-        # same result with subtract()
-        assert (
-            d.subtract(
-                months=3,
-                days=-10,
-                hours=-48,
-                seconds=-5,
-                nanoseconds=3,
-            )
-            == shifted
-        )
-
-        # same result with deltas
-        assert (
-            d.subtract(hours(-48) + seconds(-5) + nanoseconds(3))
-            .subtract(months(3))
-            .subtract(days(-10))
-        ) == shifted
-
-        assert d.subtract(months=3) == d.add(months=-3)
-
     @suppress(NaiveArithmeticWarning)
     def test_invalid(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(ValueError, match="range|year"):
             d.add(hours=24 * 365 * 8000)
 
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
+        with pytest.raises(ValueError, match="range|year"):
             d.add(hours=-24 * 365 * 3000)
 
-        with pytest.raises((TypeError, AttributeError)):
+        with pytest.raises(TypeError, match="must be a TimeDelta"):
             d.add(4)  # type: ignore[call-overload]
 
         # mixing args/kwargs
         with pytest.raises(TypeError):
             d.add(hours(48), seconds=5)  # type: ignore[call-overload]
 
-        # tempt an i128 overflow
+        # tempt an i128 overflow: at or beyond 2**63, a backend may overflow
+        # its machine integer before the range check
         with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d.add(nanoseconds=1 << 127 - 1)
+            d.add(nanoseconds=(1 << 127) - 1)
+
+    @pytest.mark.parametrize(
+        ("call", "exc", "message"),
+        [
+            (
+                lambda d: d.add(hours="x"),
+                TypeError,
+                "hours must be an integer or float",
+            ),
+            (
+                lambda d: d.add(hours=1, days=1.5),
+                TypeError,
+                "days must be an integer",
+            ),
+            (
+                lambda d: d.subtract(hours=float("nan")),
+                ValueError,
+                "value or calculation out of range",
+            ),
+            (
+                lambda d: d.add(hours=1, bogus=1),
+                TypeError,
+                "add() got an unexpected keyword argument 'bogus'",
+            ),
+            (
+                lambda d: d.add(hours(1), hours=1),
+                TypeError,
+                "add() cannot mix positional and keyword arguments",
+            ),
+            (
+                lambda d: d.subtract(hours(1), hours(1)),
+                TypeError,
+                "subtract() takes at most one positional argument (2 given)",
+            ),
+            (
+                lambda d: d.add(4),
+                TypeError,
+                "add() argument must be a TimeDelta, ItemizedDelta, or ItemizedDateDelta",
+            ),
+        ],
+    )
+    def test_rejected_argument_does_not_warn(self, call, exc, message):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
+            call(d)
+
+    def test_operator_out_of_range(self):
+        with suppress(NaiveArithmeticWarning):
+            with pytest.raises(
+                ValueError, match="^value or calculation out of range$"
+            ):
+                PlainDateTime.MAX + hours(1)
+            with pytest.raises(
+                ValueError, match="^value or calculation out of range$"
+            ):
+                PlainDateTime.MIN - hours(1)
 
     @given(
         years=integers(),
@@ -727,6 +822,38 @@ class TestShiftMethods:
             d.add(**kwargs)
         except (ValueError, OverflowError):
             pass
+
+    def test_operators(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with suppress(NaiveArithmeticWarning):
+            assert d.add(hours=48, seconds=5, nanoseconds=3) == d + TimeDelta(
+                hours=48, seconds=5, nanoseconds=3
+            )
+            assert d.subtract(
+                hours=48, seconds=5, nanoseconds=3
+            ) == d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
+
+        # operators trigger warning (exactly one warning each)
+        with warns_here(NaiveArithmeticWarning) as w:
+            d + TimeDelta(hours=48, seconds=5, nanoseconds=3)
+        assert len(w) == 1
+        assert (
+            "pass `naive_arithmetic_ok=True` to `add()`, `subtract()`, "
+            "`difference()`, `since()`, or `until()`; `+` and `-` take no "
+            "keyword" in str(w[0].message)
+        )
+
+        # operators trigger warning (exactly one warning each)
+        with warns_here(NaiveArithmeticWarning) as w:
+            d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
+        assert len(w) == 1
+
+    def test_operators_invalid(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            d + 42  # type: ignore[operator]
+        with pytest.raises(TypeError, match="unsupported operand type"):
+            42 + d  # type: ignore[operator]
 
 
 class TestNaiveArithmeticOkKwarg:
@@ -760,6 +887,37 @@ class TestNaiveArithmeticOkKwarg:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             d.difference(other, naive_arithmetic_ok=True)
+        with warns_here(NaiveArithmeticWarning) as w:
+            d.difference(other)
+        assert len(w) == 1
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda d, **kw: d.add(hours=1, **kw),
+            lambda d, **kw: d.subtract(hours=1, **kw),
+            lambda d, **kw: d.add(hours(1), **kw),
+            lambda d, **kw: d.subtract(hours(1), **kw),
+            lambda d, **kw: d.add(ItemizedDelta(hours=1), **kw),
+            lambda d, **kw: d.add(months=1, hours=1, **kw),
+        ],
+    )
+    def test_every_exact_form_warns_once(self, call):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        with warns_here(NaiveArithmeticWarning) as w:
+            call(d)
+        assert len(w) == 1
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            call(d, naive_arithmetic_ok=True)
+
+    def test_read_by_truthiness(self):
+        d = PlainDateTime(2020, 8, 15, 23, 12, 9)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            d.add(hours=1, naive_arithmetic_ok=1)  # type: ignore[call-overload]
+        with warns_here(NaiveArithmeticWarning):
+            d.add(hours=1, naive_arithmetic_ok="")  # type: ignore[call-overload]
 
     def test_since(self):
         a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
@@ -798,55 +956,6 @@ class TestNaiveArithmeticOkKwarg:
             )
 
 
-class TestShiftOperators:
-    def test_date_delta(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        shifted = d.replace(year=2021, day=19)
-        assert d + (years(1) + weeks(1) + days(-3)) == shifted
-
-        # same results with subtraction
-        assert d - (years(-1) + weeks(-1) + days(3)) == shifted
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + years(8_000)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + days(366 * 8_000)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + years(-3_000)
-
-        with pytest.raises((ValueError, OverflowError), match="range|year"):
-            d + days(-366 * 8_000)
-
-    def test_timedelta(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with suppress(NaiveArithmeticWarning):
-            assert d.add(hours=48, seconds=5, nanoseconds=3) == d + TimeDelta(
-                hours=48, seconds=5, nanoseconds=3
-            )
-            assert d.subtract(
-                hours=48, seconds=5, nanoseconds=3
-            ) == d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
-
-        # operators trigger warning (exactly one warning each)
-        with pytest.warns(NaiveArithmeticWarning) as w:
-            d + TimeDelta(hours=48, seconds=5, nanoseconds=3)
-        assert len(w) == 1
-
-        # operators trigger warning (exactly one warning each)
-        with pytest.warns(NaiveArithmeticWarning) as w:
-            d - TimeDelta(hours=48, seconds=5, nanoseconds=3)
-        assert len(w) == 1
-
-    def test_invalid(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            d + 42  # type: ignore[operator]
-        with pytest.raises(TypeError, match="unsupported operand type"):
-            42 + d  # type: ignore[operator]
-
-
 class TestDifference:
     def test_method(self):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_000)
@@ -864,7 +973,7 @@ class TestDifference:
             assert d - d == hours(0)
             assert d - other == hours(24) + seconds(5) - nanoseconds(321)
 
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             d - other
         assert len(w) == 1
 
@@ -874,264 +983,131 @@ class TestDifference:
         with pytest.raises(TypeError):
             d - 43  # type: ignore[operator]
 
-    def test_ignore_dst_deprecated(self):
+    @pytest.mark.parametrize(
+        "other",
+        [43, hours(1), OffsetDateTime(2020, 8, 15, offset=hours(1))],
+    )
+    def test_rejects_other_types_without_warning(self, other):
         d = PlainDateTime(2020, 8, 15, 23, 12, 9)
-        other = PlainDateTime(2020, 8, 14, 23, 12, 4)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", NaiveArithmeticWarning)
-            warnings.simplefilter("always", WheneverDeprecationWarning)
-            with pytest.warns(WheneverDeprecationWarning):
-                d.difference(other, ignore_dst=True)
-
-
-class TestRound:
-    @pytest.mark.parametrize(
-        "d, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
-        [
-            (
-                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
-                1,
-                "nanosecond",
-                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
-                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
-                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
-                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
-                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
-            ),
-            (
-                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
-                1,
-                "second",
-                PlainDateTime(2023, 7, 14, 1, 2, 3),
-                PlainDateTime(2023, 7, 14, 1, 2, 4),
-                PlainDateTime(2023, 7, 14, 1, 2, 3),
-                PlainDateTime(2023, 7, 14, 1, 2, 3),
-                PlainDateTime(2023, 7, 14, 1, 2, 3),
-            ),
-            (
-                PlainDateTime(2023, 7, 14, 1, 2, 21, nanosecond=459_999_999),
-                4,
-                "second",
-                PlainDateTime(2023, 7, 14, 1, 2, 20),
-                PlainDateTime(2023, 7, 14, 1, 2, 24),
-                PlainDateTime(2023, 7, 14, 1, 2, 20),
-                PlainDateTime(2023, 7, 14, 1, 2, 20),
-                PlainDateTime(2023, 7, 14, 1, 2, 20),
-            ),
-            (
-                PlainDateTime(2023, 7, 14, 23, 52, 29, nanosecond=999_999_999),
-                10,
-                "minute",
-                PlainDateTime(2023, 7, 14, 23, 50, 0),
-                PlainDateTime(2023, 7, 15),
-                PlainDateTime(2023, 7, 14, 23, 50, 0),
-                PlainDateTime(2023, 7, 14, 23, 50, 0),
-                PlainDateTime(2023, 7, 14, 23, 50, 0),
-            ),
-            (
-                PlainDateTime(2023, 7, 14, 23, 52, 29, nanosecond=999_999_999),
-                60,
-                "minute",
-                PlainDateTime(2023, 7, 14, 23),
-                PlainDateTime(2023, 7, 15),
-                PlainDateTime(2023, 7, 15),
-                PlainDateTime(2023, 7, 15),
-                PlainDateTime(2023, 7, 15),
-            ),
-            (
-                PlainDateTime(2023, 7, 14, 11, 59, 29, nanosecond=999_999_999),
-                12,
-                "hour",
-                PlainDateTime(2023, 7, 14),
-                PlainDateTime(2023, 7, 14, 12, 0, 0),
-                PlainDateTime(2023, 7, 14, 12, 0, 0),
-                PlainDateTime(2023, 7, 14, 12, 0, 0),
-                PlainDateTime(2023, 7, 14, 12, 0, 0),
-            ),
-            (
-                PlainDateTime(2023, 7, 14, 12),
-                1,
-                "day",
-                PlainDateTime(2023, 7, 14),
-                PlainDateTime(2023, 7, 15),
-                PlainDateTime(2023, 7, 14),
-                PlainDateTime(2023, 7, 15),
-                PlainDateTime(2023, 7, 14),
-            ),
-            (
-                PlainDateTime(2023, 7, 14),
-                1,
-                "day",
-                PlainDateTime(2023, 7, 14),
-                PlainDateTime(2023, 7, 14),
-                PlainDateTime(2023, 7, 14),
-                PlainDateTime(2023, 7, 14),
-                PlainDateTime(2023, 7, 14),
-            ),
-        ],
-    )
-    def test_round(
-        self,
-        d: PlainDateTime,
-        increment,
-        unit,
-        floor,
-        ceil,
-        half_floor,
-        half_ceil,
-        half_even,
-    ):
-        assert d.round(unit, increment=increment) == half_even
-        assert d.round(unit, increment=increment, mode="floor") == floor
-        assert d.round(unit, increment=increment, mode="trunc") == floor
-        assert d.round(unit, increment=increment, mode="ceil") == ceil
-        assert d.round(unit, increment=increment, mode="expand") == ceil
-        assert (
-            d.round(unit, increment=increment, mode="half_floor") == half_floor
-        )
-        assert (
-            d.round(unit, increment=increment, mode="half_trunc") == half_floor
-        )
-        assert (
-            d.round(unit, increment=increment, mode="half_ceil") == half_ceil
-        )
-        assert (
-            d.round(unit, increment=increment, mode="half_expand") == half_ceil
-        )
-        assert (
-            d.round(unit, increment=increment, mode="half_even") == half_even
-        )
-
-    def test_default(self):
-        d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=500_000_000)
-        assert d.round() == PlainDateTime(2023, 7, 14, 1, 2, 4)
-        assert d.replace(second=8).round() == PlainDateTime(
-            2023, 7, 14, 1, 2, 8
-        )
-
-    def test_invalid_mode(self):
-        d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="Invalid.*mode.*foo"):
-            d.round("second", mode="foo")  # type: ignore[call-overload]
-
-    @pytest.mark.parametrize(
-        "unit, increment",
-        [
-            ("minute", 21),
-            ("second", 14),
-            ("millisecond", 534),
-            ("day", 2),
-            ("hour", 48),
-            ("microsecond", 2001),
-        ],
-    )
-    def test_invalid_increment(self, unit, increment):
-        d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="[Ii]ncrement"):
-            d.round(unit, increment=increment)
-
-    def test_default_increment(self):
-        d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=800_000)
-        assert d.round("millisecond") == PlainDateTime(
-            2023, 7, 14, 1, 2, 3, nanosecond=1_000_000
-        )
-
-    def test_invalid_unit(self):
-        d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000)
-        with pytest.raises(ValueError, match="Invalid.*unit.*foo"):
-            d.round("foo")  # type: ignore[call-overload]
-
-    def test_out_of_range(self):
-        d = PlainDateTime.MAX.replace(nanosecond=0)
-        with pytest.raises((ValueError, OverflowError), match="range"):
-            d.round("second", increment=5)
-
-    def test_round_by_timedelta(self):
-        d = PlainDateTime(2020, 8, 15, 23, 24, 18)
-        assert d.round(TimeDelta(minutes=15)) == PlainDateTime(
-            2020, 8, 15, 23, 30
-        )
-        assert d.round(TimeDelta(hours=1)) == PlainDateTime(2020, 8, 15, 23)
-        assert d.round(TimeDelta(minutes=15), mode="floor") == PlainDateTime(
-            2020, 8, 15, 23, 15
-        )
-
-    def test_round_by_timedelta_wraps_to_next_day(self):
-        d = PlainDateTime(2020, 8, 15, 23, 50)
-        assert d.round(TimeDelta(hours=1)) == PlainDateTime(2020, 8, 16)
-
-    def test_round_by_timedelta_invalid_not_divides_day(self):
-        d = PlainDateTime(2020, 8, 15, 12)
-        with pytest.raises(ValueError, match="24.hour"):
-            d.round(TimeDelta(hours=7))
-
-    def test_round_by_timedelta_negative(self):
-        d = PlainDateTime(2020, 8, 15, 12)
-        with pytest.raises(ValueError, match="positive"):
-            d.round(TimeDelta(hours=-1))
-
-    def test_round_by_timedelta_with_increment(self):
-        d = PlainDateTime(2020, 8, 15, 12)
-        with pytest.raises(TypeError):
-            d.round(TimeDelta(hours=1), increment=2)  # type: ignore[call-overload]
-
-
-def test_replace_date():
-    d = PlainDateTime(2020, 8, 15, 3, 12, 9)
-    assert d.replace_date(Date(1996, 2, 19)) == PlainDateTime(
-        1996, 2, 19, 3, 12, 9
-    )
-    with pytest.raises((TypeError, AttributeError)):
-        d.replace_date(42)  # type: ignore[arg-type]
-
-
-def test_replace_time():
-    d = PlainDateTime(2020, 8, 15, 3, 12, 9)
-    assert d.replace_time(Time(1, 2, 3)) == PlainDateTime(2020, 8, 15, 1, 2, 3)
-    with pytest.raises((TypeError, AttributeError)):
-        d.replace_time(42)  # type: ignore[arg-type]
-
-
-def test_pickle():
-    d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654)
-    assert pickle.loads(pickle.dumps(d)) == d
-
-
-def test_old_pickle_data_remains_unpicklable():
-    # Don't update this value -- the whole idea is that it's a pickle at
-    # a specific version of the library.
-    dumped = (
-        b"\x80\x04\x95/\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0c_unp"
-        b"kl_local\x94\x93\x94C\x0b\xe4\x07\x08\x0f\x17\x0c\t\x06\x12\x0f\x00"
-        b"\x94\x85\x94R\x94."
-    )
-    assert pickle.loads(dumped) == PlainDateTime(
-        2020, 8, 15, 23, 12, 9, nanosecond=987_654
-    )
-
-
-class TestParseStrptime:
-    def test_strptime(self):
-        assert PlainDateTime.parse_strptime(
-            "2020-08-15 23:12", format="%Y-%m-%d %H:%M"
-        ) == PlainDateTime(2020, 8, 15, 23, 12)
-
-    def test_strptime_invalid(self):
-        # offset now allowed
-        with pytest.raises(ValueError):
-            PlainDateTime.parse_strptime(
-                "2020-08-15 23:12:09+0500", format="%Y-%m-%d %H:%M:%S%z"
-            )
-
-        # format is keyword-only
-        with pytest.raises(TypeError, match="format|argument"):
-            OffsetDateTime.parse_strptime(
-                "2020-08-15 23:12:09",
-                "%Y-%m-%d %H:%M:%S",  # type: ignore[call-arg]
-            )
+        with pytest.raises(
+            TypeError,
+            match="^difference\\(\\) argument must be a PlainDateTime$",
+        ):
+            d.difference(other)
 
 
 class TestSince:
+    @pytest.mark.parametrize(
+        ("unit", "expected"),
+        [
+            ("milliseconds", 86_400_000.0),
+            ("microseconds", 86_400_000_000.0),
+        ],
+    )
+    def test_total_subsecond_units(self, unit, expected):
+        a = PlainDateTime(2023, 2, 15)
+        b = PlainDateTime(2023, 2, 14)
+        with warns_here(NaiveArithmeticWarning):
+            assert a.since(b, total=unit) == expected
+
+    @pytest.mark.parametrize(
+        ("kwargs", "exc", "message"),
+        [
+            (
+                {"in_units": ["hours"], "round_mode": "bad"},
+                ValueError,
+                "invalid round_mode: 'bad'",
+            ),
+            (
+                {"in_units": ["days"], "round_increment": 0},
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": -1},
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": 1.5},
+                TypeError,
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["hours"], "round_increment": None},
+                TypeError,
+                "round_increment must be an integer",
+            ),
+            (
+                {"in_units": ["hours", "nanoseconds"]},
+                ValueError,
+                "nanoseconds can only be specified together with seconds",
+            ),
+            ({"total": "foo"}, ValueError, "invalid unit: 'foo'"),
+            ({"in_units": ["foos"]}, ValueError, "invalid unit: 'foos'"),
+            ({"in_units": ()}, ValueError, "in_units must not be empty"),
+            ({}, TypeError, "must specify either 'total' or 'in_units'"),
+            (
+                {"total": "years", "in_units": ("days",)},
+                TypeError,
+                "cannot specify both 'total' and 'in_units'",
+            ),
+            (
+                {"in_units": ["years", "days", "days"]},
+                ValueError,
+                "in_units cannot contain duplicates",
+            ),
+            (
+                {"in_units": ["hours", "days"]},
+                ValueError,
+                "in_units must be in decreasing order of size",
+            ),
+            # round_mode and round_increment are not supported with total=,
+            # not even round_increment=1
+            (
+                {"total": "years", "round_mode": "floor"},
+                TypeError,
+                "'round_mode' and 'round_increment' cannot be used with "
+                "'total'",
+            ),
+            (
+                {"total": "years", "round_increment": 1},
+                TypeError,
+                "'round_mode' and 'round_increment' cannot be used with "
+                "'total'",
+            ),
+            (
+                {"in_units": ["years"], "round_mode": "foobar"},
+                ValueError,
+                "invalid round_mode: 'foobar'",
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["since", "until"])
+    def test_rejected_argument_does_not_warn(
+        self, method, kwargs, exc, message
+    ):
+        a = PlainDateTime(2023, 2, 15)
+        b = PlainDateTime(2023, 2, 14)
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
+            getattr(a, method)(b, **kwargs)
+
+    @pytest.mark.parametrize(
+        "other",
+        [
+            OffsetDateTime(2023, 2, 14, offset=hours(1)),
+            ZonedDateTime(2023, 2, 15, tz="Europe/London"),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["since", "until"])
+    def test_rejects_other_types(self, method, other):
+        a = PlainDateTime(2023, 2, 15)
+        with pytest.raises(
+            TypeError,
+            match=f"^{method}\\(\\) argument must be a PlainDateTime$",
+        ):
+            getattr(a, method)(other, total="hours")
+
     @pytest.mark.parametrize(
         "a, b, units, kwargs, expect",
         [
@@ -1394,28 +1370,28 @@ class TestSince:
         expect: ItemizedDelta,
     ):
         with suppress(NaiveArithmeticWarning):
-            assert a.since(b, in_units=units, **kwargs).exact_eq(expect)
+            assert a.since(b, in_units=units, **kwargs).strict_eq(expect)
 
     def test_warnings(self):
         a = PlainDateTime(2023, 2, 15, hour=13, minute=25)
         b = PlainDateTime(2021, 7, 3, hour=1)
 
         # exact output units trigger the warning
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.since(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.until(b, in_units=["hours", "minutes"])
         assert len(w) == 1
 
         # mixed calendar+exact output also triggers (has exact)
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.since(b, in_units=["days", "hours"])
         assert len(w) == 1
 
         # total with exact unit triggers the warning
-        with pytest.warns(NaiveArithmeticWarning) as w:
+        with warns_here(NaiveArithmeticWarning) as w:
             a.since(b, total="hours")
         assert len(w) == 1
 
@@ -1432,103 +1408,20 @@ class TestSince:
             a.since(b, in_units=["hours", "minutes"])
             a.until(b, total="hours")
 
-    def test_invalid_units(self):
-        with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
-            PlainDateTime(2023, 2, 15).since(
-                PlainDateTime(2023, 2, 15),
-                in_units=["foos"],  # type: ignore[list-item]
-            )
-
-        with pytest.raises(ValueError, match="[Ii]nvalid unit.*foos"):
-            PlainDateTime(2023, 2, 15).since(
-                PlainDateTime(2023, 2, 15),
-                total="foos",  # type: ignore[call-overload]
-            )
-
-    def test_empty_units(self):
-        with pytest.raises(ValueError, match="[Aa]t least one unit"):
-            PlainDateTime(2023, 2, 15).since(
-                PlainDateTime(2023, 2, 15),
-                in_units=(),
-            )
-
-    @suppress(NaiveArithmeticWarning)
-    def test_no_other_class_supported(self):
-        with pytest.raises(TypeError):
-            PlainDateTime(2023, 2, 15).since(
-                ZonedDateTime(2023, 2, 15, tz="Europe/London"),  # type: ignore[call-overload]
-                in_units=["days"],
-            )
-
-    def test_neither_unit_nor_units(self):
-        with pytest.raises(
-            TypeError, match="Must specify|total.*or.*in_units"
-        ):
-            PlainDateTime(2023, 2, 15).since(
-                PlainDateTime(2023, 2, 15),
-            )  # type: ignore[call-overload]
-
-    def test_both_unit_and_units(self):
-        with pytest.raises(TypeError, match="both"):
-            PlainDateTime(2023, 2, 15).since(
-                PlainDateTime(2023, 2, 15),
-                total="years",
-                in_units=("days",),
-            )  # type: ignore[call-overload]
-
-    def test_duplicate_units(self):
-        with pytest.raises(ValueError, match="duplicate"):
-            PlainDateTime(2023, 2, 15).since(
-                PlainDateTime(2023, 2, 15),
-                in_units=["years", "days", "days"],
-            )
-
-    def test_invalid_unit_order(self):
-        with pytest.raises(ValueError, match="order"):
-            PlainDateTime(2021, 1, 1).since(
-                PlainDateTime(2020, 1, 1), in_units=["hours", "days"]
-            )
-
-    @suppress(NaiveArithmeticWarning)
-    def test_invalid_round_mode(self):
-        # round_mode and round_increment are not supported with total=
-        with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
-            PlainDateTime(2021, 1, 1).since(
-                PlainDateTime(2020, 1, 1),
-                total="years",
-                round_mode="floor",
-            )  # type: ignore[call-overload]
-
-        # even round_increment=1 is rejected (no default magic)
-        with pytest.raises(TypeError, match="round_mode.*total|total.*round"):
-            PlainDateTime(2021, 1, 1).since(
-                PlainDateTime(2020, 1, 1),
-                total="years",
-                round_increment=1,
-            )  # type: ignore[call-overload]
-
-        # round_mode is still valid with in_units
-        with pytest.raises(ValueError, match="round.*mode.*foobar"):
-            PlainDateTime(2021, 1, 1).since(
-                PlainDateTime(2020, 1, 1),
-                in_units=["years"],
-                round_mode="foobar",
-            )  # type: ignore[call-overload]
-
     @suppress(NaiveArithmeticWarning)
     def test_until_is_inverse(self):
         a = PlainDateTime(2023, 2, 15, hour=3)
         b = PlainDateTime(2021, 7, 3)
         assert a.since(
             b, in_units=["years", "months", "days", "hours"]
-        ).exact_eq(b.until(a, in_units=["years", "months", "days", "hours"]))
+        ).strict_eq(b.until(a, in_units=["years", "months", "days", "hours"]))
         # floor rounding works correctly
         assert a.since(
             b,
             in_units=["years", "months", "days", "hours"],
             round_increment=2,
             round_mode="floor",
-        ).exact_eq(
+        ).strict_eq(
             b.until(
                 a,
                 in_units=["years", "months", "days", "hours"],
@@ -1556,6 +1449,29 @@ class TestSince:
             b, in_units=["years", "months"], round_mode="ceil"
         )
         assert result_ceil == ItemizedDelta(years=1, months=1)
+
+    @suppress(NaiveArithmeticWarning)
+    @pytest.mark.parametrize("day, expect", [(2, 2), (3, 2), (4, 4)])
+    def test_half_even_tie_goes_by_the_parity_of_the_count(self, day, expect):
+        # 1.5, 2.5, and 3.5 days
+        assert PlainDateTime(2024, 1, 1).until(
+            PlainDateTime(2024, 1, day, 12),
+            in_units=["days"],
+            round_mode="half_even",
+        ) == ItemizedDelta(days=expect)
+
+    @suppress(NaiveArithmeticWarning)
+    def test_rounding_up_carries_into_larger_units(self):
+        assert PlainDateTime(2024, 1, 1).until(
+            PlainDateTime(2024, 3, 1, 23, 30),
+            in_units=["months", "days", "hours"],
+            round_mode="ceil",
+        ) == ItemizedDelta(months=2, days=1, hours=0)
+        assert PlainDateTime(2027, 4, 30, 2, 0, 25).until(
+            PlainDateTime(1992, 3, 16, 2, 0, 57, nanosecond=112_130_543),
+            in_units=["months", "days", "hours"],
+            round_mode="floor",
+        ) == ItemizedDelta(months=-421, days=-14, hours=0)
 
     @suppress(NaiveArithmeticWarning)
     def test_single_unit_returns_float(self):
@@ -1615,102 +1531,333 @@ class TestSince:
         b = PlainDateTime(23, 3, 15)
         assert a.since(b, total="nanoseconds") == 283280457600000000000
 
+    @pytest.mark.parametrize(
+        "delta, units, increment, trunc, ceil",
+        [
+            (
+                dict(minutes=5, seconds=20),
+                ["minutes", "seconds"],
+                61,
+                ItemizedDelta(minutes=5, seconds=0),
+                ItemizedDelta(minutes=6, seconds=0),
+            ),
+            (
+                dict(hours=5, minutes=20),
+                ["hours", "minutes"],
+                90,
+                ItemizedDelta(hours=5, minutes=0),
+                ItemizedDelta(hours=6, minutes=0),
+            ),
+            (
+                dict(days=1, hours=23, minutes=59),
+                ["days", "hours", "minutes"],
+                15,
+                ItemizedDelta(days=1, hours=23, minutes=45),
+                ItemizedDelta(days=2, hours=0, minutes=0),
+            ),
+        ],
+    )
+    def test_increment_rounds_the_smallest_component(
+        self, delta, units, increment, trunc, ceil
+    ):
+        a = PlainDateTime(2024, 1, 1)
+        b = a.add(**delta, naive_arithmetic_ok=True)
+        kwargs = dict(in_units=units, round_increment=increment)
+        assert (
+            b.since(a, round_mode="trunc", naive_arithmetic_ok=True, **kwargs)
+            == trunc
+        )
+        assert (
+            b.since(a, round_mode="ceil", naive_arithmetic_ok=True, **kwargs)
+            == ceil
+        )
+
     @suppress(NaiveArithmeticWarning)
     def test_very_large_increment(self):
-        a = PlainDateTime(2023, 2, 15)
+        a = PlainDateTime(2023, 2, 15, nanosecond=1)
         b = PlainDateTime(2021, 7, 3)
-        # round_increment=1<<65 ns exceeds i64::MAX; ceil mode rounds up to 1*(1<<65)
+        # round_increment=1<<65 ns exceeds i64::MAX; ceil carries it into the seconds
         assert a.since(
             b,
             in_units=["seconds", "nanoseconds"],
             round_increment=1 << 65,
             round_mode="ceil",
-        ) == ItemizedDelta(seconds=36_893_488_147, nanoseconds=419_103_232)
+        ) == ItemizedDelta(seconds=36_944_636_947, nanoseconds=0)
 
 
-class TestDeprecations:
-    def test_py_datetime(self):
-        d = PlainDateTime(2020, 8, 15, 23, 12, 9, nanosecond=987_654_823)
-        with pytest.warns(WheneverDeprecationWarning):
-            result = d.py_datetime()
-        assert result == py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
-
-    def test_from_py_datetime(self):
-        with pytest.warns(WheneverDeprecationWarning):
-            result = PlainDateTime.from_py_datetime(
-                py_datetime(2020, 8, 15, 23, 12, 9, 987_654)
-            )
-        assert result == PlainDateTime(
-            2020, 8, 15, 23, 12, 9, nanosecond=987_654_000
+class TestRound:
+    @pytest.mark.parametrize(
+        "d, increment, unit, floor, ceil, half_floor, half_ceil, half_even",
+        [
+            (
+                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                1,
+                "nanosecond",
+                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+            ),
+            (
+                PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=459_999_999),
+                1,
+                "second",
+                PlainDateTime(2023, 7, 14, 1, 2, 3),
+                PlainDateTime(2023, 7, 14, 1, 2, 4),
+                PlainDateTime(2023, 7, 14, 1, 2, 3),
+                PlainDateTime(2023, 7, 14, 1, 2, 3),
+                PlainDateTime(2023, 7, 14, 1, 2, 3),
+            ),
+            (
+                PlainDateTime(2023, 7, 14, 1, 2, 21, nanosecond=459_999_999),
+                4,
+                "second",
+                PlainDateTime(2023, 7, 14, 1, 2, 20),
+                PlainDateTime(2023, 7, 14, 1, 2, 24),
+                PlainDateTime(2023, 7, 14, 1, 2, 20),
+                PlainDateTime(2023, 7, 14, 1, 2, 20),
+                PlainDateTime(2023, 7, 14, 1, 2, 20),
+            ),
+            (
+                PlainDateTime(2023, 7, 14, 23, 52, 29, nanosecond=999_999_999),
+                10,
+                "minute",
+                PlainDateTime(2023, 7, 14, 23, 50, 0),
+                PlainDateTime(2023, 7, 15),
+                PlainDateTime(2023, 7, 14, 23, 50, 0),
+                PlainDateTime(2023, 7, 14, 23, 50, 0),
+                PlainDateTime(2023, 7, 14, 23, 50, 0),
+            ),
+            (
+                PlainDateTime(2023, 7, 14, 23, 52, 29, nanosecond=999_999_999),
+                60,
+                "minute",
+                PlainDateTime(2023, 7, 14, 23),
+                PlainDateTime(2023, 7, 15),
+                PlainDateTime(2023, 7, 15),
+                PlainDateTime(2023, 7, 15),
+                PlainDateTime(2023, 7, 15),
+            ),
+            (
+                PlainDateTime(2023, 7, 14, 11, 59, 29, nanosecond=999_999_999),
+                12,
+                "hour",
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 14, 12, 0, 0),
+                PlainDateTime(2023, 7, 14, 12, 0, 0),
+                PlainDateTime(2023, 7, 14, 12, 0, 0),
+                PlainDateTime(2023, 7, 14, 12, 0, 0),
+            ),
+            (
+                PlainDateTime(2023, 7, 14, 12),
+                1,
+                "day",
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 15),
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 15),
+                PlainDateTime(2023, 7, 14),
+            ),
+            (
+                PlainDateTime(2023, 7, 14),
+                1,
+                "day",
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 14),
+                PlainDateTime(2023, 7, 14),
+            ),
+        ],
+    )
+    def test_round(
+        self,
+        d: PlainDateTime,
+        increment,
+        unit,
+        floor,
+        ceil,
+        half_floor,
+        half_ceil,
+        half_even,
+    ):
+        assert d.round(unit, increment=increment) == half_even
+        assert d.round(unit, increment=increment, mode="floor") == floor
+        assert d.round(unit, increment=increment, mode="trunc") == floor
+        assert d.round(unit, increment=increment, mode="ceil") == ceil
+        assert d.round(unit, increment=increment, mode="expand") == ceil
+        assert (
+            d.round(unit, increment=increment, mode="half_floor") == half_floor
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_trunc") == half_floor
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_ceil") == half_ceil
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_expand") == half_ceil
+        )
+        assert (
+            d.round(unit, increment=increment, mode="half_even") == half_even
         )
 
+    def test_default(self):
+        d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=500_000_000)
+        assert d.round() == PlainDateTime(2023, 7, 14, 1, 2, 4)
+        assert d.replace(second=8).round() == PlainDateTime(
+            2023, 7, 14, 1, 2, 8
+        )
 
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
+    def test_increment_read_through_index(self):
+        d = PlainDateTime(2023, 7, 14, 12, 39, 59)
+        assert d.round("minute", increment=True) == d.round("minute")
+        assert d.round("minute", increment=cast(int, Idx())) == d.round(
+            "minute", increment=5
+        )
 
-        class Subclass(PlainDateTime):  # type: ignore[misc]
-            pass
+    @pytest.mark.parametrize("hour, expect", [(12, 12), (13, 14)])
+    def test_half_even_tie(self, hour, expect):
+        d = PlainDateTime(2023, 7, 14, hour, 30)
+        assert d.round("hour") == PlainDateTime(2023, 7, 14, expect)
 
+    def test_default_increment(self):
+        d = PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=800_000)
+        assert d.round("millisecond") == PlainDateTime(
+            2023, 7, 14, 1, 2, 3, nanosecond=1_000_000
+        )
 
-class TestDayOfYear:
-    def test_basic(self):
-        assert PlainDateTime(2024, 2, 29, 12, 30).day_of_year() == 60
+    def test_range_edges(self):
+        assert PlainDateTime.MAX.round("hour", mode="floor") == PlainDateTime(
+            9999, 12, 31, 23
+        )
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            PlainDateTime.MAX.round("hour", mode="ceil")
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            PlainDateTime.MAX.replace(nanosecond=0).round(
+                "second", increment=5
+            )
 
-    def test_jan1(self):
-        assert PlainDateTime(2023, 1, 1, 0, 0).day_of_year() == 1
+        just_after_min = PlainDateTime.MIN.replace(second=1)
+        assert just_after_min.round("hour", mode="floor") == PlainDateTime.MIN
+        assert just_after_min.round("hour", mode="ceil") == PlainDateTime(
+            1, 1, 1, 1
+        )
 
-    def test_dec31_nonleap(self):
-        assert PlainDateTime(2023, 12, 31, 23, 59).day_of_year() == 365
+    def test_round_by_timedelta(self):
+        d = PlainDateTime(2020, 8, 15, 23, 24, 18)
+        assert d.round(TimeDelta(minutes=15)) == PlainDateTime(
+            2020, 8, 15, 23, 30
+        )
+        assert d.round(hours(1)) == PlainDateTime(2020, 8, 15, 23)
+        assert d.round(TimeDelta(minutes=15), mode="floor") == PlainDateTime(
+            2020, 8, 15, 23, 15
+        )
 
-    def test_dec31_leap(self):
-        assert PlainDateTime(2024, 12, 31, 23, 59).day_of_year() == 366
+    def test_round_by_timedelta_wraps_to_next_day(self):
+        d = PlainDateTime(2020, 8, 15, 23, 50)
+        assert d.round(hours(1)) == PlainDateTime(2020, 8, 16)
 
-
-class TestDaysInMonth:
-    def test_feb_leap(self):
-        assert PlainDateTime(2024, 2, 29, 12, 30).days_in_month() == 29
-
-    def test_feb_nonleap(self):
-        assert PlainDateTime(2023, 2, 15, 12, 30).days_in_month() == 28
-
-    def test_january(self):
-        assert PlainDateTime(2023, 1, 15, 12, 30).days_in_month() == 31
-
-    def test_feb_century_nonleap(self):
-        # 1900 is not a leap year (divisible by 100, not by 400)
-        assert PlainDateTime(1900, 2, 15, 12, 30).days_in_month() == 28
-
-    def test_feb_century_leap(self):
-        # 2000 is a leap year (divisible by 400)
-        assert PlainDateTime(2000, 2, 15, 12, 30).days_in_month() == 29
-
-
-class TestDaysInYear:
-    def test_leap(self):
-        assert PlainDateTime(2024, 2, 29, 12, 30).days_in_year() == 366
-
-    def test_nonleap(self):
-        assert PlainDateTime(2023, 6, 15, 12, 30).days_in_year() == 365
-
-    def test_century_nonleap(self):
-        assert PlainDateTime(1900, 6, 15, 12, 30).days_in_year() == 365
-
-    def test_century_leap(self):
-        assert PlainDateTime(2000, 6, 15, 12, 30).days_in_year() == 366
-
-
-class TestInLeapYear:
-    def test_leap(self):
-        assert PlainDateTime(2024, 2, 29, 12, 30).in_leap_year() is True
-
-    def test_nonleap(self):
-        assert PlainDateTime(2023, 6, 15, 12, 30).in_leap_year() is False
-
-    def test_century_nonleap(self):
-        assert PlainDateTime(1900, 6, 15, 12, 30).in_leap_year() is False
-
-    def test_century_leap(self):
-        assert PlainDateTime(2000, 6, 15, 12, 30).in_leap_year() is True
+    @pytest.mark.parametrize(
+        "d, unit, kwargs, exc, message",
+        [
+            # a value already on the increment validates the mode too
+            *(
+                (d, "second", {"mode": m}, ValueError, f"invalid mode: {m!r}")
+                for d in (
+                    PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000),
+                    PlainDateTime(2023, 7, 14, 1, 2, 3),
+                )
+                for m in ("foo", "TRUNC", None, 3)
+            ),
+            *(
+                (
+                    PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000),
+                    u,
+                    {"increment": i},
+                    ValueError,
+                    "increment must divide a 24-hour day evenly",
+                )
+                for u, i in (
+                    ("minute", 21),
+                    ("second", 14),
+                    ("millisecond", 534),
+                    ("day", 2),
+                    ("hour", 48),
+                    ("microsecond", 2001),
+                    ("second", 1 << 62),
+                )
+            ),
+            *(
+                (
+                    PlainDateTime(2023, 7, 14, 1, 2, 3),
+                    "second",
+                    {"increment": i},
+                    ValueError,
+                    "increment must be a positive integer",
+                )
+                for i in (0, -1)
+            ),
+            *(
+                (
+                    PlainDateTime(2023, 7, 14, 1, 2, 3),
+                    "second",
+                    {"increment": i},
+                    TypeError,
+                    "increment must be an integer",
+                )
+                for i in (1.5, float("nan"), "5", Fraction(3, 2))
+            ),
+            *(
+                (
+                    PlainDateTime(2023, 7, 14, 1, 2, 3, nanosecond=4_000),
+                    u,
+                    {},
+                    ValueError,
+                    f"invalid unit: {u!r}",
+                )
+                for u in ("foo", "week", "minutes", None, 5)
+            ),
+            *(
+                (
+                    PlainDateTime(2020, 8, 15, 12),
+                    u,
+                    {},
+                    ValueError,
+                    "unit must divide a 24-hour day evenly",
+                )
+                for u in (hours(7), hours(25))
+            ),
+            *(
+                (
+                    PlainDateTime(2020, 8, 15, 12),
+                    u,
+                    {},
+                    ValueError,
+                    "unit must be a positive TimeDelta",
+                )
+                for u in (hours(-1), TimeDelta.ZERO)
+            ),
+            *(
+                (
+                    PlainDateTime(2020, 8, 15, 12),
+                    hours(1),
+                    {"increment": i},
+                    TypeError,
+                    "cannot specify an increment with a TimeDelta argument",
+                )
+                for i in (1, 2)
+            ),
+        ],
+    )
+    def test_rejected(self, d, unit, kwargs, exc, message):
+        with pytest.raises(exc, match="^" + re.escape(message) + "$"):
+            d.round(unit, **kwargs)
 
 
 class TestStartOf:
@@ -1723,82 +1870,68 @@ class TestStartOf:
         ],
     )
     def test_str_subclass(self, unit, expected):
-        class StrSubclass(str):
-            pass
-
         dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
         assert dt.start_of(StrSubclass(unit)) == expected  # type: ignore[arg-type]
 
-    def test_year(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.start_of("year")
-        assert result == PlainDateTime(2024, 1, 1)
-
-    def test_month(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.start_of("month")
-        assert result == PlainDateTime(2024, 8, 1)
-
-    def test_day(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.start_of("day")
-        assert result == PlainDateTime(2024, 8, 15)
-
-    def test_hour(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.start_of("hour")
-        assert result == PlainDateTime(2024, 8, 15, 14)
-
-    def test_minute(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.start_of("minute")
-        assert result == PlainDateTime(2024, 8, 15, 14, 30)
-
-    def test_second(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.start_of("second")
-        assert result == PlainDateTime(2024, 8, 15, 14, 30, 45)
+    @pytest.mark.parametrize(
+        "d, unit, expected",
+        [
+            (_THURSDAY_AFTERNOON, "year", PlainDateTime(2024, 1, 1)),
+            (_THURSDAY_AFTERNOON, "month", PlainDateTime(2024, 8, 1)),
+            (_THURSDAY_AFTERNOON, "day", PlainDateTime(2024, 8, 15)),
+            (_THURSDAY_AFTERNOON, "hour", PlainDateTime(2024, 8, 15, 14)),
+            (
+                _THURSDAY_AFTERNOON,
+                "minute",
+                PlainDateTime(2024, 8, 15, 14, 30),
+            ),
+            (
+                _THURSDAY_AFTERNOON,
+                "second",
+                PlainDateTime(2024, 8, 15, 14, 30, 45),
+            ),
+            (_THURSDAY_AFTERNOON, "week_mon", PlainDateTime(2024, 8, 12)),
+            (_THURSDAY_AFTERNOON, "week_sun", PlainDateTime(2024, 8, 11)),
+            # already at the start of the week
+            (
+                PlainDateTime(2024, 8, 12, 10),
+                "week_mon",
+                PlainDateTime(2024, 8, 12),
+            ),
+            (
+                PlainDateTime(2024, 8, 11, 10),
+                "week_sun",
+                PlainDateTime(2024, 8, 11),
+            ),
+        ],
+    )
+    def test_unit(self, d, unit, expected):
+        assert d.start_of(unit) == expected
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+        with pytest.raises(ValueError, match="^invalid unit: 'invalid'$"):
             PlainDateTime(2024, 8, 15, 14, 30).start_of("invalid")  # type: ignore[arg-type]
 
     def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
             PlainDateTime(2024, 8, 15, 14, 30).start_of("week")  # type: ignore[arg-type]
 
-    def test_week_mon(self):
-        # Thursday Aug 15 -> Monday Aug 12 at midnight
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.start_of("week_mon")
-        assert result == PlainDateTime(2024, 8, 12)
-
-    def test_week_sun(self):
-        # Thursday Aug 15 -> Sunday Aug 11 at midnight
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.start_of("week_sun")
-        assert result == PlainDateTime(2024, 8, 11)
-
-    def test_week_mon_already_monday(self):
-        dt = PlainDateTime(2024, 8, 12, 10, 0)
-        result = dt.start_of("week_mon")
-        assert result == PlainDateTime(2024, 8, 12)
-
-    def test_week_sun_already_sunday(self):
-        dt = PlainDateTime(2024, 8, 11, 10, 0)
-        result = dt.start_of("week_sun")
-        assert result == PlainDateTime(2024, 8, 11)
-
-    @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        try:
-            PlainDateTime.MIN.start_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
-            PlainDateTime.MAX.start_of(unit)
-        except (ValueError, OverflowError):
-            pass
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        assert PlainDateTime.MIN.start_of("week_mon") == PlainDateTime.MIN
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            PlainDateTime.MIN.start_of("week_sun")
+        assert PlainDateTime.MAX.start_of("week_mon") == PlainDateTime(
+            9999, 12, 27
+        )
+        assert PlainDateTime.MAX.start_of("week_sun") == PlainDateTime(
+            9999, 12, 26
+        )
 
 
 class TestEndOf:
@@ -1822,109 +1955,155 @@ class TestEndOf:
             == next_start
         )
 
-    def test_year(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.end_of("year")
-        assert result == PlainDateTime(
-            2024, 12, 31, 23, 59, 59, nanosecond=999_999_999
-        )
-
-    def test_month_31_days(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30)
-        result = dt.end_of("month")
-        assert result == PlainDateTime(
-            2024, 8, 31, 23, 59, 59, nanosecond=999_999_999
-        )
-
-    def test_month_feb_leap(self):
-        dt = PlainDateTime(2024, 2, 10, 12)
-        result = dt.end_of("month")
-        assert result == PlainDateTime(
-            2024, 2, 29, 23, 59, 59, nanosecond=999_999_999
-        )
-
-    def test_month_feb_non_leap(self):
-        dt = PlainDateTime(2023, 2, 10, 12)
-        result = dt.end_of("month")
-        assert result == PlainDateTime(
-            2023, 2, 28, 23, 59, 59, nanosecond=999_999_999
-        )
-
-    def test_day(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.end_of("day")
-        assert result == PlainDateTime(
-            2024, 8, 15, 23, 59, 59, nanosecond=999_999_999
-        )
-
-    def test_hour(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.end_of("hour")
-        assert result == PlainDateTime(
-            2024, 8, 15, 14, 59, 59, nanosecond=999_999_999
-        )
-
-    def test_minute(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.end_of("minute")
-        assert result == PlainDateTime(
-            2024, 8, 15, 14, 30, 59, nanosecond=999_999_999
-        )
-
-    def test_second(self):
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.end_of("second")
-        assert result == PlainDateTime(
-            2024, 8, 15, 14, 30, 45, nanosecond=999_999_999
-        )
+    @pytest.mark.parametrize(
+        "d, unit, expected",
+        [
+            (
+                _THURSDAY_AFTERNOON,
+                "year",
+                PlainDateTime(
+                    2024, 12, 31, 23, 59, 59, nanosecond=999_999_999
+                ),
+            ),
+            (
+                PlainDateTime(2024, 8, 15, 14, 30),
+                "month",
+                PlainDateTime(2024, 8, 31, 23, 59, 59, nanosecond=999_999_999),
+            ),
+            (
+                PlainDateTime(2024, 2, 10, 12),
+                "month",
+                PlainDateTime(2024, 2, 29, 23, 59, 59, nanosecond=999_999_999),
+            ),
+            (
+                PlainDateTime(2023, 2, 10, 12),
+                "month",
+                PlainDateTime(2023, 2, 28, 23, 59, 59, nanosecond=999_999_999),
+            ),
+            (
+                _THURSDAY_AFTERNOON,
+                "day",
+                PlainDateTime(2024, 8, 15, 23, 59, 59, nanosecond=999_999_999),
+            ),
+            (
+                _THURSDAY_AFTERNOON,
+                "hour",
+                PlainDateTime(2024, 8, 15, 14, 59, 59, nanosecond=999_999_999),
+            ),
+            (
+                _THURSDAY_AFTERNOON,
+                "minute",
+                PlainDateTime(2024, 8, 15, 14, 30, 59, nanosecond=999_999_999),
+            ),
+            (
+                _THURSDAY_AFTERNOON,
+                "second",
+                PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=999_999_999),
+            ),
+            (
+                _THURSDAY_AFTERNOON,
+                "week_mon",
+                PlainDateTime(2024, 8, 18, 23, 59, 59, nanosecond=999_999_999),
+            ),
+            (
+                _THURSDAY_AFTERNOON,
+                "week_sun",
+                PlainDateTime(2024, 8, 17, 23, 59, 59, nanosecond=999_999_999),
+            ),
+            # already at the end of the week
+            (
+                PlainDateTime(2024, 8, 18, 10),
+                "week_mon",
+                PlainDateTime(2024, 8, 18, 23, 59, 59, nanosecond=999_999_999),
+            ),
+            (
+                PlainDateTime(2024, 8, 17, 10),
+                "week_sun",
+                PlainDateTime(2024, 8, 17, 23, 59, 59, nanosecond=999_999_999),
+            ),
+        ],
+    )
+    def test_unit(self, d, unit, expected):
+        assert d.end_of(unit) == expected
 
     def test_invalid_unit(self):
-        with pytest.raises(ValueError, match="Invalid (unit|value for unit)"):
+        with pytest.raises(ValueError, match="^invalid unit: 'invalid'$"):
             PlainDateTime(2024, 8, 15, 14, 30).end_of("invalid")  # type: ignore[arg-type]
 
     def test_week_value_error(self):
-        with pytest.raises(ValueError, match="ambiguous"):
+        with pytest.raises(
+            ValueError,
+            match="^invalid unit: 'week', use 'week_mon' or 'week_sun'$",
+        ):
             PlainDateTime(2024, 8, 15, 14, 30).end_of("week")  # type: ignore[arg-type]
 
-    def test_week_mon(self):
-        # Thursday Aug 15 -> Sunday Aug 18 end of day
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.end_of("week_mon")
-        assert result == PlainDateTime(
-            2024, 8, 18, 23, 59, 59, nanosecond=999_999_999
+    def test_range_edges(self):
+        # 0001-01-01 is a Monday, 9999-12-31 a Friday
+        assert PlainDateTime.MIN.end_of("week_mon") == PlainDateTime(
+            1, 1, 7, 23, 59, 59, nanosecond=999_999_999
         )
-
-    def test_week_sun(self):
-        # Thursday Aug 15 -> Saturday Aug 17 end of day
-        dt = PlainDateTime(2024, 8, 15, 14, 30, 45, nanosecond=123)
-        result = dt.end_of("week_sun")
-        assert result == PlainDateTime(
-            2024, 8, 17, 23, 59, 59, nanosecond=999_999_999
+        assert PlainDateTime.MIN.end_of("week_sun") == PlainDateTime(
+            1, 1, 6, 23, 59, 59, nanosecond=999_999_999
         )
-
-    def test_week_mon_already_sunday(self):
-        # Sunday is already end of monday-week
-        dt = PlainDateTime(2024, 8, 18, 10, 0)
-        result = dt.end_of("week_mon")
-        assert result == PlainDateTime(
-            2024, 8, 18, 23, 59, 59, nanosecond=999_999_999
-        )
-
-    def test_week_sun_already_saturday(self):
-        # Saturday is already end of sunday-week
-        dt = PlainDateTime(2024, 8, 17, 10, 0)
-        result = dt.end_of("week_sun")
-        assert result == PlainDateTime(
-            2024, 8, 17, 23, 59, 59, nanosecond=999_999_999
-        )
+        assert PlainDateTime.MAX.end_of("day") == PlainDateTime.MAX
+        assert PlainDateTime.MAX.end_of("year") == PlainDateTime.MAX
 
     @pytest.mark.parametrize("unit", ["week_mon", "week_sun"])
-    def test_min_max_no_crash(self, unit):
-        try:
-            PlainDateTime.MIN.end_of(unit)
-        except (ValueError, OverflowError):
-            pass
-        try:
+    def test_week_beyond_max(self, unit):
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
             PlainDateTime.MAX.end_of(unit)
-        except (ValueError, OverflowError):
-            pass
+
+
+class TestCalendarProperties:
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (PlainDateTime(2024, 2, 29, 12, 30), 60),
+            (PlainDateTime(2023, 1, 1, 0, 0), 1),
+            (PlainDateTime(2023, 12, 31, 23, 59), 365),
+            (PlainDateTime(2024, 12, 31, 23, 59), 366),
+        ],
+    )
+    def test_day_of_year(self, d, expected):
+        assert d.day_of_year() == expected
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (PlainDateTime(2024, 2, 29, 12, 30), 29),
+            (PlainDateTime(2023, 2, 15, 12, 30), 28),
+            (PlainDateTime(2023, 1, 15, 12, 30), 31),
+            # 1900 is not a leap year (divisible by 100, not by 400)
+            (PlainDateTime(1900, 2, 15, 12, 30), 28),
+            # 2000 is a leap year (divisible by 400)
+            (PlainDateTime(2000, 2, 15, 12, 30), 29),
+        ],
+    )
+    def test_days_in_month(self, d, expected):
+        assert d.days_in_month() == expected
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (PlainDateTime(2024, 2, 29, 12, 30), 366),
+            (PlainDateTime(2023, 6, 15, 12, 30), 365),
+            (PlainDateTime(1900, 6, 15, 12, 30), 365),
+            (PlainDateTime(2000, 6, 15, 12, 30), 366),
+        ],
+    )
+    def test_days_in_year(self, d, expected):
+        assert d.days_in_year() == expected
+
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (PlainDateTime(2024, 2, 29, 12, 30), True),
+            (PlainDateTime(2023, 6, 15, 12, 30), False),
+            (PlainDateTime(1900, 6, 15, 12, 30), False),
+            (PlainDateTime(2000, 6, 15, 12, 30), True),
+        ],
+    )
+    def test_in_leap_year(self, d, expected):
+        assert d.in_leap_year() is expected

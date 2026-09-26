@@ -7,7 +7,8 @@ _SKIP_BUILD_SUGGESTION = """
 *******************************************************************************
 
 Building the Rust extension of the library `whenever` failed. See errors above.
-Set the `WHENEVER_NO_BUILD_RUST_EXT` environment variable to any value to skip
+Pass the build config setting `rust-extension=skip`, or set the
+`WHENEVER_NO_BUILD_RUST_EXT` environment variable to any value, to skip
 building the Rust extension and use the (slower) Python version instead.
 
 *******************************************************************************

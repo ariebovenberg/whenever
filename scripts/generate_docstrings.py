@@ -20,7 +20,13 @@ assert sys.version_info >= (
 )
 
 # Types defined in pure Python only (not in Rust extension)
-_PURE_PYTHON_TYPES = {"YearMonth", "MonthDay", "IsoWeekDate"}
+_PURE_PYTHON_TYPES = {
+    "YearMonth",
+    "MonthDay",
+    "IsoWeekDate",
+    "ItemizedDelta",
+    "ItemizedDateDelta",
+}
 
 classes = {
     cls
@@ -51,8 +57,11 @@ def _unwrap_property(m):
     return m
 
 
+# Each method with the name its docstring constant is derived from: the
+# documenting class and the attribute, not ``__qualname__``, which a method
+# may set for the sake of CPython's own error messages.
 methods = {
-    _unwrap_property(getattr(cls, name))
+    _unwrap_property(getattr(cls, name)): f"{cls.__name__}.{name}"
     for cls in chain(
         classes,
         (
@@ -96,42 +105,44 @@ PYDANTIC_DOCSTRING = 'pub(crate) const PYDANTIC_SCHEMA: &CStr = c"__get_pydantic
 
 MANUALLY_DEFINED_SIGS: dict[object, str] = {
     W.ZonedDateTime.add: """\
-($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, hours=0, \
+($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, hours=0, \
 minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-disambiguate=None)""",
+disambiguation=...)""",
     W.ZonedDateTime.replace: """\
-($self, /, *, year=None, month=None, day=None, hour=None, \
-minute=None, second=None, nanosecond=None, tz=None, disambiguate)""",
+($self, /, *, year=..., month=..., day=..., hour=..., \
+minute=..., second=..., nanosecond=..., tz=..., disambiguation=...)""",
     W.OffsetDateTime.add: """\
-($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
+($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-ignore_dst=..., stale_offset_ok=False)""",
+stale_offset_ok=False)""",
     W.OffsetDateTime.replace: """\
-($self, /, *, year=None, month=None, day=None, hour=None, \
-minute=None, second=None, nanosecond=None, offset=None, \
-ignore_dst=..., stale_offset_ok=False)""",
+($self, /, *, year=..., month=..., day=..., hour=..., \
+minute=..., second=..., nanosecond=..., offset=..., \
+stale_offset_ok=...)""",
     W.PlainDateTime.add: """\
-($self, delta=None, /, *, years=0, months=0, weeks=0, days=0, \
+($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, \
 hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, \
-ignore_dst=..., naive_arithmetic_ok=False)""",
+naive_arithmetic_ok=False)""",
     W.PlainDateTime.replace: """\
-($self, /, *, year=None, month=None, day=None, hour=None, \
-minute=None, second=None, nanosecond=None)""",
-    W.Date.replace: "($self, /, *, year=None, month=None, day=None)",
-    W.MonthDay.replace: "($self, /, *, month=None, day=None)",
-    W.Time.replace: "($self, /, *, hour=None, minute=None, second=None, nanosecond=None)",
-    W.YearMonth.replace: "($self, /, *, year=None, month=None)",
+($self, /, *, year=..., month=..., day=..., hour=..., \
+minute=..., second=..., nanosecond=...)""",
+    W.Date.replace: "($self, /, *, year=..., month=..., day=...)",
+    W.MonthDay.replace: "($self, /, *, month=..., day=...)",
+    W.Time.replace: "($self, /, *, hour=..., minute=..., second=..., nanosecond=...)",
+    W.YearMonth.replace: "($self, /, *, year=..., month=...)",
     W.Instant.add: """\
-($self, delta=None, /, *, hours=0, minutes=0, seconds=0, \
-milliseconds=0, microseconds=0, nanoseconds=0)""",
-    W.Date.add: "($self, delta=None, /, *, years=0, months=0, weeks=0, days=0)",
+($self, delta=..., /, *, weeks=0, days=0, hours=0, minutes=0, seconds=0, \
+milliseconds=0, microseconds=0, nanoseconds=0, days_assumed_24h_ok=False)""",
+    W.Date.add: "($self, delta=..., /, *, years=0, months=0, weeks=0, days=0)",
 }
+MANUALLY_DEFINED_SIGS[W.TimeDelta.add] = MANUALLY_DEFINED_SIGS[W.Instant.add]
 MANUALLY_DEFINED_SIGS.update(
     {
         W.ZonedDateTime.subtract: MANUALLY_DEFINED_SIGS[W.ZonedDateTime.add],
         W.OffsetDateTime.subtract: MANUALLY_DEFINED_SIGS[W.OffsetDateTime.add],
         W.PlainDateTime.subtract: MANUALLY_DEFINED_SIGS[W.PlainDateTime.add],
         W.Instant.subtract: MANUALLY_DEFINED_SIGS[W.Instant.add],
+        W.TimeDelta.subtract: MANUALLY_DEFINED_SIGS[W.TimeDelta.add],
         W.Date.subtract: MANUALLY_DEFINED_SIGS[W.Date.add],
     }
 )
@@ -141,14 +152,49 @@ SKIP = {
     W._Base.__get_pydantic_core_schema__,
 }
 
+# The 0.11 compatibility shims absorb their old keyword through a `**kwargs`
+# catch-all. That's an implementation detail, so hide it from the signature
+# `inspect` derives. Remove along with the shims in 1.0.
+SHIM_KWARGS: set[object] = {
+    W.Date.parse,
+    W.Instant.parse,
+    W.OffsetDateTime.parse,
+    W.PlainDateTime.parse,
+    W.PlainDateTime.assume_tz,
+    W.PlainDateTime.assume_system_tz,
+    W.Time.parse,
+    W.ZonedDateTime.parse,
+    W.ZonedDateTime.parse_iso,
+    W.ZonedDateTime.from_system_tz,
+    W.ZonedDateTime.format_iso,
+    W.ZonedDateTime.replace_date,
+    W.ZonedDateTime.replace_time,
+}
+assert all(
+    any(
+        p.kind is inspect.Parameter.VAR_KEYWORD
+        for p in inspect.signature(m).parameters.values()
+    )
+    for m in SHIM_KWARGS
+), "a method listed in SHIM_KWARGS no longer has a catch-all"
+
 
 def method_doc(method):
     method.__annotations__.clear()
     try:
         sig = MANUALLY_DEFINED_SIGS[method]
     except KeyError:
+        signature = inspect.signature(method)
+        if method in SHIM_KWARGS:
+            signature = signature.replace(
+                parameters=[
+                    p
+                    for p in signature.parameters.values()
+                    if p.kind is not inspect.Parameter.VAR_KEYWORD
+                ]
+            )
         sig = (
-            str(inspect.signature(method))
+            str(signature)
             # I escape the parens (\x28) because they mess up some LSPs
             # and text editors when viewing this script.
             .replace("\x28self", "\x28$self")
@@ -200,11 +246,10 @@ def print_everything():
             )
         )
 
-    for method in sorted(methods, key=lambda x: x.__qualname__):
+    for method, qualname in sorted(methods.items(), key=lambda x: x[1]):
         if method.__doc__ is None or method in SKIP:
             continue
 
-        qualname = method.__qualname__
         if qualname.startswith("_"):
             qualname = qualname[1:]
         print(

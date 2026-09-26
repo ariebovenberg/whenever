@@ -24,13 +24,16 @@ make build
 # rebuild it in release mode
 make build-release
 
-# clear the build artifacts (useful if you want to test the pure Python version)
-make clean
+# remove the compiled extension, to test the pure-Python backend
+make clean-ext
 
 make test  # run the tests (Python and Rust)
+make test-cov  # run the tests on the pure-Python backend, with coverage
 make fix  # apply autoformatting
 make ci-lint  # various static checks
 make typecheck  # run mypy and typing tests
+make docs  # build the docs, failing on any warning
+make check-examples  # run the docstring examples, to review by hand
 ```
 
 ## Maintainer's notes
@@ -51,8 +54,9 @@ Below are some points to keep in mind when making changes to the codebase:
     Additional advantages of ``pyo3_ffi`` are:
 
     - Its API is more stable than PyO3's, which is still evolving.
-    - It allows support for per-interpreter GIL, and free-threaded Python,
-      which are not yet (fully) supported by PyO3.
+    - The Rust extension declares per-interpreter GIL and free-threading support
+      itself, in ``src/pymodule/def.rs``, and free-threaded wheels are built
+      and tested.
 
 - The tests and documentation of the Rust code are sparse. This is because
   it has no public interface and is only used through its Python bindings.

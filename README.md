@@ -8,17 +8,17 @@
 [![](https://img.shields.io/pypi/dm/whenever)](https://pypi.python.org/pypi/whenever)
 
 
-**Type-safe datetimes for Python that get DST right. Rust or pure Python—your choice.**
+**Type-safe datetimes for Python that get DST right. Rust or pure Python, your choice.**
 
 Do you cross your fingers every time you work with Python's datetime—hoping that you didn't
 mix naive and aware, or run into one of its [other pitfalls](https://whenever.readthedocs.io/en/latest/stdlib-pitfalls/index.html)?
 
 *Whenever* takes the guesswork out, bringing **well-established concepts** from
 [modern libraries](#acknowledgements) in other languages to Python.
-Mixing up naive and aware becomes a **type error** instead of a bug you find in production,
+Mixing up naive and aware becomes a **typechecker error** instead of a bug you find in production,
 and DST is handled correctly in **all** arithmetic.
 It's also **way faster** than other third-party libraries, and usually the standard library as well.
-Rather not depend on a Rust extension? A **pure Python** version is available too.
+Rather not depend on a Rust extension? A **pure-Python backend** is available too.
 
   <p align="center">
     <picture align="center">
@@ -29,7 +29,7 @@ Rather not depend on a Rust extension? A **pure Python** version is available to
   </p>
 
   <p align="center" style="font-size: 14px">
-    <i>Parse, normalize, compare to now, shift, change timezone, and format (1M times)</i>
+    <i>Parse, normalize, compare to now, shift, change time zone, and format (1M times)</i>
   </p>
 
 <div align="center">
@@ -44,8 +44,8 @@ Rather not depend on a Rust extension? A **pure Python** version is available to
 
 </div>
 
-> ⚠️ Note: Holding off on 1.0 a little longer so we can get the API just
-> right for the long term—feedback (especially on durations) is still very welcome.
+> ⚠️ Note: 0.11 ships the 1.0 API. The deprecated spellings keep working
+> as shims until 1.0, and the changelog's migration table lists each one.
 > Leave a ⭐️ on GitHub if you'd like to see how this project develops!
 
 ## Why not the standard library?
@@ -54,7 +54,7 @@ Over 20+ years, Python's `datetime` has grown
 out of step with what you'd expect from a modern datetime library.
 Two points stand out:
 
-1. **It doesn't always account for Daylight Saving Time (DST)**.
+1. **It doesn't always account for daylight saving time (DST)**.
    Here is a simple example:
 
    ```python
@@ -64,7 +64,7 @@ Two points stand out:
    ```
 
    Note this isn't a bug, but a design decision that DST is only considered
-   when calculations involve *two* timezones.
+   when calculations involve *two* time zones.
    If you think this is surprising, you
    [are](https://github.com/python/cpython/issues/91618)
    [not](https://github.com/python/cpython/issues/116035)
@@ -95,20 +95,18 @@ address these issues. Here's how they compare to *whenever* and the standard lib
 </div>
 
 [**Arrow**](https://pypi.org/project/arrow/)
-is probably the most historically popular 3rd party datetime library.
-It attempts to provide a more "friendly" API than the standard library,
-but doesn't address the core issues:
-it keeps the same footguns, and its decision to reduce the number
-of types to just one (``arrow.Arrow``) means that it's even harder
-for typecheckers to catch mistakes.
+puts a friendlier API on top of the standard library's model — pitfalls
+included. Its single do-it-all type and anything-goes `arrow.get()`
+make mistakes *harder* for type checkers to catch, not easier.
+[Full comparison →](https://whenever.readthedocs.io/en/latest/why-not-arrow.html)
 
 [**Pendulum**](https://pypi.org/project/pendulum/)
-arrived on the scene in 2016, promising better DST-handling,
-as well as improved performance.
-However, it only fixes [*some* DST-related pitfalls](https://whenever.readthedocs.io/en/latest/why-not-pendulum.html),
-and its performance has significantly [degraded over time](https://github.com/sdispater/pendulum/issues/818).
-Additionally, it's in a long maintenance slump with only two releases in the last four years,
-while many serious and long-standing issues remain unaddressed.
+promised to fix `datetime` as a drop-in replacement — but a subclass
+can't change behavior *and* stay drop-in. The result is an API built on
+guesswork: `+` inspects the call stack to guess which semantics the caller
+expects, missing time zones become UTC, and incomplete input is completed
+from the clock. Bugs follow: `today()` can even return yesterday.
+[Full comparison →](https://whenever.readthedocs.io/en/latest/why-not-pendulum.html)
 
 ## Why use whenever?
 
@@ -121,10 +119,22 @@ while many serious and long-standing issues remain unaddressed.
 - 📆 Support for date arithmetic
 - ⏱️ Nanosecond precision
 - 🗄️ [SQLAlchemy support](https://pypi.org/project/whenever-sqlalchemy/)
-- 🪃 Pydantic support (beta)
-- 🦀 Rust!—but with a [pure-Python option](https://whenever.readthedocs.io/en/latest/faq.html#how-can-i-use-the-pure-python-version)
+- 🪃 Pydantic support
+- 🦀 Rust!—or the [pure-Python backend](https://whenever.readthedocs.io/en/latest/faq.html#how-can-i-use-the-pure-python-backend), if you prefer
 - 🧵 Free-threading support (beta)
 - 🚀 Supports per-interpreter GIL
+
+## Installation
+
+```shell
+pip install whenever
+```
+
+*Whenever* supports Python 3.10 and newer. Platform wheels include the Rust
+extension; a pure-Python wheel covers other platforms, and PyPy and GraalVM
+load the pure-Python backend automatically. To choose the pure-Python backend
+yourself, see the
+[FAQ](https://whenever.readthedocs.io/en/latest/faq.html#how-can-i-use-the-pure-python-backend).
 
 ## Quickstart
 
@@ -136,7 +146,7 @@ while many serious and long-standing issues remain unaddressed.
 ...    PlainDateTime,
 ... )
 
-# Identify moments in time, without timezone/calendar complexity
+# Identify moments in time, without time zone/calendar complexity
 >>> now = Instant.now()
 Instant("2024-07-04 10:36:56Z")
 
@@ -144,12 +154,12 @@ Instant("2024-07-04 10:36:56Z")
 >>> now.to_tz("Europe/Paris")
 ZonedDateTime("2024-07-04 12:36:56+02:00[Europe/Paris]")
 
-# A 'naive' datetime can't accidentally mix with other types.
+# A plain (local) datetime can't accidentally mix with exact types.
 # You need to explicitly convert it and handle ambiguity.
 >>> party_invite = PlainDateTime("2023-10-28 22:00")
 >>> party_invite.add(hours=6)
-  NaiveArithmeticWarning: Adjusting a local time ignores DST [...]
-PlainDateTime("2023-10-29 04:00")
+  NaiveArithmeticWarning: Shifting a PlainDateTime by exact time units does not account for time zone transitions [...]
+PlainDateTime("2023-10-29 04:00:00")
 >>> party_starts = party_invite.assume_tz("Europe/Amsterdam")
 ZonedDateTime("2023-10-28 22:00:00+02:00[Europe/Amsterdam]")
 
@@ -165,11 +175,11 @@ True
 >>> now.round("minute", increment=15)
 Instant("2024-07-04 10:30:00Z")
 
-# Formatting & parsing common formats (ISO8601, RFC3339, RFC2822)
+# Formatting & parsing common formats (ISO 8601, RFC 3339, RFC 2822)
 >>> now.format_rfc2822()
 "Thu, 04 Jul 2024 10:36:56 GMT"
 # Custom pattern formatting and parsing
->>> party_starts.format("MMM DD, hh:mm zz")
+>>> party_starts.format("MMM DD, HH:mm zz")
 "Oct 28, 22:00 CEST"
 
 # If you must: you can convert to/from the standard lib
@@ -183,7 +193,7 @@ or [API reference](https://whenever.readthedocs.io/en/latest/reference/datetime.
 ## Limitations
 
 - Supports the proleptic Gregorian calendar between 1 and 9999 AD
-- Timezone offsets are limited to whole seconds (consistent with IANA TZ DB)
+- Time zone offsets are limited to whole seconds (consistent with the IANA time zone database)
 
 ## Stability policy
 
@@ -213,7 +223,7 @@ For more details, see the licenses included in the distribution.
   After years of TC39 design work, Temporal's API
   is extraordinarily thorough. *Whenever* benefits from those hard-won insights.
 
-- **Python's `datetime` module** is used extensively in *whenever*'s pure-Python implementation
+- **Python's `datetime` module** is used extensively in *whenever*'s pure-Python backend
   for low-level date/time handling.
 
 - *Whenever* also borrows a few nifty ideas from [Jiff](https://github.com/BurntSushi/jiff):

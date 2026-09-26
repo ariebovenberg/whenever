@@ -3,7 +3,7 @@ myst:
   html_meta:
     description: >-
       Conceptual guide to whenever's three delta types: normalized versus itemized
-      durations, why calendar units need context, and how to balance units.
+      deltas, why calendar units need context, and how to balance units.
 ---
 
 (guide-deltas)=
@@ -18,19 +18,23 @@ For the full API reference, see {ref}`durations`.
 
 ## Three types for three use cases
 
-`whenever` provides three delta types because durations
-have fundamentally different arithmetic rules depending on the units involved
-(see the {ref}`FAQ <faq-why-3-deltas>` for the reasoning):
+`whenever` provides three delta types because deltas
+have fundamentally different arithmetic rules depending on the units involved:
 
 | Type | Units | When to use |
 |---|---|---|
 | {class}`TimeDelta` | hours, minutes, seconds, … | Measuring exact elapsed time |
 | {class}`ItemizedDateDelta` | years, months, weeks, days | Calendar arithmetic (e.g. "3 months from now") |
-| {class}`ItemizedDelta` | all of the above | Display, ISO 8601 round-tripping, mixed durations |
+| {class}`ItemizedDelta` | all of the above | Display, ISO 8601 round-tripping, mixed deltas |
+
+Keeping these cases separate prevents operations that need context—such as
+comparing `1 month` with `30 days`—from looking like ordinary exact-duration
+arithmetic. It also avoids normalizing away calendar components that a display
+or interchange format needs to preserve.
 
 Most of the time you won't create delta objects directly—you'll use
 `add()`, `subtract()`, `since()`, and `until()` on datetime and date objects.
-But deltas become useful when you need to *reuse* a duration, pass it around,
+But deltas become useful when you need to *reuse* a delta, pass it around,
 or inspect its components.
 
 ## Normalized vs. itemized
@@ -51,33 +55,62 @@ TimeDelta("PT2h30m")          # normalized: 2 hours 30 minutes
 ItemizedDelta("PT1h90m")      # itemized: components kept as-is
 ```
 
+Subsecond values use one `nanoseconds` component, bounded to 999,999,999;
+there are no `milliseconds` or `microseconds` components. Use
+{meth}`~whenever.ItemizedDelta.total` for a scalar in any unit:
+
+```python
+>>> d = ItemizedDelta(seconds=1, nanoseconds=234_567_890)
+>>> reference = PlainDateTime(2024, 1, 1)
+>>> d.total("milliseconds", relative_to=reference)
+1234.56789
+>>> d.total("microseconds", relative_to=reference)
+1234567.89
+>>> d.total("nanoseconds", relative_to=reference)
+1234567890
+```
+
+Nanosecond totals are integers to preserve precision; other totals are
+floating-point values. See {ref}`delta-subsecond` for the full rules.
+
 ## Calendar units need context
 
 Calendar units are not fixed durations. `1 month` may be 28, 29, 30, or
 31 days, and applying it can clamp at month end. As a result, calendar units
 need a **reference date** for operations that convert them to other units or
-combine them in a calendar-aware way.
+combine them in a calendar-aware way. An itemized delta's
+{meth}`~ItemizedDelta.total` and {meth}`~ItemizedDelta.in_units` always take
+`relative_to=`, even for exact units, as the example above shows: whether a
+reference is needed would otherwise depend on the delta's value.
+{class}`TimeDelta` has no calendar units, and needs none.
 
 ```python
 >>> d = ItemizedDateDelta(months=1)
 >>> d.total("days", relative_to=Date(2024, 1, 15))   # January → February
-31
+31.0
 >>> d.total("days", relative_to=Date(2024, 2, 15))   # February → March
-29   # 2024 is a leap year
+29.0   # 2024 is a leap year
 ```
 
 The same applies to {meth}`~ItemizedDateDelta.in_units`,
 {meth}`~ItemizedDateDelta.add`, and {meth}`~ItemizedDateDelta.subtract`
-when calendar units are involved.
+when calendar units are involved. `add()` and `subtract()` with
+`relative_to=` also take `in_units=`, the units of the result:
+
+```python
+>>> one_month = ItemizedDateDelta(months=1)
+>>> one_month.add(one_month, relative_to=Date(2023, 1, 15), in_units=["months", "days"])
+ItemizedDateDelta("P2m0d")
+```
 
 The same rule also means that calendar units do not reliably compose. Adding
 `1 month` twice can differ from adding `2 months` once, because the first step
 may change the reference date for the second step.
 
 When you call `add()` or `subtract()` on itemized deltas **without** a
-`relative_to` reference, the operation is field-wise and emits
+`relative_to` reference, the operation is component-wise and emits
 {class}`~whenever.CalendarUnitCompositionWarning` when nonzero calendar units
-are involved. Exact-only composition does not warn. Field-wise composition is
+are involved. Exact-only composition does not warn. Component-wise composition is
 literal and sometimes useful, but it should not be confused with sequential
 application to a date or datetime.
 
@@ -89,8 +122,8 @@ For example, month-end clamping makes the two operations differ:
 
 >>> start + one_month + one_month
 Date("2023-03-28")
->>> # Summing fieldwise first applies two months in a single step
->>> summed = one_month + one_month  # P2M
+>>> # Summing component-wise first applies two months in a single step
+>>> summed = one_month + one_month  # P2M, emits CalendarUnitCompositionWarning
 >>> start + summed
 Date("2023-03-31")
 ```
@@ -98,11 +131,11 @@ Date("2023-03-31")
 ## Balancing into different units
 
 "Balancing" means redistributing a delta's value across a new set of units.
-Use `in_units()`:
+Use {meth}`~whenever.TimeDelta.in_units`:
 
 ```python
 >>> td = TimeDelta(minutes=150)
->>> td.in_units(["hours", "minutes"]).values()
+>>> hours, minutes = td.in_units(["hours", "minutes"]).values()
 (2, 30)
 ```
 
@@ -110,7 +143,7 @@ For itemized deltas with calendar units, balancing requires a reference date:
 
 ```python
 >>> d = ItemizedDateDelta(days=400)
->>> d.in_units(["years", "months", "days"], relative_to=Date(2024, 1, 1)).values()
+>>> years, months, days = d.in_units(["years", "months", "days"], relative_to=Date(2024, 1, 1)).values()
 (1, 1, 3)
 ```
 

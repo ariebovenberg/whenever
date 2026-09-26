@@ -1,7 +1,10 @@
 use super::{
     plain_datetime::PlainDateTime,
+    round,
     scalar::{EpochSecs, Offset, SubSecNanos},
+    time::Time,
     time_delta::TimeDelta,
+    units::{NS_PER_MILLISECOND, NS_PER_SECOND, S_PER_DAY},
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -15,16 +18,32 @@ impl Instant {
         self.epoch.datetime(self.subsec)
     }
 
+    /// Round to an increment counted from midnight UTC. A point on the
+    /// timeline rounds as a positive number, also before 1970.
+    pub(crate) fn round(self, increment_ns: u64, mode: round::Mode) -> Option<Self> {
+        let secs = self.epoch.get();
+        let time = Time::from_sec_subsec(secs.rem_euclid(S_PER_DAY.into()) as u32, self.subsec);
+        let (rounded, next_day) = time.round(increment_ns, mode);
+        Some(Self {
+            epoch: EpochSecs::new(
+                (secs.div_euclid(S_PER_DAY.into()) + next_day as i64) * i64::from(S_PER_DAY)
+                    + i64::from(rounded.total_seconds()),
+            )?,
+            subsec: rounded.subsec,
+        })
+    }
+
     pub(crate) fn diff(self, other: Self) -> TimeDelta {
         TimeDelta::from_nanos_unchecked(self.timestamp_nanos() - other.timestamp_nanos())
     }
 
     pub(crate) fn timestamp_millis(self) -> i64 {
-        self.epoch.get() * 1_000 + self.subsec.get() as i64 / 1_000_000
+        self.epoch.get() * i64::from(NS_PER_SECOND / NS_PER_MILLISECOND)
+            + self.subsec.get() as i64 / i64::from(NS_PER_MILLISECOND)
     }
 
     pub(crate) fn timestamp_nanos(self) -> i128 {
-        self.epoch.get() as i128 * 1_000_000_000 + self.subsec.get() as i128
+        self.epoch.get() as i128 * NS_PER_SECOND as i128 + self.subsec.get() as i128
     }
 
     pub(crate) fn from_timestamp(timestamp: i64) -> Option<Self> {
@@ -35,23 +54,18 @@ impl Instant {
     }
 
     pub(crate) fn from_timestamp_f64(timestamp: f64) -> Option<Self> {
+        // The whole seconds bound the range, so the last second is included
+        let secs = timestamp.floor();
         (EpochSecs::MIN.get() as f64..=EpochSecs::MAX.get() as f64)
-            .contains(&timestamp)
+            .contains(&secs)
             .then(|| Self {
-                epoch: EpochSecs::new_unchecked(timestamp.floor() as i64),
+                epoch: EpochSecs::new_unchecked(secs as i64),
                 subsec: SubSecNanos::from_fract(timestamp),
             })
     }
 
-    pub(crate) fn from_timestamp_millis(millis: i64) -> Option<Self> {
-        Some(Self {
-            epoch: EpochSecs::new(millis.div_euclid(1_000))?,
-            subsec: SubSecNanos::new_unchecked(millis.rem_euclid(1_000) as i32 * 1_000_000),
-        })
-    }
-
     pub(crate) fn from_timestamp_nanos(timestamp: i128) -> Option<Self> {
-        i64::try_from(timestamp.div_euclid(1_000_000_000))
+        i64::try_from(timestamp.div_euclid(NS_PER_SECOND as i128))
             .ok()
             .and_then(EpochSecs::new)
             .map(|epoch| Self {
@@ -73,12 +87,5 @@ impl Instant {
             epoch: self.epoch.shift_by_offset(offset)?,
             subsec: self.subsec,
         })
-    }
-
-    pub(crate) fn to_delta(self) -> TimeDelta {
-        TimeDelta {
-            secs: self.epoch.to_delta(),
-            subsec: self.subsec,
-        }
     }
 }

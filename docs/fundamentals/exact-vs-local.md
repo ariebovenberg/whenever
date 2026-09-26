@@ -22,7 +22,7 @@ If you prefer a video explanation, [here is an excellent explanation of these co
 
 ## Exact time
 
-An **exact time** (also called "absolute time" or "UTC time") represents a single,
+An **exact time** (also called "absolute time") represents a single,
 precise moment on the global timeline.
 It refers to an instant that exists independently of where you are,
 what time zone you are in, or how clocks are configured.
@@ -32,11 +32,11 @@ such as the **Unix epoch**.
 Examples of exact time include:
 
 - "2026-01-15 12:00 UTC"
-- "1.673.779.200 seconds since the Unix epoch"
+- "1,768,478,400 seconds since the Unix epoch"
 - "The moment this database record was created"
 
 Exact time is what you use when you care about *when something actually happened*.
-It is ideal for logging, ordering events, measuring durations, and comparing timestamps.
+It is ideal for logging, ordering events, measuring durations, and comparing moments.
 Two exact times can always be compared, subtracted, or ordered, and the result is unambiguous.
 
 Importantly, exact time does **not** depend on civil conventions like daylight saving time.
@@ -83,9 +83,9 @@ A useful mental model is this:
 
 In `whenever`, the distinction between exact and local time is made explicit through different types:
 
-- {class}`~whenever.Instant` represents an exact moment on the global timeline (UTC).
+- {class}`~whenever.Instant` represents an exact moment on the global timeline.
 - {class}`~whenever.PlainDateTime` represents a local clock reading without time zone context.
-- {class}`~whenever.ZonedDateTime` represents a *both* an exact moment and its local representation in a specific time zone.
+- {class}`~whenever.ZonedDateTime` represents *both* an exact moment and its local representation in a specific time zone.
   More on that in the next section.
 
 ## Summary

@@ -1,0 +1,6 @@
+# The toolchain for development and CI; Dependabot bumps it.
+# The minimum supported version is `rust-version` in Cargo.toml.
+[toolchain]
+channel = "1.98"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

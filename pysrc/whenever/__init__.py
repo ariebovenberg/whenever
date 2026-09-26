@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-
 # Almost everything is lazily imported, to speed up initial import time.
 def __getattr__(name: str) -> object:
     # When any name from a group is first accessed, the whole module is loaded
@@ -13,23 +10,30 @@ def __getattr__(name: str) -> object:
         return g[name]
     # TZPATH is a live view, not a cached value.
     elif name == "TZPATH":
-        from ._core import _get_tzpath
+        from ._common import warn_deprecated
+        from ._core import get_tzpath
 
-        return _get_tzpath()
-    elif name == "AnyDelta":
-        from ._core import (
-            DateDelta,
-            DateTimeDelta,
-            TimeDelta,
+        warn_deprecated(
+            "TZPATH is deprecated; use get_tzpath() instead",
+            stacklevel=2,
         )
+        return get_tzpath()
+    # Not cached, so that every access warns.
+    elif name == "DisambiguateStr":
+        from ._common import warn_deprecated
+        from ._typing import DisambiguateStr
+
+        warn_deprecated(
+            "DisambiguateStr is deprecated; use DisambiguationStr instead",
+            stacklevel=2,
+        )
+        return DisambiguateStr
+    elif name == "AnyDelta":
+        from ._core import TimeDelta
         from ._ideltas import ItemizedDateDelta, ItemizedDelta
 
         globals()["AnyDelta"] = val = (
-            DateDelta
-            | TimeDelta
-            | DateTimeDelta
-            | ItemizedDelta
-            | ItemizedDateDelta
+            TimeDelta | ItemizedDelta | ItemizedDateDelta
         )
         return val
     elif name == "__version__":
@@ -44,11 +48,7 @@ def __getattr__(name: str) -> object:
 # Ensures not-yet-imported names are still included in dir() output
 def __dir__() -> list[str]:
     return sorted(
-        (
-            globals().keys()
-            | _LAZY_NAMES.keys()
-            | {"TZPATH", "AnyDelta", "__version__"}
-        )
+        (globals().keys() | _LAZY_NAMES.keys() | {"AnyDelta", "__version__"})
         - {"_LAZY_MODULES", "_LAZY_NAMES"}
     )
 
@@ -67,15 +67,9 @@ __all__ = (
     "ZonedDateTime",
     "PlainDateTime",
     # Deltas and time units
-    "DateDelta",
     "TimeDelta",
-    "DateTimeDelta",
     "ItemizedDelta",
     "ItemizedDateDelta",
-    "years",
-    "months",
-    "weeks",
-    "days",
     "hours",
     "minutes",
     "seconds",
@@ -89,11 +83,12 @@ __all__ = (
     "CalendarUnitCompositionWarning",
     "WheneverWarning",
     "PotentialDstBugWarning",
+    "PickleOffsetMismatchWarning",
     "WheneverDeprecationWarning",
+    "ImplicitDisambiguationWarning",
     "SkippedTime",
     "RepeatedTime",
     "InvalidOffsetError",
-    "ImplicitlyIgnoringDST",
     "TimeZoneNotFoundError",
     # Enums/constants
     "Weekday",
@@ -104,9 +99,12 @@ __all__ = (
     "FRIDAY",
     "SATURDAY",
     "SUNDAY",
+    "SYSTEM_TZ",
     # Other
     "reset_system_tz",
     "patch_current_time",
+    "TimePatch",
+    "get_tzpath",
     "reset_tzpath",
     "clear_tzcache",
     "available_timezones",
@@ -123,14 +121,8 @@ _LAZY_MODULES = {
         "OffsetDateTime",
         "ZonedDateTime",
         "PlainDateTime",
-        "DateDelta",
         "TimeDelta",
-        "DateTimeDelta",
         # Unit constructors
-        "years",
-        "months",
-        "weeks",
-        "days",
         "hours",
         "minutes",
         "seconds",
@@ -143,19 +135,18 @@ _LAZY_MODULES = {
         "NaiveArithmeticWarning",
         "WheneverWarning",
         "PotentialDstBugWarning",
+        "PickleOffsetMismatchWarning",
         "WheneverDeprecationWarning",
+        "ImplicitDisambiguationWarning",
         "SkippedTime",
         "RepeatedTime",
         "InvalidOffsetError",
-        "ImplicitlyIgnoringDST",
         "TimeZoneNotFoundError",
         # Other
         "reset_system_tz",
         "_EXTENSION_LOADED",
         # Unpickle functions
         "_unpkl_date",
-        "_unpkl_ddelta",
-        "_unpkl_dtdelta",
         "_unpkl_inst",
         "_unpkl_local",
         "_unpkl_offset",
@@ -172,7 +163,9 @@ _LAZY_MODULES = {
         "_unpkl_idelta",
     ),
     f"{__package__}._utils": (
+        "TimePatch",
         "patch_current_time",
+        "get_tzpath",
         "reset_tzpath",
         "clear_tzcache",
         "available_timezones",
@@ -180,11 +173,14 @@ _LAZY_MODULES = {
     f"{__package__}._typing": (
         "RoundModeStr",
         "DeltaUnitStr",
+        "DeltaTotalUnitStr",
         "DateDeltaUnitStr",
         "ExactDeltaUnitStr",
-        "DisambiguateStr",
+        "DisambiguationStr",
         "OffsetMismatchStr",
+        "TimestampUnitStr",
     ),
+    f"{__package__}._common": ("SYSTEM_TZ",),
     f"{__package__}._shared": (
         "YearMonth",
         "MonthDay",

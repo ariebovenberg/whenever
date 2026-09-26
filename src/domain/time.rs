@@ -1,4 +1,4 @@
-use super::{date::Date, plain_datetime::PlainDateTime, round, scalar::*};
+use super::{date::Date, plain_datetime::PlainDateTime, round, scalar::*, units::*};
 use crate::common::{
     fmt::{self, Sink, format_2_digits},
     parse::Scan,
@@ -38,20 +38,22 @@ impl Time {
     }
 
     pub(crate) const fn total_seconds(self) -> u32 {
-        self.hour as u32 * 3600 + self.minute as u32 * 60 + self.second as u32
+        self.hour as u32 * S_PER_HOUR as u32
+            + self.minute as u32 * S_PER_MINUTE as u32
+            + self.second as u32
     }
 
     pub(crate) const fn from_sec_subsec(sec: u32, subsec: SubSecNanos) -> Self {
         Time {
-            hour: (sec / 3600) as u8,
-            minute: ((sec % 3600) / 60) as u8,
-            second: (sec % 60) as u8,
+            hour: (sec / S_PER_HOUR as u32) as u8,
+            minute: ((sec % S_PER_HOUR as u32) / S_PER_MINUTE as u32) as u8,
+            second: (sec % S_PER_MINUTE as u32) as u8,
             subsec,
         }
     }
 
     pub(crate) const fn total_nanos(self) -> u64 {
-        self.subsec.get() as u64 + self.total_seconds() as u64 * NS_PER_SEC as u64
+        self.subsec.get() as u64 + self.total_seconds() as u64 * NS_PER_SECOND as u64
     }
 
     pub(crate) const fn on(self, date: Date) -> PlainDateTime {
@@ -62,7 +64,7 @@ impl Time {
         Time {
             hour: (nanos / NS_PER_HOUR) as u8,
             minute: ((nanos % NS_PER_HOUR) / NS_PER_MINUTE) as u8,
-            second: ((nanos % NS_PER_MINUTE) / NS_PER_SEC as u64) as u8,
+            second: ((nanos % NS_PER_MINUTE) / NS_PER_SECOND as u64) as u8,
             subsec: SubSecNanos::from_remainder(nanos),
         }
     }
@@ -136,14 +138,13 @@ impl Time {
         let total_nanos = self.total_nanos();
         let quotient = total_nanos / increment;
         let remainder = total_nanos % increment;
-        let threshold = match mode {
-            round::Mode::HalfEven => 1.max(increment / 2 + quotient.is_multiple_of(2) as u64),
-            round::Mode::Ceil | round::Mode::Expand => 1,
-            round::Mode::Floor | round::Mode::Trunc => increment + 1,
-            round::Mode::HalfFloor | round::Mode::HalfTrunc => increment / 2 + 1,
-            round::Mode::HalfCeil | round::Mode::HalfExpand => 1.max(increment / 2),
-        };
-        let ns_since_midnight = (quotient + (remainder >= threshold) as u64) * increment;
+        // A time of day is never negative: trunc is floor, expand is ceil.
+        let round_up = mode.to_abs(false).rounds_up(
+            remainder > 0,
+            remainder.cmp(&(increment - remainder)),
+            !quotient.is_multiple_of(2),
+        );
+        let ns_since_midnight = (quotient + round_up as u64) * increment;
         (
             Self::from_total_nanos_unchecked(ns_since_midnight % NS_PER_DAY),
             ns_since_midnight / NS_PER_DAY,
@@ -185,35 +186,6 @@ impl Time {
             },
         }
     }
-
-    pub(crate) fn next_start_of(self, unit: TimeBoundaryUnit) -> (Self, bool) {
-        match unit {
-            TimeBoundaryUnit::Hour => (
-                Time {
-                    hour: (self.hour + 1) % 24,
-                    ..Time::MIN
-                },
-                self.hour == 23,
-            ),
-            TimeBoundaryUnit::Minute => (
-                Time {
-                    hour: (self.hour + (self.minute == 59) as u8) % 24,
-                    minute: (self.minute + 1) % 60,
-                    ..Time::MIN
-                },
-                self.minute == 59 && self.hour == 23,
-            ),
-            TimeBoundaryUnit::Second => (
-                Time {
-                    hour: (self.hour + (self.minute == 59 && self.second == 59) as u8) % 24,
-                    minute: (self.minute + (self.second == 59) as u8) % 60,
-                    second: (self.second + 1) % 60,
-                    ..Time::MIN
-                },
-                self.second == 59 && self.minute == 59 && self.hour == 23,
-            ),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,11 +196,11 @@ pub(crate) enum TimeBoundaryUnit {
 }
 
 impl TimeBoundaryUnit {
-    pub(crate) fn in_secs(self) -> i32 {
+    pub(crate) const fn ns(self) -> u64 {
         match self {
-            TimeBoundaryUnit::Hour => 3600,
-            TimeBoundaryUnit::Minute => 60,
-            TimeBoundaryUnit::Second => 1,
+            TimeBoundaryUnit::Hour => NS_PER_HOUR,
+            TimeBoundaryUnit::Minute => NS_PER_MINUTE,
+            TimeBoundaryUnit::Second => NS_PER_SECOND as u64,
         }
     }
 }

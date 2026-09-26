@@ -7,24 +7,39 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its superseded run; runs on main all finish
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   RUST_BACKTRACE: 1
   # We rely on setup-python action to install Python,
   # because it does better caching and works with 32-bit Python on Windows.
   UV_PYTHON_DOWNLOADS: never
   UV_NO_MANAGED_PYTHON: "true"
+  # The zdump that smoketest_tz_transitions.py compares against
+  TZDB_VERSION: "2026d"
+  TZDB_SHA256: |
+    2f5c9f7fe29e6b8cb863583667884b8ce17b0a485355a054b591c6bdfcd81791  tzcode2026d.tar.gz
+    0cb2aa8e333c3dc049badc42a0c61f21987b8cd44e107fa900bad764aacc7767  tzdata2026d.tar.gz
 
 jobs:
   test-rust:
-    name: Test Rust (internal tests)
+    name: Test Rust (internal tests, minimum supported Rust version)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # rust-version in Cargo.toml. The override beats rust-toolchain.toml.
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           toolchain: "1.93"
       # even though we only test rust, we need CPython to link against
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
       - name: Build and test
@@ -33,6 +48,7 @@ jobs:
   test-rust-ext:
     name: Test ubuntu, ${{ matrix.python-version }} Rust extension
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -46,12 +62,12 @@ jobs:
           "3.15t"
         ]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        with:
-          toolchain: "1.93"
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The toolchain in rust-toolchain.toml
+      - &setup-rust
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
@@ -61,6 +77,7 @@ jobs:
         shell: bash
         run: |
           uv sync --locked --group test
+          uv run --no-sync python -c "import whenever; assert whenever._EXTENSION_LOADED"
           uv run pytest tests/ -s -v
 
       # Testing with integrations to ensure they work
@@ -75,14 +92,40 @@ jobs:
         shell: bash
         run: |
           uv sync --locked --reinstall-package whenever --no-editable --group test
-          uv run pytest tests/ -s -v
-      - run: |
-          sudo apt-get install -y tzdata  # for the zdump command
-          uv run python scripts/smoketest_*.py
+          uv run --no-sync python -c "import whenever; assert whenever._EXTENSION_LOADED"
+          uv run --no-sync pytest tests/ -s -v
+      # The smoketests below are shared with the pure-Python job.
+      # --no-sync: here they run the release build.
+      - &install-tzdata
+        name: Install the system time zone database
+        run: sudo apt-get install -y tzdata
+      - &smoketest-refcounting
+        run: uv run --no-sync python scripts/smoketest_refcounting.py
+      - &smoketest-threading
+        run: uv run --no-sync python scripts/smoketest_threading.py
+      # Transitions don't depend on the Python version: check them once per backend
+      - &build-zdump
+        name: Build tzcode's zdump
+        if: ${{ matrix.python-version == '3.14' }}
+        run: |
+          cd "$RUNNER_TEMP"
+          for part in tzcode tzdata; do
+            curl -sSfLO "https://data.iana.org/time-zones/releases/$part$TZDB_VERSION.tar.gz"
+          done
+          printf "%s" "$TZDB_SHA256" | sha256sum -c -
+          mkdir tzcode
+          tar -xzf "tzcode$TZDB_VERSION.tar.gz" -C tzcode
+          tar -xzf "tzdata$TZDB_VERSION.tar.gz" -C tzcode
+          make -C tzcode zdump
+          echo "$RUNNER_TEMP/tzcode" >> "$GITHUB_PATH"
+      - &smoketest-tz-transitions
+        if: ${{ matrix.python-version == '3.14' }}
+        run: uv run --no-sync python scripts/smoketest_tz_transitions.py
 
   test-os:
     name: Test ${{ matrix.os }}, ${{matrix.python-version}} ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }} ${{ matrix.architecture }}
     runs-on: ${{ matrix.os }}-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -96,18 +139,17 @@ jobs:
           - os: windows
             architecture: x86
             no_build_ext: ""
+            python-version: "3.14"
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        with:
-          toolchain: "1.93"
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - *setup-rust
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Add win32 target
         if: ${{ matrix.os == 'windows' && matrix.architecture == 'x86' }}
         run: rustup target add i686-pc-windows-msvc
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
           architecture:  ${{ matrix.architecture }}
@@ -116,6 +158,14 @@ jobs:
         run: uv sync --locked --group test
         env:
           WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
+
+      - &check-backend
+        name: Check which backend is loaded
+        run: uv run --no-sync python -c "import whenever; assert whenever._EXTENSION_LOADED is ${{ matrix.no_build_ext && 'False' || 'True' }}"
+
+      - name: Check the interpreter is 32-bit
+        if: ${{ matrix.architecture == 'x86' }}
+        run: uv run --no-sync python -c "import struct, sys; print(sys.version); assert struct.calcsize('P') == 4"
 
       - name: Install and test
         shell: bash
@@ -130,6 +180,7 @@ jobs:
   test-pure-python:
     name: Test ubuntu, ${{ matrix.python-version }} pure Python
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -144,9 +195,9 @@ jobs:
           "pypy3.11"
         ]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: true
@@ -154,6 +205,8 @@ jobs:
         run: uv sync --locked --group test
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
+      - name: Check which backend is loaded
+        run: uv run --no-sync python -c "import whenever; assert not whenever._EXTENSION_LOADED"
       # NOTE: we end up running pytest twice in the following sections.
       # This is because we want to test the code with and without optional dependencies.
       - run: uv run pytest tests/
@@ -166,23 +219,23 @@ jobs:
       - if: ${{ !contains(fromJSON('["pypy3.11", "3.15", "3.15t", "3.14"]'), matrix.python-version) }}
         run: |
           uv run pytest tests/
-      - run: |
-          sudo apt-get install -y tzdata  # for the zdump command
-          uv run python scripts/smoketest_*.py
+      - *install-tzdata
+      - *smoketest-refcounting
+      - *smoketest-threading
+      - *build-zdump
+      - *smoketest-tz-transitions
 
   lint:
     name: Linting
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
-      - uses: actions-rust-lang/setup-rust-toolchain@v2
-        with:
-          toolchain: "1.93"
-          components: "clippy, rustfmt"
+      - *setup-rust
       - run: uv sync --locked --group dev-extra
         env:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
@@ -191,20 +244,27 @@ jobs:
           WHENEVER_NO_BUILD_RUST_EXT: "1"
 
   typecheck:
-    name: Typecheck Python code
+    name: Typecheck Python code, ${{ matrix.no_build_ext && 'pure Python' || 'Rust extension' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        no_build_ext: ["1", ""]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - *setup-rust
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
-      - run: uv sync --locked --all-groups --no-install-project
+      - run: uv sync --locked --all-groups
         env:
-          WHENEVER_NO_BUILD_RUST_EXT: "1"
+          WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
+      - *check-backend
       - run: make typecheck
         env:
-          WHENEVER_NO_BUILD_RUST_EXT: "1"
+          WHENEVER_NO_BUILD_RUST_EXT: ${{ matrix.no_build_ext }}
 
   # https://github.com/marketplace/actions/alls-green#why
   all-green:
@@ -218,9 +278,10 @@ jobs:
       - lint
       - typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
     - name: Decide whether the needed jobs succeeded or failed
-      uses: re-actors/alls-green@release/v1
+      uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
       with:
         jobs: ${{ toJSON(needs) }}

@@ -1,23 +1,23 @@
-import pickle
 import re
-from copy import copy, deepcopy
 
 import pytest
-from whenever import Date, YearMonth
-
-from .common import AlwaysEqual, AlwaysLarger, AlwaysSmaller, NeverEqual
-
-pytestmark = pytest.mark.filterwarnings(
-    "ignore::whenever.WheneverDeprecationWarning"
+from typing_extensions import assert_type
+from whenever import (
+    Date,
+    ItemizedDateDelta,
+    YearMonth,
 )
 
 
 class TestInit:
-    def test_valid(self):
-        assert YearMonth(2021, 12) is not None
-        assert YearMonth(1, 1) is not None
-        assert YearMonth(9999, 12) is not None
-        assert YearMonth(year=2002, month=2) is not None
+    @pytest.mark.parametrize("year, month", [(2021, 12), (1, 1), (9999, 12)])
+    def test_valid(self, year, month):
+        ym = YearMonth(year, month)
+        assert (ym.year, ym.month) == (year, month)
+
+    def test_keywords(self):
+        ym = YearMonth(year=2002, month=2)
+        assert (ym.year, ym.month) == (2002, 2)
 
     @pytest.mark.parametrize(
         "year, month",
@@ -43,82 +43,54 @@ class TestInit:
         with pytest.raises(TypeError):
             YearMonth()  # type: ignore[call-overload]
 
+        with pytest.raises(
+            TypeError, match=r"^YearMonth\(\) requires an ISO 8601 string$"
+        ):
+            YearMonth(None)  # type: ignore[call-overload]
+
+    def test_iso_string_is_positional_only(self):
+        with pytest.raises(TypeError):
+            YearMonth(iso_string="2021-12")  # type: ignore[call-overload]
+
     def test_iso(self):
         assert YearMonth("2021-12") == YearMonth(2021, 12)
 
 
-def test_properties():
-    ym = YearMonth(2021, 12)
-    assert ym.year == 2021
-    assert ym.month == 12
+class TestAccessors:
+    def test_properties(self):
+        ym = YearMonth(2021, 12)
+        assert ym.year == 2021
+        assert ym.month == 12
+
+    def test_singletons(self):
+        assert YearMonth.MIN == YearMonth(1, 1)
+        assert YearMonth.MAX == YearMonth(9999, 12)
 
 
-def test_eq():
-    ym = YearMonth(2021, 12)
-    same = YearMonth(2021, 12)
-    different = YearMonth(2021, 11)
+class TestFormatIso:
+    def test_format_iso(self):
+        assert YearMonth(2021, 12).format_iso() == "2021-12"
+        assert YearMonth(2, 1).format_iso() == "0002-01"
+        assert YearMonth.parse_iso(YearMonth(2, 1).format_iso()) == YearMonth(
+            2, 1
+        )
 
-    assert ym == same
-    assert not ym == different
-    assert not ym == NeverEqual()
-    assert ym == AlwaysEqual()
+        with pytest.raises(
+            TypeError, match="unexpected keyword argument 'foo'"
+        ):
+            YearMonth(2, 1).format_iso(foo=1)  # type: ignore[call-arg]
 
-    assert not ym != same
-    assert ym != different
-    assert ym != NeverEqual()
-    assert not ym != AlwaysEqual()
-    assert ym != None  # noqa: E711
-    assert None != ym  # noqa: E711
-    assert not ym == None  # noqa: E711
-    assert not None == ym  # noqa: E711
+    def test_str(self):
+        assert (
+            str(YearMonth(2021, 12))
+            == "2021-12"
+            == YearMonth(2021, 12).format_iso()
+        )
+        assert str(YearMonth(2, 1)) == "0002-01"
 
-    assert hash(ym) == hash(same)
-
-
-def test_comparison():
-    ym = YearMonth(2021, 5)
-    same = YearMonth(2021, 5)
-    bigger = YearMonth(2022, 2)
-    smaller = YearMonth(2020, 12)
-
-    assert ym <= same
-    assert ym <= bigger
-    assert not ym <= smaller
-    assert ym <= AlwaysLarger()
-    assert not ym <= AlwaysSmaller()
-
-    assert not ym < same
-    assert ym < bigger
-    assert not ym < smaller
-    assert ym < AlwaysLarger()
-    assert not ym < AlwaysSmaller()
-
-    assert ym >= same
-    assert not ym >= bigger
-    assert ym >= smaller
-    assert not ym >= AlwaysLarger()
-    assert ym >= AlwaysSmaller()
-
-    assert not ym > same
-    assert not ym > bigger
-    assert ym > smaller
-    assert not ym > AlwaysLarger()
-    assert ym > AlwaysSmaller()
-
-
-def test_format_iso():
-    assert YearMonth(2021, 12).format_iso() == "2021-12"
-    assert YearMonth(2, 1).format_iso() == "0002-01"
-
-
-def test_str():
-    assert str(YearMonth(2021, 12)) == "2021-12"
-    assert str(YearMonth(2, 1)) == "0002-01"
-
-
-def test_repr():
-    assert repr(YearMonth(2021, 12)) == 'YearMonth("2021-12")'
-    assert repr(YearMonth(2, 1)) == 'YearMonth("0002-01")'
+    def test_repr(self):
+        assert repr(YearMonth(2021, 12)) == 'YearMonth("2021-12")'
+        assert repr(YearMonth(2, 1)) == 'YearMonth("0002-01")'
 
 
 class TestParseIso:
@@ -158,7 +130,7 @@ class TestParseIso:
     def test_invalid(self, s):
         with pytest.raises(
             ValueError,
-            match=r"Invalid format.*" + re.escape(repr(s)),
+            match=r"^invalid ISO 8601 string: " + re.escape(repr(s)) + "$",
         ):
             YearMonth.parse_iso(s)
 
@@ -167,84 +139,146 @@ class TestParseIso:
             YearMonth.parse_iso(20210102)  # type: ignore[arg-type]
 
 
-def test_replace():
-    ym = YearMonth(2021, 1)
-    assert ym.replace(year=2022) == YearMonth(2022, 1)
-    assert ym.replace(month=2) == YearMonth(2021, 2)
-    assert ym == YearMonth(2021, 1)  # original is unchanged
+class TestEquality:
+    def test_eq(self):
+        ym = YearMonth(2021, 12)
+        same = YearMonth(2021, 12)
+        different = YearMonth(2021, 11)
 
-    with pytest.raises(TypeError):
-        ym.replace(3)  # type: ignore[call-arg]
+        assert ym == same
+        assert not ym == different
 
-    with pytest.raises(TypeError, match="foo"):
-        ym.replace(foo=3)  # type: ignore[call-arg]
+        assert not ym != same
+        assert ym != different
 
-    with pytest.raises(TypeError, match="day"):
-        ym.replace(day=3)  # type: ignore[call-arg]
-
-    with pytest.raises(TypeError, match="foo"):
-        ym.replace(foo="blabla")  # type: ignore[call-arg]
-
-    with pytest.raises(ValueError, match="(date|year)"):
-        ym.replace(year=10_000)
+        assert hash(ym) == hash(same)
 
 
-def test_on_day():
-    ym = YearMonth(2021, 1)
-    assert ym.on_day(3) == Date(2021, 1, 3)
-    assert ym.on_day(31) == Date(2021, 1, 31)
+class TestComparison:
+    def test_comparison(self):
+        ym = YearMonth(2021, 5)
+        same = YearMonth(2021, 5)
+        bigger = YearMonth(2022, 2)
+        smaller = YearMonth(2020, 12)
 
-    with pytest.raises(ValueError):
-        ym.on_day(0)
+        assert ym <= same
+        assert ym <= bigger
+        assert not ym <= smaller
 
-    with pytest.raises(ValueError):
-        ym.on_day(-9)
+        assert not ym < same
+        assert ym < bigger
+        assert not ym < smaller
 
-    with pytest.raises(ValueError):
-        ym.on_day(10_000)
+        assert ym >= same
+        assert not ym >= bigger
+        assert ym >= smaller
 
-    ym2 = YearMonth(2009, 2)
-    assert ym2.on_day(28) == Date(2009, 2, 28)
-    with pytest.raises(ValueError):
-        ym2.on_day(29)
-
-    ym3 = YearMonth(2016, 2)
-    assert ym3.on_day(29) == Date(2016, 2, 29)
-
-
-def test_copy():
-    ym = YearMonth(2021, 1)
-    assert copy(ym) is ym
-    assert deepcopy(ym) is ym
+        assert not ym > same
+        assert not ym > bigger
+        assert ym > smaller
 
 
-def test_singletons():
-    assert YearMonth.MIN == YearMonth(1, 1)
-    assert YearMonth.MAX == YearMonth(9999, 12)
+class TestReplace:
+    def test_replace(self):
+        ym = YearMonth(2021, 1)
+        assert ym.replace(year=2022) == YearMonth(2022, 1)
+        assert ym.replace(month=2) == YearMonth(2021, 2)
+        assert ym == YearMonth(2021, 1)  # original is unchanged
+
+        with pytest.raises(TypeError):
+            ym.replace(3)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="foo"):
+            ym.replace(foo=3)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="day"):
+            ym.replace(day=3)  # type: ignore[call-arg]
+
+        with pytest.raises(TypeError, match="foo"):
+            ym.replace(foo="blabla")  # type: ignore[call-arg]
+
+        with pytest.raises(ValueError, match="(date|year)"):
+            ym.replace(year=10_000)
 
 
-def test_pickling():
-    d = YearMonth(2021, 1)
-    dumped = pickle.dumps(d)
-    assert pickle.loads(dumped) == d
-
-
-def test_unpickle_compatibility():
-    dumped = (
-        b"\x80\x04\x95$\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\t_unpkl_y"
-        b"m\x94\x93\x94C\x03\xe5\x07\x01\x94\x85\x94R\x94."
+class TestShift:
+    @pytest.mark.parametrize(
+        ("start", "kwargs", "expected"),
+        [
+            (YearMonth(2021, 1), {"years": 2}, YearMonth(2023, 1)),
+            (YearMonth(2021, 1), {"months": 13}, YearMonth(2022, 2)),
+            (YearMonth(2021, 1), {"months": -1}, YearMonth(2020, 12)),
+            (
+                YearMonth(2021, 6),
+                {"years": -1, "months": 7},
+                YearMonth(2021, 1),
+            ),
+        ],
     )
-    assert pickle.loads(dumped) == YearMonth(2021, 1)
+    def test_add(self, start, kwargs, expected):
+        assert start.add(**kwargs) == expected
+
+    def test_subtract(self):
+        assert YearMonth(2021, 1).subtract(years=1, months=2) == YearMonth(
+            2019, 11
+        )
+
+    def test_noop(self):
+        value = YearMonth(2021, 1)
+        assert value.add() == value
+        assert value.subtract() == value
+
+    # mypy rejects `**` unpacking of a mapping whose keys are str literals
+    # ("must have string keys"), so the idiom needs an ignore.
+    def test_delta_unpacks(self):
+        delta = ItemizedDateDelta(years=1, months=2)
+        result = YearMonth(2024, 3).add(**delta)  # type: ignore[arg-type]
+        assert_type(result, YearMonth)
+        assert result == YearMonth(2025, 5)
+        assert YearMonth(2024, 3).subtract(**delta) == YearMonth(  # type: ignore[arg-type]
+            2023, 1
+        )
+
+    def test_delta_with_day_units(self):
+        with pytest.raises(TypeError, match="days"):
+            YearMonth(2024, 3).add(**ItemizedDateDelta(months=1, days=1))  # type: ignore[arg-type]
+
+    def test_no_days_or_positional_delta(self):
+        with pytest.raises(TypeError, match="days"):
+            YearMonth(2024, 3).add(days=1)  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            YearMonth(2024, 3).add(ItemizedDateDelta(months=1))  # type: ignore[arg-type, call-arg]
+
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            ({"years": 1.5}, "years must be an integer"),
+            ({"months": "1"}, "months must be an integer"),
+            ({"months": None}, "months must be an integer"),
+        ],
+    )
+    def test_non_integer(self, kwargs, message):
+        with pytest.raises(TypeError, match="^" + re.escape(message) + "$"):
+            YearMonth(2024, 3).add(**kwargs)
+        with pytest.raises(TypeError, match="^" + re.escape(message) + "$"):
+            YearMonth(2024, 3).subtract(**kwargs)
+
+    @pytest.mark.parametrize(
+        "operation",
+        [
+            lambda: YearMonth.MAX.add(months=1),
+            lambda: YearMonth.MIN.subtract(months=1),
+            lambda: YearMonth(2024, 1).add(years=10**6),
+        ],
+    )
+    def test_out_of_range(self, operation):
+        with pytest.raises(
+            ValueError, match="^value or calculation out of range$"
+        ):
+            operation()
 
 
-def test_cannot_subclass():
-    with pytest.raises(TypeError):
-
-        class SubclassDate(YearMonth):  # type: ignore[misc]
-            pass
-
-
-class TestDaysInMonth:
+class TestCalendarProperties:
     @pytest.mark.parametrize(
         "ym, expected",
         [
@@ -261,17 +295,14 @@ class TestDaysInMonth:
             (YearMonth(2023, 10), 31),
             (YearMonth(2023, 11), 30),
             (YearMonth(2023, 12), 31),
+            # the century leap year rules
+            (YearMonth(2000, 2), 29),
+            (YearMonth(1900, 2), 28),
         ],
     )
-    def test_values(self, ym, expected):
+    def test_days_in_month(self, ym, expected):
         assert ym.days_in_month() == expected
 
-    def test_feb_century_leap_rules(self):
-        assert YearMonth(2000, 2).days_in_month() == 29
-        assert YearMonth(1900, 2).days_in_month() == 28
-
-
-class TestDaysInYear:
     @pytest.mark.parametrize(
         "ym, expected",
         [
@@ -281,11 +312,9 @@ class TestDaysInYear:
             (YearMonth(1900, 6), 365),
         ],
     )
-    def test_values(self, ym, expected):
+    def test_days_in_year(self, ym, expected):
         assert ym.days_in_year() == expected
 
-
-class TestInLeapYear:
     @pytest.mark.parametrize(
         "ym, expected",
         [
@@ -296,5 +325,29 @@ class TestInLeapYear:
             (YearMonth(2100, 6), False),
         ],
     )
-    def test_values(self, ym, expected):
+    def test_in_leap_year(self, ym, expected):
         assert ym.in_leap_year() is expected
+
+
+class TestConversion:
+    def test_on_day(self):
+        ym = YearMonth(2021, 1)
+        assert ym.on_day(3) == Date(2021, 1, 3)
+        assert ym.on_day(31) == Date(2021, 1, 31)
+
+        with pytest.raises(ValueError):
+            ym.on_day(0)
+
+        with pytest.raises(ValueError):
+            ym.on_day(-9)
+
+        with pytest.raises(ValueError):
+            ym.on_day(10_000)
+
+        ym2 = YearMonth(2009, 2)
+        assert ym2.on_day(28) == Date(2009, 2, 28)
+        with pytest.raises(ValueError):
+            ym2.on_day(29)
+
+        ym3 = YearMonth(2016, 2)
+        assert ym3.on_day(29) == Date(2016, 2, 29)

@@ -61,21 +61,21 @@ Why is `whenever` faster?
 
 - **Front-loaded computation.** Every `ZonedDateTime` stores its UTC offset at
   construction time. Operations like "normalize to UTC" or "subtract two instants"
-  become simple integer arithmetic with no timezone database lookup at operation
+  become simple integer arithmetic with no time zone database lookup at operation
   time.
 
-- **Compiled core.** The default wheel is a Rust extension, giving C-level
-  performance with safe, auditable code. The pure-Python fallback still
+- **Rust extension.** The default wheel is a Rust extension, giving C-level
+  performance with safe, auditable code. The pure-Python backend still
   benefits from the front-loaded computation model and outperforms Arrow on most
   simple operations.
 
-```{admonition} What about the pure-Python version of whenever?
+```{admonition} What about the pure-Python backend of whenever?
 :class: hint
 
 For simple operations — `now()`, ISO parsing,
 UTC normalization — it is noticeably faster than Arrow and Pendulum. For
-timezone-heavy operations such as `ZonedDateTime` construction or timezone
-conversion it is slower, as those use pure-Python timezone code instead
+operations that lean on time zone data, such as `ZonedDateTime` construction or time zone
+conversion it is slower, as those use pure-Python time zone code instead
 of the C-optimized `zoneinfo` module.
 Overall it is in the same ballpark as Arrow and Pendulum.
 ```
@@ -117,8 +117,8 @@ Import time is mainly kept low through lazy loading of submodules and dependenci
 
 The chart below compares wheel sizes of `whenever` against other
 datetime libraries, as well as some unrelated libraries for context.
-A pure-Python wheel is also available for environments where install size
-or platform coverage matters more than runtime speed.
+The pure-Python backend is also available as a wheel for environments where
+install size or platform coverage matters more than runtime speed.
 
 ```{raw} html
 <picture>
@@ -133,9 +133,10 @@ or platform coverage matters more than runtime speed.
 `whenever`'s focus on runtime speed and rich API means it is relatively large.
 However, it keeps the wheel size reasonable through careful design choices:
 
-- Several types (`Weekday`, `YearMonth`, `MonthDay`, `IsoWeekDate`) are
-  implemented only in Python even when the extension is active, keeping the
-  native binary focused on the performance-critical datetime types.
+- Several types (`Weekday`, `YearMonth`, `MonthDay`, `IsoWeekDate`,
+  `ItemizedDelta`, `ItemizedDateDelta`, and the `TimePatch` handle) are
+  implemented only in Python even when the Rust extension is active, keeping
+  the Rust extension focused on the performance-critical datetime types.
 - Inlining is used judiciously: hot code paths are optimized, while cold paths
   are prevented from inflating the binary size.
 

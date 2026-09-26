@@ -1,15 +1,15 @@
 """
-Stress tests for thread-safety of the timezone cache.
+Stress tests for thread-safety of the time zone cache.
 
 Note this isn't a unit test, because it relies on a clean cache
 """
 
 import sys
+import threading
 import time
 from os import environ
-from threading import Thread
 
-from whenever import PlainDateTime, reset_system_tz
+from whenever import SYSTEM_TZ, PlainDateTime, reset_system_tz
 
 if not hasattr(sys, "_is_gil_enabled") or sys._is_gil_enabled():
     # Running with GIL enabled can still be useful to compare performance,
@@ -44,25 +44,37 @@ TIMEZONE_SAMPLE = [
     "Brazil/Acre",
 ]
 assert len(TIMEZONE_SAMPLE) % NUM_THREADS, (
-    "Timezone sample should not be evenly divisible by number of threads"
+    "Time zone sample should not be evenly divisible by number of threads"
 )
 TZS = TIMEZONE_SAMPLE * (NUM_THREADS * NUM_ITERATIONS)
 
 
 def touch_timezones(tzs):
-    """A minimal function that triggers a timezone lookup"""
+    """A minimal function that triggers a time zone lookup"""
     for tz in tzs:
         zdt = PLAIN_DT.assume_tz(tz)
         del zdt
 
 
 def set_system_tz(tzs):
-    """A function that sets the timezone to system timezone"""
+    """A function that sets the time zone to system time zone"""
     for tz in tzs:
         environ["TZ"] = tz
         reset_system_tz()
-        zdt = PLAIN_DT.assume_system_tz()
+        zdt = PLAIN_DT.assume_tz(SYSTEM_TZ)
         del zdt
+
+
+# A worker's exception only prints its traceback; collect them to fail the run
+FAILURES = []
+
+
+def collect_failure(args):
+    FAILURES.append(args.exc_value)
+    threading.__excepthook__(args)
+
+
+threading.excepthook = collect_failure
 
 
 def main(func):
@@ -72,7 +84,7 @@ def main(func):
     start_time = time.time()
 
     for n in range(NUM_THREADS):
-        thread = Thread(target=func, args=(TZS[n::NUM_THREADS],))
+        thread = threading.Thread(target=func, args=(TZS[n::NUM_THREADS],))
         threads.append(thread)
         thread.start()
 
@@ -86,3 +98,5 @@ def main(func):
 if __name__ == "__main__":
     main(touch_timezones)
     main(set_system_tz)
+    if FAILURES:
+        sys.exit(f"{len(FAILURES)} worker thread(s) failed")

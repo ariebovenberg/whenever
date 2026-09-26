@@ -10,61 +10,54 @@ use crate::{
         date::Date,
         local::{LocalMapping, LocalSeconds},
         scalar::*,
-        time::Time,
+        units::*,
     },
 };
 use std::num::{NonZeroU8, NonZeroU16};
 
-const DEFAULT_DST: OffsetDelta = OffsetDelta::new_unchecked(3_600);
+const DEFAULT_DST: OffsetDelta = OffsetDelta::new_unchecked(S_PER_HOUR);
 
-/// Result of a timezone metadata query.
+/// Result of a time zone metadata query.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct TzMetaResult {
+pub(crate) struct TzMetaResult<'a> {
     pub(crate) dst_saving: i32,
-    pub(crate) abbrev: TzAbbrev,
+    pub(crate) abbrev: &'a [u8],
+}
+
+/// An abbreviation as text
+pub(crate) fn abbrev_text(b: &[u8]) -> &str {
+    debug_assert!(b.is_ascii());
+    // SAFETY: abbreviations are ASCII. A POSIX TZ name's grammar allows
+    // only ASCII, and parsing a TZif file rejects any other byte.
+    unsafe { std::str::from_utf8_unchecked(b) }
 }
 
 // RFC 9636: the transition time may range from -167 to 167 hours! (not just 24)
 pub(crate) type TransitionTime = i32;
-const DEFAULT_RULE_TIME: i32 = 2 * 3_600; // 2 AM
+const DEFAULT_RULE_TIME: i32 = 2 * S_PER_HOUR; // 2 AM
+const MAX_RULE_TIME: i32 = 167 * S_PER_HOUR + 59 * S_PER_MINUTE + 59;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TzAbbrev {
-    data: [u8; 8],
-    len: u8,
-}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TzAbbrev(Box<[u8]>);
 
 impl TzAbbrev {
-    pub(crate) const EMPTY: Self = TzAbbrev {
-        data: [0; 8],
-        len: 0,
-    };
-
-    pub(crate) fn from_bytes(b: &[u8]) -> Option<Self> {
-        if b.len() > 8 || !b.is_ascii() {
-            return None;
-        }
-        let mut data = [0u8; 8];
-        data[..b.len()].copy_from_slice(b);
-        Some(TzAbbrev {
-            data,
-            len: b.len() as u8,
-        })
+    pub(crate) fn new(b: &[u8]) -> Self {
+        TzAbbrev(b.into())
     }
 
     pub(crate) fn as_bytes(&self) -> &[u8] {
-        &self.data[..self.len as usize]
+        &self.0
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TzStr {
     std: Offset,
     dst: Option<Dst>,
     std_abbrev: TzAbbrev,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Dst {
     offset: Offset,
     start: (Rule, TransitionTime),
@@ -77,177 +70,226 @@ pub(crate) struct Dst {
 pub(crate) enum Rule {
     LastWeekday(Weekday, Month),
     NthWeekday(NonZeroU8, Weekday, Month), // N is 1..=4
-    DayOfYear(NonZeroU16),                 // 1..=366, accounts for leap days
-    JulianDayOfYear(NonZeroU16),           // 1..=365, ignores leap days
+    DayOfYear(NonZeroU16), // 1..=366, 366 is Jan 1 of the next year in a common year
+    JulianDayOfYear(NonZeroU16), // 1..=365, ignores leap days
 }
 
 impl TzStr {
+    pub(crate) fn std(&self) -> Offset {
+        self.std
+    }
+
     pub(crate) fn offset_for_instant(&self, epoch: EpochSecs) -> Offset {
-        if self.is_dst_at(epoch) {
-            // SAFETY: is_dst_at only returns true when self.dst is Some
-            self.dst.unwrap().offset
-        } else {
-            self.std
+        match &self.dst {
+            Some(dst) if self.is_dst_at(dst, epoch) => dst.offset,
+            _ => self.std,
         }
     }
 
     /// Get the offset for a local time, given as the number of seconds since the Unix epoch.
     pub(crate) fn mapping_for_local(&self, t: LocalSeconds) -> LocalMapping {
-        match self.dst {
-            None => LocalMapping::Unique { offset: self.std },
-            Some(Dst {
-                start: (start_rule, start_time),
-                end: (end_rule, end_time),
-                offset: dst,
-                ..
-            }) => {
-                // Below are some saturing_add_i32 calls to prevent overflow.
-                // These should only affect DST calculations at the extreme MIN/MAX
-                // boundaries. We just want to avoid crashing.
-                let year = t.date().year; // OPTIMIZE: pass the year as an argument
-                let start = start_rule.for_year(year, start_time);
-                let end = end_rule.for_year(year, end_time);
-
-                // Compensate for inverted DST setups (e.g. Australia)
-                // to ensure the two transition points (t1, t2) are in order.
-                let (t1, t2, off1, off2, shift) = if start < end {
-                    (start, end, self.std, dst, dst.sub(self.std).get())
-                } else {
-                    (end, start, dst, self.std, self.std.sub(dst).get())
-                };
-
-                // Positive DST: first a gap, then a fold
-                if shift >= 0 {
-                    if t < t1 {
-                        LocalMapping::Unique { offset: off1 }
-                    } else if t < t1.saturating_add_i32(shift) {
-                        LocalMapping::Gap {
-                            transition: t1.saturating_add_i32(shift),
-                            before: off1,
-                            after: off2,
-                        }
-                    } else if t < t2.saturating_add_i32(-shift) {
-                        LocalMapping::Unique { offset: off2 }
-                    } else if t < t2 {
-                        LocalMapping::Fold {
-                            transition: t2,
-                            before: off2,
-                            after: off1,
-                        }
-                    } else {
-                        LocalMapping::Unique { offset: off1 }
-                    }
-                // Negative DST: first a fold, then a gap
-                } else if t < t1.saturating_add_i32(shift) {
-                    LocalMapping::Unique { offset: off1 }
-                } else if t < t1 {
-                    LocalMapping::Fold {
-                        transition: t1,
-                        before: off1,
-                        after: off2,
-                    }
-                } else if t < t2 {
-                    LocalMapping::Unique { offset: off2 }
-                } else if t < t2.saturating_add_i32(-shift) {
-                    LocalMapping::Gap {
-                        transition: t2.saturating_add_i32(-shift),
-                        before: off2,
-                        after: off1,
-                    }
-                } else {
-                    LocalMapping::Unique { offset: off1 }
+        let Some(dst) = &self.dst else {
+            return LocalMapping::Unique { offset: self.std };
+        };
+        // A local time reads one instant per offset; an offset holds for the
+        // local time when it is in effect at that instant.
+        let std_holds = !self.is_dst_at(dst, t.to_epoch_saturating(self.std));
+        let dst_holds = self.is_dst_at(dst, t.to_epoch_saturating(dst.offset));
+        let (small, large) = if self.std < dst.offset {
+            (self.std, dst.offset)
+        } else {
+            (dst.offset, self.std)
+        };
+        match (std_holds, dst_holds) {
+            (true, false) => LocalMapping::Unique { offset: self.std },
+            (false, true) => LocalMapping::Unique { offset: dst.offset },
+            // Both hold: the larger offset reads the earlier instant, before
+            // the transition.
+            (true, true) => {
+                let transition = self.change_after(dst, t.to_epoch_saturating(large));
+                LocalMapping::Fold {
+                    transition: LocalSeconds::from_instant_saturating(transition, large),
+                    before: large,
+                    after: small,
+                }
+            }
+            // Neither holds: the smaller offset is in effect before the
+            // transition, the larger one after it.
+            (false, false) => {
+                let transition = self.change_after(dst, t.to_epoch_saturating(large));
+                LocalMapping::Gap {
+                    transition: LocalSeconds::from_instant_saturating(transition, large),
+                    before: small,
+                    after: large,
                 }
             }
         }
     }
 
-    /// Timezone metadata: (dst_saving, abbreviation)
-    pub(crate) fn meta_for_instant(&self, epoch: EpochSecs) -> TzMetaResult {
-        match self.dst {
-            Some(Dst {
-                offset: dst_offset,
-                abbrev: dst_abbrev,
-                ..
-            }) if self.is_dst_at(epoch) => TzMetaResult {
-                dst_saving: dst_offset.get() - self.std.get(),
-                abbrev: dst_abbrev,
+    /// Time zone metadata: (dst_saving, abbreviation)
+    pub(crate) fn meta_for_instant(&self, epoch: EpochSecs) -> TzMetaResult<'_> {
+        match &self.dst {
+            Some(dst) if self.is_dst_at(dst, epoch) => TzMetaResult {
+                dst_saving: dst.offset.get() - self.std.get(),
+                abbrev: dst.abbrev.as_bytes(),
             },
             _ => TzMetaResult {
                 dst_saving: 0,
-                abbrev: self.std_abbrev,
+                abbrev: self.std_abbrev.as_bytes(),
             },
         }
     }
 
-    /// Compute the two DST transition instants (in UTC) for a given year,
-    /// each paired with the offset that becomes active at that transition.
-    fn utc_transitions_for_year(
-        &self,
-        year: Year,
-    ) -> Option<((EpochSecs, Offset), (EpochSecs, Offset))> {
-        let Dst {
-            start: (start_rule, start_time),
-            end: (end_rule, end_time),
-            offset: dst_offset,
-            ..
-        } = self.dst?;
+    /// The two rule transitions of a year, earliest first, each flagged with
+    /// whether DST starts there. A rule time beyond 24 hours, or the 366th
+    /// day of a common year, can move a transition into an adjacent year.
+    fn year_transitions(&self, dst: &Dst, year: Year) -> [(EpochSecs, bool); 2] {
+        let (start_rule, start_time) = dst.start;
+        let (end_rule, end_time) = dst.end;
         let start = start_rule
             .for_year(year, start_time)
             .to_epoch_saturating(self.std);
         let end = end_rule
             .for_year(year, end_time)
-            .to_epoch_saturating(dst_offset);
-        Some(((start, dst_offset), (end, self.std)))
-    }
-
-    /// Whether DST is active at the given UTC epoch.
-    fn is_dst_at(&self, epoch: EpochSecs) -> bool {
-        let Some(((start, _), (end, _))) =
-            self.utc_transitions_for_year(epoch.saturating_shift_by_offset(self.std).date().year)
-        else {
-            return false;
-        };
-        if start < end {
-            start <= epoch && epoch < end
+            .to_epoch_saturating(dst.offset);
+        if end < start {
+            [(end, false), (start, true)]
         } else {
-            !(end <= epoch && epoch < start)
+            [(start, true), (end, false)]
         }
     }
 
-    /// The next UTC offset transition after `epoch`, or None if no DST rule.
-    pub(crate) fn next_transition(&self, epoch: EpochSecs) -> Option<(EpochSecs, Offset)> {
-        let year = epoch.saturating_shift_by_offset(self.std).date().year;
-        let ((se, so), (ee, eo)) = self.utc_transitions_for_year(year)?;
-        let result = match (se > epoch, ee > epoch) {
-            (true, true) if se <= ee => Some((se, so)),
-            (true, true) => Some((ee, eo)),
-            (true, false) => Some((se, so)),
-            (false, true) => Some((ee, eo)),
-            (false, false) => None,
-        };
-        result.or_else(|| {
-            let next_year = Year::new(year.get() + 1)?;
-            let ((se, so), (ee, eo)) = self.utc_transitions_for_year(next_year)?;
-            Some(if se <= ee { (se, so) } else { (ee, eo) })
-        })
+    /// The local year of `epoch`, in standard time
+    fn year_of(&self, epoch: EpochSecs) -> u16 {
+        epoch.saturating_shift_by_offset(self.std).date().year.get()
     }
 
-    /// The previous UTC offset transition before `epoch`, or None if no DST rule.
-    pub(crate) fn prev_transition(&self, epoch: EpochSecs) -> Option<(EpochSecs, Offset)> {
-        let year = epoch.saturating_shift_by_offset(self.std).date().year;
-        let ((se, so), (ee, eo)) = self.utc_transitions_for_year(year)?;
-        let result = match (se < epoch, ee < epoch) {
-            (true, true) if se >= ee => Some((se, so)),
-            (true, true) => Some((ee, eo)),
-            (true, false) => Some((se, so)),
-            (false, true) => Some((ee, eo)),
-            (false, false) => None,
+    /// The rule transitions of the years around `epoch`, in order. At a
+    /// shared instant, the later year's transition comes last and wins.
+    fn transitions_near(
+        &self,
+        dst: &Dst,
+        epoch: EpochSecs,
+        years_before: u16,
+        years_after: u16,
+    ) -> ([(EpochSecs, bool); 8], usize) {
+        let year = self.year_of(epoch);
+        let mut items = [(EpochSecs::MIN, false); 8];
+        let mut n = 0;
+        for y in year.saturating_sub(years_before)..=year.saturating_add(years_after) {
+            if let Some(y) = Year::new(y) {
+                for item in self.year_transitions(dst, y) {
+                    items[n] = item;
+                    n += 1;
+                }
+            }
+        }
+        // Stable, so a tie keeps the year order
+        items[..n].sort_by_key(|&(t, _)| t);
+        (items, n)
+    }
+
+    /// Whether DST is in effect at the given UTC epoch: the latest rule
+    /// transition at or before it decides. An adjacent year's transitions
+    /// count only near the turn of the year, so most calls see one year.
+    fn is_dst_at(&self, dst: &Dst, epoch: EpochSecs) -> bool {
+        let year = self.year_of(epoch);
+        let latest = |y: u16| {
+            Year::new(y).and_then(|y| {
+                self.year_transitions(dst, y)
+                    .into_iter()
+                    .rfind(|&(t, _)| t <= epoch)
+            })
         };
-        result.or_else(|| {
-            let prev_year = Year::new(year.get() - 1)?;
-            let ((se, so), (ee, eo)) = self.utc_transitions_for_year(prev_year)?;
-            Some(if se >= ee { (se, so) } else { (ee, eo) })
-        })
+        let this_year = Year::new(year).map(|y| self.year_transitions(dst, y));
+        let mut best = this_year.and_then(|ts| ts.into_iter().rfind(|&(t, _)| t <= epoch));
+        let stray_end = jan1(year).get() + STRAY;
+        let stray_next = jan1(year + 1).get() - STRAY;
+        if best.is_none_or(|(t, _)| t.get() < stray_end)
+            && let Some(prev) = latest(year - 1)
+            && best.is_none_or(|(t, _)| prev.0 > t)
+        {
+            best = Some(prev);
+        }
+        // At a shared instant, the later year wins
+        if epoch.get() >= stray_next
+            && let Some(next) = latest(year + 1)
+            && best.is_none_or(|(t, _)| next.0 >= t)
+        {
+            best = Some(next);
+        }
+        match best {
+            Some((_, starts_dst)) => starts_dst,
+            // Only at the edge of the supported range: before a transition,
+            // the other state holds.
+            None => this_year.is_some_and(|[(_, first_starts_dst), _]| !first_starts_dst),
+        }
+    }
+
+    fn offset_of(&self, dst: &Dst, is_dst: bool) -> Offset {
+        if is_dst { dst.offset } else { self.std }
+    }
+
+    /// The first instant after `epoch` where DST starts or ends.
+    fn change_after(&self, dst: &Dst, epoch: EpochSecs) -> EpochSecs {
+        self.next_change(dst, epoch)
+            .map_or(EpochSecs::MAX, |(t, _)| t)
+    }
+
+    fn next_change(&self, dst: &Dst, epoch: EpochSecs) -> Option<(EpochSecs, bool)> {
+        let state = self.is_dst_at(dst, epoch);
+        let (items, n) = self.transitions_near(dst, epoch, 1, 2);
+        let items = &items[..n];
+        // A year's transitions stay within days of it, so the years in view
+        // settle every instant up to a year before the last of them ends.
+        let limit = jan1(self.year_of(epoch) + 2);
+        for (i, &(t, starts_dst)) in items.iter().enumerate() {
+            if t >= limit {
+                break;
+            }
+            // Only the last transition at an instant counts
+            if t <= epoch || items.get(i + 1).is_some_and(|&(u, _)| u == t) {
+                continue;
+            }
+            if starts_dst != state {
+                return Some((t, starts_dst));
+            }
+        }
+        None
+    }
+
+    /// The next UTC offset transition after `epoch`, or None if there is none.
+    pub(crate) fn next_transition(&self, epoch: EpochSecs) -> Option<(EpochSecs, Offset)> {
+        let dst = self.dst.as_ref()?;
+        self.next_change(dst, epoch)
+            .map(|(t, is_dst)| (t, self.offset_of(dst, is_dst)))
+    }
+
+    /// The previous UTC offset transition before `epoch`, or None if there is none.
+    pub(crate) fn prev_transition(&self, epoch: EpochSecs) -> Option<(EpochSecs, Offset)> {
+        let dst = self.dst.as_ref()?;
+        let (items, n) = self.transitions_near(dst, epoch, 2, 1);
+        let items = &items[..n];
+        // See `next_change`
+        let limit = jan1(self.year_of(epoch).saturating_sub(1));
+        for i in (0..n).rev() {
+            let (t, starts_dst) = items[i];
+            if t < limit {
+                break;
+            }
+            // Only the last transition at an instant counts
+            if t >= epoch || items.get(i + 1).is_some_and(|&(u, _)| u == t) {
+                continue;
+            }
+            let before = match items[..i].iter().rposition(|&(u, _)| u < t) {
+                Some(j) => items[j].1,
+                None => self.is_dst_at(dst, t.saturating_add_i32(-1)),
+            };
+            if starts_dst != before {
+                return Some((t, self.offset_of(dst, starts_dst)));
+            }
+        }
+        None
     }
 
     pub fn parse(s: &[u8]) -> Option<Self> {
@@ -300,65 +342,73 @@ impl TzStr {
     }
 }
 
+/// How far a year's rule transitions can stray into an adjacent year: a
+/// rule time of up to 168 hours, an offset of up to 24, and the 366th day
+/// of a common year.
+const STRAY: i64 = (168 + 24 + 24) * S_PER_HOUR as i64;
+
+/// Midnight UTC on Jan 1 of `year`, saturating at the supported range
+fn jan1(year: u16) -> EpochSecs {
+    match Year::new(year) {
+        Some(y) => EpochSecs::clamp(i64::from(y.unix_days_at_jan1().get()) * i64::from(S_PER_DAY)),
+        None if year == 0 => EpochSecs::MIN,
+        None => EpochSecs::MAX,
+    }
+}
+
 impl Rule {
     fn for_year(self, year: Year, transition_time: TransitionTime) -> LocalSeconds {
-        let date = match self {
-            Rule::DayOfYear(d) => {
-                // SAFETY: the clamped day remains within the requested year.
-                unsafe {
-                    year.unix_days_at_jan1().add_unchecked(
-                        (d.get()
-                            // The 366th day will blow up for non-leap years.
-                            // It's unlikely that a TZ string would specify this,
-                            // so we'll just clamp it to the last day of the year.
-                            .min(365 + year.is_leap() as u16)
-                            - 1) as _,
-                    )
-                }
-                .date()
-            }
-
+        let jan1 = year.unix_days_at_jan1().get();
+        let days = match self {
+            // In a common year, the 366th day is Jan 1 of the next year,
+            // as POSIX, `zoneinfo` and libc have it.
+            Rule::DayOfYear(d) => jan1 + i32::from(d.get()) - 1,
             Rule::JulianDayOfYear(d) => {
-                // SAFETY: the Julian day, adjusted for leap years, remains within the year.
-                unsafe {
-                    year.unix_days_at_jan1().add_unchecked(
-                        (d.get() - 1) as i32 + (year.is_leap() && d.get() > 59) as i32,
-                    )
-                }
-                .date()
+                jan1 + i32::from(d.get()) - 1 + i32::from(year.is_leap() && d.get() > 59)
             }
-
             Self::LastWeekday(w, m) => {
                 // SAFETY: -1 always produces a valid result (every month has
                 // at least one occurrence of every weekday)
-                Date::nth_weekday_in_month(year, m, -1, w).unwrap()
+                Date::nth_weekday_in_month(year, m, -1, w)
+                    .unwrap()
+                    .unix_days()
+                    .get()
             }
             Self::NthWeekday(n, w, m) => {
                 debug_assert!(n.get() <= 4);
                 // SAFETY: n in 1..=4 always fits in a month
-                Date::nth_weekday_in_month(year, m, n.get() as i32, w).unwrap()
+                Date::nth_weekday_in_month(year, m, n.get() as i32, w)
+                    .unwrap()
+                    .unix_days()
+                    .get()
             }
         };
-        date.at(Time::MIN)
-            .local_seconds()
-            .saturating_add_i32(transition_time)
+        LocalSeconds::clamp(i64::from(days) * i64::from(S_PER_DAY) + i64::from(transition_time))
     }
 }
 
-/// Parse the TZ name and return it as a TzAbbrev
+/// Parse the TZ name and return it as a TzAbbrev. Per POSIX, a name has
+/// three or more characters: letters, or, between `<` and `>`, letters,
+/// digits, `+` and `-`.
 fn parse_tzname(s: &mut Scan) -> Option<TzAbbrev> {
-    // Note also that in Tzif files, TZ names are limited to 6 characters.
     let tzname = match s.peek() {
         Some(b'<') => {
             let name = s.take_until_inclusive(|c| c == b'>')?;
-            &name[1..name.len() - 1]
+            let name = &name[1..name.len() - 1];
+            name.iter()
+                .all(|&c| c.is_ascii_alphanumeric() || c == b'+' || c == b'-')
+                .then_some(name)?
         }
-        _ => s.take_until(|c| matches!(c, b'+' | b'-' | b',' | b'0'..=b'9'))?,
+        _ => {
+            let len = s
+                .rest()
+                .iter()
+                .take_while(|c| c.is_ascii_alphabetic())
+                .count();
+            s.take_unchecked(len)
+        }
     };
-    if tzname.is_empty() || !tzname.is_ascii() {
-        return None;
-    }
-    TzAbbrev::from_bytes(tzname)
+    (tzname.len() >= 3).then(|| TzAbbrev::new(tzname))
 }
 
 /// Parse an offset like `[+|-]h[h][:mm[:ss]]`
@@ -380,16 +430,16 @@ fn parse_hms(s: &mut Scan, max: i32) -> Option<i32> {
     let mut total = 0;
 
     // parse the hours
-    let hrs = if max > 99 * 3_600 {
+    let hrs = if max > 99 * S_PER_HOUR {
         s.up_to_3_digits()? as i32
     } else {
         s.up_to_2_digits()? as i32
     };
-    total += hrs * 3_600;
+    total += hrs * S_PER_HOUR;
 
     // parse the optional minutes and seconds
     if let Some(true) = s.advance_on(b':') {
-        total += s.digits00_59()? as i32 * 60;
+        total += s.digits00_59()? as i32 * S_PER_MINUTE;
         if let Some(true) = s.advance_on(b':') {
             total += s.digits00_59()? as i32;
         }
@@ -434,12 +484,11 @@ fn parse_rule(scan: &mut Scan) -> Option<(Rule, TransitionTime)> {
             .map(Rule::DayOfYear),
     }?;
 
-    Some((
-        rule,
-        scan.expect(b'/')
-            .and_then(|_| parse_hms(scan, 167 * 3_600))
-            .unwrap_or(DEFAULT_RULE_TIME),
-    ))
+    let time = match scan.advance_on(b'/') {
+        Some(true) => parse_hms(scan, MAX_RULE_TIME)?,
+        _ => DEFAULT_RULE_TIME,
+    };
+    Some((rule, time))
 }
 
 #[cfg(test)]
@@ -584,7 +633,7 @@ mod tests {
                 TzStr {
                     std: expected.try_into().unwrap(),
                     dst: None,
-                    std_abbrev: TzAbbrev::from_bytes(abbrev).unwrap(),
+                    std_abbrev: TzAbbrev::new(abbrev),
                 },
                 "{:?} -> {}",
                 unsafe { std::str::from_utf8_unchecked(s) },
@@ -637,9 +686,9 @@ mod tests {
                         ),
                         DEFAULT_RULE_TIME
                     ),
-                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
+                    abbrev: TzAbbrev::new(b"FOOS"),
                 }),
-                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
+                std_abbrev: TzAbbrev::new(b"FOO"),
             }
         );
         // Explicit DST offset
@@ -661,9 +710,9 @@ mod tests {
                         ),
                         DEFAULT_RULE_TIME
                     ),
-                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
+                    abbrev: TzAbbrev::new(b"FOOS"),
                 }),
-                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
+                std_abbrev: TzAbbrev::new(b"FOO"),
             }
         );
         // Explicit time, weekday rule
@@ -685,9 +734,9 @@ mod tests {
                         ),
                         DEFAULT_RULE_TIME
                     ),
-                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
+                    abbrev: TzAbbrev::new(b"FOOS"),
                 }),
-                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
+                std_abbrev: TzAbbrev::new(b"FOO"),
             }
         );
         // Explicit time, Julian day rule
@@ -709,9 +758,9 @@ mod tests {
                         ),
                         3 * 3_600
                     ),
-                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
+                    abbrev: TzAbbrev::new(b"FOOS"),
                 }),
-                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
+                std_abbrev: TzAbbrev::new(b"FOO"),
             }
         );
         // Explicit time, day-of-year rule
@@ -726,9 +775,9 @@ mod tests {
                         8 * 3_600 + 34 * 60 + 1
                     ),
                     end: (Rule::JulianDayOfYear(1.try_into().unwrap()), 0),
-                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
+                    abbrev: TzAbbrev::new(b"FOOS"),
                 }),
-                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
+                std_abbrev: TzAbbrev::new(b"FOO"),
             }
         );
         // Explicit time, zeroth day of year
@@ -743,9 +792,9 @@ mod tests {
                         8 * 3_600 + 34 * 60 + 1
                     ),
                     end: (Rule::JulianDayOfYear(1.try_into().unwrap()), 0),
-                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
+                    abbrev: TzAbbrev::new(b"FOOS"),
                 }),
-                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
+                std_abbrev: TzAbbrev::new(b"FOO"),
             }
         );
         // 24:00:00 is a valid time for a rule
@@ -767,9 +816,9 @@ mod tests {
                         ),
                         DEFAULT_RULE_TIME
                     ),
-                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
+                    abbrev: TzAbbrev::new(b"FOOS"),
                 }),
-                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
+                std_abbrev: TzAbbrev::new(b"FOO"),
             }
         );
         // Anything between -167 and 167 hours is also valid!
@@ -791,9 +840,9 @@ mod tests {
                         ),
                         100 * 3_600
                     ),
-                    abbrev: TzAbbrev::from_bytes(b"FOOS").unwrap(),
+                    abbrev: TzAbbrev::new(b"FOOS"),
                 }),
-                std_abbrev: TzAbbrev::from_bytes(b"FOO").unwrap(),
+                std_abbrev: TzAbbrev::new(b"FOO"),
             }
         );
     }
@@ -813,7 +862,7 @@ mod tests {
         let cases = [
             // Extremes
             (1, 1, (1, 1, 1)),           // MIN day
-            (9999, 366, (9999, 12, 31)), // MAX day
+            (9999, 366, (9999, 12, 31)), // MAX day (saturated)
             // no leap year
             (2021, 1, (2021, 1, 1)),     // First day
             (2059, 40, (2059, 2, 9)),    // < Feb 28
@@ -821,7 +870,7 @@ mod tests {
             (1911, 60, (1911, 3, 1)),    // Mar 1
             (1900, 124, (1900, 5, 4)),   // > Mar 1
             (2021, 365, (2021, 12, 31)), // Last day
-            (2021, 366, (2021, 12, 31)), // Last day (clamped)
+            (2021, 366, (2022, 1, 1)),   // Jan 1 of the next year
             // leap year
             (2024, 1, (2024, 1, 1)),     // First day
             (2060, 40, (2060, 2, 9)),    // < Feb 28
@@ -935,7 +984,7 @@ mod tests {
         let tz_fixed = TzStr {
             std: 1234.try_into().unwrap(),
             dst: None,
-            std_abbrev: TzAbbrev::EMPTY,
+            std_abbrev: TzAbbrev::new(b""),
         };
         // A TZ with random-ish DST rules
         let tz = TzStr {
@@ -950,9 +999,9 @@ mod tests {
                     Rule::JulianDayOfYear(281.try_into().unwrap()),
                     DEFAULT_RULE_TIME,
                 ),
-                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
+                abbrev: TzAbbrev::new(b"DST"),
             }),
-            std_abbrev: TzAbbrev::EMPTY,
+            std_abbrev: TzAbbrev::new(b""),
         };
         // A TZ with DST time rules that are very large, or negative!
         let tz_weirdtime = TzStr {
@@ -964,9 +1013,9 @@ mod tests {
                     50 * 3_600,
                 ),
                 end: (Rule::JulianDayOfYear(281.try_into().unwrap()), -2 * 3_600),
-                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
+                abbrev: TzAbbrev::new(b"DST"),
             }),
-            std_abbrev: TzAbbrev::EMPTY,
+            std_abbrev: TzAbbrev::new(b""),
         };
         // A TZ with DST rules that are 00:00:00
         let tz00 = TzStr {
@@ -975,9 +1024,9 @@ mod tests {
                 offset: 9300.try_into().unwrap(),
                 start: (Rule::LastWeekday(Weekday::Sunday, 3.try_into().unwrap()), 0),
                 end: (Rule::JulianDayOfYear(281.try_into().unwrap()), 0),
-                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
+                abbrev: TzAbbrev::new(b"DST"),
             }),
-            std_abbrev: TzAbbrev::EMPTY,
+            std_abbrev: TzAbbrev::new(b""),
         };
         // A TZ with a DST offset smaller than the standard offset (theoretically possible)
         let tz_neg = TzStr {
@@ -989,11 +1038,11 @@ mod tests {
                     DEFAULT_RULE_TIME,
                 ),
                 end: (Rule::JulianDayOfYear(281.try_into().unwrap()), 4 * 3_600),
-                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
+                abbrev: TzAbbrev::new(b"DST"),
             }),
-            std_abbrev: TzAbbrev::EMPTY,
+            std_abbrev: TzAbbrev::new(b""),
         };
-        // Some timezones have DST end before start
+        // Some time zones have DST end before start
         let tz_inverted = TzStr {
             std: 4800.try_into().unwrap(),
             dst: Some(Dst {
@@ -1003,27 +1052,27 @@ mod tests {
                     DEFAULT_RULE_TIME,
                 ),
                 start: (Rule::JulianDayOfYear(281.try_into().unwrap()), 4 * 3_600), // oct 8th,
-                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
+                abbrev: TzAbbrev::new(b"DST"),
             }),
-            std_abbrev: TzAbbrev::EMPTY,
+            std_abbrev: TzAbbrev::new(b""),
         };
-        // Some timezones appear to be "always DST", like Africa/Casablanca
+        // Some time zones appear to be "always DST", like Africa/Casablanca
         let tz_always_dst = TzStr {
             std: 7200.try_into().unwrap(),
             dst: Some(Dst {
                 offset: 3600.try_into().unwrap(),
                 start: (Rule::DayOfYear(1.try_into().unwrap()), 0),
                 end: (Rule::JulianDayOfYear(365.try_into().unwrap()), 23 * 3600),
-                abbrev: TzAbbrev::from_bytes(b"DST").unwrap(),
+                abbrev: TzAbbrev::new(b"DST"),
             }),
-            std_abbrev: TzAbbrev::EMPTY,
+            std_abbrev: TzAbbrev::new(b""),
         };
 
         fn to_epoch_s(d: Date, t: Time, offset: Offset) -> EpochSecs {
             d.unix_days().epoch_at(t).shift_by_offset(-offset).unwrap()
         }
 
-        fn test(tz: TzStr, ymd: (u16, u8, u8), hms: (u8, u8, u8), expected: LocalMapping) {
+        fn test(tz: &TzStr, ymd: (u16, u8, u8), hms: (u8, u8, u8), expected: LocalMapping) {
             let (y, m, d) = ymd;
             let (hour, minute, second) = hms;
             let date = mkdate(y, m, d);
@@ -1068,177 +1117,184 @@ mod tests {
 
         let cases = [
             // fixed always the same
-            (tz_fixed, (2020, 3, 19), (12, 34, 56), unique(1234)),
+            (&tz_fixed, (2020, 3, 19), (12, 34, 56), unique(1234)),
             // First second of the year
-            (tz, (1990, 1, 1), (0, 0, 0), unique(4800)),
+            (&tz, (1990, 1, 1), (0, 0, 0), unique(4800)),
             // Last second of the year
-            (tz, (1990, 12, 31), (23, 59, 59), unique(4800)),
+            (&tz, (1990, 12, 31), (23, 59, 59), unique(4800)),
             // Well before the transition
-            (tz, (1990, 3, 13), (12, 34, 56), unique(4800)),
+            (&tz, (1990, 3, 13), (12, 34, 56), unique(4800)),
             // Gap: Before, start, mid, end, after
-            (tz, (1990, 3, 25), (3, 59, 59), unique(4800)),
-            (tz, (1990, 3, 25), (4, 0, 0), gap(638342100, 9300, 4800)),
-            (tz, (1990, 3, 25), (5, 10, 0), gap(638342100, 9300, 4800)),
-            (tz, (1990, 3, 25), (5, 14, 59), gap(638342100, 9300, 4800)),
-            (tz, (1990, 3, 25), (5, 15, 0), unique(9300)),
+            (&tz, (1990, 3, 25), (3, 59, 59), unique(4800)),
+            (&tz, (1990, 3, 25), (4, 0, 0), gap(638342100, 9300, 4800)),
+            (&tz, (1990, 3, 25), (5, 10, 0), gap(638342100, 9300, 4800)),
+            (&tz, (1990, 3, 25), (5, 14, 59), gap(638342100, 9300, 4800)),
+            (&tz, (1990, 3, 25), (5, 15, 0), unique(9300)),
             // Well after the transition
-            (tz, (1990, 6, 26), (8, 0, 0), unique(9300)),
+            (&tz, (1990, 6, 26), (8, 0, 0), unique(9300)),
             // Fold: Before, start, mid, end, after
-            (tz, (1990, 10, 8), (0, 44, 59), unique(9300)),
-            (tz, (1990, 10, 8), (0, 45, 0), fold(655351200, 9300, 4800)),
-            (tz, (1990, 10, 8), (1, 33, 59), fold(655351200, 9300, 4800)),
-            (tz, (1990, 10, 8), (1, 59, 59), fold(655351200, 9300, 4800)),
-            (tz, (1990, 10, 8), (2, 0, 0), unique(4800)),
+            (&tz, (1990, 10, 8), (0, 44, 59), unique(9300)),
+            (&tz, (1990, 10, 8), (0, 45, 0), fold(655351200, 9300, 4800)),
+            (&tz, (1990, 10, 8), (1, 33, 59), fold(655351200, 9300, 4800)),
+            (&tz, (1990, 10, 8), (1, 59, 59), fold(655351200, 9300, 4800)),
+            (&tz, (1990, 10, 8), (2, 0, 0), unique(4800)),
             // Well after the end of DST
-            (tz, (1990, 11, 30), (23, 34, 56), unique(4800)),
+            (&tz, (1990, 11, 30), (23, 34, 56), unique(4800)),
             // time outside 0-24h range is also valid for a rule
-            (tz_weirdtime, (1990, 3, 26), (1, 59, 59), unique(4800)),
+            (&tz_weirdtime, (1990, 3, 26), (1, 59, 59), unique(4800)),
             (
-                tz_weirdtime,
+                &tz_weirdtime,
                 (1990, 3, 27),
                 (2, 0, 0),
                 gap(638507700, 9300, 4800),
             ),
             (
-                tz_weirdtime,
+                &tz_weirdtime,
                 (1990, 3, 27),
                 (3, 0, 0),
                 gap(638507700, 9300, 4800),
             ),
             (
-                tz_weirdtime,
+                &tz_weirdtime,
                 (1990, 3, 27),
                 (3, 14, 59),
                 gap(638507700, 9300, 4800),
             ),
-            (tz_weirdtime, (1990, 3, 27), (3, 15, 0), unique(9300)),
-            (tz_weirdtime, (1990, 10, 7), (20, 44, 59), unique(9300)),
+            (&tz_weirdtime, (1990, 3, 27), (3, 15, 0), unique(9300)),
+            (&tz_weirdtime, (1990, 10, 7), (20, 44, 59), unique(9300)),
             (
-                tz_weirdtime,
+                &tz_weirdtime,
                 (1990, 10, 7),
                 (20, 45, 0),
                 fold(655336800, 9300, 4800),
             ),
             (
-                tz_weirdtime,
+                &tz_weirdtime,
                 (1990, 10, 7),
                 (21, 33, 59),
                 fold(655336800, 9300, 4800),
             ),
             (
-                tz_weirdtime,
+                &tz_weirdtime,
                 (1990, 10, 7),
                 (21, 59, 59),
                 fold(655336800, 9300, 4800),
             ),
-            (tz_weirdtime, (1990, 10, 7), (22, 0, 0), unique(4800)),
-            (tz_weirdtime, (1990, 10, 7), (22, 0, 1), unique(4800)),
+            (&tz_weirdtime, (1990, 10, 7), (22, 0, 0), unique(4800)),
+            (&tz_weirdtime, (1990, 10, 7), (22, 0, 1), unique(4800)),
             // 00:00:00 is a valid time for a rule
-            (tz00, (1990, 3, 24), (23, 59, 59), unique(4800)),
-            (tz00, (1990, 3, 25), (0, 0, 0), gap(638327700, 9300, 4800)),
-            (tz00, (1990, 3, 25), (1, 0, 0), gap(638327700, 9300, 4800)),
-            (tz00, (1990, 3, 25), (1, 14, 59), gap(638327700, 9300, 4800)),
-            (tz00, (1990, 3, 25), (1, 15, 0), unique(9300)),
-            (tz00, (1990, 10, 7), (22, 44, 59), unique(9300)),
+            (&tz00, (1990, 3, 24), (23, 59, 59), unique(4800)),
+            (&tz00, (1990, 3, 25), (0, 0, 0), gap(638327700, 9300, 4800)),
+            (&tz00, (1990, 3, 25), (1, 0, 0), gap(638327700, 9300, 4800)),
             (
-                tz00,
+                &tz00,
+                (1990, 3, 25),
+                (1, 14, 59),
+                gap(638327700, 9300, 4800),
+            ),
+            (&tz00, (1990, 3, 25), (1, 15, 0), unique(9300)),
+            (&tz00, (1990, 10, 7), (22, 44, 59), unique(9300)),
+            (
+                &tz00,
                 (1990, 10, 7),
                 (22, 45, 0),
                 fold(655344000, 9300, 4800),
             ),
             (
-                tz00,
+                &tz00,
                 (1990, 10, 7),
                 (23, 33, 59),
                 fold(655344000, 9300, 4800),
             ),
             (
-                tz00,
+                &tz00,
                 (1990, 10, 7),
                 (23, 59, 59),
                 fold(655344000, 9300, 4800),
             ),
-            (tz00, (1990, 10, 8), (0, 0, 0), unique(4800)),
-            (tz00, (1990, 10, 8), (0, 0, 1), unique(4800)),
+            (&tz00, (1990, 10, 8), (0, 0, 0), unique(4800)),
+            (&tz00, (1990, 10, 8), (0, 0, 1), unique(4800)),
             // Negative DST should be handled gracefully. Gap and fold reversed
             // Fold instead of gap
-            (tz_neg, (1990, 3, 25), (0, 59, 59), unique(4800)),
+            (&tz_neg, (1990, 3, 25), (0, 59, 59), unique(4800)),
             (
-                tz_neg,
+                &tz_neg,
                 (1990, 3, 25),
                 (1, 0, 0),
                 fold(638330400, 4800, 1200),
             ),
             (
-                tz_neg,
+                &tz_neg,
                 (1990, 3, 25),
                 (1, 33, 59),
                 fold(638330400, 4800, 1200),
             ),
             (
-                tz_neg,
+                &tz_neg,
                 (1990, 3, 25),
                 (1, 59, 59),
                 fold(638330400, 4800, 1200),
             ),
-            (tz_neg, (1990, 3, 25), (2, 0, 0), unique(1200)),
+            (&tz_neg, (1990, 3, 25), (2, 0, 0), unique(1200)),
             // Gap instead of fold
-            (tz_neg, (1990, 10, 8), (3, 59, 59), unique(1200)),
-            (tz_neg, (1990, 10, 8), (4, 0, 0), gap(655362000, 4800, 1200)),
+            (&tz_neg, (1990, 10, 8), (3, 59, 59), unique(1200)),
             (
-                tz_neg,
+                &tz_neg,
+                (1990, 10, 8),
+                (4, 0, 0),
+                gap(655362000, 4800, 1200),
+            ),
+            (
+                &tz_neg,
                 (1990, 10, 8),
                 (4, 42, 12),
                 gap(655362000, 4800, 1200),
             ),
             (
-                tz_neg,
+                &tz_neg,
                 (1990, 10, 8),
                 (4, 59, 59),
                 gap(655362000, 4800, 1200),
             ),
-            (tz_neg, (1990, 10, 8), (5, 0, 0), unique(4800)),
+            (&tz_neg, (1990, 10, 8), (5, 0, 0), unique(4800)),
             // Always DST
-            (tz_always_dst, (1990, 1, 1), (0, 0, 0), unique(3600)),
-            // This is actually incorrect, but ZoneInfo does the same...
-            (
-                tz_always_dst,
-                (1992, 12, 31),
-                (23, 0, 0),
-                gap(725846400, 7200, 3600),
-            ),
+            (&tz_always_dst, (1990, 1, 1), (0, 0, 0), unique(3600)),
+            // DST ends as the next year's begins: no gap at the turn of the
+            // year, as in tzcode
+            (&tz_always_dst, (1992, 12, 31), (23, 0, 0), unique(3600)),
+            (&tz_always_dst, (1993, 1, 1), (0, 30, 0), unique(3600)),
             // Inverted DST
-            (tz_inverted, (1990, 2, 9), (15, 0, 0), unique(7200)), // DST in effect
-            (tz_inverted, (1990, 3, 25), (1, 19, 0), unique(7200)), // Before fold
+            (&tz_inverted, (1990, 2, 9), (15, 0, 0), unique(7200)), // DST in effect
+            (&tz_inverted, (1990, 3, 25), (1, 19, 0), unique(7200)), // Before fold
             (
-                tz_inverted,
+                &tz_inverted,
                 (1990, 3, 25),
                 (1, 20, 0),
                 fold(638330400, 7200, 4800),
             ), // Fold starts
             (
-                tz_inverted,
+                &tz_inverted,
                 (1990, 3, 25),
                 (1, 59, 0),
                 fold(638330400, 7200, 4800),
             ), // Fold almost over
-            (tz_inverted, (1990, 3, 25), (2, 0, 0), unique(4800)), // Fold over
-            (tz_inverted, (1990, 9, 8), (8, 0, 0), unique(4800)),  // DST not in effect
-            (tz_inverted, (1990, 10, 8), (3, 59, 0), unique(4800)), // Before gap
+            (&tz_inverted, (1990, 3, 25), (2, 0, 0), unique(4800)), // Fold over
+            (&tz_inverted, (1990, 9, 8), (8, 0, 0), unique(4800)),  // DST not in effect
+            (&tz_inverted, (1990, 10, 8), (3, 59, 0), unique(4800)), // Before gap
             (
-                tz_inverted,
+                &tz_inverted,
                 (1990, 10, 8),
                 (4, 0, 0),
                 gap(655360800, 7200, 4800),
             ), // Gap starts
             (
-                tz_inverted,
+                &tz_inverted,
                 (1990, 10, 8),
                 (4, 39, 0),
                 gap(655360800, 7200, 4800),
             ), // Gap almost over
-            (tz_inverted, (1990, 10, 8), (4, 40, 0), unique(7200)), // Gap over
-            (tz_inverted, (1990, 12, 31), (23, 40, 0), unique(7200)), // DST not in effect
+            (&tz_inverted, (1990, 10, 8), (4, 40, 0), unique(7200)), // Gap over
+            (&tz_inverted, (1990, 12, 31), (23, 40, 0), unique(7200)), // DST not in effect
         ];
 
         for &(tz, ymd, hms, expected) in &cases {

@@ -23,6 +23,15 @@ pub(crate) trait Sink {
     fn write(&mut self, s: &[u8]);
 }
 
+impl Sink for Vec<u8> {
+    fn write_byte(&mut self, b: u8) {
+        self.push(b);
+    }
+    fn write(&mut self, s: &[u8]) {
+        self.extend_from_slice(s);
+    }
+}
+
 /// Something with a fixed length that can write itself into a `Sink`.
 /// Used for "fast" formatting of known-size chunks.
 pub(crate) trait Chunk {

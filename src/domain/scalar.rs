@@ -1,5 +1,5 @@
 //! Checked arithmetic for scalar date and time concepts
-use super::round;
+use super::units::*;
 use super::{date::Date, plain_datetime::PlainDateTime, time::Time};
 use crate::common::fmt::{self, Sink, format_2_digits};
 use std::{num::NonZeroU16, ops::Neg};
@@ -34,7 +34,7 @@ impl Offset {
     pub(crate) fn from_hours(hrs: i64) -> Option<Self> {
         (-23..=23)
             .contains(&hrs)
-            .then(|| Self::new_unchecked(hrs as i32 * 3600))
+            .then(|| Self::new_unchecked(hrs as i32 * S_PER_HOUR))
     }
 
     pub(crate) fn from_i64(secs: i64) -> Option<Self> {
@@ -70,9 +70,9 @@ impl Offset {
     pub(crate) fn iso_format(self, basic: bool) -> OffsetFormat {
         let total_secs = self.0.abs();
         let sign_char = if self.0 < 0 { b'-' } else { b'+' };
-        let secs = total_secs % 60;
-        let mins = (total_secs / 60) % 60;
-        let hrs = total_secs / 3600;
+        let secs = total_secs % S_PER_MINUTE;
+        let mins = (total_secs % S_PER_HOUR) / S_PER_MINUTE;
+        let hrs = total_secs / S_PER_HOUR;
         OffsetFormat {
             sign_char,
             hrs: hrs as _,
@@ -137,16 +137,22 @@ impl std::fmt::Display for Offset {
         } else {
             ('+', self.0)
         };
-        if (secs as u32).is_multiple_of(60) {
-            write!(f, "{}{:02}:{:02}", sign, secs / 3600, (secs % 3600) / 60)
+        if (secs as u32).is_multiple_of(S_PER_MINUTE as u32) {
+            write!(
+                f,
+                "{}{:02}:{:02}",
+                sign,
+                secs / S_PER_HOUR,
+                (secs % S_PER_HOUR) / S_PER_MINUTE
+            )
         } else {
             write!(
                 f,
                 "{}{:02}:{:02}:{:02}",
                 sign,
-                secs / 3600,
-                (secs % 3600) / 60,
-                secs % 60
+                secs / S_PER_HOUR,
+                (secs % S_PER_HOUR) / S_PER_MINUTE,
+                secs % S_PER_MINUTE
             )
         }
     }
@@ -253,16 +259,11 @@ impl EpochSecs {
     pub(crate) fn time(self, nanos: SubSecNanos) -> Time {
         let time_secs = (self.get().rem_euclid(i64::from(S_PER_DAY))) as i32;
         Time {
-            hour: (time_secs / 3600) as u8,
-            minute: ((time_secs / 60) % 60) as u8,
-            second: (time_secs % 60) as u8,
+            hour: (time_secs / S_PER_HOUR) as u8,
+            minute: ((time_secs % S_PER_HOUR) / S_PER_MINUTE) as u8,
+            second: (time_secs % S_PER_MINUTE) as u8,
             subsec: nanos,
         }
-    }
-
-    pub(crate) fn to_delta(self) -> DeltaSeconds {
-        // Safe: range of DeltaSeconds is large enough to cover all possible differences
-        DeltaSeconds::new_unchecked(self.0)
     }
 }
 
@@ -272,7 +273,7 @@ pub struct UnixDays(i32);
 
 impl UnixDays {
     // 0001-01-01 to 9999-12-31
-    pub(crate) const MIN: UnixDays = UnixDays(-719_162);
+    pub(crate) const MIN: UnixDays = UnixDays(-DAYS_BEFORE_EPOCH);
     pub(crate) const MAX: UnixDays = UnixDays(2_932_896);
     pub const fn new_unchecked(days: i32) -> Self {
         debug_assert!(days >= Self::MIN.0 && days <= Self::MAX.0);
@@ -299,15 +300,15 @@ impl UnixDays {
     pub fn date(self) -> Date {
         // Shift and correction constants.
         const S: u32 = 82;
-        const K: u32 = 719468 + 146097 * S;
-        const L: u32 = 400 * S;
+        const K: u32 = DAYS_FROM_MARCH_EPOCH_TO_EPOCH + DAYS_PER_GREGORIAN_CYCLE * S;
+        const L: u32 = YEARS_PER_GREGORIAN_CYCLE * S;
         // Rata die shift.
         let n = (self.0 as u32).wrapping_add(K);
 
         // Century.
         let n_1 = 4 * n + 3;
-        let c = n_1 / 146097;
-        let n_c = n_1 % 146097 / 4;
+        let c = n_1 / DAYS_PER_GREGORIAN_CYCLE;
+        let n_c = n_1 % DAYS_PER_GREGORIAN_CYCLE / 4;
 
         // Year.
         let n_2 = 4 * n_c + 3;
@@ -335,15 +336,6 @@ impl UnixDays {
         }
     }
 
-    pub(crate) unsafe fn add_unchecked(self, days: i32) -> Self {
-        debug_assert!(
-            self.0
-                .checked_add(days)
-                .is_some_and(|v| (Self::MIN.0..=Self::MAX.0).contains(&v))
-        );
-        Self(self.0 + days)
-    }
-
     pub(crate) fn shift(self, d: DeltaDays) -> Option<Self> {
         // Safety: both values well within i32::MIN/MAX
         Self::new(self.0 + d.get())
@@ -361,7 +353,9 @@ impl UnixDays {
 
     pub(crate) fn day_of_week(self) -> Weekday {
         // SAFETY: adding one to a remainder modulo seven produces 1..=7.
-        unsafe { Weekday::from_iso_unchecked(((self.get() + 3).rem_euclid(7) + 1) as _) }
+        unsafe {
+            Weekday::from_iso_unchecked(((self.get() + 3).rem_euclid(DAYS_PER_WEEK) + 1) as _)
+        }
     }
 }
 
@@ -435,7 +429,7 @@ impl Year {
 
     pub(crate) fn unix_days_at_jan1(self) -> UnixDays {
         let y = (self.get() - 1) as i32;
-        UnixDays::new_unchecked(y * 365 + y / 4 - y / 100 + y / 400 - 719_162)
+        UnixDays::new_unchecked(y * 365 + y / 4 - y / 100 + y / 400 - DAYS_BEFORE_EPOCH)
     }
 
     pub(crate) const fn days_in_month(self, month: Month) -> u8 {
@@ -534,16 +528,6 @@ impl TryFrom<u8> for Month {
     }
 }
 
-pub(crate) const S_PER_DAY: i32 = 86_400;
-pub(crate) const S_PER_HOUR: u32 = 3_600;
-pub(crate) const NS_PER_MICROSEC: u32 = 1_000;
-pub(crate) const NS_PER_MILLISEC: u32 = 1_000_000;
-pub(crate) const NS_PER_SEC: u32 = 1_000_000_000;
-pub(crate) const NS_PER_MINUTE: u64 = 60_000_000_000;
-pub(crate) const NS_PER_HOUR: u64 = 3_600_000_000_000;
-pub(crate) const NS_PER_DAY: u64 = 86_400_000_000_000;
-pub(crate) const NS_PER_WEEK: u64 = 604_800_000_000_000;
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct DeltaMonths(i32);
 
@@ -569,25 +553,8 @@ impl DeltaMonths {
             .then(|| Self::new_unchecked(months as i32))
     }
 
-    pub(crate) fn from_i64_years(years: i64) -> Option<Self> {
-        years.checked_mul(12).and_then(Self::from_i64)
-    }
-
     pub(crate) const fn get(self) -> i32 {
         self.0
-    }
-
-    pub(crate) const fn abs(self) -> Self {
-        Self(self.0.abs())
-    }
-
-    pub(crate) fn mul(self, n: i32) -> Option<Self> {
-        self.0.checked_mul(n).and_then(Self::new)
-    }
-
-    pub(crate) fn add(self, d: DeltaMonths) -> Option<Self> {
-        // Safety: both values well within i32::MIN/MAX
-        Self::new(self.0 + d.get())
     }
 
     pub(crate) const fn is_zero(self) -> bool {
@@ -638,21 +605,8 @@ impl DeltaDays {
             .then(|| Self::new_unchecked(days as i32))
     }
 
-    pub(crate) fn from_i64_weeks(weeks: i64) -> Option<Self> {
-        weeks.checked_mul(7).and_then(Self::from_i64)
-    }
-
     pub(crate) const fn abs(self) -> Self {
         Self(self.0.abs())
-    }
-
-    pub(crate) fn mul(self, n: i32) -> Option<Self> {
-        self.0.checked_mul(n).and_then(Self::new)
-    }
-
-    pub(crate) fn add(self, d: DeltaDays) -> Option<Self> {
-        // SAFETY: both values well within i32::MIN/MAX
-        Self::new(self.0 + d.get())
     }
 
     pub(crate) const fn is_zero(self) -> bool {
@@ -679,9 +633,9 @@ pub(crate) struct DeltaSeconds(i64);
 
 impl DeltaSeconds {
     // Bounds sufficiently large to cover all years
-    pub(crate) const MIN: DeltaSeconds =
-        DeltaSeconds(-(Year::MAX.get() as i64) * 366 * 24 * 60 * 60);
-    pub(crate) const MAX: DeltaSeconds = DeltaSeconds(Year::MAX.get() as i64 * 366 * 24 * 60 * 60);
+    pub(crate) const MIN: DeltaSeconds = DeltaSeconds(-Self::MAX.0);
+    pub(crate) const MAX: DeltaSeconds =
+        DeltaSeconds(Year::MAX.get() as i64 * 366 * S_PER_DAY as i64);
     pub(crate) const ZERO: DeltaSeconds = DeltaSeconds(0);
     pub(crate) const fn new(secs: i64) -> Option<Self> {
         if secs >= Self::MIN.0 && secs <= Self::MAX.0 {
@@ -700,15 +654,14 @@ impl DeltaSeconds {
         self.0
     }
 
-    pub(crate) fn add(self, d: DeltaSeconds) -> Option<Self> {
-        // Safety: both values well within i64::MIN/MAX
-        Self::new(self.0 + d.get())
-    }
-
     /// Get the absolute value of the delta in hours, minutes, and seconds
     pub(crate) fn abs_hms(self) -> (i64, u8, u8) {
         let secs = self.0.abs();
-        (secs / 3600, ((secs % 3600) / 60) as _, (secs % 60) as _)
+        (
+            secs / i64::from(S_PER_HOUR),
+            ((secs % i64::from(S_PER_HOUR)) / i64::from(S_PER_MINUTE)) as _,
+            (secs % i64::from(S_PER_MINUTE)) as _,
+        )
     }
 }
 
@@ -730,8 +683,10 @@ impl std::ops::Neg for DeltaSeconds {
 pub(crate) struct DeltaNanos(i128);
 
 impl DeltaNanos {
-    pub(crate) const MIN: DeltaNanos = DeltaNanos(DeltaSeconds::MIN.get() as i128 * 1_000_000_000);
-    pub(crate) const MAX: DeltaNanos = DeltaNanos(DeltaSeconds::MAX.get() as i128 * 1_000_000_000);
+    pub(crate) const MIN: DeltaNanos =
+        DeltaNanos(DeltaSeconds::MIN.get() as i128 * NS_PER_SECOND as i128);
+    pub(crate) const MAX: DeltaNanos =
+        DeltaNanos(DeltaSeconds::MAX.get() as i128 * NS_PER_SECOND as i128);
     pub(crate) const fn new(nanos: i128) -> Option<Self> {
         if nanos >= Self::MIN.0 && nanos <= Self::MAX.0 {
             Some(Self(nanos))
@@ -747,7 +702,7 @@ impl DeltaNanos {
     pub(crate) fn sec_subsec(self) -> (DeltaSeconds, SubSecNanos) {
         (
             // Safety: No range check since nanos are already within range
-            DeltaSeconds::new_unchecked(self.0.div_euclid(1_000_000_000) as _),
+            DeltaSeconds::new_unchecked(self.0.div_euclid(NS_PER_SECOND as i128) as _),
             SubSecNanos::from_remainder(self.get()),
         )
     }
@@ -760,7 +715,7 @@ pub(crate) struct SubSecNanos(i32);
 
 impl SubSecNanos {
     pub(crate) const MIN: SubSecNanos = SubSecNanos(0);
-    pub(crate) const MAX: SubSecNanos = SubSecNanos(999_999_999);
+    pub(crate) const MAX: SubSecNanos = SubSecNanos(NS_PER_SECOND as i32 - 1);
 
     pub(crate) const fn new(nanos: i32) -> Option<Self> {
         if nanos >= Self::MIN.0 && nanos <= Self::MAX.0 {
@@ -784,7 +739,7 @@ impl SubSecNanos {
         self.0
     }
 
-    /// Cast to `u32`. Safe because `SubSecNanos` is always in `0..1_000_000_000`.
+    /// Cast to `u32`. Safe because `SubSecNanos` is always below one second.
     pub(crate) const fn as_u32(self) -> u32 {
         self.0 as u32
     }
@@ -797,42 +752,23 @@ impl SubSecNanos {
         Self::new_unchecked(nanos.subsec_nanos())
     }
 
+    /// The nanoseconds of the fraction, floored.
     pub(crate) fn from_fract(frac: f64) -> Self {
-        // Safety: remainder is always in range
-        Self::new_unchecked((frac.fract() * 1_000_000_000_f64).rem_euclid(1_000_000_000_f64) as _)
+        // A tiny negative fraction's remainder rounds up to a whole second,
+        // where the floor is the last nanosecond before it.
+        Self::new_unchecked(
+            (frac.fract() * f64::from(NS_PER_SECOND))
+                .rem_euclid(f64::from(NS_PER_SECOND))
+                .min(f64::from(Self::MAX.0)) as _,
+        )
     }
 
     pub(crate) fn add(self, other: Self) -> (DeltaSeconds, Self) {
         let sum = self.0 + other.0;
         (
             // Safety: No range check since we're dealing with at most 1 second here
-            DeltaSeconds::new_unchecked(sum.div_euclid(1_000_000_000) as _),
+            DeltaSeconds::new_unchecked(sum.div_euclid(NS_PER_SECOND as i32) as _),
             SubSecNanos::from_remainder(sum),
-        )
-    }
-
-    pub(crate) fn round(self, increment: u32, mode: round::AbsMode) -> (DeltaSeconds, Self) {
-        debug_assert!(increment > 0);
-        debug_assert!(increment < 1_000_000_000);
-        debug_assert!(1_000_000_000_u32.is_multiple_of(increment));
-        let tot = self.as_u32();
-        let quotient = tot / increment;
-        let remainder = tot % increment;
-        // Compare against the half without dividing, so an odd increment isn't truncated.
-        let round_up = match mode {
-            round::AbsMode::Trunc => false,
-            round::AbsMode::Expand => remainder > 0,
-            round::AbsMode::HalfTrunc => remainder > increment - remainder,
-            round::AbsMode::HalfExpand => remainder >= increment - remainder,
-            round::AbsMode::HalfEven => {
-                remainder > increment - remainder
-                    || (remainder == increment - remainder && !quotient.is_multiple_of(2))
-            }
-        };
-        let rounded = (quotient + round_up as u32) * increment;
-        (
-            DeltaSeconds::new_unchecked((rounded / 1_000_000_000).into()),
-            SubSecNanos::from_remainder(rounded),
         )
     }
 
@@ -892,37 +828,37 @@ pub(crate) trait NanosRemainder {
 
 impl NanosRemainder for i64 {
     fn subsec_nanos(self) -> i32 {
-        self.rem_euclid(1_000_000_000) as _
+        self.rem_euclid(NS_PER_SECOND as i64) as _
     }
 }
 
 impl NanosRemainder for i32 {
     fn subsec_nanos(self) -> i32 {
-        self.rem_euclid(1_000_000_000) as _
+        self.rem_euclid(NS_PER_SECOND as i32) as _
     }
 }
 
 impl NanosRemainder for u32 {
     fn subsec_nanos(self) -> i32 {
-        self.rem_euclid(1_000_000_000) as _
+        self.rem_euclid(NS_PER_SECOND) as _
     }
 }
 
 impl NanosRemainder for u64 {
     fn subsec_nanos(self) -> i32 {
-        self.rem_euclid(1_000_000_000) as _
+        self.rem_euclid(NS_PER_SECOND as u64) as _
     }
 }
 
 impl NanosRemainder for i128 {
     fn subsec_nanos(self) -> i32 {
-        self.rem_euclid(1_000_000_000) as _
+        self.rem_euclid(NS_PER_SECOND as i128) as _
     }
 }
 
 impl NanosRemainder for u128 {
     fn subsec_nanos(self) -> i32 {
-        self.rem_euclid(1_000_000_000) as _
+        self.rem_euclid(NS_PER_SECOND as u128) as _
     }
 }
 
@@ -948,6 +884,19 @@ impl Weekday {
 
     pub(crate) const fn iso(self) -> u8 {
         self as u8
+    }
+
+    /// The name of the Python enum member, as its `repr()` spells it
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Weekday::Monday => "MONDAY",
+            Weekday::Tuesday => "TUESDAY",
+            Weekday::Wednesday => "WEDNESDAY",
+            Weekday::Thursday => "THURSDAY",
+            Weekday::Friday => "FRIDAY",
+            Weekday::Saturday => "SATURDAY",
+            Weekday::Sunday => "SUNDAY",
+        }
     }
 }
 
@@ -1070,11 +1019,6 @@ mod tests {
 
     #[test]
     fn checked_delta_conversions() {
-        assert_eq!(DeltaMonths::from_i64_years(1).unwrap().get(), 12);
-        assert!(DeltaMonths::from_i64_years(i64::MAX).is_none());
-        assert_eq!(DeltaDays::from_i64_weeks(1).unwrap().get(), 7);
-        assert!(DeltaDays::from_i64_weeks(i64::MAX).is_none());
-
         assert_eq!(i32::from_i64(i32::MAX as i64), Some(i32::MAX));
         assert_eq!(i32::from_i64(i32::MIN as i64), None);
         assert_eq!(i32::from_i64(i32::MAX as i64 + 1), None);

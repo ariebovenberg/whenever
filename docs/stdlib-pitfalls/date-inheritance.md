@@ -29,11 +29,14 @@ datetime.today()  # fun exercise: what does this return?
 
 Whenever separates the concepts of date and datetime completely.
 There is no inheritance relationship between `Date` and `PlainDateTime`/`ZonedDateTime`.
-This means you can catch mistakes at compile time, and all comparisons behave intuitively:
+This means you can catch mistakes with a type checker, and all comparisons behave intuitively:
 
 ```python
 >>> from whenever import Date, PlainDateTime
 >>> d = Date(2024, 7, 4)
 >>> dt = PlainDateTime(2024, 7, 4, 12, 0, 0)
 >>> d > dt  # type checker will catch this
+Traceback (most recent call last):
+  ...
+TypeError: '>' not supported between instances of 'whenever.Date' and 'whenever.PlainDateTime'
 ```

@@ -12,7 +12,7 @@ pub(crate) fn _set_tzpath(state: &State, to: PyObj) -> PyReturn {
     for path in py_tuple.iter() {
         result.push(PathBuf::from(
             path.cast_allow_subclass::<PyStr>()
-                .ok_or_type_err("path must be a string")?
+                .ok_or_type_err("reset_tzpath() argument must be an iterable of paths")?
                 .as_str()?,
         ))
     }
@@ -33,7 +33,7 @@ pub(crate) fn _clear_tz_cache_by_keys(state: &State, keys_obj: PyObj) -> PyRetur
     for k in py_tuple.iter() {
         keys.push(
             k.cast_allow_subclass::<PyStr>()
-                .ok_or_type_err("key must be a string")?
+                .ok_or_type_err("only_keys must be an iterable of time zone IDs")?
                 .as_str()?
                 // We use String here since &str would borrow from the PyStr temporary,
                 // which doesn't survive the iteration. The performance impact is negligible.
@@ -44,7 +44,7 @@ pub(crate) fn _clear_tz_cache_by_keys(state: &State, keys_obj: PyObj) -> PyRetur
     Ok(none())
 }
 
-pub(crate) fn _get_tzpath(state: &State) -> PyReturn {
+pub(crate) fn get_tzpath(state: &State) -> PyReturn {
     state.tz_store.get_paths_as_pytuple()
 }
 

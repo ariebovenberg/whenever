@@ -16,8 +16,7 @@ DEFAULT_PYTEST_ARGS := -q --tb=short
 DEFAULT_CARGO_ARGS := --quiet --message-format=short
 MYPY_ARGS := --no-error-summary
 RUFF_ARGS := --quiet
-SLOTSCHECK_ARGS :=
-SPHINXOPTS ?= -q
+SPHINXOPTS ?= -q -W --keep-going
 BUILD_ARGS := -q
 RUST_BUILD_ARGS := --qbuild
 DEFAULT_COV_REPORT_ARGS := --cov-report=term-missing:skip-covered --cov-report=html
@@ -28,8 +27,7 @@ DEFAULT_PYTEST_ARGS := -s
 DEFAULT_CARGO_ARGS :=
 MYPY_ARGS :=
 RUFF_ARGS :=
-SLOTSCHECK_ARGS := -v
-SPHINXOPTS ?=
+SPHINXOPTS ?= -W --keep-going
 BUILD_ARGS :=
 RUST_BUILD_ARGS :=
 DEFAULT_COV_REPORT_ARGS := --cov-report=term-missing --cov-report=html
@@ -45,11 +43,20 @@ BENCH_PYTEST_ARGS ?= $(DEFAULT_BENCH_PYTEST_ARGS)
 .PHONY: typecheck
 typecheck:
 	uv $(UV_ARGS) run mypy $(MYPY_ARGS) pysrc/ tests/
+	# checks the stub against whichever backend is installed
+	uv $(UV_ARGS) run python -m mypy.stubtest whenever \
+		--mypy-config-file tests/stubtest_mypy.ini \
+		--allowlist tests/stubtest_allowlist.txt \
+		--ignore-unused-allowlist
 
 .PHONY: sync-docstrings
 sync-docstrings:
 	# --no-sync prevents rust rebuild, which fails on empty docstrings.rs
 	uv $(UV_ARGS) run --no-sync python scripts/generate_docstrings.py > src/docstrings.rs
+
+.PHONY: check-examples
+check-examples:
+	uv $(UV_ARGS) run --no-sync python scripts/check_docstring_examples.py
 
 .PHONY: check-docstrings
 check-docstrings:
@@ -60,14 +67,13 @@ check-docstrings:
 
 .PHONY: fix
 fix:
-	uv $(UV_ARGS) run --no-sync ruff check $(RUFF_ARGS) --select I --fix src/ tests/ scripts/
-	uv $(UV_ARGS) run --no-sync ruff format $(RUFF_ARGS) src/ tests/ scripts/
+	uv $(UV_ARGS) run --no-sync ruff check $(RUFF_ARGS) --select I --fix pysrc/ tests/ scripts/
+	uv $(UV_ARGS) run --no-sync ruff format $(RUFF_ARGS) pysrc/ tests/ scripts/
 	cargo fmt
 
 .PHONY: docs
-docs: clean-ext  # clean the extension since it messes with autodoc
-	uv $(UV_ARGS) run --no-sync $(MAKE) --no-print-directory -C docs/ \
-		SPHINXOPTS="$(SPHINXOPTS)" html
+docs:
+	uv $(UV_ARGS) run --no-sync sphinx-build -M html docs docs/_build -j auto $(SPHINXOPTS)
 
 .PHONY: check-readme
 check-readme:
@@ -101,11 +107,9 @@ test: test-py test-rs
 .PHONY: ci-lint
 ci-lint: check-readme check-docstrings check-llms-summaries
 	uv $(UV_ARGS) lock --check
-	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) src/ tests/ scripts/
-	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check src/ tests/ scripts/
+	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) pysrc/ tests/ scripts/
+	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check pysrc/ tests/ scripts/
 	cargo fmt -- --check
-	# hash seed to ensure deterministic import order by slotscheck
-	uv $(UV_ARGS) run env PYTHONPATH=pysrc/ PYTHONHASHSEED=3 slotscheck $(SLOTSCHECK_ARGS) pysrc
 	cargo clippy $(CLIPPY_ARGS) --all-targets --all-features -- -D warnings
 
 .PHONY: clean-ext
@@ -130,10 +134,9 @@ build-release:
 .PHONY: bench
 bench: build-release
 	uv $(UV_ARGS) run pytest $(BENCH_PYTEST_ARGS) benchmarks/ \
-		--benchmark-group-by=group \
 		--benchmark-columns=median,stddev \
 		--benchmark-autosave \
-		--benchmark-group-by=fullname \
+		--benchmark-group-by=fullname
 
 .PHONY: bench-compare
 bench-compare:

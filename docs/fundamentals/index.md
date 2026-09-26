@@ -38,12 +38,12 @@ distinction of all: exact time versus local time.
 
       A moment on the timeline, or a reading on a clock: not the same thing
 
-   .. grid-item-card:: 2. Timezones
+   .. grid-item-card:: 2. Time zones
       :link: timezones
       :link-type: doc
       :shadow: md
 
-      The rules that connect the two—and what "timezone" actually means
+      The rules that connect the two—and what "time zone" actually means
 
    .. grid-item-card:: 3. Ambiguity
       :link: ambiguity

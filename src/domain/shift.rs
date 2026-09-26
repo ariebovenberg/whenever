@@ -15,13 +15,6 @@ impl CalendarShift {
         days: DeltaDays::ZERO,
     };
 
-    pub(crate) fn add(self, other: Self) -> Option<Self> {
-        Some(Self {
-            months: self.months.add(other.months)?,
-            days: self.days.add(other.days)?,
-        })
-    }
-
     pub(crate) fn negate_if(self, negate: bool) -> Self {
         Self {
             months: self.months.negate_if(negate),
@@ -48,23 +41,14 @@ pub(crate) struct DateTimeShift {
 }
 
 impl DateTimeShift {
-    pub(crate) const ZERO: Self = Self {
-        calendar: CalendarShift::ZERO,
-        time: TimeDelta::ZERO,
-    };
-
-    pub(crate) fn add(self, other: Self) -> Option<Self> {
-        Some(Self {
-            calendar: self.calendar.add(other.calendar)?,
-            time: self.time.add(other.time)?,
-        })
-    }
-
     pub(crate) fn negate_if(self, negate: bool) -> Self {
         Self {
             calendar: self.calendar.negate_if(negate),
             time: self.time.negate_if(negate),
         }
+    }
+    pub(crate) fn is_zero(self) -> bool {
+        self.calendar.is_zero() && self.time.is_zero()
     }
 }
 

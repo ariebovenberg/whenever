@@ -2,7 +2,15 @@ from datetime import date, datetime, timedelta, timezone
 from functools import partial
 
 import pytest
-from whenever._tz.common import Fold, Gap, Unambiguous
+from whenever import (
+    SYSTEM_TZ,
+    Instant,
+    PlainDateTime,
+    TimeZoneNotFoundError,
+    ZonedDateTime,
+    hours,
+)
+from whenever._tz.common import Fold, Gap, Unique
 from whenever._tz.posix import (
     DEFAULT_RULE_TIME,
     DayOfYear,
@@ -13,24 +21,15 @@ from whenever._tz.posix import (
     TzStr,
 )
 
+from .common import hhmm, system_tz, ymdhms
+
 UTC = timezone.utc
 dt_utc = partial(datetime.fromtimestamp, tz=UTC)
 
 
-def ymdhms(
-    year: int,
-    month: int,
-    day: int,
-    hour: int = 0,
-    minute: int = 0,
-    second: int = 0,
-) -> int:
-    dt = datetime(year, month, day, hour, minute, second, tzinfo=UTC)
-    return int(dt.timestamp())
-
-
-def hhmm(hours: int, minutes: int = 0) -> int:
-    return hours * 3600 + minutes * 60
+def days(year: int, month: int, day: int) -> int:
+    """Days since the Unix epoch"""
+    return (date(year, month, day) - date(1970, 1, 1)).days
 
 
 class TestParse:
@@ -270,7 +269,7 @@ class TestApplyRule:
         [
             # Extremes
             (1, 1, (1, 1, 1)),  # MIN day
-            (9999, 366, (9999, 12, 31)),  # MAX day
+            (9998, 366, (9999, 1, 1)),  # MAX year, via the next year
             # no leap year
             (2021, 1, (2021, 1, 1)),  # First day
             (2059, 40, (2059, 2, 9)),  # < Feb 28
@@ -278,7 +277,7 @@ class TestApplyRule:
             (1911, 60, (1911, 3, 1)),  # Mar 1
             (1900, 124, (1900, 5, 4)),  # > Mar 1
             (2021, 365, (2021, 12, 31)),  # Last day
-            (2021, 366, (2021, 12, 31)),  # Last day (clamped)
+            (2021, 366, (2022, 1, 1)),  # Jan 1 of the next year
             # leap year
             (2024, 1, (2024, 1, 1)),  # First day
             (2060, 40, (2060, 2, 9)),  # < Feb 28
@@ -291,7 +290,7 @@ class TestApplyRule:
         ],
     )
     def test_day_of_year(self, year, nth, expected):
-        assert DayOfYear(nth).apply(year) == date(*expected)
+        assert DayOfYear(nth).days(year) == days(*expected)
 
     @pytest.mark.parametrize(
         "year, nth, expected",
@@ -317,7 +316,7 @@ class TestApplyRule:
         ],
     )
     def test_julian_day_of_year(self, year, nth, expected):
-        assert JulianDayOfYear(nth).apply(year) == date(*expected)
+        assert JulianDayOfYear(nth).days(year) == days(*expected)
 
     @pytest.mark.parametrize(
         "year, weekday, month, expected",
@@ -331,7 +330,7 @@ class TestApplyRule:
         ],
     )
     def test_last_weekday(self, year, weekday, month, expected):
-        assert LastWeekday(weekday, month).apply(year) == date(*expected)
+        assert LastWeekday(weekday, month).days(year) == days(*expected)
 
     @pytest.mark.parametrize(
         "year, month, nth, weekday, expected",
@@ -345,7 +344,7 @@ class TestApplyRule:
         ],
     )
     def test_nth_weekday(self, year, month, nth, weekday, expected):
-        assert NthWeekday(month, nth, weekday).apply(year) == date(*expected)
+        assert NthWeekday(month, nth, weekday).days(year) == days(*expected)
 
 
 class TestCalculateOffsets:
@@ -399,7 +398,7 @@ class TestCalculateOffsets:
         std_abbrev="STD",
     )
 
-    # Some timezones have DST end before start
+    # Some time zones have DST end before start
     TZ_INVERTED = TzStr(
         std=4800,
         dst=Dst(
@@ -411,7 +410,7 @@ class TestCalculateOffsets:
         std_abbrev="STD",
     )
 
-    # Some timezones appear to be "always DST", like Africa/Casablanca
+    # Some time zones appear to be "always DST", like Africa/Casablanca
     TZ_ALWAYS_DST = TzStr(
         std=7200,
         dst=Dst(
@@ -431,7 +430,6 @@ class TestCalculateOffsets:
     MIDNIGHT_FOLD = Fold(ymdhms(1990, 10, 8), hhmm(2, 35), hhmm(1, 20))
     NEGATIVE_FOLD = Fold(ymdhms(1990, 3, 25, 2), hhmm(1, 20), hhmm(0, 20))
     NEGATIVE_GAP = Gap(ymdhms(1990, 10, 8, 5), hhmm(1, 20), hhmm(0, 20))
-    ALWAYS_DST_GAP = Gap(ymdhms(1993, 1, 1), hhmm(2), hhmm(1))
     INVERTED_FOLD = Fold(ymdhms(1990, 3, 25, 2), hhmm(2), hhmm(1, 20))
     INVERTED_GAP = Gap(ymdhms(1990, 10, 8, 4, 40), hhmm(2), hhmm(1, 20))
 
@@ -439,82 +437,84 @@ class TestCalculateOffsets:
         "tz, ymd, hms, expected",
         [
             # fixed always the same
-            (TZ_FIXED, (2020, 3, 19), (12, 34, 56), Unambiguous(1234)),
+            (TZ_FIXED, (2020, 3, 19), (12, 34, 56), Unique(1234)),
             # First second of the year
-            (TZ, (1990, 1, 1), (0, 0, 0), Unambiguous(4800)),
+            (TZ, (1990, 1, 1), (0, 0, 0), Unique(4800)),
             # Last second of the year
-            (TZ, (1990, 12, 31), (23, 59, 59), Unambiguous(4800)),
+            (TZ, (1990, 12, 31), (23, 59, 59), Unique(4800)),
             # Well before the transition
-            (TZ, (1990, 3, 13), (12, 34, 56), Unambiguous(4800)),
+            (TZ, (1990, 3, 13), (12, 34, 56), Unique(4800)),
             # Gap: Before, start, mid, end, after
-            (TZ, (1990, 3, 25), (3, 59, 59), Unambiguous(4800)),
+            (TZ, (1990, 3, 25), (3, 59, 59), Unique(4800)),
             (TZ, (1990, 3, 25), (4, 0, 0), TZ_GAP),
             (TZ, (1990, 3, 25), (5, 10, 0), TZ_GAP),
             (TZ, (1990, 3, 25), (5, 14, 59), TZ_GAP),
-            (TZ, (1990, 3, 25), (5, 15, 0), Unambiguous(9300)),
+            (TZ, (1990, 3, 25), (5, 15, 0), Unique(9300)),
             # Well after the transition
-            (TZ, (1990, 6, 26), (8, 0, 0), Unambiguous(9300)),
+            (TZ, (1990, 6, 26), (8, 0, 0), Unique(9300)),
             # Fold: Before, start, mid, end, after
-            (TZ, (1990, 10, 8), (0, 44, 59), Unambiguous(9300)),
+            (TZ, (1990, 10, 8), (0, 44, 59), Unique(9300)),
             (TZ, (1990, 10, 8), (0, 45, 0), TZ_FOLD),
             (TZ, (1990, 10, 8), (1, 33, 59), TZ_FOLD),
             (TZ, (1990, 10, 8), (1, 59, 59), TZ_FOLD),
-            (TZ, (1990, 10, 8), (2, 0, 0), Unambiguous(4800)),
+            (TZ, (1990, 10, 8), (2, 0, 0), Unique(4800)),
             # Well after the end of DST
-            (TZ, (1990, 11, 30), (23, 34, 56), Unambiguous(4800)),
+            (TZ, (1990, 11, 30), (23, 34, 56), Unique(4800)),
             # time outside 0-24h range is also valid for a rule
-            (TZ_WEIRDTIME, (1990, 3, 26), (1, 59, 59), Unambiguous(4800)),
+            (TZ_WEIRDTIME, (1990, 3, 26), (1, 59, 59), Unique(4800)),
             (TZ_WEIRDTIME, (1990, 3, 27), (2, 0, 0), WEIRD_GAP),
             (TZ_WEIRDTIME, (1990, 3, 27), (3, 0, 0), WEIRD_GAP),
             (TZ_WEIRDTIME, (1990, 3, 27), (3, 14, 59), WEIRD_GAP),
-            (TZ_WEIRDTIME, (1990, 3, 27), (3, 15, 0), Unambiguous(9300)),
-            (TZ_WEIRDTIME, (1990, 10, 7), (20, 44, 59), Unambiguous(9300)),
+            (TZ_WEIRDTIME, (1990, 3, 27), (3, 15, 0), Unique(9300)),
+            (TZ_WEIRDTIME, (1990, 10, 7), (20, 44, 59), Unique(9300)),
             (TZ_WEIRDTIME, (1990, 10, 7), (20, 45, 0), WEIRD_FOLD),
             (TZ_WEIRDTIME, (1990, 10, 7), (21, 33, 59), WEIRD_FOLD),
             (TZ_WEIRDTIME, (1990, 10, 7), (21, 59, 59), WEIRD_FOLD),
-            (TZ_WEIRDTIME, (1990, 10, 7), (22, 0, 0), Unambiguous(4800)),
-            (TZ_WEIRDTIME, (1990, 10, 7), (22, 0, 1), Unambiguous(4800)),
+            (TZ_WEIRDTIME, (1990, 10, 7), (22, 0, 0), Unique(4800)),
+            (TZ_WEIRDTIME, (1990, 10, 7), (22, 0, 1), Unique(4800)),
             # 00:00:00 is a valid time for a rule
-            (TZ00, (1990, 3, 24), (23, 59, 59), Unambiguous(4800)),
+            (TZ00, (1990, 3, 24), (23, 59, 59), Unique(4800)),
             (TZ00, (1990, 3, 25), (0, 0, 0), MIDNIGHT_GAP),
             (TZ00, (1990, 3, 25), (1, 0, 0), MIDNIGHT_GAP),
             (TZ00, (1990, 3, 25), (1, 14, 59), MIDNIGHT_GAP),
-            (TZ00, (1990, 3, 25), (1, 15, 0), Unambiguous(9300)),
-            (TZ00, (1990, 10, 7), (22, 44, 59), Unambiguous(9300)),
+            (TZ00, (1990, 3, 25), (1, 15, 0), Unique(9300)),
+            (TZ00, (1990, 10, 7), (22, 44, 59), Unique(9300)),
             (TZ00, (1990, 10, 7), (22, 45, 0), MIDNIGHT_FOLD),
             (TZ00, (1990, 10, 7), (23, 33, 59), MIDNIGHT_FOLD),
             (TZ00, (1990, 10, 7), (23, 59, 59), MIDNIGHT_FOLD),
-            (TZ00, (1990, 10, 8), (0, 0, 0), Unambiguous(4800)),
-            (TZ00, (1990, 10, 8), (0, 0, 1), Unambiguous(4800)),
+            (TZ00, (1990, 10, 8), (0, 0, 0), Unique(4800)),
+            (TZ00, (1990, 10, 8), (0, 0, 1), Unique(4800)),
             # Negative DST should be handled gracefully. Gap and fold reversed
             # Fold instead of gap
-            (TZ_NEG, (1990, 3, 25), (0, 59, 59), Unambiguous(4800)),
+            (TZ_NEG, (1990, 3, 25), (0, 59, 59), Unique(4800)),
             (TZ_NEG, (1990, 3, 25), (1, 0, 0), NEGATIVE_FOLD),
             (TZ_NEG, (1990, 3, 25), (1, 33, 59), NEGATIVE_FOLD),
             (TZ_NEG, (1990, 3, 25), (1, 59, 59), NEGATIVE_FOLD),
-            (TZ_NEG, (1990, 3, 25), (2, 0, 0), Unambiguous(1200)),
+            (TZ_NEG, (1990, 3, 25), (2, 0, 0), Unique(1200)),
             # Gap instead of fold
-            (TZ_NEG, (1990, 10, 8), (3, 59, 59), Unambiguous(1200)),
+            (TZ_NEG, (1990, 10, 8), (3, 59, 59), Unique(1200)),
             (TZ_NEG, (1990, 10, 8), (4, 0, 0), NEGATIVE_GAP),
             (TZ_NEG, (1990, 10, 8), (4, 42, 12), NEGATIVE_GAP),
             (TZ_NEG, (1990, 10, 8), (4, 59, 59), NEGATIVE_GAP),
-            (TZ_NEG, (1990, 10, 8), (5, 0, 0), Unambiguous(4800)),
+            (TZ_NEG, (1990, 10, 8), (5, 0, 0), Unique(4800)),
             # Always DST
-            (TZ_ALWAYS_DST, (1990, 1, 1), (0, 0, 0), Unambiguous(3600)),
-            # This is actually incorrect, but ZoneInfo does the same...
-            (TZ_ALWAYS_DST, (1992, 12, 31), (23, 0, 0), ALWAYS_DST_GAP),
+            (TZ_ALWAYS_DST, (1990, 1, 1), (0, 0, 0), Unique(3600)),
+            # DST ends as the next year's begins: no gap at the turn of the
+            # year, as in tzcode
+            (TZ_ALWAYS_DST, (1992, 12, 31), (23, 0, 0), Unique(3600)),
+            (TZ_ALWAYS_DST, (1993, 1, 1), (0, 30, 0), Unique(3600)),
             # Inverted DST
             (
                 TZ_INVERTED,
                 (1990, 2, 9),
                 (15, 0, 0),
-                Unambiguous(7200),
+                Unique(7200),
             ),  # DST in effect
             (
                 TZ_INVERTED,
                 (1990, 3, 25),
                 (1, 19, 0),
-                Unambiguous(7200),
+                Unique(7200),
             ),  # Before fold
             (
                 TZ_INVERTED,
@@ -532,19 +532,19 @@ class TestCalculateOffsets:
                 TZ_INVERTED,
                 (1990, 3, 25),
                 (2, 0, 0),
-                Unambiguous(4800),
+                Unique(4800),
             ),  # Fold over
             (
                 TZ_INVERTED,
                 (1990, 9, 8),
                 (8, 0, 0),
-                Unambiguous(4800),
+                Unique(4800),
             ),  # DST not in effect
             (
                 TZ_INVERTED,
                 (1990, 10, 8),
                 (3, 59, 0),
-                Unambiguous(4800),
+                Unique(4800),
             ),  # Before gap
             (
                 TZ_INVERTED,
@@ -562,13 +562,13 @@ class TestCalculateOffsets:
                 TZ_INVERTED,
                 (1990, 10, 8),
                 (4, 40, 0),
-                Unambiguous(7200),
+                Unique(7200),
             ),  # Gap over
             (
                 TZ_INVERTED,
                 (1990, 12, 31),
                 (23, 40, 0),
-                Unambiguous(7200),
+                Unique(7200),
             ),  # DST not in effect
         ],
     )
@@ -594,7 +594,7 @@ class TestCalculateOffsets:
         assert actual == expected
 
         # Test that the inverse operation (epoch->local) works
-        if isinstance(expected, Unambiguous):
+        if isinstance(expected, Unique):
             assert (
                 tz.offset_for_instant(
                     to_epoch_s(y, m, d, hour, minute, second, expected.offset)
@@ -623,3 +623,162 @@ class TestPrevTransitionEdge:
         # and year 0 is out of range -> returns None
         jan1_year1_epoch = (date(1, 1, 1).toordinal() - 719163) * 86400
         assert tz.prev_transition(jan1_year1_epoch) is None
+
+
+class TestSystemTzString:
+    """POSIX TZ strings through the public API, on both backends"""
+
+    @pytest.mark.parametrize(
+        "tz",
+        [
+            # unbracketed names are letters only
+            "AB_C5",
+            "A.B5",
+            "A:B5",
+            # names have three or more characters
+            "AB5",
+            "<AB>5",
+            "<A_B>5",
+            # offsets have at most two hour digits
+            "EST005",
+            # rule times are within 167 hours, and complete after a `/`
+            "CET-1CEST,M3.5.0,M10.5.0/",
+            "CET-1CEST,M3.5.0/,M10.5.0/3",
+            "CET-1CEST,M3.5.0/+,M10.5.0/3",
+            "CET-1CEST,M3.5.0,M10.5.0/3:",
+            "CET-1CEST,M3.5.0,M10.5.0/168",
+            "CET-1CEST,M3.5.0,M10.5.0/-168",
+            "CET-1CEST,M3.5.0,M10.5.0/999",
+        ],
+    )
+    def test_rejected(self, tz):
+        with pytest.raises(
+            TimeZoneNotFoundError,
+            match="is not a time zone ID or POSIX TZ string",
+        ):
+            with system_tz(tz):
+                pass  # pragma: no cover
+
+    @pytest.mark.parametrize(
+        "tz, abbrev",
+        [
+            ("<ABCDEFGHIJ>5", "ABCDEFGHIJ"),
+            ("ABCDEFGHIJ5", "ABCDEFGHIJ"),
+            ("<+0330>-3:30", "+0330"),
+        ],
+    )
+    def test_names(self, tz, abbrev):
+        with system_tz(tz):
+            assert (
+                Instant.from_utc(2024, 7, 1).to_tz(SYSTEM_TZ).tz_abbrev()
+                == abbrev
+            )
+
+    @system_tz("EST5EDT,M3.2.0/167:59:59,M11.1.0/-167:59:59")
+    def test_rule_time_at_the_limit(self):
+        d = ZonedDateTime(2024, 6, 1, tz=SYSTEM_TZ)
+        prev, next = d.prev_transition(), d.next_transition()
+        assert prev is not None and next is not None
+        assert str(prev.to_fixed_offset()) == "2024-03-17T00:59:59-04:00"
+        assert str(next.to_fixed_offset()) == "2024-10-26T23:00:01-05:00"
+
+    @system_tz("EST5EDT,0/0,J365/25")
+    def test_dst_all_year(self):
+        # DST ends as the next year's begins (RFC 8536 section 3.3.1)
+        d = PlainDateTime(2024, 1, 1, 0, 30).assume_tz(
+            SYSTEM_TZ, disambiguation="raise"
+        )
+        assert d.offset == hours(-4)
+        assert d.dst_offset() == hours(1)
+        assert d.next_transition() is None
+        assert d.prev_transition() is None
+        for utc in [(2023, 12, 31, 23), (2024, 1, 1, 5), (2024, 7, 1)]:
+            assert Instant.from_utc(*utc).to_tz(SYSTEM_TZ).offset == hours(-4)
+
+    @pytest.mark.parametrize(
+        "tz, utc, offset, abbrev",
+        [
+            # a rule time beyond 24 hours
+            (
+                "AAA16BBB,J249/114:30,J153/167:41:30",
+                (2000, 6, 2, 18),
+                -15,
+                "BBB",
+            ),
+            # the previous year's transition decides at the start of the year
+            ("AAA-18BBB0,J115/90:14,M4.4.5", (1999, 12, 31, 6), 0, "BBB"),
+            # zero-based day 365 of a common year is Jan 1 of the next year
+            ("AAA3BBB2,365/2,0/2", (1999, 1, 1, 3), -3, "AAA"),
+            # the next year's DST ends at 14:00 on Dec 31, as in tzcode;
+            # zoneinfo evaluates each year alone and keeps DST until Jan 1
+            ("AAA3BBB2,M3.2.0,0/-10", (1999, 12, 31, 13), -2, "BBB"),
+            ("AAA3BBB2,M3.2.0,0/-10", (2000, 1, 1, 1), -3, "AAA"),
+        ],
+    )
+    def test_rule_crossing_the_year_boundary(self, tz, utc, offset, abbrev):
+        # Expected values from zoneinfo, except where noted
+        with system_tz(tz):
+            d = Instant.from_utc(*utc).to_tz(SYSTEM_TZ)
+            assert d.offset == hours(offset)
+            assert d.tz_abbrev() == abbrev
+
+    @pytest.mark.parametrize(
+        "tz, utc, offset",
+        [
+            # 2023 starts and ends DST at the same instant: standard time
+            # holds until 2024 starts DST, after it ends DST on Mar 24
+            ("EST5EDT,M3.5.0,M3.4.0/3", (2024, 1, 9, 23), -5),
+            ("EST5EDT,M3.5.0,M3.4.0/3", (2024, 1, 10, 1), -5),
+            ("EST5EDT,M3.5.0,M3.4.0/3", (2024, 3, 24, 12), -5),
+            ("EST5EDT,M3.5.0,M3.4.0/3", (2024, 4, 5), -4),
+            # J62 comes after M3.1.0 in 1998 and before it in 2001
+            ("AAA3BBB,J62/0,M3.1.0/0", (1999, 1, 5), -2),
+            ("AAA3BBB,J62/0,M3.1.0/0", (1999, 1, 20), -2),
+            ("AAA3BBB,J62/0,M3.1.0/0", (2002, 1, 5), -3),
+            ("AAA3BBB,J62/0,M3.1.0/0", (2002, 1, 20), -3),
+        ],
+    )
+    def test_start_and_end_swap_order_between_years(self, tz, utc, offset):
+        # Expected values from libc
+        with system_tz(tz):
+            d = Instant.from_utc(*utc).to_tz(SYSTEM_TZ)
+            assert d.offset == hours(offset)
+
+    @pytest.mark.parametrize(
+        "tz, utc, offset, prev, next",
+        [
+            # DST ends 100 hours before the year's first Sunday, so in the
+            # previous December
+            (
+                "AAA3BBB,M6.1.0,M1.1.0/-100",
+                (1992, 12, 30, 12),
+                -3,
+                "1992-12-29T19:00:00-03:00",
+                "1993-06-06T03:00:00-02:00",
+            ),
+            (
+                "AAA3BBB,M6.1.0,M1.1.0/-100",
+                (1992, 1, 1),
+                -3,
+                "1991-12-31T19:00:00-03:00",
+                "1992-06-07T03:00:00-02:00",
+            ),
+        ],
+    )
+    def test_rule_time_moves_a_transition_into_the_previous_year(
+        self, tz, utc, offset, prev, next
+    ):
+        # Expected values from tzcode's zdump
+        with system_tz(tz):
+            d = Instant.from_utc(*utc).to_tz(SYSTEM_TZ)
+            assert d.offset == hours(offset)
+            p, n = d.prev_transition(), d.next_transition()
+            assert p is not None and n is not None
+            assert str(p.to_fixed_offset()) == prev
+            assert str(n.to_fixed_offset()) == next
+
+    @system_tz("CET-1CEST,M3.5.0,M10.5.0/3")
+    def test_prev_transition_in_year_1(self):
+        d = ZonedDateTime(1, 6, 1, tz=SYSTEM_TZ).prev_transition()
+        assert d is not None
+        assert str(d.to_fixed_offset()) == "0001-03-25T03:00:00+02:00"

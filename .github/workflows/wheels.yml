@@ -13,10 +13,12 @@ jobs:
   check-tag:
     name: Check tag correctness
     runs-on: ubuntu-latest
-    if: "startsWith(github.ref, 'refs/tags/')"
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - run: |
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # A manual run builds and tests without a tag; only a tag releases
+      - if: "startsWith(github.ref, 'refs/tags/')"
+        run: |
           version=$(grep -E '^version\s*=' pyproject.toml | sed -E 's/^version\s*=\s*"([^"]+)".*/\1/')
 
           tag="${GITHUB_REF_NAME}"
@@ -38,13 +40,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `test` marks the wheels their runner can execute without
+          # emulation. checks.yml covers source builds per OS and Python;
+          # this covers what it cannot: missing files, stripping, ABI tags,
+          # and the targets it never builds.
+
           # manylinux targets
           - os: linux
             target: x86_64
+            test: true
           - os: linux
             target: x86
           - os: linux
             target: aarch64
+            runner: ubuntu-24.04-arm
+            test: true
           - os: linux
             target: armv7
           - os: linux
@@ -56,12 +66,15 @@ jobs:
           - os: linux
             target: x86_64
             manylinux: musllinux_1_2
+            test: true
           - os: linux
             target: x86
             manylinux: musllinux_1_2
           - os: linux
             target: aarch64
             manylinux: musllinux_1_2
+            runner: ubuntu-24.04-arm
+            test: true
           - os: linux
             target: armv7
             manylinux: musllinux_1_2
@@ -69,39 +82,69 @@ jobs:
           # windows
           - os: windows
             target: x86_64
+            test: true
           - os: windows
             python-architecture: x86
             target: x86
+            test: true
 
           # macos
           - os: macos
             target: x86_64
           - os: macos
             target: aarch64
+            test: true
 
-    runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
+    runs-on: ${{ matrix.runner || format('{0}-latest', (matrix.os == 'linux' && 'ubuntu') || matrix.os) }}
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
       - name: Generate third-party license information
+        shell: bash
         run: |
-          cargo install cargo-3pl --version 0.1.3
+          cargo install cargo-3pl --version 0.1.3 --locked
+          # cargo 3pl reads every dependency in the manifest, and the wheel
+          # contains only the normal and build ones
+          python -c "import re, pathlib; p = pathlib.Path('Cargo.toml'); p.write_text(re.sub(r'\[dev-dependencies\][^\[]*|\[\[bench\]\][^\[]*', '', p.read_text()))"
           cargo 3pl > LICENSE-THIRD-PARTY
+          git checkout -- Cargo.toml Cargo.lock
       - name: Sync Python environment
         run: uv sync --locked --group dev-extra --no-install-project
       - name: build wheels
-        uses: PyO3/maturin-action@v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
           args: --release --strip --out dist --interpreter '3.10 3.11 3.12 3.13 3.14 3.14t 3.15 3.15t'
           manylinux: ${{ matrix.manylinux || 'auto' }}
-          rust-toolchain: "1.93"
       - run: uv run twine check --strict dist/*
+      - name: Export the test requirements
+        if: matrix.test
+        run: uv export --locked --only-group test --no-hashes --no-emit-project -o test-requirements.txt
+      # The oldest, the newest, and the free-threaded interpreter
+      - name: Test the wheels
+        if: matrix.test && !matrix.manylinux
+        shell: bash
+        run: |
+          for version in 3.10 3.14 3.14t; do
+            request="cpython-${version}${{ matrix.python-architecture == 'x86' && '-windows-x86' || '' }}"
+            uv python install "$request"
+            scripts/test_wheel.sh "$(uv python find --managed-python "$request")" wheel True test-requirements.txt
+          done
+      # musl wheels run in an Alpine container of the host architecture,
+      # which has no free-threaded image
+      - name: Test the wheels (musllinux)
+        if: matrix.test && matrix.manylinux
+        run: |
+          for version in 3.10 3.14; do
+            docker run --rm -v "$PWD:/io" -w /io "python:$version-alpine" \
+              scripts/test_wheel.sh python wheel True test-requirements.txt
+          done
       - name: Upload wheels
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheels-binary-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'auto' }}
           path: dist/*
@@ -109,21 +152,28 @@ jobs:
   pure-python:
     needs: [check-tag]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.13'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
       - run: uv sync --locked --all-groups --no-install-project
       - name: Build sdist and pure-Python wheel
         run: |
-          uv build
+          uv build -C rust-extension=skip
+      - run: uv run twine check --strict dist/*
+      - name: Test the pure-Python wheel and the sdist
+        run: |
+          uv export --locked --only-group test --no-hashes --no-emit-project -o test-requirements.txt
+          for version in 3.10 3.14 3.14t; do
+            uv python install "$version"
+            python="$(uv python find --managed-python "$version")"
+            scripts/test_wheel.sh "$python" wheel False test-requirements.txt
+            scripts/test_wheel.sh "$python" sdist False test-requirements.txt
+          done
         env:
           WHENEVER_NO_BUILD_RUST_EXT: 1
-      - run: uv run twine check --strict dist/*
       - name: Upload pure Python wheels and sdist
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wheels-pure-python
           path: dist/*
@@ -134,10 +184,11 @@ jobs:
     if: "startsWith(github.ref, 'refs/tags/')"
     needs: [binary, pure-python]
     environment: Release
+    timeout-minutes: 10
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       - name: Sanity check wheel count
         run: |
           COUNT=$(find wheels-* -maxdepth 1 -type f | wc -l)
@@ -152,4 +203,4 @@ jobs:
           mkdir -p dist
           mv wheels-*/* dist
       - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

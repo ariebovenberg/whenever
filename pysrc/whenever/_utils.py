@@ -1,23 +1,27 @@
-"""Misc public utilities, e.g. to manage the timezone cache, or patch the time"""
+"""Misc public utilities, e.g. to manage the time zone cache, or patch the time"""
 
 from __future__ import annotations
 
 import os.path  # NOTE: we don't use pathlib here to keep our imports light
 from contextlib import contextmanager
-from functools import partial
-from typing import Any, Iterable, Iterator, no_type_check
+from threading import RLock
+from typing import Any, Iterable, Iterator, Protocol
+from warnings import warn
 
+from ._common import DAYS_NOT_ALWAYS_24H_MSG, SPHINX_RUNNING, UNSET
 from ._core import (
+    DaysAssumed24HoursWarning,
     Instant,
     OffsetDateTime,
+    TimeDelta,
     ZonedDateTime,
     _clear_tz_cache,
     _clear_tz_cache_by_keys,
-    _get_tzpath,
     _patch_time_frozen,
     _patch_time_keep_ticking,
     _set_tzpath,
     _unpatch_time,
+    get_tzpath,
 )
 
 # Maintainer's notes:
@@ -28,39 +32,128 @@ from ._core import (
 
 
 __all__ = [
+    "TimePatch",
     "patch_current_time",
+    "get_tzpath",
     "reset_tzpath",
     "clear_tzcache",
     "available_timezones",
 ]
 
 
+class TimePatch(Protocol):  # pragma: no cover
+    """The handle to an active **time patch**: move the patched clock with
+    ``shift()`` or ``move_to()``.
+    """
+
+    def shift(
+        self,
+        delta: TimeDelta = UNSET,
+        /,
+        *,
+        weeks: float = 0,
+        days: float = 0,
+        hours: float = 0,
+        minutes: float = 0,
+        seconds: float = 0,
+        milliseconds: float = 0,
+        microseconds: float = 0,
+        nanoseconds: int = 0,
+        days_assumed_24h_ok: bool = False,
+    ) -> None:
+        """Move the patched clock by an elapsed time, given as a
+        ``TimeDelta`` or as the keywords of ``Instant.add()``.
+        ``days=`` and ``weeks=`` count 24-hour days and warn with
+        :exc:`~whenever.DaysAssumed24HoursWarning` unless
+        ``days_assumed_24h_ok=True``. A ticking patch shifts from the
+        current instant.
+        """
+        ...
+
+    def move_to(
+        self,
+        value: Instant | OffsetDateTime | ZonedDateTime,
+        /,
+    ) -> None:
+        """Move the patched clock to an exact time."""
+        ...
+
+
 class _TimePatch:
-    _pin: Instant | ZonedDateTime | OffsetDateTime
+    _pin: Instant
     _keep_ticking: bool
+    _active: bool
 
     def __init__(
         self,
-        pin: Instant | ZonedDateTime | OffsetDateTime,
+        pin: Instant,
         keep_ticking: bool,
     ):
         self._pin = pin
         self._keep_ticking = keep_ticking
+        self._active = True
 
-    # NOTE: permissively typechecked, but that's OK for a testing utility
-    def shift(self, *args: Any, **kwargs: Any) -> None:
+    def _check_active(self) -> None:
+        if not self._active:
+            raise RuntimeError("time patch is no longer active")
+
+    def _apply(self, pin: Instant, /) -> None:
         if self._keep_ticking:
-            self._pin = new = (self._pin + (Instant.now() - self._pin)).add(
-                *args, **kwargs
-            )
-            _patch_time_keep_ticking(
-                new if isinstance(new, Instant) else new.to_instant()
-            )
+            _patch_time_keep_ticking(pin)
         else:
-            self._pin = new = self._pin.add(*args, **kwargs)
-            _patch_time_frozen(
-                new if isinstance(new, Instant) else new.to_instant()
+            _patch_time_frozen(pin)
+        self._pin = pin
+
+    def shift(self, delta: Any = UNSET, /, **kwargs: Any) -> None:
+        """Move the patched clock by an elapsed time, given as a
+        ``TimeDelta`` or as the keywords of ``Instant.add()``.
+        ``days=`` and ``weeks=`` count 24-hour days and warn with
+        :exc:`~whenever.DaysAssumed24HoursWarning` unless
+        ``days_assumed_24h_ok=True``. A ticking patch shifts from the
+        current instant.
+        """
+        if delta is UNSET:
+            # Build the delta here rather than in Instant.add(), so that the
+            # days-are-24-hours warning points at the caller of shift().
+            ok = kwargs.pop("days_assumed_24h_ok", False)
+            delta = TimeDelta(**kwargs, days_assumed_24h_ok=True)
+            if (kwargs.get("weeks") or kwargs.get("days")) and not ok:
+                warn(
+                    DAYS_NOT_ALWAYS_24H_MSG,
+                    DaysAssumed24HoursWarning,
+                    stacklevel=2,
+                )
+        elif kwargs:
+            raise TypeError(
+                "shift() cannot mix positional and keyword arguments"
             )
+        elif not isinstance(delta, TimeDelta):
+            raise TypeError("shift() argument must be a TimeDelta")
+        with _patch_lock:
+            self._check_active()
+            current = Instant.now() if self._keep_ticking else self._pin
+            self._apply(current.add(delta))
+
+    def move_to(
+        self,
+        value: Instant | OffsetDateTime | ZonedDateTime,
+        /,
+    ) -> None:
+        """Move the patched clock to an exact time."""
+        with _patch_lock:
+            self._check_active()
+            if not isinstance(value, (Instant, OffsetDateTime, ZonedDateTime)):
+                raise TypeError(
+                    "move_to() argument must be an Instant, OffsetDateTime, "
+                    "or ZonedDateTime"
+                )
+            self._apply(
+                value if isinstance(value, Instant) else value.to_instant()
+            )
+
+
+_active_patch: _TimePatch | None = None
+_patch_lock = RLock()
 
 
 @contextmanager
@@ -69,27 +162,31 @@ def patch_current_time(
     /,
     *,
     keep_ticking: bool,
-) -> Iterator[_TimePatch]:
-    """Patch the current time to a fixed value (for testing purposes).
-    Behaves as a context manager or decorator, with similar semantics to
-    ``unittest.mock.patch``.
+) -> Iterator[TimePatch]:
+    """Patch the current time as whenever sees it, for testing.
+    A **frozen** patch (``keep_ticking=False``) holds one instant; a
+    **ticking** patch (``keep_ticking=True``) advances from it.
+    Works as a context manager or as a decorator. Patches do not nest:
+    creating one while another is active raises :exc:`RuntimeError`.
+    The decorator form does not pass the handle to the decorated function,
+    and doesn't cover the body of an ``async def`` function: enter
+    ``with patch_current_time(...)`` inside the coroutine instead.
 
     Important
     ---------
 
-    * This function should be used only for testing purposes. It is not
-      thread-safe or part of the stable API.
+    * This function should be used only for testing purposes.
     * This function only affects whenever's ``now`` functions. It does not
       affect the standard library's time functions or any other libraries.
       Use the ``time_machine`` package if you also want to patch other libraries.
-    * It doesn't affect the system timezone.
-      If you need to patch the system timezone, set the ``TZ`` environment
+    * It doesn't affect the system time zone.
+      If you need to patch the system time zone, set the ``TZ`` environment
       variable in combination with :func:`~whenever.reset_system_tz`.
 
     Example
     -------
 
-    >>> from whenever import Instant, patch_current_time
+    >>> from whenever import Instant, patch_current_time, seconds
     >>> i = Instant.from_utc(1980, 3, 2, hour=2)
     >>> with patch_current_time(i, keep_ticking=False) as p:
     ...     assert Instant.now() == i
@@ -99,98 +196,140 @@ def patch_current_time(
     >>> assert Instant.now() != i
     ...
     >>> @patch_current_time(i, keep_ticking=True)
-    ... def test_thing(p):
+    ... def test_thing():
     ...     assert (Instant.now() - i) < seconds(1)
-    ...     p.shift(hours=8)
-    ...     sleep(0.000001)
-    ...     assert hours(8) < (Instant.now() - i) < hours(8.1)
     """
-    instant = dt if isinstance(dt, Instant) else dt.to_instant()
-    if keep_ticking:
-        _patch_time_keep_ticking(instant)
-    else:
-        _patch_time_frozen(instant)
+    global _active_patch
 
+    if not isinstance(dt, (Instant, OffsetDateTime, ZonedDateTime)):
+        raise TypeError(
+            "patch_current_time() argument must be an Instant, "
+            "OffsetDateTime, or ZonedDateTime"
+        )
+    with _patch_lock:
+        if _active_patch is not None:
+            raise RuntimeError("a time patch is already active")
+        instant = dt if isinstance(dt, Instant) else dt.to_instant()
+        if keep_ticking:
+            _patch_time_keep_ticking(instant)
+        else:
+            _patch_time_frozen(instant)
+        patch = _active_patch = _TimePatch(instant, keep_ticking)
     try:
-        yield _TimePatch(dt, keep_ticking)
+        yield patch
     finally:
-        _unpatch_time()
+        with _patch_lock:
+            try:
+                _unpatch_time()
+            finally:
+                patch._active = False
+                _active_patch = None
 
 
 def reset_tzpath(
     target: Iterable[str | os.PathLike[str]] | None = None, /
 ) -> None:
-    """Reset or set the paths in which ``whenever`` will search for timezone data.
+    """Set the time zone search path: the directories in which ``whenever``
+    looks for time zone data, in order. Each entry is an absolute path, as a
+    ``str`` or a path-like object. Without an argument, the path is read
+    again from the ``PYTHONTZPATH`` environment variable, falling back to the
+    interpreter's compiled-in default, as :func:`zoneinfo.reset_tzpath` does.
 
     It does not affect the :mod:`zoneinfo` module or other libraries.
 
     Note
     ----
-    Due to caching, you may find that looking up a timezone after setting the tzpath
-    doesn't load the timezone data from the new path. You may need to call
-    :func:`clear_tzcache` if you want to force loading *all* timezones from the new path.
-    Note that clearing the cache may have unexpected side effects, however.
+    Due to caching, looking up a time zone after changing the search path may
+    continue to use the already loaded definition. Call :func:`clear_tzcache`
+    to make subsequent lookups load from the new path.
 
-    Behaves similarly to :func:`zoneinfo.reset_tzpath`
+    Raises
+    ------
+    TypeError
+        If the argument is a single string or not an iterable of paths.
+    ValueError
+        If an entry is not an absolute path.
     """
-    if target is not None:
-        # This is such a common mistake, that we raise a descriptive error
-        if isinstance(target, (str, bytes)):
-            raise TypeError("tzpath must be an iterable of paths")
-
-        if not all(map(os.path.isabs, target)):
-            raise ValueError("tzpaths must be absolute paths")
-        # mypy doesn't seem to follow, but it appears correct
-        _set_tzpath(tuple(map(os.fspath, target)))  # type: ignore[arg-type]
-    else:
+    if target is None:
         from ._shared import _tzpath_from_env
 
         _set_tzpath(_tzpath_from_env())
+        return
+    # A string is iterable too, so this common mistake needs its own check.
+    if isinstance(target, (str, bytes)):
+        raise TypeError(_TZPATH_ARG_MSG)
+    try:
+        # Read once: an iterator is consumed by the first pass.
+        entries = tuple(target)
+    except TypeError:
+        raise TypeError(_TZPATH_ARG_MSG) from None
+    paths = []
+    for e in entries:
+        try:
+            path = os.fspath(e)
+        except TypeError:
+            raise TypeError(_TZPATH_ARG_MSG) from None
+        if not isinstance(path, str):
+            raise TypeError(_TZPATH_ARG_MSG)
+        if not os.path.isabs(path):
+            raise ValueError(
+                "time zone search path entries must be absolute paths, "
+                f"got {e!r}"
+            )
+        paths.append(path)
+    _set_tzpath(tuple(paths))
+
+
+_TZPATH_ARG_MSG = "reset_tzpath() argument must be an iterable of paths"
 
 
 def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
-    """Clear the timezone cache. If ``only_keys`` is provided, only the cache for those
-    keys will be cleared.
+    """Clear the time zone cache. With ``only_keys``, clear only the entries
+    for those time zone IDs, matched case-insensitively; an ID that is not
+    cached is a no-op.
 
     Caution
     -------
     Calling this function may change the behavior of existing ``ZonedDateTime``
-    instances in surprising ways. Most significantly, ``exact_eq()`` may
-    return ``False`` between two timezone instances with the same TZ ID,
-    if this timezone definition was changed on disk.
+    instances in surprising ways. Most significantly, ``strict_eq()`` may
+    return ``False`` between two time zone instances with the same time zone
+    ID, if this time zone definition was changed on disk.
 
     **Use this function only if you know that you need to.**
 
     Behaves similarly to :meth:`zoneinfo.ZoneInfo.clear_cache`.
+
+    Raises
+    ------
+    TypeError
+        If ``only_keys`` is a single string or not an iterable of strings.
     """
     if only_keys is None:
         _clear_tz_cache()
     else:
+        # This is such a common mistake, that we raise a descriptive error
+        if isinstance(only_keys, (str, bytes)):
+            raise TypeError("only_keys must be an iterable of time zone IDs")
         _clear_tz_cache_by_keys(tuple(only_keys))
 
 
 def available_timezones() -> set[str]:
-    """Gather the set of all available timezones.
+    """Gather the set of all available time zone IDs.
 
-    Each call to this function will recalculate the available timezone names
-    depending on the currently configured ``TZPATH``, and the
-    presence of the ``tzdata`` package.
+    Each call recalculates the set from the current time zone search path
+    (see :func:`get_tzpath`) and the ``tzdata`` package, when it is installed.
+    The special entries ``posixrules`` and ``localtime`` are excluded, as are
+    the ``posix/`` and ``right/`` directories.
 
     Warning
     -------
     This function may open a large number of files, since the first few bytes
-    of timezone files must be read to determine if they are valid.
+    of time zone files must be read to determine if they are valid.
 
     Note
     ----
-
-    This function behaves similarly to :func:`zoneinfo.available_timezones`,
-    which means it ignores the "special" zones (e.g. posixrules, right/posix, etc.)
-
-    It should give the same result as :func:`zoneinfo.available_timezones`,
-    unless ``whenever`` was configured to use a different tzpath
-    using :func:`reset_tzpath`.
-
+    On the same time zone search path, the result equals
+    :func:`zoneinfo.available_timezones` minus ``localtime``.
     """
     zones: set[str] = set()
     # Get the zones from the tzdata package, if available
@@ -205,7 +344,7 @@ def available_timezones() -> set[str]:
         pass
 
     # Get the zones from the tzpath directories
-    for base in _get_tzpath():
+    for base in get_tzpath():
         zones.update(_find_all_tznames(base))
 
     # special files that shouldn't be included
@@ -224,9 +363,8 @@ def _find_all_tznames(base: str) -> Iterator[str]:
     for name in os.listdir(base):
         entry = os.path.join(base, name)
         if os.path.isdir(entry):
-            # FUTURE: expand test coverage for this
-            if name in ("right", "posix"):  # pragma: no cover
-                # These directories contain special files that shouldn't be included
+            # These directories contain special files that shouldn't be included
+            if name in ("right", "posix"):
                 continue
             else:
                 for path in _find_nested_tzfiles(entry):
@@ -254,35 +392,14 @@ def _is_tzifile(p: str) -> bool:
         return False
 
 
-@no_type_check
-def _pydantic_parse(cls: type, v: object) -> object:
-    # exact type comparison is OK: whenever types don't allow subclassing
-    if type(v) is cls:
-        return v
-    # whenever also doesn't allow string subclasses
-    elif type(v) is str:
-        return cls.parse_iso(v)
-    else:
-        raise ValueError(f"Cannot parse {cls.__name__} from type {type(v)}")
-
-
-@no_type_check
-def pydantic_schema(cls):
-    from pydantic_core import core_schema
-
-    return core_schema.json_or_python_schema(
-        # NOTE: We can't use no_info_plain_validator_function here, because
-        # this breaks JSON schema generation...but only when used with the
-        # "serialization" mode for some reason...
-        json_schema=core_schema.no_info_after_validator_function(
-            cls.parse_iso,
-            core_schema.str_schema(strict=True),
-            serialization=core_schema.to_string_ser_schema(),
-        ),
-        python_schema=core_schema.no_info_plain_validator_function(
-            partial(_pydantic_parse, cls),
-            # NOTE: not setting serializer here somehow breaks the JSON schema
-            # generation when defaults are present...yeah...
-            serialization=core_schema.to_string_ser_schema(),
-        ),
-    )
+# Report the public module, so help() and pickling don't point at this one
+if not SPHINX_RUNNING:  # pragma: no branch
+    for _obj in (
+        TimePatch,
+        patch_current_time,
+        reset_tzpath,
+        clear_tzcache,
+        available_timezones,
+    ):
+        _obj.__module__ = "whenever"
+    del _obj
