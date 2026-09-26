@@ -159,9 +159,7 @@ jobs:
       - run: uv sync --locked --all-groups --no-install-project
       - name: Build sdist and pure-Python wheel
         run: |
-          uv build
-        env:
-          WHENEVER_NO_BUILD_RUST_EXT: 1
+          uv build -C rust-extension=skip
       - run: uv run twine check --strict dist/*
       - name: Test the pure-Python wheel and the sdist
         run: |

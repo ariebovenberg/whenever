@@ -273,7 +273,7 @@ need to configure anything.
 A pure-Python wheel is published alongside the platform wheels, but pip
 prefers the platform wheel when one matches. To select the pure-Python
 backend, install from the source distribution with `--no-binary` and the
-`WHENEVER_NO_BUILD_RUST_EXT` environment variable set.
+build config setting `rust-extension=skip`.
 
 Installing this way is different depending on your tool of choice:
 
@@ -281,45 +281,45 @@ Installing this way is different depending on your tool of choice:
 
 ```
 # as a one-off command
-WHENEVER_NO_BUILD_RUST_EXT=1 pip install whenever --no-binary whenever
+pip install whenever --no-binary whenever --config-settings rust-extension=skip
 
-# in requirements.txt, with WHENEVER_NO_BUILD_RUST_EXT=1 in the environment
+# in requirements.txt
 --no-binary whenever
-whenever
+whenever --config-settings rust-extension=skip
 ```
 
 ### Poetry
 
 ```
-
 # as a one-off command
-WHENEVER_NO_BUILD_RUST_EXT=1 poetry run pip install --no-binary whenever whenever
+poetry run pip install whenever --no-binary whenever --config-settings rust-extension=skip
 
-# in poetry.toml (not pyproject.toml!),
-# with WHENEVER_NO_BUILD_RUST_EXT=1 in the environment
+# in poetry.toml (not pyproject.toml!), Poetry 2.1 or later
 [installer]
 no-binary = ["whenever"]
+
+[installer.build-config-settings]
+whenever = { rust-extension = "skip" }
 ```
 
 ### uv
 
 ```
 # as a one-off command
-WHENEVER_NO_BUILD_RUST_EXT=1 uv add whenever --no-binary-package whenever
+uv add whenever --no-binary-package whenever --config-settings-package whenever:rust-extension=skip
 
-# pyproject.toml, with WHENEVER_NO_BUILD_RUST_EXT=1 in the environment
+# in pyproject.toml
 [tool.uv]
 no-binary-package = ["whenever"]
+config-settings-package = { whenever = { rust-extension = "skip" } }
 ```
 
-See [uv's documentation](https://docs.astral.sh/uv/reference/settings/#no-binary-package) for more information
+See [uv's documentation](https://docs.astral.sh/uv/reference/settings/#config-settings-package) for more information.
 
-
-A source install alone does not select the pure-Python backend:
-it builds the Rust extension when a Rust toolchain is present.
-Only `WHENEVER_NO_BUILD_RUST_EXT` prevents the build.
-The configuration files cannot set it,
-so it must be in the environment of every install.
+Without the setting, a source install builds the Rust extension
+when a Rust toolchain is present.
+Where a tool can't pass config settings,
+the environment variable `WHENEVER_NO_BUILD_RUST_EXT=1` has the same effect.
 
 You can check if the Rust extension is being used by running:
 

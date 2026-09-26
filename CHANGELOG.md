@@ -1,34 +1,21 @@
 # Changelog
 
-## 0.11.0 (unreleased)
+## 0.11.0 (2026-10-??)
 
 This release is intended as a soft 1.0 release: it establishes the planned
 1.0 API while retaining compatibility shims for newly deprecated interfaces.
 Unless significant issues arise, this API will become 1.0 after those
 deprecated interfaces are removed.
 
+Unavoidably this release has several breaking changes. Two of which
+you'll notice: the system timezone API (which uses the new PEP661)
+and some renames that ensure consistent vocabulatory throughout the library.
+
+Thank you for sticking with it. Once 1.0 locks in, you'll be
+rid of my pesky waffling on the API surface,
+and be only treated to bugfixes an additional features.
+
 **Breaking changes**
-
-- Removed APIs deprecated before 0.11: `DateDelta`, `DateTimeDelta`, the
-  `years()`, `months()`, `weeks()`, and `days()` helpers, legacy standard
-  library conversion methods, `TimeDelta.in_*()` convenience methods,
-  `Date.days_since()` and `Date.days_until()`, deprecated `Date` operators,
-  `parse_strptime()`, `ZonedDateTime.start_of_day()`, `ignore_dst`, and
-  `ImplicitlyIgnoringDST`.
-
-  See the 0.10.0 entry below for migration instructions.
-
-- Timestamp APIs are consolidated around a `unit=` argument.
-  `Instant.from_timestamp(..., unit=)` and exact-time `.timestamp(unit=)`
-  support seconds, milliseconds, microseconds, and nanoseconds.
-  `timestamp_millis()`, `timestamp_nanos()`, and their matching `Instant`
-  factories are deprecated, as are the timestamp factories on
-  `OffsetDateTime` and `ZonedDateTime`: construct an `Instant` first, then
-  call `to_fixed_offset()` or `to_tz()`.
-
-  **Rationale**: one unit-selectable API is easier to discover and extend,
-  while `Instant` is the natural type for constructing an exact time from a
-  timestamp.
 
 - The system time zone is now accepted everywhere a named time zone (i.e.
   `tz=`) is accepted, using the new `SYSTEM_TZ` sentinel (PEP 661). The
@@ -56,6 +43,27 @@ deprecated interfaces are removed.
   and `"never"` each needed the docstring to say which of those it meant.
   `TZPATH` was a module attribute that was loaded on access.
   Its replacement, `get_tzpath()` is more explicit about this.
+
+- Removed APIs deprecated before 0.11: `DateDelta`, `DateTimeDelta`, the
+  `years()`, `months()`, `weeks()`, and `days()` helpers, legacy standard
+  library conversion methods, `TimeDelta.in_*()` convenience methods,
+  `Date.days_since()` and `Date.days_until()`, deprecated `Date` operators,
+  `parse_strptime()`, `ZonedDateTime.start_of_day()`, `ignore_dst`, and
+  `ImplicitlyIgnoringDST`.
+
+  See the 0.10.0 entry below for migration instructions.
+
+- Timestamp APIs are consolidated around a `unit=` argument.
+  `Instant.from_timestamp(..., unit=)` and exact-time `.timestamp(unit=)`
+  support seconds, milliseconds, microseconds, and nanoseconds.
+  `timestamp_millis()`, `timestamp_nanos()`, and their matching `Instant`
+  factories are deprecated, as are the timestamp factories on
+  `OffsetDateTime` and `ZonedDateTime`: construct an `Instant` first, then
+  call `to_fixed_offset()` or `to_tz()`.
+
+  **Rationale**: one unit-selectable API is easier to discover and extend,
+  while `Instant` is the natural type for constructing an exact time from a
+  timestamp.
 
 - Patterns use `H`/`HH` for the 24-hour clock; `h`/`hh` are deprecated.
   Optional seconds go in brackets after `mm`: `[:ss]`, `[:ss.fff]`,
@@ -129,6 +137,10 @@ deprecated interfaces are removed.
   decorator it keeps the wrapped function's signature.
 - Added LLM-friendly Markdown documentation, including `llms.txt` and
   `llms-full.txt`.
+- A source install selects the pure-Python backend with the build config
+  setting `rust-extension=skip`, which configuration files can set:
+  `config-settings-package` in uv's `pyproject.toml`, `--config-settings`
+  in `requirements.txt`. `WHENEVER_NO_BUILD_RUST_EXT` still works.
 - `TimeDelta.total()`, `TimeDelta.in_units()`, `ItemizedDelta.total()`,
   `ItemizedDelta.in_units()`, and calendar-aware `add()`/`subtract()` accept
   `naive_arithmetic_ok=` for a `PlainDateTime` reference and
