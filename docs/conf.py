@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import importlib.metadata
+import os
 import re
 import sys
 import warnings
 
 import whenever._common
+from docutils import nodes
+from sphinx_design.shared import PassthroughTextElement
 
 # Document the pure-Python backend: autodoc and viewcode need its source.
 sys.modules["whenever._whenever"] = None
@@ -62,6 +65,9 @@ redirects = {
     "overview": "guide/index.html",
     "reference/deprecated": "../changelog.html",
 }
+# The llms.txt markdown build has no handler for the <meta> nodes that
+# pages emit through myst's html_meta; dropping them loses nothing.
+llms_txt_suppress_unknown_node_warnings = ["meta"]
 html_static_path = ["_static"]
 html_title = "Whenever"
 # Used by _templates/base.html for the homepage <title> only.
@@ -85,6 +91,9 @@ autodoc_default_options = {
 }
 autodoc_member_order = "groupwise"
 html_theme = "furo"
+# The llms.txt output is a second full Sphinx build in a subprocess, so it's
+# built only on Read the Docs. Pass `-D llms_txt_enabled=1` to build it locally.
+llms_txt_enabled = os.environ.get("READTHEDOCS") == "True"
 llms_txt_description = (
     "A type-safe Python datetime library with DST-correct arithmetic and "
     "distinct instant, zoned, offset, and plain datetime types."
@@ -160,7 +169,6 @@ _SYSTEM_TZ_CLASS = re.compile(r"(?:whenever\.(?:_common\.)?)?_SystemTZ")
 
 
 def _fix_signature_nodes(app, doctree):
-    from docutils import nodes
     from sphinx import addnodes
 
     for sig in doctree.findall(addnodes.desc_signature):
@@ -189,6 +197,38 @@ def _fix_signature_nodes(app, doctree):
             parent.insert(i, addnodes.desc_sig_name(name, name))
 
 
+# sphinx-markdown-builder drops these nodes from the llms.txt output.
+# The admonition handler reuses its private box helpers, as its named
+# admonitions (note, hint, ...) do.
+def _visit_admonition_md(self, node):
+    title, *body = node.children
+    self._push_box(title.astext())
+    for c in body:
+        c.walkabout(self)
+    self._pop_context()
+    raise nodes.SkipNode
+
+
+def _visit_attribution_md(self, node):
+    self.add(f"-- {node.astext()}", prefix_eol=2)
+    raise nodes.SkipNode
+
+
+def _pass_md(self, node):
+    pass
+
+
+def _depart_passthrough_md(self, node):
+    self.ensure_eol(2)
+
+
 def setup(app):
     app.connect("autodoc-process-signature", _hide_shim_kwargs)
     app.connect("doctree-read", _fix_signature_nodes)
+    for node, handlers in [
+        (nodes.admonition, (_visit_admonition_md, None)),
+        (nodes.attribution, (_visit_attribution_md, None)),
+        (PassthroughTextElement, (_pass_md, _depart_passthrough_md)),
+        (nodes.abbreviation, (_pass_md, _pass_md)),
+    ]:
+        app.add_node(node, override=True, **{"llms-markdown": handlers})

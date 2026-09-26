@@ -73,7 +73,7 @@ fix:
 
 .PHONY: docs
 docs:
-	uv $(UV_ARGS) run --no-sync sphinx-build -M html docs docs/_build $(SPHINXOPTS)
+	uv $(UV_ARGS) run --no-sync sphinx-build -M html docs docs/_build -j auto $(SPHINXOPTS)
 
 .PHONY: check-readme
 check-readme:
