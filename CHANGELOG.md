@@ -7,13 +7,14 @@ This release is intended as a soft 1.0 release: it establishes the planned
 Unless significant issues arise, this API will become 1.0 after those
 deprecated interfaces are removed.
 
-Unavoidably this release has several breaking changes. Two of which
-you'll notice: the system timezone API (which uses the new PEP661)
-and some renames that ensure consistent vocabulatory throughout the library.
+Getting the API right for 1.0 means breaking a few things first.
+Two changes you'll notice:
+the system time zone API, which now uses a PEP 661 sentinel,
+and a round of renames that gives the library one consistent vocabulary.
 
-Thank you for sticking with it. Once 1.0 locks in, you'll be
-rid of my pesky waffling on the API surface,
-and be only treated to bugfixes an additional features.
+Thanks for bearing with the churn. This is the last of it:
+once 1.0 locks in, the API stays put,
+and releases bring only bug fixes and new features.
 
 **Breaking changes**
 
