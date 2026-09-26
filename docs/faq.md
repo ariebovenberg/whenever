@@ -4,7 +4,8 @@ myst:
     description: >-
       Answers to common questions about whenever's design and use: why Instant
       exists, why there are three delta types, leap seconds, pure-Python
-      installs, SQLAlchemy, and free-threading.
+      installs and why they aren't a separate package, SQLAlchemy,
+      free-threading, and finding the time zone database version.
 ---
 
 ```{eval-rst}
@@ -329,6 +330,29 @@ python -c "import whenever; print(whenever._EXTENSION_LOADED)"
 
 This attribute is a diagnostic, not part of the API.
 
+(faq-why-no-separate-py-package)=
+## Why isn't the pure-Python backend a separate package?
+
+Some projects publish their compiled version under a separate name,
+like `cytoolz` alongside `toolz`.
+With two packages, the dependency list decides which backend you get:
+
+- If `whenever` included the {term}`Rust extension`,
+  every library depending on it would impose it on all of its users.
+- If the Rust extension were a separate package,
+  most users would never know to install it.
+
+Whether the Rust extension is welcome depends on where the code runs:
+a no-binary policy, a small container image, or a platform without wheels.
+The person running the install knows this; the library author doesn't.
+Installers already have settings for this kind of choice,
+so `whenever` uses those (see {ref}`faq-pure-python`).
+
+The downside is that opting out takes two settings instead of a package name,
+and is easy to overlook.
+Other layouts, such as a `whenever-py` package that `whenever` depends on,
+were discussed in [issue #158](https://github.com/ariebovenberg/whenever/issues/158).
+
 ## What about `dateutil`?
 
 `dateutil` is more of an *extension* to `datetime` than a replacement,
@@ -430,4 +454,28 @@ The precision of this time depends on what the OS and hardware provide:
 This is a limitation of the operating systems themselves, not `whenever`.
 If this difference in precision causes issues in your tests or when
 comparing values across different systems, you can normalize the precision
-by calling `.round("microsecond")`
+by calling `.round("microsecond")`.
+
+(faq-tzdb-version)=
+## Which time zone database version is in use?
+
+There's no reliable way to find out.
+`whenever` reads the IANA time zone database installed on your system,
+which has no standard place to record its version.
+Some distributions include a `+VERSION` file or a version comment in `tzdata.zi`;
+others don't.
+
+If you need a specific version, pin the [`tzdata`](https://pypi.org/project/tzdata/) package
+and empty the {term}`time zone search path`,
+so that every time zone loads from `tzdata`:
+
+```python
+from whenever import reset_tzpath
+
+reset_tzpath([])  # use the tzdata package only
+```
+
+The version is then `tzdata.IANA_VERSION`.
+Call {func}`~whenever.reset_tzpath` at startup, before any time zone lookup:
+loaded time zones stay cached until you call {func}`~whenever.clear_tzcache`
+(see {ref}`timezone-database`).
