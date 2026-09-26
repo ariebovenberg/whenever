@@ -8,14 +8,14 @@
 [![](https://img.shields.io/pypi/dm/whenever)](https://pypi.python.org/pypi/whenever)
 
 
-**Type-safe datetimes for Python that get DST right. Rust or pure Python—your choice.**
+**Type-safe datetimes for Python that get DST right. Rust or pure Python, your choice.**
 
 Do you cross your fingers every time you work with Python's datetime—hoping that you didn't
 mix naive and aware, or run into one of its [other pitfalls](https://whenever.readthedocs.io/en/latest/stdlib-pitfalls/index.html)?
 
 *Whenever* takes the guesswork out, bringing **well-established concepts** from
 [modern libraries](#acknowledgements) in other languages to Python.
-Mixing up naive and aware becomes a **type error** instead of a bug you find in production,
+Mixing up naive and aware becomes a **typechecker error** instead of a bug you find in production,
 and DST is handled correctly in **all** arithmetic.
 It's also **way faster** than other third-party libraries, and usually the standard library as well.
 Rather not depend on a Rust extension? A **pure-Python backend** is available too.
