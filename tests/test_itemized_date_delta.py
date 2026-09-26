@@ -454,13 +454,12 @@ class TestEquality:
         assert d1 == d2
         assert not d1 != d2
 
-    def test_no_allow_mixing_delta_types(self):
+    def test_other_types_unequal(self):
         d = ItemizedDateDelta(days=5)
         # NOTE: the mypy ignore comments are actually also "tests" in the sense
         # they ensure that the types properly implement strict comparison!
         assert d != "P5D"  # type: ignore[comparison-overlap]
         assert d != {"days": 5}
-        assert d != ItemizedDelta(days=5)
 
     def test_strict_eq(self):
         d1 = ItemizedDateDelta(years=2, months=0, weeks=5, days=0)

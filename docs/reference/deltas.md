@@ -177,9 +177,18 @@ if their total duration is the same, regardless of how their components are repr
 True  # normalized deltas are the same
 ```
 
-Use {meth}`~ItemizedDelta.strict_eq` when explicit component presence also matters
-(see {ref}`strict-equality`). `hash()` follows `==`, so an explicit zero
-hashes like a missing component.
+The two itemized types compare equal when their components are, so a date
+delta equals the same delta with its exact components zero or absent:
+
+```python
+>>> ItemizedDelta(days=3, hours=0) == ItemizedDateDelta(days=3)
+True
+```
+
+Use {meth}`~ItemizedDelta.strict_eq` when explicit component presence or the
+type also matters (see {ref}`strict-equality`). `hash()` follows `==`, so an
+explicit zero hashes like a missing component, and equal deltas of the two
+types hash alike.
 Constructors currently require at least one component, so construct an
 itemized zero with an explicit component such as `ItemizedDelta(seconds=0)` or
 `ItemizedDateDelta(days=0)`. Allowing empty constructors may be considered as

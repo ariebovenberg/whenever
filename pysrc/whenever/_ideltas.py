@@ -1211,10 +1211,28 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> d == ItemizedDelta(weeks=2, minutes=91)
         False
 
-        If you want strict equality (including presence of components),
-        use :meth:`strict_eq`.
+        An :class:`ItemizedDateDelta` with the same components is equal:
+
+        >>> ItemizedDelta(weeks=2, hours=0) == ItemizedDateDelta(weeks=2)
+        True
+
+        If you want strict equality (including presence of components
+        and the type), use :meth:`strict_eq`.
 
         """
+        if isinstance(other, ItemizedDateDelta):
+            return (
+                not (
+                    self._hours
+                    or self._minutes
+                    or self._seconds
+                    or self._nanoseconds
+                )
+                and (self._years or 0) == (other._years or 0)
+                and (self._months or 0) == (other._months or 0)
+                and (self._weeks or 0) == (other._weeks or 0)
+                and (self._days or 0) == (other._days or 0)
+            )
         if not isinstance(other, ItemizedDelta):
             return NotImplemented
         return (
@@ -2215,16 +2233,20 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
         - No normalization is performed. 12 months is not equal to 1 year, etc.
         - An explicit zero is equivalent to an absent component.
+        - An :class:`ItemizedDelta` with the same components is equal.
 
-        If you want strict equality (including presence of components),
-        use :meth:`strict_eq`.
+        If you want strict equality (including presence of components
+        and the type), use :meth:`strict_eq`.
 
         >>> d = ItemizedDateDelta(weeks=2, days=3)
         >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
         True
         >>> d == ItemizedDateDelta(weeks=2, days=4)
         False
+        >>> d == ItemizedDelta(weeks=2, days=3, hours=0)
+        True
         """
+        # An ItemizedDelta operand is compared by its reflected __eq__
         if not isinstance(other, ItemizedDateDelta):
             return NotImplemented
         return (

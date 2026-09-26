@@ -150,6 +150,10 @@ and releases bring only bug fixes and new features.
 
 **Changed**
 
+- An `ItemizedDelta` and an `ItemizedDateDelta` with the same components
+  are equal, where they were never equal:
+  `ItemizedDelta(days=3) == ItemizedDateDelta(days=3)`. `strict_eq()` still
+  tells them apart.
 - `OffsetDateTime.replace()` no longer emits `StaleOffsetWarning` when
   `offset=` is passed: the offset is stated, not carried.
 - `OffsetDateTime.since()` and `until()` emit `StaleOffsetWarning` when a

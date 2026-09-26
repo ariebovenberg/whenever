@@ -788,13 +788,41 @@ class TestEquality:
         assert d1 == d2
         assert not d1 != d2
 
-    def test_no_allow_mixing_delta_types(self):
+    def test_other_types_unequal(self):
         d = ItemizedDelta(days=5)
         # NOTE: the mypy ignore comments are actually also "tests" in the sense
         # they ensure that the types properly implement strict comparison!
         assert d != "P5D"  # type: ignore[comparison-overlap]
         assert d != {"days": 5}
-        assert d != ItemizedDateDelta(days=5)
+
+    @pytest.mark.parametrize(
+        "a, b, equal",
+        [
+            (ItemizedDelta(days=5), ItemizedDateDelta(days=5), True),
+            (
+                ItemizedDelta(weeks=1, hours=0),
+                ItemizedDateDelta(weeks=1),
+                True,
+            ),
+            (ItemizedDelta(seconds=0), ItemizedDateDelta(days=0), True),
+            (
+                ItemizedDelta(years=-1, nanoseconds=0),
+                ItemizedDateDelta(years=-1, days=0),
+                True,
+            ),
+            (ItemizedDelta(days=5), ItemizedDateDelta(days=6), False),
+            (ItemizedDelta(days=5), ItemizedDateDelta(days=-5), False),
+            (ItemizedDelta(days=5, hours=1), ItemizedDateDelta(days=5), False),
+            (ItemizedDelta(nanoseconds=1), ItemizedDateDelta(days=0), False),
+        ],
+    )
+    def test_itemized_date_delta(self, a, b, equal):
+        assert (a == b) is equal
+        assert (b == a) is equal
+        assert (a != b) is not equal
+        assert (b != a) is not equal
+        if equal:
+            assert hash(a) == hash(b)
 
     def test_strict_eq(self):
         d1 = ItemizedDelta(years=2, months=0, minutes=5, seconds=0)

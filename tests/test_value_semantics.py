@@ -165,12 +165,14 @@ EQUAL_BUT_NOT_STRICTLY_EQUAL = [
         ItemizedDateDelta(weeks=2, days=3),
         ItemizedDateDelta(weeks=2, days=3, months=0),
     ),
+    (ItemizedDelta(weeks=2, days=3), ItemizedDateDelta(weeks=2, days=3)),
 ]
 
 
 class TestCrossTypeComparison:
-    """Outside the exact family, values of different types are never equal
-    and never order; the same holds against the standard library."""
+    """Outside the exact family and the two itemized deltas, values of
+    different types are never equal and never order; the same holds against
+    the standard library."""
 
     @pytest.mark.parametrize(
         "a, b",
@@ -178,7 +180,6 @@ class TestCrossTypeComparison:
             (Date(2020, 1, 1), PlainDateTime(2020, 1, 1)),
             (Time(), Date(2020, 1, 1)),
             (TimeDelta(hours=1), ItemizedDelta(hours=1)),
-            (ItemizedDelta(days=1), ItemizedDateDelta(days=1)),
             (Instant.from_utc(2020, 1, 1), PlainDateTime(2020, 1, 1)),
             (ItemizedDelta(hours=1), {"hours": 1}),
             (Date(2020, 1, 1), py_date(2020, 1, 1)),
