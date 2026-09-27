@@ -80,6 +80,11 @@ check-readme:
 	uv $(UV_ARGS) run python -m build $(BUILD_ARGS) --sdist
 	uv $(UV_ARGS) run twine check dist/*
 
+# GitHub release text renders every newline, so unwrap the newest entry
+.PHONY: release-notes
+release-notes:
+	@awk '/^## /{n++} n==1' CHANGELOG.md | pandoc -f gfm -t gfm --wrap=none
+
 .PHONY: test-py
 test-py:
 	RUST_BACKTRACE=1 uv $(UV_ARGS) run pytest $(PYTEST_ARGS) $(TEST_PATH)
