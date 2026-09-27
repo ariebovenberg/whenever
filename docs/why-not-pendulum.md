@@ -21,10 +21,10 @@ Pendulum's classes subclass the standard library's, so existing code keeps worki
 But this promise is a trap:
 a drop-in replacement [can't *also* change behavior](https://wiki.c2.com/?LiskovSubstitutionPrinciple).
 Fixing an API this way may work in the short term, but it invites new contradictions and footguns.
-Pendulum's numerous bugs are not accidents of implementation but a result
-of its fundamental design.[^versions]
+Most of the problems below trace back to Pendulum's design, not its
+implementation.[^versions]
 
-Subclassing isn't the only decision that backfires.
+Subclassing isn't the only decision with lasting consequences.
 Pendulum also {ref}`assumes UTC <pendulum-decision-naive>` when a time zone is missing,
 {ref}`redefines fold <pendulum-decision-fold>`,
 {ref}`puts months inside a timedelta <pendulum-decision-months>`,
@@ -60,7 +60,7 @@ Subclassing is also a well-worn trap.
 While a subclass is free to *add* behavior, the moment it *changes* behavior,
 every piece of code ever written against the base class can [break when handed this subclass](https://wiki.c2.com/?LiskovSubstitutionPrinciple).
 
-Pendulum walked straight in. Its main attraction, arithmetic that
+Pendulum's main attraction, arithmetic that
 knows about DST, is exactly such a behavior change.
 A subclass of `datetime` either fixes how `+` behaves,
 *or* is a drop-in replacement. It cannot be both.
@@ -72,7 +72,7 @@ After all: a subclass can't reliably guess which semantics the caller expects.
 ### Pendulum guesses which semantics the caller expects
 
 The best *and* worst part of Python is that you can do almost anything.
-Here's how Pendulum [tries to have it both ways](https://github.com/python-pendulum/pendulum/blob/aea611d7a1c15ed0da56505c3f370fe4446ba733/src/pendulum/datetime.py#L1237-L1245):
+Here's how Pendulum [reconciles the two](https://github.com/python-pendulum/pendulum/blob/aea611d7a1c15ed0da56505c3f370fe4446ba733/src/pendulum/datetime.py#L1237-L1245):
 
 ```python
 # src/pendulum/datetime.py (3.2.0)
@@ -136,8 +136,8 @@ the call stack every time.
 
 ### Every addition pays for the guess
 
-While Pendulum initially promised [improved performance](https://pendulum.eustace.io/faq/),
-its `+` is now hundreds of times slower than the standard library's:
+Pendulum's FAQ lists [improved performance](https://pendulum.eustace.io/faq/) as a goal,
+but its `+` is now hundreds of times slower than the standard library's:
 
 ```python
 >>> from timeit import timeit
@@ -150,7 +150,7 @@ its `+` is now hundreds of times slower than the standard library's:
 39.47
 ```
 
-The hack is the cause. `ZoneInfo.fromutc()` calls `+`, so every
+The stack inspection is the cause. `ZoneInfo.fromutc()` calls `+`, so every
 `astimezone()`, `in_tz()`, and `+` walks the stack.
 `traceback` then consults `linecache`, which `stat()`s the source file.
 That is *a system call per datetime addition*.
@@ -165,7 +165,7 @@ It shipped its own time zone implementation, whose `fromutc()` never called `+`.
 Version 3.0 replaced that implementation with a `ZoneInfo` subclass.
 The standard library's conversion code, which does call `+`,
 entered the path of every conversion.
-The hack appears in the same release.
+The workaround appears in the same release.
 :::
 
 :::{admonition} How `whenever` does it
@@ -220,7 +220,7 @@ is alive, the next `tz="Asia/Tokyo"` re-reads and re-parses the tzdata file:
 0.75
 ```
 
-## Four more decisions that backfire
+## Four more decisions with a cost
 
 Subclassing is the biggest decision Pendulum is built on, but not the only
 one. Four more decisions run just as deep and cannot be 
@@ -304,7 +304,7 @@ Notably, the standard library has been *retiring* that third reading:
 `utcnow()` and `utcfromtimestamp()` are deprecated since Python 3.12,
 precisely because naive-but-actually-UTC values are a bug factory.
 
-Pendulum keeps all three inherited readings, doubles down on the deprecated
+Pendulum keeps all three inherited readings, extends the deprecated
 one (`parse()`, `instance()`, and `DateTime.strptime()` all assume UTC)
 and adds a fourth of its own: `in_timezone()` reads a
 naive value as "already in whatever time zone you name".
@@ -315,7 +315,7 @@ naive value as "already in whatever time zone you name".
 True
 >>> n.astimezone(pendulum.UTC)              # inherited: local (e.g. New York)
 DateTime(2024, 1, 1, 5, 0, 0, tzinfo=Timezone('UTC'))
->>> pendulum.instance(datetime(2024, 1, 1)) # doubled-down: it is UTC
+>>> pendulum.instance(datetime(2024, 1, 1)) # extended: it is UTC
 DateTime(2024, 1, 1, 0, 0, 0, tzinfo=Timezone('UTC'))
 >>> n.in_tz("Europe/Paris")                 # new: "it is already Paris"
 DateTime(2024, 1, 1, 0, 0, 0, tzinfo=Timezone('Europe/Paris'))
@@ -323,15 +323,14 @@ DateTime(2024, 1, 1, 0, 0, 0, tzinfo=Timezone('Europe/Paris'))
 
 The method, not the value, decides which reading applies: the same `n`
 denotes three different instants across the five calls above. The standard
-library spent a decade retiring one of a naive datetime's meanings; Pendulum
-ships four.
+library is retiring one of these meanings; Pendulum has four.
 
 :::{admonition} How `whenever` does it
 :class: tip
 
 `whenever` keeps datetimes without a time zone — as
 {class}`~whenever.PlainDateTime`, which holds a {term}`local time` — but makes
-them a separate type rather than a defective one. A `PlainDateTime` has
+them a separate type rather than an incomplete aware one. A `PlainDateTime` has
 no time zone and never acquires one implicitly: there is no reading of it as
 UTC, as system-local, or as "already in whatever time zone you name". Turning one
 into an instant is an explicit call —
@@ -690,8 +689,8 @@ The date comes from the clock and the time zone
 {ref}`from a guess <pendulum-utc-assumption>`, all while ignoring
 the provided offset.
 An implicit UTC assumption at least serves the people whose data is in UTC.
-This combination serves nobody:
-no program wants the local date, stamped UTC, with its offset thrown away.
+It's hard to think of a program that wants the local date,
+stamped UTC, with its offset discarded.
 
 The string `"now"` is special-cased (and undocumented):
 
@@ -715,9 +714,9 @@ that type is a `ValueError`.
 
 ## Other notable bugs
 
-This section highlights some of the more consequential defects in Pendulum. 
-Fixing any of them takes no redesign and gives up no compatibility, 
-but they have remained open, sometimes for years.
+This section highlights some of the more consequential defects in Pendulum.
+Unlike the design decisions above, none needs a redesign or breaks compatibility,
+and several already have a proposed fix.
 
 | | Issue | Open since | Proposed fix |
 |---|---|---|---|
@@ -934,7 +933,7 @@ unrelated part of the program, or by a library it happens to import.
 ### The global locale reaches formats that mandate English
 
 The formatter and its locale data are one of Pendulum's attractions, and they
-mostly work. But they are also where the global locale does the most damage:
+mostly work. But they are also where the global locale is most visible:
 the standard formats follow it, although RFC 2822 and friends mandate
 English.
 
@@ -976,7 +975,7 @@ wraps in a subclass), the diff treats the end's time of day as midnight:
 
 The pure-Python build answers `5 hours 30 minutes` and `'4 days'`.
 That bug is [#906](https://github.com/python-pendulum/pendulum/issues/906),
-and the offending check is still on `master`.
+and the check is unchanged on `master`.
 
 The two parsers can't agree on valid and invalid input. On the compiled
 build `PT4294967297M` overflows to `Duration(minutes=1)`, `P12M4M` and
@@ -986,7 +985,7 @@ rounded to whole minutes (`P0.001D` → `Duration(minutes=1)`), and
 4,294,967,297 minutes and rejects the duplicates, but interprets every
 fractional component as tenths regardless of the number of digits
 ([#534](https://github.com/python-pendulum/pendulum/issues/534), open since 2021)
-and accepts near-anything as ISO 8601:
+and accepts many strings that aren't ISO 8601:
 
 ```text
 # Compiled parser                     # Pure-Python parser
@@ -1002,7 +1001,7 @@ ParserError                           DateTime(2026, 8, 23, 20, 24, 1, tzinfo=Ti
 
 ## The state of the project
 
-The problems on this page come in two kinds, and neither is going away.
+The problems on this page come in two kinds, and neither has a quick fix.
 The design decisions would take a breaking redesign.
 The bugs would take scarce maintainer time.
 
@@ -1032,13 +1031,13 @@ Rust one. Development slowed after that release. Since 2025 the project lives un
 organization. Its new maintainers picked up a codebase they didn't write,
 and have kept it going: 3.1 shipped in April 2025 and 3.2 in January 2026.
 
-They are hamstrung, through no fault of their own.
-Most of what this page describes follows from the
+Their options are limited:
+most of what this page describes follows from the
 design decisions listed at the top, which cannot be changed without breaking
 the "drop-in replacement" promise that is Pendulum's main selling point.
 None of those decisions were theirs.
-Meanwhile the backlog grows: reproducible correctness issues remain open across releases,
-including cases where a tested fix is already available
+Reproducible correctness issues remain open across releases,
+including some with a tested fix ready
 ([#909](https://github.com/python-pendulum/pendulum/pull/909),
 [#968](https://github.com/python-pendulum/pendulum/pull/968),
 [#975](https://github.com/python-pendulum/pendulum/pull/975),

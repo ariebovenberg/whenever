@@ -16,12 +16,14 @@ popular third-party datetime libraries for Python. It was closely modeled on Jav
 `moment.js`: one friendly `Arrow` type, a permissive `arrow.get()` that accepts
 almost anything, moment-style format tokens, and localized, human-readable
 differences (`humanize()`).
+It brought that friendliness to Python years before the standard library
+had a time zone database of its own, and many codebases still rely on it.
 
 Unlike Pendulum, Arrow *wraps* `datetime` instead of subclassing it,
 so it avoids the {ref}`drop-in trap <pendulum-decision-dropin>`.
 However, the wrapper is mostly about *convenience*:
 it still inherits all the pitfalls from the standard library.
-The convenience itself has also aged poorly.
+And API design has moved on since 2013:
 Arrow's *'do what I mean'* approach makes the same call mean different things
 depending on the types of its arguments, the current time, or the system time zone,
 making it hard to say what the code does before running it.
@@ -51,7 +53,7 @@ A sample of behaviour you can reproduce today, each explained further down:
   it's wrong.
 ```
 
-## Do-what-I-mean, a decade later
+## A 'do what I mean' API
 
 `arrow.get()` accepts timestamps, `Decimal`s, strings, format
 strings, lists of format strings, `datetime`s, `date`s, tzinfo objects,
@@ -212,7 +214,7 @@ value in a repeated hour, the default `format()` output drops microseconds,
 and the `ZZZ` token emits names (`'CEST'`, `'UTC+01:00'`) that the parser
 rejects — while accepting `'CET'` as a DST-observing *zone*.
 
-## `humanize()` has bands nobody would draw
+## `humanize()` rounds unevenly
 
 ```python
 >>> now = arrow.get(2024, 1, 15, 12)
@@ -222,22 +224,23 @@ rejects — while accepting `'CET'` as a DST-observing *zone*.
 
 Fifteen days is "a month"; "3 weeks" can never be produced; 44 days is
 `'in 2 months'` when counted from January 31 but `'in a month'` from March 1;
-364 days is `'in 12 months'` and 729 days `'in a year'`. A fix for the
-fifteen-days case was merged and then reverted
+364 days is `'in 12 months'` and 729 days `'in a year'`. The fifteen-days
+case is a known issue: a fix was merged and later reverted
 ([#1240](https://github.com/arrow-py/arrow/issues/1240)).
 
 `dehumanize()`, the inverse, matches substrings: `"in 1.5 hours"` shifts by
-five hours, `"in 1,000 hours"` by zero, `"in 5 minutes banana"` is accepted —
+five hours, `"in 1,000 hours"` by zero, and trailing words (`"in 5 minutes banana"`)
+are ignored —
 while `"in 1 hour"` and its own output `"instantly"` are rejected.
 
 ## Types stop at the wrapper
 
-Arrow predates Python's typing era, and it shows.
+Arrow predates Python's typing era, and its types reflect that.
 `Arrow` declares no attributes for the datetime fields it exposes:
 `year`, `month`, `hour` and the rest are served by `__getattr__`,
 which makes every one of them `Any`.
 The same delegation lets the wrapped `datetime` back out through inherited
-methods, and the API disagrees with itself about what is a method and what is
+methods, and the API is inconsistent about what is a method and what is
 a property:
 
 ```python
@@ -251,13 +254,14 @@ a property:
 
 ## Maintenance and performance
 
-Releases are infrequent: 1.2.2 (January 2022), 1.3.0 (September 2023), 1.4.0
-(October 2025), and three commits so far in 2026. The open DST-arithmetic
-reports span 2022–2025, and the one substantive recent release introduced the
-`'local'` regression above.
+Releases are spaced out:
+1.2.2 (January 2022), 1.3.0 (September 2023), 1.4.0 (October 2025),
+and three commits so far in 2026.
+Reports about DST arithmetic from 2022–2025 are still open,
+and 1.4.0 introduced the `'local'` regression above.
 
-Performance is not Arrow's pitch, but the gap with the standard library is
-wide for everyday operations:
+Arrow doesn't aim for performance, and the wrapper adds overhead to everyday
+operations compared to the standard library:
 
 | operation | Arrow 1.4 | standard library |
 |---|---|---|
@@ -268,4 +272,4 @@ wide for everyday operations:
 | `a.year` | 0.22 µs | 0.02 µs |
 
 In {ref}`benchmarks <benchmarks>`, `whenever` parses and converts one to two
-orders of magnitude faster, while rejecting the inputs Arrow guesses about.
+orders of magnitude faster, and rejects ambiguous input instead of guessing.
