@@ -55,6 +55,8 @@ the corresponding value.
 | `D`   | day of month | `D` <br/> `DD` | `5` <br/> `05` |
 | `E`   | day of week [^2] | `EEE` <br/> `EEEE` | `Fri` <br/> `Friday` |
 
+Month and weekday names are English, whatever the locale.
+
 :::{admonition} Why are Whenever's patterns different?
 :class: important
 
@@ -152,6 +154,7 @@ raises {class}`InvalidOffsetError`.
 
 Use uppercase `X` when you want `Z` for zero offset
 (e.g. {class}`Instant` formatting).
+When parsing, `X` also accepts a lowercase `z`, as ISO 8601 parsing does.
 Use lowercase `x` when you always want a numeric offset
 (e.g. {class}`OffsetDateTime` formatting).
 ```

@@ -1,4 +1,4 @@
-"""The main pure-Python implementation of the whenever library."""
+"""The main types of the whenever library, in the pure-Python backend."""
 
 # Maintainer's notes:
 #
@@ -74,6 +74,7 @@ from ._common import (
     mk_fixed_tzinfo,
     normalize_renamed_keyword,
     replace_fields,
+    round_offset_to_minute,
     split_timestamp,
     timestamp_from_parts,
     tzid_display,
@@ -1625,6 +1626,9 @@ class Time(_Base):
 
         >>> Time(23, 59, 59).round("minute", mode="ceil")
         Time("00:00:00")
+
+        Increments are counted from midnight, so ``"half_even"`` breaks a
+        tie toward the even multiple counted from there.
         """
         if unit == "day":
             raise invalid("unit", unit)
@@ -2722,11 +2726,11 @@ class _BasicConversions(_Base):
         return self._py_dt.replace(microsecond=self._nanos // 1_000)
 
     def format_iso(self) -> str:
-        raise NotImplementedError  # pragma: no cover
+        raise NotImplementedError
 
     @classmethod
     def parse_iso(cls: type[_T], s: str, /) -> _T:
-        raise NotImplementedError  # pragma: no cover
+        raise NotImplementedError
 
     def __str__(self) -> str:
         return self.format_iso()
@@ -2741,7 +2745,7 @@ class _BasicConversions(_Base):
         return self
 
     def _init_from_py(self, d: _datetime) -> None:
-        raise NotImplementedError  # pragma: no cover
+        raise NotImplementedError
 
 
 # Methods for types that know a local date and time-of-day:
@@ -4291,15 +4295,15 @@ class OffsetDateTime(_ExactAndLocalTime):
         """Format as an RFC 2822 string.
 
         RFC 2822 has whole-second datetimes and minute-precision offsets.
-        Nanoseconds and offset seconds are discarded.
+        Nanoseconds are discarded, and offset seconds are rounded to the
+        nearest minute, as the ``xx`` pattern does.
 
         >>> OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2)).format_rfc2822()
         "Sat, 15 Aug 2020 23:12:00 +0200"
         """
-        offset = self._current_offset_secs()
-        # -0000 means the offset is unknown; a known one under a minute
-        # truncates to +0000.
-        offset_sign = "-" if offset <= -60 else "+"
+        offset = round_offset_to_minute(self._current_offset_secs())
+        # -0000 means the offset is unknown, so a known zero is +0000
+        offset_sign = "-" if offset < 0 else "+"
         offset = abs(offset)
         offset_h = offset // 3600
         offset_m = (offset % 3600) // 60
@@ -4588,6 +4592,9 @@ class OffsetDateTime(_ExactAndLocalTime):
         OffsetDateTime("2020-08-15 23:15:00+04:00")
         >>> d.round(TimeDelta(minutes=15))
         OffsetDateTime("2020-08-15 23:30:00+04:00")
+
+        Increments are counted from midnight, so ``"half_even"`` breaks a
+        tie toward the even multiple counted from there.
 
         Warning
         -------
@@ -6318,6 +6325,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         * Rounding to a day compares the time elapsed since the start of the
           day with the day's length. On the 23-hour day of 2023-03-26 in
           Amsterdam, 11:31 therefore rounds down and 12:31 rounds up.
+        * Increments are counted from midnight, so ``"half_even"`` breaks a
+          tie toward the even multiple counted from there.
         """
         increment_ns = _round_increment_ns(unit, increment, False)
         start, end, odd = (
@@ -7394,6 +7403,9 @@ class PlainDateTime(_LocalTime):
         PlainDateTime("2020-08-15 23:15:00")
         >>> d.round(TimeDelta(minutes=15))
         PlainDateTime("2020-08-15 23:30:00")
+
+        Increments are counted from midnight, so ``"half_even"`` breaks a
+        tie toward the even multiple counted from there.
         """
         return self._round_unchecked(
             _round_increment_ns(unit, increment, False), mode
@@ -8178,10 +8190,18 @@ def _zoned_difference_in_units(
             expand_date = diff_to(expand_date)[2]
             expand = at(expand_date)
         span = abs((expand - trunc)._total_ns)
+        remainder = abs((a - trunc)._total_ns)
+        if span and remainder == span:
+            # A skipped day resolved the expanded endpoint onto ``a``, which
+            # the calendar counts a day short of it: round by the days
+            # between the dates, as on the wall clock (and in Temporal)
+            trunc_day = resolve_leap_day(trunc_date)
+            remainder = abs((target_date._py_date - trunc_day).days)
+            span = abs((resolve_leap_day(expand_date) - trunc_day).days)
         # The endpoints coincide only where ``a`` is the truncated value
         if span and rounds_up(
             round_mode,
-            abs((a - trunc)._total_ns),
+            remainder,
             span,
             result[smallest_unit] // round_increment % 2 == 1,
             sign,
@@ -8365,7 +8385,7 @@ final(_ExactAndLocalTime)
 final(_BasicConversions)
 
 # Pure-Python Instant pickles from 0.8.0 to 0.10.0 name this module's
-# `_unpkl_inst`. Where the extension is available, they load as its Instant.
+# `_unpkl_inst`. Where the Rust extension is available, they load as its Instant.
 try:
     from ._whenever import _unpkl_inst  # type: ignore[no-redef]
 except ModuleNotFoundError as e:

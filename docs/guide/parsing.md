@@ -84,8 +84,12 @@ numeric offset and no time zone ID, so a parse can never yield a
 {class}`~whenever.PlainDateTime` has no offset to write.
 
 RFC 2822 only represents whole seconds and minute-precision offsets.
-Formatting therefore discards nanoseconds and any seconds in the offset; use
+Formatting therefore discards nanoseconds and rounds any seconds in the
+offset to the nearest minute, as the `xx` pattern does; use
 ISO 8601 when those values must round-trip exactly.
+Parsing reads the obsolete two- and three-digit years as RFC 5322 section 4.3
+says: `00` to `49` are 2000 to 2049, `50` to `99` are 1950 to 1999, and a
+three-digit year adds 1900.
 
 ## Patterns
 

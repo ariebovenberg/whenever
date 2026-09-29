@@ -9,7 +9,7 @@ myst:
 
 # Whenever
 
-**Type-safe datetimes for Python that get DST right. Rust or pure Python—your choice.**
+**Type-safe datetimes for Python that get DST right. Rust or pure Python, your choice.**
 
 Do you cross your fingers every time you work with Python's {mod}`datetime`—hoping
 that you didn't mix naive and aware, or run into one of its
@@ -23,7 +23,7 @@ full_rest = bedtime + timedelta(hours=8)
 
 *Whenever* takes the guesswork out, bringing **well-established concepts**
 from modern datetime libraries in other languages to Python.
-Mixing up naive and aware becomes a **type error** instead of a bug you find in
+Mixing up naive and aware becomes a **typechecker error** instead of a bug you find in
 production, and DST is handled correctly in **all** arithmetic:
 
 ```python

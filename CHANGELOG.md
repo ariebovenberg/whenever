@@ -114,7 +114,8 @@ with a new glossary and a comparison with Arrow.
 
 - An `ItemizedDelta` and an `ItemizedDateDelta` with the same components
   are equal: `ItemizedDelta(days=3) == ItemizedDateDelta(days=3)`.
-  `strict_eq()` still tells them apart.
+  `strict_eq()` takes only a delta of its own type, and raises `TypeError`
+  for the other.
 
 - Arithmetic on date-only deltas stays date-only: composing two of them, or
   `ItemizedDateDelta.in_units()`, returns an `ItemizedDateDelta` whatever
@@ -130,6 +131,8 @@ with a new glossary and a comparison with Arrow.
   `increment=` alongside a `TimeDelta` unit in `round()`, and pattern
   fractions followed by a digit field. A non-integer `increment=` raises
   `TypeError`, and a `.FFF` pattern no longer parses a bare trailing dot.
+  `reset_tzpath()` takes only a list or tuple: the search path is ordered,
+  and a set gave a different one in each process.
 
 **Added and improved**
 
@@ -149,11 +152,11 @@ with a new glossary and a comparison with Arrow.
   hashable, so they can be `set` members and `dict` keys.
 - `ItemizedDelta.add()` and `subtract()` accept a `PlainDateTime` or
   `OffsetDateTime` as `relative_to=`, as `in_units()` does. Calls with such
-  a reference accept the escape their warning names:
+  a reference, including `in_units()` and `total()` on `ItemizedDelta` and
+  `TimeDelta`, accept the escape their warning names:
   `naive_arithmetic_ok=` or `stale_offset_ok=`.
-- Integer arguments accept integer-like objects such as numpy integers.
-- Added LLM-friendly Markdown documentation, including `llms.txt` and
-  `llms-full.txt`.
+- Integer-only arguments accept integer-like objects such as numpy integers.
+- Added LLM-friendly Markdown documentation, including `llms.txt`.
 - A source install selects the pure-Python backend with the build config
   setting `rust-extension=skip`, which configuration files can set:
   `config-settings-package` in uv's `pyproject.toml`, `--config-settings`
@@ -162,6 +165,7 @@ with a new glossary and a comparison with Arrow.
   `datetime` with a `ZoneInfo` subclass, like the other standard library
   overloads.
 - Added the type aliases `DeltaTotalUnitStr` and `TimestampUnitStr`.
+  `from whenever import *` now includes all the `*Str` aliases.
 
 **Fixed**
 
@@ -221,13 +225,23 @@ with a new glossary and a comparison with Arrow.
 - An unknown time zone ID raises `TimeZoneNotFoundError` wherever it's
   given, including inside an ISO string.
 - `Instant.parse()` accepted a weekday that contradicts the date.
-- RFC 2822 parsing was too lenient in the pure-Python backend, and
-  formatting wrote `-0000` (unknown offset) for a negative offset under a
-  minute.
+- RFC 2822 parsing was too lenient in the pure-Python backend.
+  Formatting rounds an offset's seconds to the nearest minute, as patterns
+  do, where it truncated them, and it no longer writes `-0000` (unknown
+  offset) for a negative offset under a minute.
 - With `time-machine` installed, the Rust extension's `now()` was off
   before 1970 and raised past 2262.
-- `reset_tzpath()` given an iterator set an empty search path.
-- In a pattern, `''` inside a quoted run is a literal quote.
+- In the pure-Python backend, importing a utility such as
+  `patch_current_time` before the core types no longer raises a
+  circular-import `ImportError`.
+- A copied or unpickled `TimePatch` handle could still move the clock after
+  its patch had ended.
+- `available_timezones()` no longer follows symlinks to directories, as
+  `zoneinfo` doesn't.
+- The Rust extension supports subinterpreters with their own GIL on
+  Python 3.12 too, not only on 3.13 and later.
+- In a pattern, `''` inside a quoted run is a literal quote, and `X`
+  parses a lowercase `z`, as ISO 8601 parsing does.
 - `repr(Weekday.MONDAY)` is `Weekday.MONDAY`.
 - Formatting `VV` without a time zone ID consistently raises, and
   `IsoWeekDate.parse_iso()` accepts a lowercase `w`.

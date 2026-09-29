@@ -90,6 +90,15 @@ and for `total=` also `milliseconds` and `microseconds`)
 *and* calendar units (`years`, `months`, `weeks`, `days`).
 The `-` operator only returns exact elapsed time.
 
+A `total=` in a calendar unit counts the whole units,
+then adds the elapsed fraction of the next one, measured in exact time:
+January 1 to February 16, 2024 is 1.52 months,
+one month plus 15 of February's 29 days.
+Next to a skipped day (Samoa skipped December 30, 2011),
+two whole-unit endpoints can fall on the same instant,
+so the total can jump there,
+and its whole part can differ from the truncated `in_units=` result.
+
 {class}`Instant` has no `since()`/`until()`: it has no calendar, and
 `(a - b).total("hours")` already spells an exact total.
 {class}`Date` has no `difference()`: two dates have no single exact
@@ -148,6 +157,16 @@ it is {term}`clamped <clamping>` to the last valid day:
 ```python
 >>> PlainDateTime(2023, 8, 31).add(months=1)
 PlainDateTime("2023-09-30 00:00:00")   # September has 30 days
+```
+
+A difference counts a month once the clamped date reaches the target,
+so it agrees with `add()`: January 31 to February 28 is one month,
+because January 31 plus one month is February 28.
+Temporal gives `P28D` there.
+
+```python
+>>> Date(2023, 1, 31).until(Date(2023, 2, 28), in_units=["months", "days"])
+ItemizedDateDelta("P1m0d")
 ```
 
 **Unit order.** `add()` and `subtract()` apply years and months first

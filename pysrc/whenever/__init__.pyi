@@ -17,8 +17,8 @@ from datetime import (
 from os import PathLike
 from typing import (
     Callable,
-    ClassVar,
     ContextManager,
+    Final,
     Iterable,
     Literal,
     ParamSpec,
@@ -87,6 +87,14 @@ __all__ = (
     "clear_tzcache",
     "available_timezones",
     "AnyDelta",
+    "RoundModeStr",
+    "DisambiguationStr",
+    "DeltaUnitStr",
+    "DeltaTotalUnitStr",
+    "DateDeltaUnitStr",
+    "ExactDeltaUnitStr",
+    "OffsetMismatchStr",
+    "TimestampUnitStr",
 )
 
 _EXTENSION_LOADED: bool
@@ -181,8 +189,8 @@ class Date(_ISOMixin):
     def __init__(self, iso_string: str, /) -> None: ...
     @overload
     def __init__(self, py_date: _date, /) -> None: ...
-    MIN: ClassVar[Date]
-    MAX: ClassVar[Date]
+    MIN: Final[Date]
+    MAX: Final[Date]
     @classmethod
     @deprecated("use today(SYSTEM_TZ) instead")
     def today_in_system_tz(cls) -> Date: ...
@@ -320,8 +328,8 @@ class YearMonth(_ISOMixin):
     def __init__(self, year: int, month: int) -> None: ...
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
-    MIN: ClassVar[YearMonth]
-    MAX: ClassVar[YearMonth]
+    MIN: Final[YearMonth]
+    MAX: Final[YearMonth]
     @property
     def year(self) -> int: ...
     @property
@@ -344,8 +352,8 @@ class MonthDay(_ISOMixin):
     def __init__(self, month: int, day: int) -> None: ...
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
-    MIN: ClassVar[MonthDay]
-    MAX: ClassVar[MonthDay]
+    MIN: Final[MonthDay]
+    MAX: Final[MonthDay]
     @property
     def month(self) -> int: ...
     @property
@@ -366,8 +374,8 @@ class IsoWeekDate(_ISOMixin):
     def __init__(self, year: int, week: int, weekday: Weekday) -> None: ...
     @overload
     def __init__(self, iso_string: str, /) -> None: ...
-    MIN: ClassVar[IsoWeekDate]
-    MAX: ClassVar[IsoWeekDate]
+    MIN: Final[IsoWeekDate]
+    MAX: Final[IsoWeekDate]
     @property
     def year(self) -> int: ...
     @property
@@ -400,10 +408,10 @@ class Time(_ISOMixin):
         *,
         nanosecond: int = 0,
     ) -> None: ...
-    MIN: ClassVar[Time]
-    MAX: ClassVar[Time]
-    MIDNIGHT: ClassVar[Time]
-    NOON: ClassVar[Time]
+    MIN: Final[Time]
+    MAX: Final[Time]
+    MIDNIGHT: Final[Time]
+    NOON: Final[Time]
     @property
     def hour(self) -> int: ...
     @property
@@ -514,9 +522,9 @@ class TimeDelta(_ISOMixin):
         nanoseconds: int = 0,
         days_assumed_24h_ok: bool = ...,
     ) -> None: ...
-    ZERO: ClassVar[TimeDelta]
-    MIN: ClassVar[TimeDelta]
-    MAX: ClassVar[TimeDelta]
+    ZERO: Final[TimeDelta]
+    MIN: Final[TimeDelta]
+    MAX: Final[TimeDelta]
     @overload
     def total(
         self,
@@ -2406,8 +2414,8 @@ class Instant(_ExactTime):
         *,
         nanosecond: int = 0,
     ) -> Self: ...
-    MIN: ClassVar[Instant]
-    MAX: ClassVar[Instant]
+    MIN: Final[Instant]
+    MAX: Final[Instant]
     @classmethod
     def now(cls) -> Self: ...
     @overload
@@ -3459,8 +3467,8 @@ class PlainDateTime(_PyDateTimeMixin, _LocalTime):
         *,
         nanosecond: int = 0,
     ) -> None: ...
-    MIN: ClassVar[PlainDateTime]
-    MAX: ClassVar[PlainDateTime]
+    MIN: Final[PlainDateTime]
+    MAX: Final[PlainDateTime]
     def assume_utc(self) -> Instant: ...
     @overload
     def assume_fixed_offset(self, offset: TimeDelta, /) -> OffsetDateTime: ...
@@ -3785,7 +3793,7 @@ TZPATH: tuple[str, ...]
 
 def get_tzpath() -> tuple[str, ...]: ...
 def reset_tzpath(
-    target: Iterable[str | PathLike[str]] | None = None, /
+    target: Sequence[str | PathLike[str]] | None = None, /
 ) -> None: ...
 def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None: ...
 def available_timezones() -> set[str]: ...

@@ -27,6 +27,13 @@ local time
   Also called *civil time* and *wall-clock time*.
   See {ref}`Exact time vs local time <exact-vs-local>`.
 
+unit
+  A span of time that values round to and quantities count in: an exact
+  unit or a calendar unit. Its name is singular where you round *to an hour*
+  (`round("hour")`, `start_of()`, `end_of()`, `format_iso(unit=)`,
+  `timestamp(unit=)`) and plural where you count *the total of minutes*
+  (`total("minutes")`, `in_units=["hours", "minutes"]`).
+
 exact units
   Units of fixed duration: hours, minutes, seconds, and smaller.
   See {ref}`Date-time arithmetic <arithmetic2>`.
@@ -194,6 +201,12 @@ call-local escape
   and *per-method kwarg*.
   See {ref}`warnings`.
 
+compatibility shim
+  A deprecated spelling kept until 1.0: it does what its replacement does
+  and emits `WheneverDeprecationWarning`. The changelog's migration table
+  lists each one.
+  Also called *wrapper*, *alias*, and *legacy path*.
+
 time patch
   A test-only override of the current time as Whenever sees it, created by
   `patch_current_time()` and driven through its `TimePatch` handle. Either
@@ -268,7 +281,8 @@ component-wise composition
   Adding or subtracting two itemized deltas by combining like components,
   which is what `+`, `-`, and `add()`/`subtract()` without `relative_to`
   do. Flagged by `CalendarUnitCompositionWarning` when a calendar unit is
-  involved. Passing `relative_to=` gives calendar-aware composition instead.
+  involved. Passing `relative_to=` also sums the components, then expresses
+  the sum in other units; it doesn't apply the deltas one after another.
   Also called *field-wise composition* and *literal addition*.
   See {ref}`delta-add-sub`.
 
@@ -288,6 +302,7 @@ pure-Python backend
   The fallback that loads when the Rust extension is absent, and the
   reference the Rust extension mirrors. Behaviour is the same; speed is not.
   Also called *pure-Python version*, *pure-Python implementation*,
-  *pure-Python option*, *pure-Python fallback*, and *pure-Python wheel*.
+  *pure-Python option*, and *pure-Python fallback*. The *pure-Python wheel*
+  is the package artifact that contains only this backend.
   See {ref}`faq-pure-python`.
 ```

@@ -109,6 +109,14 @@ __all__ = (
     "clear_tzcache",
     "available_timezones",
     "AnyDelta",
+    "RoundModeStr",
+    "DisambiguationStr",
+    "DeltaUnitStr",
+    "DeltaTotalUnitStr",
+    "DateDeltaUnitStr",
+    "ExactDeltaUnitStr",
+    "OffsetMismatchStr",
+    "TimestampUnitStr",
 )
 
 

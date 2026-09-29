@@ -97,7 +97,7 @@ def get_tz() -> SystemTz:
     """
     try:
         tz_env = os.environ["TZ"]
-    except KeyError:  # pragma: no cover
+    except KeyError:
         return _key_or_file()
     else:
         if tz_env.startswith(":"):

@@ -44,7 +44,7 @@ from whenever import (
                 9,
                 offset=hours(5) + minutes(22) + seconds(45),
             ),
-            "Sat, 15 Aug 2020 23:12:09 +0522",
+            "Sat, 15 Aug 2020 23:12:09 +0523",
         ),
         (
             OffsetDateTime(
@@ -54,28 +54,38 @@ from whenever import (
                 23,
                 12,
                 9,
-                offset=-(hours(5) + minutes(22) + seconds(45)),
+                offset=-(hours(5) + minutes(22) + seconds(29)),
             ),
             "Sat, 15 Aug 2020 23:12:09 -0522",
         ),
-        # -0000 means "offset unknown", so a known offset under a minute
-        # writes +0000
         (
             OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-seconds(30)),
-            "Sat, 15 Aug 2020 23:12:09 +0000",
-        ),
-        (
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-seconds(59)),
-            "Sat, 15 Aug 2020 23:12:09 +0000",
-        ),
-        (
-            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-seconds(60)),
             "Sat, 15 Aug 2020 23:12:09 -0001",
+        ),
+        # -0000 means "offset unknown", so a known offset that rounds to zero
+        # writes +0000
+        (
+            OffsetDateTime(2020, 8, 15, 23, 12, 9, offset=-seconds(29)),
+            "Sat, 15 Aug 2020 23:12:09 +0000",
         ),
     ],
 )
 def test_format_offset_datetime(d, expected):
     assert d.format_rfc2822() == expected
+
+
+@pytest.mark.parametrize(
+    "offset",
+    [
+        -seconds(30),
+        -seconds(29),
+        hours(5) + minutes(30) + seconds(59),
+        -(hours(5) + minutes(30) + seconds(30)),
+    ],
+)
+def test_offset_seconds_round_as_in_patterns(offset):
+    d = OffsetDateTime(1900, 1, 1, offset=offset)
+    assert d.format_rfc2822()[-5:] == d.format("xx")
 
 
 VALID_RFC2822 = [

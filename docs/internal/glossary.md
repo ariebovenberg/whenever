@@ -8,13 +8,11 @@ in a warning message, a docs page, or a public name.
 Same rules as the public glossary: use the headword in code, comments, and
 messages; the "preferred over" words are rejected synonyms.
 
-**compatibility shim**
-: A deprecated path kept for one release cycle: it delegates to its
-  replacement and emits `WheneverDeprecationWarning`. A deprecated pattern
-  spelling is one too; the compiler variants that keep it (`_Hour24Legacy`,
-  `Hour24Legacy`, `_SecondOpt`, `_ColonSec`) and their tests keep "legacy"
-  in their names until 1.0 deletes them, rather than being renamed first.
-  Preferred over *wrapper*, *alias*, and *legacy path*.
+**compatibility shim** (public glossary)
+: A deprecated pattern spelling is one too; the compiler variants that keep
+  it (`_Hour24Legacy`, `Hour24Legacy`, `_SecondOpt`, `_ColonSec`) and their
+  tests keep "legacy" in their names until 1.0 deletes them, rather than
+  being renamed first.
 
 **field**
 : The value a specifier sets: year, month, day, weekday, hour, minute,

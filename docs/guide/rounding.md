@@ -102,9 +102,7 @@ TimeDelta("PT48h")
 so a day has no midnight to start at.
 To round to periods of exactly 24 hours, pass `"hour"` with `increment=24`, or `hours(24)`.
 As with every increment on an {class}`~whenever.Instant`,
-the periods are counted from midnight UTC,
-and `half_even` breaks a tie toward the even multiple counted from that midnight,
-not from the epoch.
+the periods are counted from midnight UTC, not from the epoch.
 
 ## Increment
 
@@ -112,6 +110,12 @@ The `increment` argument sets the {term}`rounding increment`:
 the step the value is rounded to, as a count of the unit.
 For example, you can round to the nearest 15 minutes by setting `increment=15`
 and `unit="minute"`.
+
+Increments are counted from midnight (UTC for an {class}`~whenever.Instant`),
+so `half_even` breaks a tie toward the even multiple counted from there.
+`Time(1, 30).round("minute", increment=20, mode="half_even")` is `01:20`:
+90 minutes is 4.5 increments, and 4 is even.
+Temporal counts within the hour on its local types, and gives `01:40`.
 
 There are some restrictions on the allowed increments:
 

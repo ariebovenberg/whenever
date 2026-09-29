@@ -811,6 +811,15 @@ class TestEquality:
                 True,
             ),
             (ItemizedDelta(days=5), ItemizedDateDelta(days=6), False),
+            # each date component takes part
+            *[
+                (
+                    ItemizedDelta(**{unit: 1}),
+                    ItemizedDateDelta(**{unit: 2}),
+                    False,
+                )
+                for unit in ("years", "months", "weeks", "days")
+            ],
             (ItemizedDelta(days=5), ItemizedDateDelta(days=-5), False),
             (ItemizedDelta(days=5, hours=1), ItemizedDateDelta(days=5), False),
             (ItemizedDelta(nanoseconds=1), ItemizedDateDelta(days=0), False),
@@ -1268,7 +1277,7 @@ class TestShift:
         with warns_here(CalendarUnitCompositionWarning):
             d.add(days=1, cal_unit_composition_ok="")  # type: ignore[call-overload]
 
-    def test_cal_unit_composition_ok_suppresses_warning(self):
+    def test_cal_unit_composition_ok_escape(self):
         result = ItemizedDelta(hours=1).add(
             ItemizedDateDelta(days=1),
             cal_unit_composition_ok=True,
@@ -1352,7 +1361,7 @@ class TestShift:
         with pytest.raises(TypeError):
             getattr(delta, "subtract")(ItemizedDelta(hours=1), reference)
 
-    def test_subtract_no_op_and_suppressed_warning(self):
+    def test_subtract_no_op_and_escaped_warning(self):
         delta = ItemizedDelta(hours=1)
         assert delta.subtract() is delta
         result = delta.subtract(hours=1, cal_unit_composition_ok=True)
@@ -1582,7 +1591,7 @@ class TestInUnitsRelativeToNonZoned:
             result = d.in_units(["hours", "minutes"], relative_to=ref)
         assert result == ItemizedDelta(hours=5, minutes=30)
 
-    def test_warning_suppressed_plain(self):
+    def test_warning_escaped_plain(self):
         d = ItemizedDelta(months=1)
         with suppress(NaiveArithmeticWarning):
             result = d.in_units(
@@ -1590,7 +1599,7 @@ class TestInUnitsRelativeToNonZoned:
             )
         assert result == ItemizedDelta(days=31)
 
-    def test_warning_suppressed_offset(self):
+    def test_warning_escaped_offset(self):
         d = ItemizedDelta(months=1)
         with suppress(StaleOffsetWarning):
             result = d.in_units(
@@ -1889,7 +1898,7 @@ class TestTotal:
                 relative_to=OffsetDateTime(2020, 1, 1, offset=hours(3)),
             )
 
-    def test_relative_to_warning_suppressed(self):
+    def test_relative_to_warning_escaped(self):
         d = ItemizedDelta(months=1)
         with suppress(NaiveArithmeticWarning):
             result = d.total("hours", relative_to=PlainDateTime(2020, 1, 1))
@@ -2257,12 +2266,59 @@ class TestReferenceRule:
                 stale_offset_ok=True,
             )  # type: ignore[call-overload]
 
+    @pytest.mark.parametrize(
+        "call, expect",
+        [
+            (
+                lambda r: ItemizedDelta(days=1).in_units(
+                    ["hours"], relative_to=r
+                ),
+                ItemizedDelta(hours=24),
+            ),
+            (
+                lambda r: ItemizedDelta(days=1).total("hours", relative_to=r),
+                24.0,
+            ),
+            (
+                lambda r: ItemizedDelta(days=1).add(
+                    hours=1, relative_to=r, in_units=["hours"]
+                ),
+                ItemizedDelta(hours=25),
+            ),
+            (
+                lambda r: ItemizedDelta(days=1).subtract(
+                    hours=1, relative_to=r, in_units=["hours"]
+                ),
+                ItemizedDelta(hours=23),
+            ),
+            (
+                lambda r: ItemizedDateDelta(days=1).add(
+                    ItemizedDelta(hours=1), relative_to=r, in_units=["hours"]
+                ),
+                ItemizedDelta(hours=25),
+            ),
+        ],
+    )
+    def test_zoned_reference_shifted_into_a_gap(self, call, expect):
+        # The shifted reference is an intermediate value: the gap resolves
+        # as the default would, without ImplicitDisambiguationWarning
+        reference = ZonedDateTime(2024, 3, 30, 2, 30, tz="Europe/Amsterdam")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert call(reference) == expect
+
     def test_total_validates_the_unit_before_warning(self):
         with warnings.catch_warnings(record=True) as record:
             warnings.simplefilter("always")
             with pytest.raises(ValueError, match="^invalid unit: 'foo'$"):
                 ItemizedDelta(months=1).total("foo", relative_to=self.PLAIN)  # type: ignore[call-overload]
         assert record == []
+
+
+_REFERENCE_WARNINGS = {
+    PlainDateTime: NaiveArithmeticWarning,
+    OffsetDateTime: StaleOffsetWarning,
+}
 
 
 class TestDatetimeOperators:
@@ -2292,14 +2348,14 @@ class TestDatetimeOperators:
         ],
     )
     def test_add_and_subtract(self, dt, delta, expected):
-        warning = isinstance(dt, (PlainDateTime, OffsetDateTime))
-        with pytest.warns(Warning) if warning else nullcontext():
+        w = _REFERENCE_WARNINGS.get(type(dt))
+        with warns_here(w) if w else nullcontext():
             assert dt + delta == expected
-        with pytest.warns(Warning) if warning else nullcontext():
+        with warns_here(w) if w else nullcontext():
             assert delta + dt == expected
-        with pytest.warns(Warning) if warning else nullcontext():
+        with warns_here(w) if w else nullcontext():
             subtracted = dt - delta
-        with pytest.warns(Warning) if warning else nullcontext():
+        with warns_here(w) if w else nullcontext():
             expected_subtracted = dt.subtract(delta)
         assert subtracted == expected_subtracted
 
@@ -2323,8 +2379,8 @@ class TestDatetimeOperators:
     def test_calendar_units_apply_before_exact_units(self, dt, expected):
         # The day is added in local time first (23 hours across Amsterdam's
         # transition), then the 24 hours; the other order gives 13:00.
-        warning = isinstance(dt, (PlainDateTime, OffsetDateTime))
-        with pytest.warns(Warning) if warning else nullcontext():
+        w = _REFERENCE_WARNINGS.get(type(dt))
+        with warns_here(w) if w else nullcontext():
             assert dt.add(days=1, hours=24) == expected
             assert (dt + ItemizedDelta(days=1, hours=24)) == expected
 

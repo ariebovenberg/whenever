@@ -379,7 +379,7 @@ class TestTZifFiles:
 def test_smoke(tzdir: Path | None):
     """Every TZif file parses and agrees with zoneinfo"""
     if tzdir is None or not tzdir.is_dir():
-        pytest.skip(f"no {tzdir}")
+        pytest.skip("no tzdata package" if tzdir is None else f"no {tzdir}")
     count = 0
     for root, _, files in os.walk(tzdir):
         # Special directories we should ignore
@@ -567,6 +567,40 @@ class TestDegenerateFiles:
             assert d.offset == hours(2)
             assert d.tz_abbrev() == "EET"
             assert d.next_transition() is None
+
+    def test_fold_starting_where_a_gap_ends(self, tmp_path: Path):
+        # The bound of the overlap check: touching windows don't overlap
+        t0 = 1_700_000_000
+        data = tzif(
+            version=2,
+            times=(-5364662400, t0, t0 + 3600),
+            idxs=(0, 1, 0),
+            types=((0, 0, 0), (3600, 1, 4)),
+            abbrevs=b"AAA\x00BBB\x00",
+            footer=b"AAA0",
+        )
+        with self._zone(tmp_path, data):
+            assert Instant.from_timestamp(t0 + 1800).to_tz(
+                "Test/Zone"
+            ).offset == hours(1)
+            assert Instant.from_timestamp(t0 + 3600).to_tz(
+                "Test/Zone"
+            ).offset == hours(0)
+
+    def test_abbreviation_without_nul(self, tmp_path: Path):
+        # The last abbreviation runs to the end of its block
+        data = tzif(
+            version=2,
+            times=(0,),
+            idxs=(0,),
+            types=((3600, 0, 0),),
+            abbrevs=b"CET",
+            footer=b"CET-1",
+        )
+        with self._zone(tmp_path, data):
+            assert (
+                ZonedDateTime(2024, 7, 1, tz="Test/Zone").tz_abbrev() == "CET"
+            )
 
     def test_dst_record_at_the_footers_standard_offset(self, tmp_path: Path):
         # DST began with standard time moving to the offset of the footer's
@@ -788,6 +822,25 @@ class TestDegenerateFiles:
                 types=((-18000, 0, 0), (-14400, 1, 4)),
                 abbrevs=b"EST\x00EDT\x00",
                 footer=b"EST5EDT,M3.2.0,M11.1.0",
+            ),
+            # a version that isn't a digit
+            tzif(
+                version=2,
+                times=(0,),
+                idxs=(0,),
+                types=((3600, 0, 0),),
+                abbrevs=b"CET\x00",
+                footer=b"CET-1",
+            ).replace(b"TZif2", b"TZifA", 1),
+            # a footer whose first transition, a fold, overlaps the gap of
+            # the last record
+            tzif(
+                version=2,
+                times=(1_000_000_000,),
+                idxs=(1,),
+                types=((-36000, 0, 0), (7200, 0, 4)),
+                abbrevs=b"M10\x00P02\x00",
+                footer=b"<P02>-2<M10>+10,J252/3:46:41,J300/0",
             ),
         ],
     )

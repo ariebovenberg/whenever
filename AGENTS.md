@@ -91,12 +91,16 @@ CI runs this coverage check on Python 3.14.
   is keyword-only; constructor fields through `second` are positional-or-keyword,
   and `nanosecond`, `offset`, `tz`, `disambiguation`, and delta components are
   keyword-only. Both backends enforce it; `make typecheck` runs stubtest.
+- **Unit spelling**: singular where a value rounds to a unit, as in "round to
+  an hour" (`round()`, `start_of()`, `end_of()`, `format_iso()`,
+  `timestamp()`, `from_timestamp()`); plural where a quantity counts it, as in
+  "the total of minutes" (`total()`, `in_units=`). Each rejects the other.
 - **Value types**: `repr(x)` is a constructor expression that rebuilds an equal
   value (space separator, lowercase delta units); `str(x)` is `format_iso()`
   and never raises; `hash` agrees with `==`; `__format__` exists exactly on the
-  six types with patterns. Outside the exact family, `==` across types is
-  `False` and ordering across types raises `TypeError`; `==` against stdlib
-  objects is `False`.
+  six types with patterns. Outside the exact family and the two itemized
+  deltas, `==` across types is `False`; ordering across types raises
+  `TypeError`; `==` against stdlib objects is `False`.
   Sub-microsecond precision is floored on the way to the stdlib.
 - **Exceptions**: out of domain is `ValueError`. A value past the
   representable range may raise `OverflowError` instead, and the backends
@@ -120,8 +124,8 @@ CI runs this coverage check on Python 3.14.
 - **Messages**: lowercase, the offending value in `repr` form, the parameter
   named when the call has more than one, glossary headwords. Keep one wording
   per condition on both backends where that costs nothing; stdlib messages
-  may bubble up in the pure-Python backend. Which of two wrong arguments is
-  reported first is unspecified.
+  may bubble up in the pure-Python backend. Which of two wrong arguments, or
+  of two defects in one parsed string, is reported first is unspecified.
 - **Warnings**: each escapable warning has one call-local escape ending in
   `_ok`, named in its message; `ImplicitDisambiguationWarning` is escaped by
   stating `disambiguation=`. A call that rejects an argument emits no

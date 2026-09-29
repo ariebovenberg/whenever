@@ -159,7 +159,11 @@ class TestCompilePattern:
         "pattern", ["HH:mm aa", "hh:mm aa", "H:mm aa", "h:mm aa"]
     )
     def test_24h_with_ampm_raises(self, pattern):
-        with pytest.raises(ValueError, match="24-hour.*cannot.*AM/PM"):
+        with pytest.raises(
+            ValueError,
+            match=r"^24-hour clock \(H/HH\) cannot be combined with AM/PM "
+            r"\(a/aa\): use the 12-hour clock \(i/ii\) instead$",
+        ):
             Time(14, 30).format(pattern)
 
     def test_12h_without_ampm_warns(self):
@@ -1016,12 +1020,18 @@ class TestOffsetDateTimeParse:
         )
         assert odt == OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(2))
 
-    def test_utc_z(self):
+    # As in ISO 8601 parsing, a lowercase z is accepted too
+    @pytest.mark.parametrize("z", ["Z", "z"])
+    def test_utc_z(self, z):
         """Parsing accepts Z as +00:00 with uppercase X."""
         odt = OffsetDateTime.parse(
-            "2024-03-15 14:30Z", pattern="YYYY-MM-DD HH:mmXXX"
+            f"2024-03-15 14:30{z}", pattern="YYYY-MM-DD HH:mmXXX"
         )
         assert odt == OffsetDateTime(2024, 3, 15, 14, 30, offset=hours(0))
+        with pytest.raises(ValueError, match="expected offset sign"):
+            OffsetDateTime.parse(
+                f"2024-03-15 14:30{z}", pattern="YYYY-MM-DD HH:mmxxx"
+            )
 
     def test_missing_offset(self):
         with pytest.raises(ValueError, match="offset.*x/X"):
@@ -1590,13 +1600,21 @@ class TestParseEdgeCases:
         assert Time.parse("02 P", pattern="ii a") == Time(14, 0)
         assert Time.parse("02 A", pattern="ii a") == Time(2, 0)
 
-    def test_ampm_short_invalid(self):
-        with pytest.raises(ValueError, match="AM/PM"):
-            Time.parse("02 X", pattern="ii a")
-
-    def test_ampm_full_invalid(self):
-        with pytest.raises(ValueError, match="AM/PM"):
-            Time.parse("02:00 XY", pattern="ii:mm aa")
+    # The message shows the value as written
+    @pytest.mark.parametrize(
+        "s, pattern, got",
+        [
+            ("02 X", "ii a", "'X'"),
+            ("02 x", "ii a", "'x'"),
+            ("02:00 XY", "ii:mm aa", "'XY'"),
+            ("02:00 xy", "ii:mm aa", "'xy'"),
+        ],
+    )
+    def test_ampm_invalid(self, s, pattern, got):
+        with pytest.raises(
+            ValueError, match=f"^expected AM/PM at position \\d+, got {got}$"
+        ):
+            Time.parse(s, pattern=pattern)
 
     def test_offset_with_seconds(self):
         odt = OffsetDateTime.parse(

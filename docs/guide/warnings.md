@@ -35,9 +35,11 @@ UserWarning (stdlib)
     └── WheneverDeprecationWarning
 ```
 
-One warning has no class of its own: a pattern with a 12-hour clock (`i` or
-`ii`) and no AM/PM specifier emits `WheneverWarning` itself. Filter it by
-message if that case needs separate handling.
+Two warnings have no class of their own and emit `WheneverWarning` itself:
+a pattern with a 12-hour clock (`i` or `ii`) and no AM/PM specifier, and a
+conversion that loses data, such as `Date()` given a `datetime` or a
+constructor given a `pandas` object. Filter them by message if either case
+needs separate handling.
 
 ## Turn warnings into errors
 

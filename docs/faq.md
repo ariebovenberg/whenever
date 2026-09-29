@@ -243,10 +243,10 @@ with
 (faq-production-ready)=
 ## Is it production-ready?
 
-The core functionality is complete and mostly stable. The goal is to
-reach 1.0 soon, but the API may change until then. Of course, it's
-still a relatively young project, so the stability relies on you to try
-it out and report any issues!
+The core functionality is complete, and version 0.11 establishes the 1.0
+API: unless significant issues arise, 1.0 differs from it only by
+removing the spellings 0.11 deprecates. Please try it out and report any
+issues!
 
 ## Where do the benchmarks come from?
 
@@ -306,9 +306,6 @@ whenever = { rust-extension = "skip" }
 ### uv
 
 ```
-# as a one-off command
-uv add whenever --no-binary-package whenever --config-settings-package whenever:rust-extension=skip
-
 # in pyproject.toml
 [tool.uv]
 no-binary-package = ["whenever"]

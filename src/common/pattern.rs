@@ -1001,7 +1001,7 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
 
     if has_24h && has_ampm {
         return Err(
-            "24-hour clock (H/HH) cannot be combined with AM/PM (a/aa). Use the 12-hour clock (i/ii) instead.".into(),
+            "24-hour clock (H/HH) cannot be combined with AM/PM (a/aa): use the 12-hour clock (i/ii) instead".into(),
         );
     }
 
@@ -1631,7 +1631,7 @@ fn parse_offset_value(
 ) -> Result<(i32, usize, bool, bool), String> {
     // The final two values indicate whether offset seconds were present and
     // whether the input used `Z`, respectively.
-    if accept_z && pos < s.len() && s[pos] == b'Z' {
+    if accept_z && pos < s.len() && matches!(s[pos], b'Z' | b'z') {
         return Ok((0, pos + 1, true, true));
     }
     if pos >= s.len() || (s[pos] != b'+' && s[pos] != b'-') {

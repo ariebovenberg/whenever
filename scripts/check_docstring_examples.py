@@ -12,8 +12,8 @@ Two things to know when reading the output:
   ``whenever.Date``. Doctest therefore reports line numbers into
   ``__init__.py``, which contains none of these docstrings -- search for the
   example text in ``_pywhenever.py`` or ``_ideltas.py`` instead.
-* Examples run against whichever implementation is installed, so this covers
-  the Rust docstrings too when the extension is built.
+* Examples run against whichever backend is installed, so this covers
+  the Rust docstrings too when the Rust extension is built.
 
 Usage: python scripts/check_docstring_examples.py [--verbose]
 """

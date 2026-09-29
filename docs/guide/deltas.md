@@ -77,8 +77,7 @@ floating-point values. See {ref}`delta-subsecond` for the full rules.
 
 Calendar units are not fixed durations. `1 month` may be 28, 29, 30, or
 31 days, and applying it can clamp at month end. As a result, calendar units
-need a **reference date** for operations that convert them to other units or
-combine them in a calendar-aware way. An itemized delta's
+need a **reference date** for operations that convert them to other units. An itemized delta's
 {meth}`~ItemizedDelta.total` and {meth}`~ItemizedDelta.in_units` always take
 `relative_to=`, even for exact units, as the example above shows: whether a
 reference is needed would otherwise depend on the delta's value.
@@ -126,6 +125,18 @@ Date("2023-03-28")
 >>> summed = one_month + one_month  # P2M, emits CalendarUnitCompositionWarning
 >>> start + summed
 Date("2023-03-31")
+```
+
+`relative_to=` doesn't change this. `add()` and `subtract()` with a reference
+still sum the components, apply the sum to the reference in one step, and
+express the result in `in_units`. To apply the deltas one after another,
+apply each one to the date and measure the result:
+
+```python
+>>> one_month.add(one_month, relative_to=start, in_units=["months", "days"])
+ItemizedDateDelta("P2m0d")
+>>> (start + one_month + one_month).since(start, in_units=["months", "days"])
+ItemizedDateDelta("P1m28d")
 ```
 
 ## Balancing into different units

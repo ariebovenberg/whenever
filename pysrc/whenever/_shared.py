@@ -1,5 +1,5 @@
 """Pure-Python components that are shared between the Rust extension
-and the pure-Python implementation.
+and the pure-Python backend.
 
 Types defined here are always pure Python, even when the Rust extension is active.
 This prevents unnecessary duplication for these simple concepts.
@@ -105,6 +105,12 @@ SATURDAY = Weekday.SATURDAY
 SUNDAY = Weekday.SUNDAY
 
 
+def _check_parse_iso_arg(s: object) -> None:
+    # Bytes would otherwise pass as far as a misleading ValueError
+    if not isinstance(s, str):
+        raise TypeError("parse_iso() argument must be a string")
+
+
 @final
 class YearMonth(_Base):
     """A year and month without a day component.
@@ -151,20 +157,12 @@ class YearMonth(_Base):
 
     @property
     def year(self) -> int:
-        """The year component of the year-month
-
-        >>> YearMonth(2021, 1).year
-        2021
-        """
+        """The year component of the year-month"""
         return self._py.year
 
     @property
     def month(self) -> int:
-        """The month component of the year-month
-
-        >>> YearMonth(2021, 1).month
-        1
-        """
+        """The month component of the year-month"""
         return self._py.month
 
     def format_iso(self) -> str:
@@ -186,6 +184,7 @@ class YearMonth(_Base):
         >>> YearMonth.parse_iso("2021-01")
         YearMonth("2021-01")
         """
+        _check_parse_iso_arg(s)
         return cls._from_py_unchecked(yearmonth_from_iso(s))
 
     if not TYPE_CHECKING:  # for a nice autodoc
@@ -416,20 +415,12 @@ class MonthDay(_Base):
 
     @property
     def month(self) -> int:
-        """The month component of the month-day
-
-        >>> MonthDay(11, 23).month
-        11
-        """
+        """The month component of the month-day"""
         return self._py.month
 
     @property
     def day(self) -> int:
-        """The day component of the month-day
-
-        >>> MonthDay(11, 23).day
-        23
-        """
+        """The day component of the month-day"""
         return self._py.day
 
     def format_iso(self) -> str:
@@ -457,6 +448,7 @@ class MonthDay(_Base):
         >>> MonthDay.parse_iso("--11-23")
         MonthDay("--11-23")
         """
+        _check_parse_iso_arg(s)
         return cls._from_py_unchecked(monthday_from_iso(s))
 
     if not TYPE_CHECKING:  # for a nice autodoc
@@ -676,29 +668,17 @@ class IsoWeekDate(_Base):
 
     @property
     def year(self) -> int:
-        """The ISO week year
-
-        >>> IsoWeekDate(2024, 1, Weekday.MONDAY).year
-        2024
-        """
+        """The ISO week year"""
         return self._year
 
     @property
     def week(self) -> int:
-        """The ISO week number (1--53)
-
-        >>> IsoWeekDate(2024, 1, Weekday.MONDAY).week
-        1
-        """
+        """The ISO week number (1--53)"""
         return self._week
 
     @property
     def weekday(self) -> Weekday:
-        """The day of the week
-
-        >>> IsoWeekDate(2024, 1, Weekday.MONDAY).weekday
-        Weekday.MONDAY
-        """
+        """The day of the week"""
         return self._weekday
 
     def date(self) -> Date:
@@ -769,6 +749,7 @@ class IsoWeekDate(_Base):
         >>> IsoWeekDate.parse_iso("2024-W01-1")
         IsoWeekDate("2024-W01-1")
         """
+        _check_parse_iso_arg(s)
         obj = _object_new(cls)
         obj._init_from_iso(s)
         return obj

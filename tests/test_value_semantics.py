@@ -353,9 +353,13 @@ _P = PlainDateTime(2020, 1, 1)
             lambda x: _Z.replace_time(x),
             r"replace_time\(\) argument must be a Time",
         ),
+        *[
+            (cls.parse_iso, r"parse_iso\(\) argument must be a string")
+            for cls in (YearMonth, MonthDay, IsoWeekDate)
+        ],
     ],
 )
-@pytest.mark.parametrize("operand", [None, 3, _P])
+@pytest.mark.parametrize("operand", [None, 3, _P, b"2020-01"])
 def test_wrong_operand_names_the_expected_type(call, message, operand):
     with pytest.raises(TypeError, match=f"^{message}$"):
         call(operand)

@@ -366,7 +366,8 @@ impl ZonedDateTime {
         }
         // The multiples of the value's own clock reading bracket it. Safe:
         // `mapping_for_local` agrees with `offset_for_instant`, since the
-        // loader rejects overlapping gaps and folds (`load_transitions`) and
+        // loader rejects overlapping gaps and folds (`load_transitions`, and
+        // `parse_tzif` across the last record and the POSIX TZ string) and
         // a POSIX TZ string that disagrees with the last record.
         let (start, _, nanos) = start.unwrap();
         TimeUnitBounds {
@@ -604,15 +605,31 @@ pub(crate) fn zoned_since_in_units(
             expand_date = diff_to(expand_date)?.2;
             expand = b.with_date(expand_date.into())?.to_instant();
         }
-        if ddelta.round_by_time(
-            calendar_units.smallest(),
-            a_inst,
-            trunc,
-            expand,
-            mode,
-            increment,
-            negative,
-        ) {
+        // A skipped day can resolve the expanded endpoint onto `a`, which
+        // the calendar counts a day short of it: round by the days between
+        // the dates, as on the wall clock (and in Temporal)
+        let rounded_up = if expand == a_inst && expand != trunc {
+            ddelta.round_by_days(
+                calendar_units.smallest(),
+                target_date,
+                trunc_date.into(),
+                expand_date.into(),
+                mode,
+                increment,
+                negative,
+            )
+        } else {
+            ddelta.round_by_time(
+                calendar_units.smallest(),
+                a_inst,
+                trunc,
+                expand,
+                mode,
+                increment,
+                negative,
+            )
+        };
+        if rounded_up {
             // The larger units take the carry, and the smallest stays a
             // multiple of the increment. Counted on the dates, and stepped
             // on where a skipped day resolves the carried date short of `a`.

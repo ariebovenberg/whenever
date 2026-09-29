@@ -814,7 +814,7 @@ class TestShift:
         with warns_here(CalendarUnitCompositionWarning):
             d.add(days=1, cal_unit_composition_ok="")  # type: ignore[call-overload]
 
-    def test_cal_unit_composition_ok_suppresses_warning(self):
+    def test_cal_unit_composition_ok_escape(self):
         result = ItemizedDateDelta(days=1).add(
             ItemizedDateDelta(days=0), cal_unit_composition_ok=True
         )
@@ -896,7 +896,7 @@ class TestShift:
             result = delta.subtract(ItemizedDateDelta(days=1))
         assert result.strict_eq(ItemizedDateDelta(days=0))
 
-    def test_full_delta_add_and_suppressed_subtract_warning(self):
+    def test_full_delta_add_and_escaped_subtract_warning(self):
         with warns_here(CalendarUnitCompositionWarning):
             result = ItemizedDateDelta(days=1).add(ItemizedDelta(hours=1))
         assert result.strict_eq(ItemizedDelta(days=1, hours=1))

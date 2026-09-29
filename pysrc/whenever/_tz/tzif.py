@@ -235,7 +235,7 @@ class TimeZone:
                 and self._meta_by_utc == other._meta_by_utc
                 and self._abbrev_data == other._abbrev_data
             )
-        return NotImplemented  # pragma: no cover
+        return NotImplemented  # pragma: no cover (another type)
 
     @classmethod
     def parse_posix(cls, s: str) -> TimeZone:
@@ -353,7 +353,7 @@ def _parse_header(data: IO[bytes]) -> Header:
     elif version_byte.isdigit():
         version = int(version_byte)
     else:
-        raise ValueError("Invalid header value")  # pragma: no cover
+        raise ValueError("Invalid header value")
 
     data.read(15)  # Skip reserved bytes
 
@@ -461,6 +461,15 @@ def _parse_content(
             raise ValueError("Invalid TZif data")
         if (nxt := end.next_transition(last)) is not None:
             footer_from, offset = nxt
+            # The footer's first transition must not overlap the last
+            # record's gap or fold either, by the inequality
+            # `_load_transitions` applies between records
+            if len(offsets_by_utc) > 1 and footer_from + min(
+                offset, last_offset
+            ) < offsets_by_utc[-1][0] + max(
+                offsets_by_utc[-2][1], last_offset
+            ):
+                raise ValueError("Invalid TZif data")
             footer_local_from = clamp_epoch_secs(
                 footer_from + min(offset, last_offset)
             )
@@ -531,7 +540,7 @@ def _abbrev_at(abbrev_data: bytes, idx: int) -> str:
     """Extract a NUL-terminated abbreviation string at the given index."""
     try:
         end = abbrev_data.index(b"\x00", idx)
-    except ValueError:  # pragma: no cover
+    except ValueError:
         end = len(abbrev_data)
     return abbrev_data[idx:end].decode("ascii")
 

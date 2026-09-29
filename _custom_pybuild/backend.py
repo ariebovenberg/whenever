@@ -16,6 +16,13 @@ def _apply(config_settings):
     through the environment variable. Returns the settings without ours.
     """
     settings = dict(config_settings or {})
+    # A misspelling would otherwise build the extension without a word
+    if typos := [
+        k for k in settings if k.startswith("rust-") and k != _SETTING
+    ]:
+        raise ValueError(
+            f"unknown config setting {typos[0]!r}; the setting is {_SETTING!r}"
+        )
     value = settings.pop(_SETTING, "build")
     if value == "skip":
         os.environ[_ENV_VAR] = "1"

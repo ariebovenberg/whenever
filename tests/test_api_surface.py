@@ -26,15 +26,20 @@ from .common import SAMPLE_VALUES
 
 
 @pytest.mark.skipif(
-    sys.version_info < (3, 13),
-    reason="feature not supported until Python 3.13",
+    sys.version_info < (3, 12),
+    reason="per-interpreter GIL not supported until Python 3.12",
 )
 def test_multiple_interpreters():
-    import _interpreters as interpreters
+    # Private modules: the only way to create a subinterpreter with its own
+    # GIL (the default for both) before PEP 734 in Python 3.14
+    if sys.version_info >= (3, 13):
+        import _interpreters as interpreters
+    else:
+        import _xxsubinterpreters as interpreters
 
     for _ in range(10):
         interp_id = interpreters.create()
-        # returns the exception instead of raising it; typeshed says None
+        # 3.13+ returns the exception instead of raising it; typeshed says None
         error = interpreters.run_string(  # type: ignore[func-returns-value]
             interp_id,
             "from whenever import Instant; Instant.now()",
@@ -91,7 +96,6 @@ def test_dir_includes_public_names():
         *whenever.__all__,
         "__version__",
         "_EXTENSION_LOADED",
-        "RoundModeStr",
     }
     assert expected <= set(dir(whenever))
 

@@ -41,13 +41,12 @@ pub(crate) fn format(odt: OffsetDateTime) -> [u8; 31] {
     buf[17..19].copy_from_slice(format_2_digits(hour).as_ref());
     buf[20..22].copy_from_slice(format_2_digits(minute).as_ref());
     buf[23..25].copy_from_slice(format_2_digits(second).as_ref());
-    // -0000 means the offset is unknown; a known one under a minute truncates to +0000.
-    buf[26] = if offset.get() > -S_PER_MINUTE {
-        b'+'
-    } else {
-        b'-'
-    };
-    let offset_abs = offset.get().abs();
+    // Offset seconds round to the nearest minute, as the `xx` pattern does
+    let secs = offset.get();
+    let rounded = secs.signum() * ((secs.abs() + 30) / S_PER_MINUTE * S_PER_MINUTE);
+    // -0000 means the offset is unknown, so a known zero is +0000
+    buf[26] = if rounded < 0 { b'-' } else { b'+' };
+    let offset_abs = rounded.abs();
     buf[27..29].copy_from_slice(format_2_digits((offset_abs / S_PER_HOUR) as u8).as_ref());
     buf[29..31].copy_from_slice(
         format_2_digits(((offset_abs % S_PER_HOUR) / S_PER_MINUTE) as u8).as_ref(),

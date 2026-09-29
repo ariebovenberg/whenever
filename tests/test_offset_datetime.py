@@ -1831,7 +1831,7 @@ class TestRound:
             d.round(unit)
         assert len(w) == 1
 
-    def test_stale_offset_ok_suppresses_warning(self):
+    def test_stale_offset_ok_escape(self):
         d = OffsetDateTime(2020, 8, 15, 23, 24, 18, offset=hours(4))
         with warnings.catch_warnings():
             warnings.simplefilter("error")
@@ -1908,7 +1908,7 @@ class TestStartOf:
         with warns_here(StaleOffsetWarning):
             odt.start_of("day")
 
-    def test_stale_offset_ok_suppresses_warning(self):
+    def test_stale_offset_ok_escape(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
         with warnings.catch_warnings():
             warnings.simplefilter("error")
@@ -2153,7 +2153,7 @@ class TestEndOf:
         with warns_here(StaleOffsetWarning):
             odt.end_of("day")
 
-    def test_stale_offset_ok_suppresses_warning(self):
+    def test_stale_offset_ok_escape(self):
         odt = OffsetDateTime(2024, 8, 15, 14, 30, offset=hours(5))
         with warnings.catch_warnings():
             warnings.simplefilter("error")

@@ -453,7 +453,7 @@ class _Base:
 
     @classmethod
     def parse_iso(cls: type[_T], s: str, /) -> _T:
-        raise NotImplementedError  # pragma: no cover
+        raise NotImplementedError
 
 
 if TYPE_CHECKING:

@@ -97,7 +97,7 @@ static MODULE_SLOTS: PyDefSlice<PyModuleDef_Slot> = PyDefSlice::new(&[
             _wrap
         } as *mut c_void,
     },
-    #[cfg(Py_3_13)]
+    #[cfg(Py_3_12)]
     PyModuleDef_Slot {
         slot: Py_mod_multiple_interpreters,
         value: Py_MOD_PER_INTERPRETER_GIL_SUPPORTED,

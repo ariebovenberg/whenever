@@ -8,7 +8,7 @@ class Unique:
     def __eq__(self, other: object) -> bool:
         if isinstance(other, Unique):
             return self.offset == other.offset
-        return False  # pragma: no cover
+        return False  # pragma: no cover (an ambiguity of another kind)
 
     def __repr__(self) -> str:
         return f"Unique({self.offset})"
@@ -34,7 +34,7 @@ class Gap:
                 and self.later_offset == other.later_offset
                 and self.earlier_offset == other.earlier_offset
             )
-        return False  # pragma: no cover
+        return False  # pragma: no cover (an ambiguity of another kind)
 
     def __repr__(self) -> str:
         return (
@@ -63,7 +63,7 @@ class Fold:
                 and self.earlier_offset == other.earlier_offset
                 and self.later_offset == other.later_offset
             )
-        return False  # pragma: no cover
+        return False  # pragma: no cover (an ambiguity of another kind)
 
     def __repr__(self) -> str:
         return (

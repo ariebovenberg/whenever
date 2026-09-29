@@ -1,4 +1,4 @@
-"""Pure-Python implementation of ItemizedDelta and ItemizedDateDelta.
+"""ItemizedDelta and ItemizedDateDelta, in pure Python on both backends.
 
 These types are always pure Python, even when the Rust extension is active.
 The Rust extension imports them from this module.
@@ -222,20 +222,18 @@ def _read_components(
 def _shift_reference(
     reference: _whenever.ZonedDateTime,
     components: Mapping[Any, int],
-    warn_stacklevel: int,
 ) -> _whenever.ZonedDateTime:
-    """Shift a reference by summed components, which may mix signs, and
-    attribute the shift's ``ImplicitDisambiguationWarning`` to the caller.
+    """Shift a reference by summed components, which may mix signs. The
+    result is an intermediate value, so a skipped or repeated time resolves
+    as the default would, without ``ImplicitDisambiguationWarning``, as the
+    intermediates of ``since()`` do.
 
-    Both go past the stub, so a cast is needed: a mixed-sign sum cannot
-    form an itemized delta, and ``_warn_stacklevel`` is private.
-    ``warn_stacklevel`` counts from the caller of this helper.
+    A mixed-sign sum cannot form an itemized delta, so it goes past the
+    stub with a cast.
     """
     return cast(
         _whenever.ZonedDateTime,
-        cast(Any, reference).add(
-            **components, _warn_stacklevel=warn_stacklevel + 1
-        ),
+        cast(Any, reference).add(**components, disambiguation="compatible"),
     )
 
 
@@ -265,20 +263,21 @@ CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG = (
     "of applying the deltas one after another. With calendar units such as "
     "months or days, the combined delta can produce a different date because "
     "calendar arithmetic may clamp at month boundaries. To apply the deltas "
-    "sequentially, apply each one to the date or datetime in a separate step. "
-    "To create one delta relative to a starting point, use the corresponding "
-    "`.add()` or `.subtract()` method with `relative_to=...` and "
-    "`in_units=...`. If component-wise composition is intentional, use that method "
-    "with `cal_unit_composition_ok=True`. " + WARNING_HANDLING_DOCS_MSG
+    "one after another, apply each one to the date or datetime in a separate "
+    "step. If component-wise composition is intentional, use the corresponding "
+    "`.add()` or `.subtract()` method with `cal_unit_composition_ok=True`, or "
+    "with `relative_to=...` and `in_units=...` to express the combined delta "
+    "in other units. " + WARNING_HANDLING_DOCS_MSG
 )
 
 CALENDAR_UNIT_METHOD_COMPOSITION_MSG = (
     "Calling `.add()` or `.subtract()` without `relative_to` combines the "
     "itemized deltas component by component. With calendar units such as months or "
     "days, the resulting delta may behave differently from applying the deltas "
-    "one after another. Pass `relative_to=...` and `in_units=...` to create a "
-    "delta relative to a specific starting point. If component-wise composition is "
-    "intentional, pass `cal_unit_composition_ok=True`. "
+    "one after another. To apply them one after another, apply each one to the "
+    "date or datetime in a separate step. If component-wise composition is "
+    "intentional, pass `cal_unit_composition_ok=True`, or `relative_to=...` and "
+    "`in_units=...` to express the combined delta in other units. "
     + WARNING_HANDLING_DOCS_MSG
 )
 
@@ -426,7 +425,7 @@ def _compose(
         naive_arithmetic_ok,
         stale_offset_ok,
     )
-    result = _shift_reference(reference, combined, 3).since(
+    result = _shift_reference(reference, combined).since(
         reference,
         in_units=units,
         round_mode=round_mode,
@@ -470,10 +469,14 @@ class CalendarUnitCompositionWarning(WheneverWarning):
     throws without a reference) because a warning serves strict, accepting,
     and unaware callers alike: see :ref:`flagged-not-forbidden`.
 
-    To preserve calendar-aware semantics, pass ``relative_to=...`` and
-    ``in_units=...`` to :meth:`~whenever.ItemizedDelta.add` or
-    :meth:`~whenever.ItemizedDateDelta.add`. If component-wise composition is
-    intentional, pass ``cal_unit_composition_ok=True`` or use Python's
+    To apply the deltas one after another, apply each one to the date or
+    datetime in a separate step. ``relative_to=`` on
+    :meth:`~whenever.ItemizedDelta.add` and
+    :meth:`~whenever.ItemizedDateDelta.add` doesn't: it sums the components
+    too, applies the sum to the reference, and expresses the result in
+    ``in_units=``. If component-wise composition is intentional, pass
+    ``cal_unit_composition_ok=True``, pass ``relative_to=`` and
+    ``in_units=`` for the combined delta in other units, or use Python's
     standard warning filters.
     """
 
@@ -1254,9 +1257,11 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     def strict_eq(self, other: ItemizedDelta, /) -> bool:
         """Compare two deltas, including what ``==`` ignores.
 
-        ``ItemizedDelta.__eq__`` ignores the argument's type, and whether a
-        component was given explicitly as zero. An argument of a different
-        type raises :exc:`TypeError`.
+        ``==`` equates an :class:`ItemizedDelta` with an
+        :class:`ItemizedDateDelta` of the same components, and ignores
+        whether a component was given explicitly as zero. ``strict_eq()``
+        takes only an :class:`ItemizedDelta`: another type raises
+        :exc:`TypeError`.
 
         >>> d = ItemizedDelta(weeks=2, hours=3)
         >>> d == ItemizedDelta(weeks=2, hours=3, months=0)
@@ -1375,10 +1380,11 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             The delta to add, or else its components as keywords, named
             as in the constructor.
         relative_to
-            The reference for calendar-aware composition: the components of
-            both deltas are summed, applied to the reference, and the result
-            is measured back from it in ``in_units``. Without a reference,
-            composition is component-wise: like components are summed.
+            The reference that expresses the sum in ``in_units``: the
+            components of both deltas are summed, the sum is applied to the
+            reference in one step (not one delta after the other), and the
+            result is measured back from it in ``in_units``. Without a
+            reference, the summed components are the result.
             A :class:`ZonedDateTime` emits no warning. A
             :class:`PlainDateTime` ignores time zone transitions, and emits
             :class:`NaiveArithmeticWarning` when the computation crosses the
@@ -1511,8 +1517,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
         Composition emits :class:`~whenever.CalendarUnitCompositionWarning`
         when a nonzero calendar unit is involved; :meth:`add` accepts that
-        with ``cal_unit_composition_ok=True``, or composes calendar-aware
-        with ``relative_to``.
+        with ``cal_unit_composition_ok=True``, or with ``relative_to`` to
+        express the sum in other units.
         """
         if isinstance(other, _datetime_types()):
             return _shift_datetime_operator(other, self, False)
@@ -1617,7 +1623,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             naive_arithmetic_ok,
             stale_offset_ok,
         )
-        result = _shift_reference(reference, self, 2).since(
+        result = _shift_reference(reference, self).since(
             reference,
             in_units=units,
             round_mode=round_mode,
@@ -1674,7 +1680,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             naive_arithmetic_ok,
             stale_offset_ok,
         )
-        result = (_shift_reference(reference, self, 2) - reference).total(
+        result = (_shift_reference(reference, self) - reference).total(
             unit, relative_to=reference
         )
         if warning is not None:
@@ -2264,9 +2270,10 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     def strict_eq(self, other: ItemizedDateDelta, /) -> bool:
         """Compare two deltas, including what ``==`` ignores.
 
-        ``ItemizedDateDelta.__eq__`` ignores the argument's type, and whether
-        a component was given explicitly as zero. An argument of a different
-        type raises :exc:`TypeError`.
+        ``==`` equates an :class:`ItemizedDateDelta` with an
+        :class:`ItemizedDelta` of the same components, and ignores whether a
+        component was given explicitly as zero. ``strict_eq()`` takes only an
+        :class:`ItemizedDateDelta`: another type raises :exc:`TypeError`.
 
         >>> d = ItemizedDateDelta(weeks=2, days=3)
         >>> d == ItemizedDateDelta(weeks=2, days=3, months=0)
@@ -2375,10 +2382,11 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             The delta to add, or else its components as keywords, named
             as in the constructor.
         relative_to
-            The reference for calendar-aware composition: the components of
-            both deltas are summed, applied to the reference, and the result
-            is measured back from it in ``in_units``. Without a reference,
-            composition is component-wise: like components are summed.
+            The reference that expresses the sum in ``in_units``: the
+            components of both deltas are summed, the sum is applied to the
+            reference in one step (not one delta after the other), and the
+            result is measured back from it in ``in_units``. Without a
+            reference, the summed components are the result.
             For an :class:`ItemizedDateDelta` result, a :class:`Date` or a
             datetime, of which only the date is read, without a warning.
             For an :class:`ItemizedDelta` result, a datetime.
@@ -2503,8 +2511,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         an :class:`ItemizedDelta`. Composition emits
         :class:`~whenever.CalendarUnitCompositionWarning` when a nonzero
         calendar unit is involved; :meth:`add` accepts that with
-        ``cal_unit_composition_ok=True``, or composes calendar-aware with
-        ``relative_to``.
+        ``cal_unit_composition_ok=True``, or with ``relative_to`` to express
+        the sum in other units.
         """
         if isinstance(other, _date_or_datetime_types()):
             return _shift_datetime_operator(other, self, False)

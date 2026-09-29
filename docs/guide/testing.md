@@ -24,8 +24,7 @@ Sometimes you need to control what `.now()` returns, typically for testing.
 
 ```{note}
 
-[freezegun](https://github.com/spulec/freezegun) isn't supported:
-the Rust extension reads the system clock directly, out of freezegun's reach.
+[freezegun](https://github.com/spulec/freezegun) isn't supported.
 Use `time-machine` instead.
 ```
 

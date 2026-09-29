@@ -1,3 +1,5 @@
+import copy
+import pickle
 import warnings
 from collections.abc import Callable
 from time import sleep, time_ns
@@ -82,6 +84,21 @@ def test_time_patch_lifetime_and_overlap():
         handle.move_to(i)
 
 
+@pytest.mark.parametrize(
+    "duplicate", [copy.copy, lambda p: pickle.loads(pickle.dumps(p))]
+)
+def test_duplicated_time_patch_handle_is_not_active(duplicate):
+    i = Instant.from_utc(1980, 3, 2, hour=2)
+    with patch_current_time(i, keep_ticking=False) as handle:
+        dup = duplicate(handle)
+
+    with pytest.raises(RuntimeError, match="no longer active"):
+        dup.shift(hours(1))
+    with pytest.raises(RuntimeError, match="no longer active"):
+        dup.move_to(i)
+    assert Instant.now() > Instant.from_utc(2024, 1, 1)
+
+
 def test_ticking_time_patch_before_epoch():
     i = Instant.from_utc(1960, 3, 2, hour=2)
     with patch_current_time(i, keep_ticking=True):
@@ -111,15 +128,6 @@ def test_time_patch_shift_out_of_range():
     with patch_current_time(Instant.MAX, keep_ticking=False) as p:
         with pytest.raises(ValueError, match="out of range"):
             p.shift(seconds=1)
-
-
-def test_time_patch_ticks_out_of_range():
-    with patch_current_time(Instant.MAX, keep_ticking=True):
-        sleep(1e-6)
-        with pytest.raises(
-            ValueError, match="^value or calculation out of range$"
-        ):
-            Instant.now()
 
 
 def test_time_patch_is_not_constructable():

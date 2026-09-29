@@ -387,10 +387,21 @@ fn parse_content(header: Header, s: &mut Scan, key: Option<&str>) -> ParseResult
             return Err(ErrorCause::Body);
         }
         (Some(tz), Some(&last)) => match tz.next_transition(last) {
-            Some((t, offset)) => (
-                t,
-                LocalSeconds::from_instant_saturating(t, offset.min(last_offset)),
-            ),
+            Some((t, offset)) => {
+                // The footer's first transition must not overlap the last
+                // record's gap or fold either, by the inequality
+                // `load_transitions` applies between records
+                if let [.., (_, before), (last_epoch, _)] = offsets_by_utc[..]
+                    && t.get() + i64::from(offset.min(last_offset).get())
+                        < last_epoch.get() + i64::from(before.max(last_offset).get())
+                {
+                    return Err(ErrorCause::Body);
+                }
+                (
+                    t,
+                    LocalSeconds::from_instant_saturating(t, offset.min(last_offset)),
+                )
+            }
             None => (
                 last,
                 LocalSeconds::from_instant_saturating(last, last_offset),

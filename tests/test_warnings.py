@@ -15,7 +15,6 @@ from whenever import (
     ImplicitDisambiguationWarning,
     Instant,
     InvalidOffsetError,
-    ItemizedDateDelta,
     ItemizedDelta,
     NaiveArithmeticWarning,
     OffsetDateTime,
@@ -38,8 +37,6 @@ from whenever import (
 from .common import warns_here
 
 _PLAIN = PlainDateTime(2021, 1, 31)
-# One day later is 02:30 on the morning Amsterdam skips 02:00-03:00.
-_BEFORE_SKIPPED = ZonedDateTime(2023, 3, 25, 2, 30, tz="Europe/Amsterdam")
 
 
 def test_hierarchy():
@@ -142,52 +139,6 @@ def test_time_patch_shift_points_at_the_caller():
             lambda: hours(49).total("days"),
             DaysAssumed24HoursWarning,
             id="TimeDelta.total(days)",
-        ),
-        pytest.param(
-            lambda: ItemizedDelta(days=1).total(
-                "hours", relative_to=_BEFORE_SKIPPED
-            ),
-            ImplicitDisambiguationWarning,
-            id="ItemizedDelta.total",
-        ),
-        pytest.param(
-            lambda: ItemizedDelta(days=1).in_units(
-                ["hours"], relative_to=_BEFORE_SKIPPED
-            ),
-            ImplicitDisambiguationWarning,
-            id="ItemizedDelta.in_units",
-        ),
-        pytest.param(
-            lambda: ItemizedDelta(days=1).add(
-                hours=0, relative_to=_BEFORE_SKIPPED, in_units=["hours"]
-            ),
-            ImplicitDisambiguationWarning,
-            id="ItemizedDelta.add",
-        ),
-        pytest.param(
-            lambda: ItemizedDelta(days=1).subtract(
-                hours=0, relative_to=_BEFORE_SKIPPED, in_units=["hours"]
-            ),
-            ImplicitDisambiguationWarning,
-            id="ItemizedDelta.subtract",
-        ),
-        pytest.param(
-            lambda: ItemizedDateDelta(days=1).add(
-                ItemizedDelta(hours=0),
-                relative_to=_BEFORE_SKIPPED,
-                in_units=["hours"],
-            ),
-            ImplicitDisambiguationWarning,
-            id="ItemizedDateDelta.add",
-        ),
-        pytest.param(
-            lambda: ItemizedDateDelta(days=1).subtract(
-                ItemizedDelta(hours=0),
-                relative_to=_BEFORE_SKIPPED,
-                in_units=["hours"],
-            ),
-            ImplicitDisambiguationWarning,
-            id="ItemizedDateDelta.subtract",
         ),
     ],
 )

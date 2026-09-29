@@ -4564,6 +4564,18 @@ class TestSince:
                 ItemizedDelta(days=-2),
                 {"floor", "expand", "half_floor", "half_expand"},
             ),
+            # The skipped day resolves onto the target, which the calendar
+            # counts one day away: a tie, as in Temporal
+            (
+                "2012-01-01 00:00+14:00[Pacific/Apia]",
+                "2011-12-31 00:00+14:00[Pacific/Apia]",
+                ["days"],
+                2,
+                -1.0,
+                ItemizedDelta(days=0),
+                ItemizedDelta(days=-2),
+                {"floor", "expand", "half_floor", "half_expand"},
+            ),
             (
                 "2012-01-02 14:32:53+14:00[Pacific/Apia]",
                 "2011-12-31 06:57:44+14:00[Pacific/Apia]",

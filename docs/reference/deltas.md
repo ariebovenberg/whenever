@@ -185,8 +185,9 @@ delta equals the same delta with its exact components zero or absent:
 True
 ```
 
-Use {meth}`~ItemizedDelta.strict_eq` when explicit component presence or the
-type also matters (see {ref}`strict-equality`). `hash()` follows `==`, so an
+Use {meth}`~ItemizedDelta.strict_eq` when explicit component presence
+matters (see {ref}`strict-equality`); it takes only a delta of its own type,
+and raises {exc}`TypeError` for the other. `hash()` follows `==`, so an
 explicit zero hashes like a missing component, and equal deltas of the two
 types hash alike.
 Constructors currently require at least one component, so construct an
@@ -343,7 +344,8 @@ TimeDelta("PT3h30m")
 
 "Itemized" delta composition can use a relative date or datetime context
 to resolve calendar units when adding or subtracting.
-For example, the calendar-aware composition of "1 month" and "30 days"
+The components are summed, the sum is applied to the reference, and the
+result is expressed in `in_units`. For example, "1 month" plus "30 days"
 depends on the starting date:
 
 ```python
@@ -420,7 +422,7 @@ The itemized deltas are mappings, not numbers: they have `+`, `-`, unary
 and emit {class}`~whenever.CalendarUnitCompositionWarning` when either
 operand contains nonzero calendar units. Exact-only composition does not
 warn. Use the method forms if you want to pass `cal_unit_composition_ok=True`
-or if you need calendar-aware composition via `relative_to`. An itemized
+or a result in other units via `relative_to`. An itemized
 delta has one sign, so a composition that leaves components of both signs
 raises {class}`ValueError`: `ItemizedDelta(hours=1) + ItemizedDelta(minutes=-90)`
 is rejected with "mixed sign in delta". To split a delta into its date and

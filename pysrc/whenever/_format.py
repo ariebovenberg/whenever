@@ -609,7 +609,7 @@ class _ColonSec(_Field):
 
 
 class _OptionalSeconds(_Field):
-    """An optional seconds tail with an optional literal separator."""
+    """Optional seconds, with an optional literal separator."""
 
     category = "time"
     state_field = "second"
@@ -803,10 +803,10 @@ class _AmPmShort(_Field):
         return "A" if v.hour < 12 else "P"
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        ch = s[pos : pos + 1].upper()
-        if ch == "A":
+        ch = s[pos : pos + 1]
+        if ch in ("A", "a"):
             state.ampm = "AM"
-        elif ch == "P":
+        elif ch in ("P", "p"):
             state.ampm = "PM"
         else:
             raise ValueError(f"expected AM/PM at position {pos}, got {ch!r}")
@@ -822,10 +822,10 @@ class _AmPmFull(_Field):
         return "AM" if v.hour < 12 else "PM"
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        chunk = s[pos : pos + 2].upper()
-        if chunk == "AM":
+        chunk = s[pos : pos + 2]
+        if chunk.upper() == "AM":
             state.ampm = "AM"
-        elif chunk == "PM":
+        elif chunk.upper() == "PM":
             state.ampm = "PM"
         else:
             raise ValueError(
@@ -867,7 +867,7 @@ def _parse_offset_value(
     The final two return values indicate whether the input included offset
     seconds and whether it used ``Z``, respectively.
     """
-    if accept_z and pos < len(s) and s[pos] == "Z":
+    if accept_z and pos < len(s) and s[pos] in "Zz":
         return 0, pos + 1, True, True
     if pos >= len(s) or s[pos] not in "+-":
         raise ValueError(f"expected offset sign at position {pos}")
@@ -1130,7 +1130,7 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
     if has_24h and has_ampm:
         raise ValueError(
             "24-hour clock (H/HH) cannot be combined with "
-            "AM/PM (a/aa). Use the 12-hour clock (i/ii) instead."
+            "AM/PM (a/aa): use the 12-hour clock (i/ii) instead"
         )
 
     for el, follower in pairwise(elements):

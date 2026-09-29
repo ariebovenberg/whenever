@@ -27,10 +27,14 @@ Composition is flagged rather than refused (Temporal's ``Duration.add()``
 throws without a reference) because a warning serves strict, accepting,
 and unaware callers alike: see :ref:`flagged-not-forbidden`.
 
-To preserve calendar-aware semantics, pass ``relative_to=...`` and
-``in_units=...`` to :meth:`~whenever.ItemizedDelta.add` or
-:meth:`~whenever.ItemizedDateDelta.add`. If component-wise composition is
-intentional, pass ``cal_unit_composition_ok=True`` or use Python's
+To apply the deltas one after another, apply each one to the date or
+datetime in a separate step. ``relative_to=`` on
+:meth:`~whenever.ItemizedDelta.add` and
+:meth:`~whenever.ItemizedDateDelta.add` doesn't: it sums the components
+too, applies the sum to the reference, and expresses the result in
+``in_units=``. If component-wise composition is intentional, pass
+``cal_unit_composition_ok=True``, pass ``relative_to=`` and
+``in_units=`` for the combined delta in other units, or use Python's
 standard warning filters.
 ";
 pub(crate) const DATE: &CStr = c"\
@@ -1059,7 +1063,8 @@ pub(crate) const OFFSETDATETIME_FORMAT_RFC2822: &CStr = c"\
 Format as an RFC 2822 string.
 
 RFC 2822 has whole-second datetimes and minute-precision offsets.
-Nanoseconds and offset seconds are discarded.
+Nanoseconds are discarded, and offset seconds are rounded to the
+nearest minute, as the ``xx`` pattern does.
 
 >>> OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2)).format_rfc2822()
 \"Sat, 15 Aug 2020 23:12:00 +0200\"
@@ -1238,6 +1243,9 @@ OffsetDateTime(\"2020-08-16 00:00:00+04:00\")
 OffsetDateTime(\"2020-08-15 23:15:00+04:00\")
 >>> d.round(TimeDelta(minutes=15))
 OffsetDateTime(\"2020-08-15 23:30:00+04:00\")
+
+Increments are counted from midnight, so ``\"half_even\"`` breaks a
+tie toward the even multiple counted from there.
 
 Warning
 -------
@@ -1498,6 +1506,9 @@ PlainDateTime(\"2020-08-16 00:00:00\")
 PlainDateTime(\"2020-08-15 23:15:00\")
 >>> d.round(TimeDelta(minutes=15))
 PlainDateTime(\"2020-08-15 23:30:00\")
+
+Increments are counted from midnight, so ``\"half_even\"`` breaks a
+tie toward the even multiple counted from there.
 ";
 pub(crate) const PLAINDATETIME_SINCE: &CStr = c"\
 since($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=...)
@@ -1649,6 +1660,9 @@ the day wraps around to midnight:
 
 >>> Time(23, 59, 59).round(\"minute\", mode=\"ceil\")
 Time(\"00:00:00\")
+
+Increments are counted from midnight, so ``\"half_even\"`` breaks a
+tie toward the even multiple counted from there.
 ";
 pub(crate) const TIME_SECOND: &CStr = c"\
 The second component of the time";
@@ -2218,6 +2232,8 @@ Notes
 * Rounding to a day compares the time elapsed since the start of the
   day with the day's length. On the 23-hour day of 2023-03-26 in
   Amsterdam, 11:31 therefore rounds down and 12:31 rounds up.
+* Increments are counted from midnight, so ``\"half_even\"`` breaks a
+  tie toward the even multiple counted from there.
 ";
 pub(crate) const ZONEDDATETIME_SINCE: &CStr = c"\
 since($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=...)

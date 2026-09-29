@@ -83,7 +83,7 @@ class LastWeekday:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, LastWeekday):
-            return NotImplemented  # pragma: no cover
+            return NotImplemented  # pragma: no cover (a rule of another kind)
         return self.month == other.month and self.weekday == other.weekday
 
     def __repr__(self) -> str:
@@ -113,7 +113,7 @@ class NthWeekday:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, NthWeekday):
-            return NotImplemented  # pragma: no cover
+            return NotImplemented  # pragma: no cover (a rule of another kind)
         return (
             self.month == other.month
             and self.nth == other.nth
@@ -136,7 +136,7 @@ class DayOfYear:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, DayOfYear):
-            return NotImplemented  # pragma: no cover
+            return NotImplemented  # pragma: no cover (a rule of another kind)
         return self.nth == other.nth
 
     def __repr__(self) -> str:
@@ -159,7 +159,7 @@ class JulianDayOfYear:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, JulianDayOfYear):
-            return NotImplemented  # pragma: no cover
+            return NotImplemented  # pragma: no cover (a rule of another kind)
         return self.nth == other.nth
 
     def __repr__(self) -> str:
@@ -191,7 +191,7 @@ class Dst:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Dst):
-            return NotImplemented  # pragma: no cover
+            return NotImplemented  # pragma: no cover (a rule of another kind)
         return (
             self.offset == other.offset
             and self.start == other.start
@@ -393,7 +393,7 @@ class TzStr:
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TzStr):
-            return NotImplemented  # pragma: no cover
+            return NotImplemented  # pragma: no cover (another type)
         return (
             self.std == other.std
             and self.dst == other.dst

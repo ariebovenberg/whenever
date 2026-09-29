@@ -23,6 +23,7 @@ from whenever import (
     PlainDateTime,
     Time,
     TimeDelta,
+    TimeZoneNotFoundError,
     YearMonth,
     ZonedDateTime,
     clear_tzcache,
@@ -219,6 +220,15 @@ def hhmm(hours: int, minutes: int = 0) -> int:
     return hours * 3600 + minutes * 60
 
 
+def restore_system_tz() -> None:
+    """Read the ambient TZ again after a test changed it. Where it doesn't
+    resolve, the test's zone stays cached: the suite may run under any TZ."""
+    try:
+        reset_system_tz()
+    except TimeZoneNotFoundError:
+        pass
+
+
 @contextmanager
 def system_tz(name):
     try:
@@ -226,7 +236,7 @@ def system_tz(name):
             reset_system_tz()
             yield
     finally:
-        reset_system_tz()  # don't forget to reset the time zone after the patch!
+        restore_system_tz()
 
 
 @contextmanager
@@ -575,7 +585,6 @@ INVALID_TDELTAS = [
     "PTM",
     # way too many digits (there's a limit...)
     "PT000000000000000000000000000000000000000000000000000000000001S",
-    # intermediate arithmetic and integer conversion must not overflow
 ]
 
 

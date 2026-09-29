@@ -5,7 +5,7 @@ from __future__ import annotations
 import os.path  # NOTE: we don't use pathlib here to keep our imports light
 from contextlib import contextmanager
 from threading import RLock
-from typing import Any, Iterable, Iterator, Protocol
+from typing import Any, Iterable, Iterator, Protocol, Sequence
 from warnings import warn
 
 from ._common import DAYS_NOT_ALWAYS_24H_MSG, SPHINX_RUNNING, UNSET
@@ -82,7 +82,6 @@ class TimePatch(Protocol):  # pragma: no cover
 class _TimePatch:
     _pin: Instant
     _keep_ticking: bool
-    _active: bool
 
     def __init__(
         self,
@@ -91,10 +90,10 @@ class _TimePatch:
     ):
         self._pin = pin
         self._keep_ticking = keep_ticking
-        self._active = True
 
     def _check_active(self) -> None:
-        if not self._active:
+        # Identity, not a flag: a copied or unpickled handle is never active
+        if _active_patch is not self:
             raise RuntimeError("time patch is no longer active")
 
     def _apply(self, pin: Instant, /) -> None:
@@ -169,8 +168,8 @@ def patch_current_time(
     Works as a context manager or as a decorator. Patches do not nest:
     creating one while another is active raises :exc:`RuntimeError`.
     The decorator form does not pass the handle to the decorated function,
-    and doesn't cover the body of an ``async def`` function: enter
-    ``with patch_current_time(...)`` inside the coroutine instead.
+    and doesn't cover the body of an ``async def`` or generator function:
+    enter ``with patch_current_time(...)`` inside the function instead.
 
     Important
     ---------
@@ -222,12 +221,11 @@ def patch_current_time(
             try:
                 _unpatch_time()
             finally:
-                patch._active = False
                 _active_patch = None
 
 
 def reset_tzpath(
-    target: Iterable[str | os.PathLike[str]] | None = None, /
+    target: Sequence[str | os.PathLike[str]] | None = None, /
 ) -> None:
     """Set the time zone search path: the directories in which ``whenever``
     looks for time zone data, in order. Each entry is an absolute path, as a
@@ -246,7 +244,7 @@ def reset_tzpath(
     Raises
     ------
     TypeError
-        If the argument is a single string or not an iterable of paths.
+        If the argument is not a list or tuple of paths.
     ValueError
         If an entry is not an absolute path.
     """
@@ -255,16 +253,12 @@ def reset_tzpath(
 
         _set_tzpath(_tzpath_from_env())
         return
-    # A string is iterable too, so this common mistake needs its own check.
-    if isinstance(target, (str, bytes)):
+    # The path is ordered: a set would give a different one per process.
+    # A string, a sequence too, is a common mistake.
+    if not isinstance(target, (list, tuple)):
         raise TypeError(_TZPATH_ARG_MSG)
-    try:
-        # Read once: an iterator is consumed by the first pass.
-        entries = tuple(target)
-    except TypeError:
-        raise TypeError(_TZPATH_ARG_MSG) from None
     paths = []
-    for e in entries:
+    for e in target:
         try:
             path = os.fspath(e)
         except TypeError:
@@ -280,7 +274,7 @@ def reset_tzpath(
     _set_tzpath(tuple(paths))
 
 
-_TZPATH_ARG_MSG = "reset_tzpath() argument must be an iterable of paths"
+_TZPATH_ARG_MSG = "reset_tzpath() argument must be a list or tuple of paths"
 
 
 def clear_tzcache(*, only_keys: Iterable[str] | None = None) -> None:
@@ -353,34 +347,17 @@ def available_timezones() -> set[str]:
     return zones
 
 
-# Recursively find all tzfiles in the tzpath directories.
-# Recursion is safe here since the file tree is trusted, and nesting doesn't
-# even approach the recursion limit.
 # NOTE: we don't use pathlib here, since we want to keep our imports light
 def _find_all_tznames(base: str) -> Iterator[str]:
-    if not os.path.isdir(base):
-        return
-    for name in os.listdir(base):
-        entry = os.path.join(base, name)
-        if os.path.isdir(entry):
+    # Like zoneinfo, this doesn't follow symlinks to directories
+    for root, dirs, files in os.walk(base):
+        if root == base:
             # These directories contain special files that shouldn't be included
-            if name in ("right", "posix"):
-                continue
-            else:
-                for path in _find_nested_tzfiles(entry):
-                    yield os.path.relpath(path, base).replace("\\", "/")
-        elif _is_tzifile(entry):
-            yield name
-
-
-def _find_nested_tzfiles(path: str) -> Iterator[str]:
-    assert os.path.isdir(path)
-    for name in os.listdir(path):
-        entry = os.path.join(path, name)
-        if os.path.isdir(entry):
-            yield from _find_nested_tzfiles(entry)
-        elif _is_tzifile(entry):
-            yield entry
+            dirs[:] = [d for d in dirs if d not in ("right", "posix")]
+        for name in files:
+            path = os.path.join(root, name)
+            if _is_tzifile(path):
+                yield os.path.relpath(path, base).replace(os.sep, "/")
 
 
 def _is_tzifile(p: str) -> bool:

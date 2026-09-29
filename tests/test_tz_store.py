@@ -8,6 +8,7 @@ import struct
 import subprocess
 import sys
 import sysconfig
+import zoneinfo
 from copy import copy, deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -36,7 +37,12 @@ from whenever import (
 )
 from whenever._tz.system import _tzid_from_path, get_tz
 
-from .common import AMS_TZ_RAWFILE, system_tz, tz_rules_from_file
+from .common import (
+    AMS_TZ_RAWFILE,
+    restore_system_tz,
+    system_tz,
+    tz_rules_from_file,
+)
 
 try:
     import tzdata  # noqa
@@ -569,7 +575,7 @@ class TestTzCache:
         assert repeated.replace(tz=nyc).strict_eq(repeated)
 
         # check exception handling invalid arguments
-        with pytest.raises(TypeError, match="iterable"):
+        with pytest.raises(TypeError, match="list or tuple"):
             reset_tzpath("/usr/share/zoneinfo")  # must be a list!
         with pytest.raises(TypeError, match="iterable"):
             clear_tzcache(only_keys=nyc)  # must be a list!
@@ -611,6 +617,28 @@ def test_available_timezones_skips_right_and_posix(tmp_path: Path):
         reset_tzpath(previous)
     assert "Europe/Amsterdam" in tzs
     assert not {z for z in tzs if z.startswith(("right/", "posix/"))}
+
+
+def test_available_timezones_skips_directory_symlinks(tmp_path: Path):
+    zone = tmp_path / "Europe" / "Amsterdam"
+    zone.parent.mkdir()
+    shutil.copyfile(TEST_DIR / "tzif" / "Amsterdam.tzif", zone)
+    try:
+        (tmp_path / "loop").symlink_to(tmp_path, target_is_directory=True)
+    except OSError:  # pragma: no cover
+        pytest.skip("symlinks unsupported here")
+
+    previous = get_tzpath()
+    reset_tzpath([tmp_path])
+    zoneinfo.reset_tzpath([tmp_path])
+    try:
+        tzs = available_timezones()
+        assert tzs == zoneinfo_available_timezones()
+    finally:
+        reset_tzpath(previous)
+        zoneinfo.reset_tzpath()
+    assert "Europe/Amsterdam" in tzs
+    assert not {z for z in tzs if z.startswith("loop/")}
 
 
 class TestClearTzCache:
@@ -674,19 +702,24 @@ class TestResetTzpath:
         finally:
             reset_tzpath(previous)
 
-    def test_iterator_is_read_once(self, tmp_path):
-        previous = get_tzpath()
-        try:
-            reset_tzpath(iter([tmp_path]))
-            assert get_tzpath() == (str(tmp_path),)
-        finally:
-            reset_tzpath(previous)
-
-    @pytest.mark.parametrize("bad", [[b"/x"], [1], 1, "/x", b"/x", [None]])
-    def test_not_an_iterable_of_paths(self, bad):
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            [b"/x"],
+            [1],
+            1,
+            "/x",
+            b"/x",
+            [None],
+            {"/x"},
+            iter(["/x"]),
+            {"/x": None},
+        ],
+    )
+    def test_not_a_list_or_tuple_of_paths(self, bad):
         with pytest.raises(
             TypeError,
-            match="^reset_tzpath\\(\\) argument must be an iterable of paths$",
+            match="^reset_tzpath\\(\\) argument must be a list or tuple of paths$",
         ):
             reset_tzpath(bad)
 
@@ -746,10 +779,71 @@ threads = [threading.Thread(target=lookup, args=(z,)) for z in zones]
 [t.join() for t in threads]
 assert not errors, errors
 """
+    # The guard above reads the compiled-in path, so the variable that
+    # overrides it is cleared
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONTZPATH"}
     result = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True
+        [sys.executable, "-c", script], capture_output=True, text=True, env=env
     )
     assert result.returncode == 0, result.stderr
+
+
+class TestInitialSearchPath:
+    """Importing a utility first (from ``whenever._utils``) once left the
+    pure-Python search path empty. Each case runs in a fresh process, with
+    tzdata hidden so a failed lookup can't fall back to it."""
+
+    def _run(self, script: str, pythontzpath: str | None) -> None:
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONTZPATH"}
+        if pythontzpath is not None:
+            env["PYTHONTZPATH"] = pythontzpath
+        prelude = f"""
+import sys
+sys.modules["tzdata"] = None
+if {not _EXTENSION_LOADED}:
+    sys.modules["whenever._whenever"] = None
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", prelude + script],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+
+    @pytest.mark.skipif(
+        not sysconfig.get_config_var("TZPATH"),
+        reason="no system time zone database",
+    )
+    def test_utility_imported_first(self):
+        self._run(
+            """
+from whenever import patch_current_time, ZonedDateTime
+ZonedDateTime(2024, 1, 1, tz="Europe/Paris")
+""",
+            None,
+        )
+
+    def test_matches_zoneinfo(self):
+        self._run(
+            """
+import zoneinfo, whenever
+assert whenever.get_tzpath() == zoneinfo.TZPATH, whenever.get_tzpath()
+""",
+            None,
+        )
+
+    def test_environment_variable(self, tmp_path):
+        (tmp_path / "Test").mkdir()
+        shutil.copy(AMS_TZ_RAWFILE, tmp_path / "Test" / "Zone")
+        self._run(
+            f"""
+from whenever import patch_current_time, ZonedDateTime, get_tzpath
+assert get_tzpath() == ({str(tmp_path)!r},), get_tzpath()
+ZonedDateTime(2024, 1, 1, tz="Test/Zone")
+""",
+            str(tmp_path),
+        )
 
 
 class TestEmptyTzIsUtc:
@@ -785,7 +879,7 @@ class TestEmptyTzIsUtc:
             assert ZonedDateTime.now(SYSTEM_TZ).tz_id == "UTC"
         finally:
             monkeypatch.undo()
-            reset_system_tz()
+            restore_system_tz()
 
 
 def test_get_system_tz():
@@ -894,7 +988,7 @@ class TestLocaltime:
         monkeypatch.delenv("TZ", raising=False)
         yield tmp_path / "localtime"
         monkeypatch.undo()
-        reset_system_tz()
+        restore_system_tz()
 
     @pytest.mark.parametrize(
         "rules, timezone_file, expect",
@@ -1063,10 +1157,15 @@ class TestTzEnvPath:
     ) -> None:
         monkeypatch.setitem(sys.modules, "tzdata", None)
         monkeypatch.setitem(sys.modules, "tzdata.zoneinfo", None)
+        previous = get_tzpath()
         reset_tzpath([])
         clear_tzcache()
         with system_tz(str(zoneinfo_dir / "Europe" / "Amsterdam")):
-            assert _system_tz_offset_and_id() == (hours(1), None)
+            try:
+                assert _system_tz_offset_and_id() == (hours(1), None)
+            finally:
+                # Before system_tz() reads the ambient TZ again on exit
+                reset_tzpath(previous)
 
     def test_fifo(self, tmp_path: Path) -> None:
         os.mkfifo(tmp_path / "fifo")
@@ -1137,7 +1236,7 @@ class TestTzlocalBackend:
         monkeypatch.delenv("TZ", raising=False)
         yield stub
         monkeypatch.undo()
-        reset_system_tz()
+        restore_system_tz()
 
     def test_reloads_before_reading_the_name(self, tzlocal) -> None:
         calls: list[str] = []

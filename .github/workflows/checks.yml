@@ -91,7 +91,13 @@ jobs:
       - name: Test (release mode)
         shell: bash
         run: |
-          uv sync --locked --reinstall-package whenever --no-editable --group test
+          # Integrations where they install (as above), so that the tz
+          # smoketest below also reads tzdata's slim files
+          groups="--group test"
+          if [[ "${{ matrix.python-version }}" != 3.15* ]]; then
+            groups="$groups --group integrations"
+          fi
+          uv sync --locked --reinstall-package whenever --no-editable $groups
           uv run --no-sync python -c "import whenever; assert whenever._EXTENSION_LOADED"
           uv run --no-sync pytest tests/ -s -v
       # The smoketests below are shared with the pure-Python job.

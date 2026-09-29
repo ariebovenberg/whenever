@@ -24,7 +24,8 @@ __all__ = [
 
 _NOGIL = hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled()
 
-_TZPATH: tuple[str, ...] = ()
+# Read from the environment on first use, as the Rust store does
+_TZPATH: tuple[str, ...] | None = None
 
 # Our cache for loaded tz files. The design is based off that of `zoneinfo`.
 _TZCACHE_LRU_SIZE = 32
@@ -75,6 +76,12 @@ def get_tzpath() -> tuple[str, ...]:
     looks for time zone data, in order. The tuple is a snapshot: it does
     not change when :func:`reset_tzpath` is called later.
     """
+    global _TZPATH
+    if _TZPATH is None:
+        # Deferred: _shared imports the core types, which import this module
+        from .._shared import _tzpath_from_env
+
+        _TZPATH = _tzpath_from_env()
     return _TZPATH
 
 
@@ -271,7 +278,7 @@ def _try_tzif_from_path(
     key: NormalizedTzId, original_key: str
 ) -> tuple[bytes, str, _TzDirCache] | None:
     try:
-        for search_path in _TZPATH:
+        for search_path in get_tzpath():
             if (tzif := _read_tzif_from_path(search_path, key)) is not None:
                 return tzif
     except OSError:
