@@ -91,29 +91,24 @@ reference is needed would otherwise depend on the delta's value.
 29.0   # 2024 is a leap year
 ```
 
-The same applies to {meth}`~ItemizedDateDelta.in_units`,
-{meth}`~ItemizedDateDelta.add`, and {meth}`~ItemizedDateDelta.subtract`
-when calendar units are involved. `add()` and `subtract()` with
-`relative_to=` also take `in_units=`, the units of the result:
+The same applies to {meth}`~whenever.ItemizedDateDelta.in_units` when
+calendar units are involved.
+
+(delta-composition)=
+## Composing deltas
+
+`+`, `-`, {meth}`~whenever.ItemizedDateDelta.add`, and
+{meth}`~whenever.ItemizedDateDelta.subtract` compose itemized deltas
+**component-wise**: like components add up, and the result stays itemized.
 
 ```python
->>> one_month = ItemizedDateDelta(months=1)
->>> one_month.add(one_month, relative_to=Date(2023, 1, 15), in_units=["months", "days"])
-ItemizedDateDelta("P2m0d")
+>>> ItemizedDateDelta(weeks=1) + ItemizedDateDelta(days=3)
+ItemizedDateDelta("P1w3d")
 ```
 
-The same rule also means that calendar units do not reliably compose. Adding
-`1 month` twice can differ from adding `2 months` once, because the first step
-may change the reference date for the second step.
-
-When you call `add()` or `subtract()` on itemized deltas **without** a
-`relative_to` reference, the operation is component-wise and emits
-{class}`~whenever.CalendarUnitCompositionWarning` when nonzero calendar units
-are involved. Exact-only composition does not warn. Component-wise composition is
-literal and sometimes useful, but it should not be confused with sequential
-application to a date or datetime.
-
-For example, month-end clamping makes the two operations differ:
+That isn't the same as applying the deltas in turn. With years or months, the
+two can land on different days, because a month clamps at the end of the
+month:
 
 ```python
 >>> one_month = ItemizedDateDelta(months=1)
@@ -121,23 +116,27 @@ For example, month-end clamping makes the two operations differ:
 
 >>> start + one_month + one_month
 Date("2023-03-28")
->>> # Summing component-wise first applies two months in a single step
->>> summed = one_month + one_month  # P2M, emits CalendarUnitCompositionWarning
->>> start + summed
+>>> start + one_month.add(one_month, month_composition_ok=True)
 Date("2023-03-31")
 ```
 
-`relative_to=` doesn't change this. `add()` and `subtract()` with a reference
-still sum the components, apply the sum to the reference in one step, and
-express the result in `in_units`. To apply the deltas one after another,
-apply each one to the date and measure the result:
+Both answers are right, for different questions. The second monthly renewal
+after January 31 falls on March 31; two monthly steps from January 31 land on
+March 28. So composing years or months emits
+{class}`~whenever.MonthCompositionWarning`, and `month_composition_ok=True`
+says you meant the first. Days, weeks, and exact units never clamp, and
+compose without a warning.
+
+To apply deltas in turn, add each to the date, and measure the result if you
+need it as a delta:
 
 ```python
->>> one_month.add(one_month, relative_to=start, in_units=["months", "days"])
-ItemizedDateDelta("P2m0d")
 >>> (start + one_month + one_month).since(start, in_units=["months", "days"])
 ItemizedDateDelta("P1m28d")
 ```
+
+A composed delta is never balanced: `1 hour` plus `90 minutes` stays
+`1 hour 90 minutes`. The next section shows how to balance it.
 
 ## Balancing into different units
 

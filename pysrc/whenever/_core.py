@@ -48,9 +48,9 @@ except ModuleNotFoundError as e:
 
 
 from ._ideltas import (
-    CalendarUnitCompositionWarning,
     ItemizedDateDelta,
     ItemizedDelta,
+    MonthCompositionWarning,
     _unpkl_iddelta,
     _unpkl_idelta,
 )

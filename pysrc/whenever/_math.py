@@ -284,8 +284,7 @@ def resolve_rounding(
     mode: RoundModeStr, increment: int
 ) -> tuple[RoundModeStr, int]:
     """Validate the ``round_mode``/``round_increment`` pair of ``in_units()``,
-    ``since()``/``until()``, and calendar-aware composition, applying the
-    defaults for ``UNSET``."""
+    and ``since()``/``until()``, applying the defaults for ``UNSET``."""
     if mode is UNSET:
         mode = "trunc"
     if increment is UNSET:

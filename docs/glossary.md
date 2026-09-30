@@ -279,10 +279,9 @@ balancing
 
 component-wise composition
   Adding or subtracting two itemized deltas by combining like components,
-  which is what `+`, `-`, and `add()`/`subtract()` without `relative_to`
-  do. Flagged by `CalendarUnitCompositionWarning` when a calendar unit is
-  involved. Passing `relative_to=` also sums the components, then expresses
-  the sum in other units; it doesn't apply the deltas one after another.
+  as `+`, `-`, `add()`, and `subtract()` do. With years or months, the
+  result can land on a different day than the deltas applied in turn,
+  which `MonthCompositionWarning` flags.
   Also called *field-wise composition* and *literal addition*.
   See {ref}`delta-add-sub`.
 

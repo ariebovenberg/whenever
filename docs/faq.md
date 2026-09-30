@@ -398,9 +398,9 @@ Date("2024-02-29")
 These operators use the same calendar clamping rules as `add()` and
 `subtract()`. As a result, adding and then subtracting the same delta is not
 always reversible. Itemized deltas also support `+` and `-` with each other;
-these perform component-wise composition and warn when nonzero calendar units are
-involved because applying the combined delta may differ from applying its
-parts sequentially.
+these perform component-wise composition, and warn when years or months are
+involved: the composed delta can land on a different day than its parts
+applied in turn.
 
 Operators without a generally useful interpretation remain unavailable. For
 example, itemized deltas cannot be multiplied or divided.

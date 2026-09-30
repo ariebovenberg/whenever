@@ -153,7 +153,7 @@ def test_itemized_runtime_annotations_resolve_from_lazy_import():
             "ItemizedDateDelta = whenever.ItemizedDateDelta; "
             "assert 'whenever._core' not in sys.modules; "
             "assert whenever.ZonedDateTime in "
-            "get_type_hints(ItemizedDelta.add)['relative_to'].__args__; "
+            "get_type_hints(ItemizedDelta.in_units)['relative_to'].__args__; "
             "get_type_hints(ItemizedDelta.date_and_time_parts); "
             "get_type_hints(ItemizedDateDelta.__add__); "
             "assert whenever.Date in "

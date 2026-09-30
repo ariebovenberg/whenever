@@ -1,3 +1,4 @@
+import re
 import warnings
 from collections.abc import Callable
 from typing import Any, get_args
@@ -10,9 +11,12 @@ from whenever import (
     Instant,
     ItemizedDateDelta,
     ItemizedDelta,
+    MonthCompositionWarning,
     MonthDay,
+    NaiveArithmeticWarning,
     OffsetDateTime,
     PlainDateTime,
+    PotentialDstBugWarning,
     StaleOffsetWarning,
     Time,
     TimeZoneNotFoundError,
@@ -1250,3 +1254,883 @@ class TestPatternDeprecations:
         assert all(x.category is WheneverDeprecationWarning for x in w)
         assert all(x.filename == __file__ for x in w)
         assert w[0].lineno != w[1].lineno
+
+
+_UTC = ZonedDateTime(2024, 1, 1, tz="UTC")
+_DATE = Date(2024, 1, 1)
+# Untyped, so the deprecated overloads need no per-call ignore
+_D: Any = ItemizedDelta(hours=1)
+_DD: Any = ItemizedDateDelta(days=1)
+
+
+class TestRenamedComposition:
+    def test_warning_class(self):
+        cls = deprecated(
+            lambda: whenever.CalendarUnitCompositionWarning,
+            match="CalendarUnitCompositionWarning is deprecated",
+        )
+        assert cls is MonthCompositionWarning
+
+    @pytest.mark.parametrize("d", [ItemizedDelta, ItemizedDateDelta])
+    def test_flag(self, d: Any):
+        with warns_here(
+            WheneverDeprecationWarning, match="cal_unit_composition_ok"
+        ) as caught:
+            result = d(months=1).add(days=1, cal_unit_composition_ok=True)
+        assert len(caught) == 1
+        assert result.strict_eq(d(months=1, days=1))
+        with warns_here(
+            WheneverDeprecationWarning, match="cal_unit_composition_ok"
+        ) as caught:
+            result = d(months=1, days=3).subtract(
+                days=1, cal_unit_composition_ok=1
+            )
+        assert len(caught) == 1
+        assert result.strict_eq(d(months=1, days=2))
+
+        # a false flag still warns about composition
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            d(months=1).add(days=1, cal_unit_composition_ok=False)
+        assert sorted(w.category.__name__ for w in record) == [
+            "MonthCompositionWarning",
+            "WheneverDeprecationWarning",
+        ]
+
+    def test_both_flags_rejected(self):
+        with pytest.raises(TypeError, match="both"):
+            _D.add(
+                days=1, month_composition_ok=True, cal_unit_composition_ok=True
+            )
+
+
+@pytest.mark.filterwarnings("ignore::whenever.WheneverDeprecationWarning")
+class TestItemizedDeltaComposeAtReference:
+    """``add()``/``subtract()`` with ``relative_to=`` as 0.10 had them: the
+    summed components, applied to the reference in one step and measured
+    back in ``in_units``."""
+
+    def test_deprecated(self):
+        d: Any = ItemizedDelta(months=1)
+        deprecated(
+            lambda: d.add(
+                days=30, relative_to=_UTC, in_units=["months", "days"]
+            ),
+            match="'relative_to' on add\\(\\) and subtract\\(\\) is deprecated",
+        )
+        deprecated(
+            lambda: d.subtract(
+                days=30, relative_to=_UTC, in_units=["months", "days"]
+            ),
+            match="relative_to",
+        )
+        # no composition warning: the reference form never had one
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            d.add(months=1, relative_to=_UTC, in_units=["months"])
+        assert [w.category for w in record] == [WheneverDeprecationWarning]
+
+    @pytest.mark.parametrize(
+        "d1, d2, relative_to, expected, kwargs",
+        [
+            # simple case with no carry
+            (
+                ItemizedDelta(years=2, months=3, minutes=5),
+                ItemizedDelta(years=1, months=2, seconds=500),
+                ZonedDateTime(
+                    "2021-12-31T15:16Z[America/Sao_Paulo]",
+                ),
+                ItemizedDelta(years=3, months=5, minutes=13, seconds=20),
+                {"in_units": ["years", "months", "minutes", "seconds"]},
+            ),
+            # with carry
+            (
+                ItemizedDelta(
+                    years=2, months=3, weeks=4, days=5, hours=0, seconds=5000
+                ),
+                ItemizedDelta(
+                    years=1, months=8, weeks=3, days=30, hours=0, seconds=1042
+                ),
+                ZonedDateTime(
+                    "2024-02-29T05:16:00.00004Z[America/Los_Angeles]",
+                ),
+                ItemizedDelta(
+                    years=4, months=1, weeks=3, days=3, hours=1, seconds=2442
+                ),
+                {
+                    "in_units": [
+                        "years",
+                        "months",
+                        "weeks",
+                        "days",
+                        "hours",
+                        "seconds",
+                    ]
+                },
+            ),
+            # different units
+            (
+                ItemizedDelta(years=2, days=5, minutes=3_000),
+                ItemizedDelta(years=1, months=8, days=30, seconds=3603),
+                ZonedDateTime(
+                    "0021-01-01T00:16Z[Europe/Dublin]",
+                ),
+                ItemizedDelta(
+                    years=3, months=9, days=7, minutes=180, seconds=3
+                ),
+                {
+                    "in_units": [
+                        "years",
+                        "months",
+                        "days",
+                        "minutes",
+                        "seconds",
+                    ]
+                },
+            ),
+            # customized output kwargs
+            (
+                ItemizedDelta(years=2, days=5, minutes=3_000),
+                ItemizedDelta(years=1, months=8, days=30, seconds=3603),
+                ZonedDateTime(
+                    "9921-01-01T00:16Z[Africa/Johannesburg]",
+                ),
+                ItemizedDelta(months=45, weeks=1, hours=3, minutes=2),
+                {
+                    "in_units": ["months", "weeks", "hours", "minutes"],
+                    "round_mode": "expand",
+                    "round_increment": 2,
+                },
+            ),
+            # zero result
+            (
+                ItemizedDelta(years=2, months=3, hours=2),
+                ItemizedDelta(years=-2, months=-3, minutes=-120),
+                ZonedDateTime(
+                    "2024-02-29T05:16:00.00004Z[America/Los_Angeles]",
+                ),
+                ItemizedDelta(years=0, months=0, hours=0, minutes=0),
+                {"in_units": ["years", "months", "hours", "minutes"]},
+            ),
+            # negative arg, positive result
+            (
+                ItemizedDelta(years=2, months=3, hours=2),
+                ItemizedDelta(years=-1, months=-4, hours=-4_000),
+                ZonedDateTime(
+                    "1995-03-30T23:16Z[Australia/Sydney]",
+                ),
+                ItemizedDelta(years=0, months=5, hours=369),
+                {"in_units": ["years", "months", "hours"]},
+            ),
+            # negative arg, negative result
+            (
+                ItemizedDelta(years=2, months=3, hours=2),
+                ItemizedDelta(years=-1, months=-20, hours=-4_000),
+                ZonedDateTime(
+                    "1995-03-01T23:16Z[Australia/Sydney]",
+                ),
+                ItemizedDelta(years=-0, months=-10, hours=-326),
+                {"in_units": ["years", "months", "hours"]},
+            ),
+        ],
+    )
+    def test_valid(
+        self,
+        d1: Any,
+        d2: Any,
+        relative_to: ZonedDateTime,
+        expected: ItemizedDelta,
+        kwargs: Any,
+    ):
+        result = d1.add(d2, relative_to=relative_to, **kwargs)
+        assert result.strict_eq(expected)
+
+        # same result with kwargs
+        assert d1.add(**d2, relative_to=relative_to, **kwargs).strict_eq(
+            expected
+        )
+
+        # same result with subtraction
+        if (
+            kwargs.get("round_increment", 1) == 1
+            and kwargs.get("round_mode", "trunc") == "trunc"
+        ):
+            assert d1.subtract(
+                -d2, relative_to=relative_to, **kwargs
+            ).strict_eq(expected)
+
+            assert d1.subtract(
+                **{k: -v for k, v in d2.items()},
+                relative_to=relative_to,
+                **kwargs,
+            ).strict_eq(expected)
+
+    def test_mixed_sign_in_kwargs_allowed(self):
+        d: Any = ItemizedDelta(days=2)
+        assert d.add(
+            days=-1,
+            minutes=3,
+            relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+            in_units=["days", "minutes"],
+        ).strict_eq(ItemizedDelta(days=1, minutes=3))
+
+    def test_no_positional_and_kwarg_mix(self):
+        with pytest.raises(TypeError, match="mix"):
+            _D.add(
+                ItemizedDelta(years=1),
+                years=3,
+                relative_to=_UTC,
+                in_units=["years"],
+            )
+
+    def test_add_nothing_balances(self):
+        d: Any = ItemizedDelta(years=2)
+        assert d.add(relative_to=_UTC, in_units=["years"]).strict_eq(
+            ItemizedDelta(years=2)
+        )
+        assert d.add(relative_to=_UTC, in_units=["months"]).strict_eq(
+            ItemizedDelta(months=24)
+        )
+
+    def test_invalid_unit_kwarg(self):
+        with pytest.raises(TypeError, match="foo"):
+            _D.add(foo=5, relative_to=_UTC, in_units=["years", "months"])
+
+    def test_overflows(self):
+        d: Any = ItemizedDelta(years=5)
+        with pytest.raises(ValueError, match="out of range"):
+            d.add(
+                months=29,
+                relative_to=ZonedDateTime("9994-12-31T00:00Z[Asia/Tokyo]"),
+                in_units=["years"],
+            )
+
+    def test_floor_round_mode_behaves_correctly_on_negative(self):
+        d1: Any = ItemizedDelta(years=4, seconds=500_000)
+        d2 = ItemizedDelta(years=-8, seconds=-6)
+
+        assert d1.add(
+            d2,
+            relative_to=ZonedDateTime("2021-12-31T00:00Z[Africa/Cairo]"),
+            round_mode="floor",
+            round_increment=2,
+            in_units=["years", "seconds"],
+        ).strict_eq(ItemizedDelta(years=-3, seconds=-31036006))
+
+    def test_sums_before_applying(self):
+        # Jan 31 + 2 months = Mar 31, not Mar 28 as two monthly steps give
+        d: Any = ItemizedDelta(months=1)
+        assert d.add(
+            months=1,
+            relative_to=ZonedDateTime(2021, 1, 31, tz="UTC"),
+            in_units=["months"],
+        ).strict_eq(ItemizedDelta(months=2))
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_invalid_arguments(self, method: str):
+        operation = getattr(_D, method)
+        with pytest.raises(TypeError, match="in_units"):
+            operation(hours=1, relative_to=_UTC)
+        with pytest.raises(TypeError, match="relative_to"):
+            operation(hours=1, in_units=["hours"])
+        with pytest.raises(
+            TypeError,
+            match="round_mode and round_increment require relative_to",
+        ):
+            operation(hours=1, round_mode="ceil")
+        with pytest.raises(
+            TypeError,
+            match="round_mode and round_increment require relative_to",
+        ):
+            operation(round_mode="ceil", round_increment=2)
+        with pytest.raises((TypeError, AttributeError)):
+            operation(hours=1, relative_to=None, in_units=["hours"])
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    @pytest.mark.parametrize(
+        "rounding, error",
+        [
+            ({"round_mode": ""}, ValueError),
+            ({"round_increment": 0}, ValueError),
+            ({"round_increment": 0.5}, TypeError),
+        ],
+    )
+    def test_invalid_rounding_arguments(
+        self,
+        method: str,
+        rounding: dict[str, str | int | float],
+        error: type[Exception],
+    ):
+        with pytest.raises(error):
+            getattr(_D, method)(
+                hours=1, relative_to=_UTC, in_units=["hours"], **rounding
+            )
+
+    @pytest.mark.parametrize(
+        "call, error, message",
+        [
+            (
+                lambda: _D.add(hours=1, in_units=["hours"]),
+                TypeError,
+                "in_units requires relative_to",
+            ),
+            (
+                lambda: _D.add(hours=1, relative_to=_UTC),
+                TypeError,
+                "in_units is required with relative_to",
+            ),
+            (
+                lambda: _D.subtract(hours=1, relative_to=_UTC),
+                TypeError,
+                "in_units is required with relative_to",
+            ),
+            (
+                lambda: _D.add(hours=1, round_mode="ceil"),
+                TypeError,
+                "round_mode and round_increment require relative_to",
+            ),
+            (
+                lambda: _D.add(hours=1, relative_to=_UTC, in_units=[]),
+                ValueError,
+                "in_units must not be empty",
+            ),
+            (
+                lambda: _D.add(hours=1, relative_to=_UTC, in_units=["foo"]),
+                ValueError,
+                "invalid unit: 'foo'",
+            ),
+            (
+                lambda: _D.add(
+                    hours=1,
+                    relative_to=_UTC,
+                    in_units=["hours", "nanoseconds"],
+                ),
+                ValueError,
+                "nanoseconds can only be specified together with seconds",
+            ),
+            (
+                lambda: _D.add(
+                    hours=1,
+                    relative_to=_UTC,
+                    in_units=["hours"],
+                    round_mode="foo",
+                ),
+                ValueError,
+                "invalid round_mode: 'foo'",
+            ),
+            (
+                lambda: _D.add(
+                    hours=1,
+                    relative_to=_UTC,
+                    in_units=["hours"],
+                    round_increment=1.5,
+                ),
+                TypeError,
+                "round_increment must be an integer",
+            ),
+            (
+                lambda: _D.add(
+                    hours=1,
+                    relative_to=_UTC,
+                    in_units=["hours"],
+                    round_increment=0,
+                ),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                lambda: _D.add(
+                    hours=1, relative_to=Date(2023, 1, 1), in_units=["hours"]
+                ),
+                TypeError,
+                "relative_to must be a ZonedDateTime, PlainDateTime, "
+                "or OffsetDateTime",
+            ),
+        ],
+    )
+    def test_messages(self, call, error, message):
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            with pytest.raises(error, match=f"^{re.escape(message)}$"):
+                call()
+        # a raising call emits no warning, deprecation included
+        assert record == []
+
+    def test_units_is_any_iterable(self):
+        expected = ItemizedDelta(hours=1, minutes=30)
+        d: Any = expected
+        assert (
+            d.add(relative_to=_UTC, in_units=iter(["hours", "minutes"]))
+            == expected
+        )
+        with pytest.raises(TypeError):
+            d.add(hours=1, relative_to=_UTC, in_units=None)
+
+    PLAIN = PlainDateTime(2023, 1, 1)
+    OFFSET = OffsetDateTime(2023, 1, 1, offset=hours(2))
+    ZONED = ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam")
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_warns_once_per_reference(self, method):
+        operation = getattr(ItemizedDelta(months=1), method)
+        with warns_here(NaiveArithmeticWarning) as caught:
+            result = operation(
+                hours=24, relative_to=self.PLAIN, in_units=["months", "days"]
+            )
+        assert sum(w.category is NaiveArithmeticWarning for w in caught) == 1
+        assert isinstance(result, ItemizedDelta)
+        with warns_here(StaleOffsetWarning) as caught:
+            operation(
+                hours=24, relative_to=self.OFFSET, in_units=["months", "days"]
+            )
+        assert sum(w.category is StaleOffsetWarning for w in caught) == 1
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PotentialDstBugWarning)
+            operation(
+                hours=24, relative_to=self.ZONED, in_units=["months", "days"]
+            )
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_reference_escapes(self, method):
+        operation = getattr(ItemizedDelta(months=1), method)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PotentialDstBugWarning)
+            plain = operation(
+                hours=24,
+                relative_to=self.PLAIN,
+                in_units=["months", "days"],
+                naive_arithmetic_ok=True,
+            )
+            offset = operation(
+                hours=24,
+                relative_to=self.OFFSET,
+                in_units=["months", "days"],
+                stale_offset_ok=True,
+            )
+        assert plain.strict_eq(offset)
+        # the other escape does not apply
+        with warns_here(NaiveArithmeticWarning):
+            operation(
+                hours=24,
+                relative_to=self.PLAIN,
+                in_units=["months", "days"],
+                stale_offset_ok=True,
+            )
+        with warns_here(StaleOffsetWarning):
+            operation(
+                hours=24,
+                relative_to=self.OFFSET,
+                in_units=["months", "days"],
+                naive_arithmetic_ok=True,
+            )
+
+    def test_plain_reference_no_boundary_no_warning(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PotentialDstBugWarning)
+            result = ItemizedDelta(months=1).add(  # type: ignore[deprecated]
+                days=30, relative_to=self.PLAIN, in_units=["months", "days"]
+            )
+        assert result.strict_eq(ItemizedDelta(months=2, days=2))
+
+    @pytest.mark.parametrize(
+        "call, expect",
+        [
+            (
+                lambda r: _D.add(hours=1, relative_to=r, in_units=["hours"]),
+                ItemizedDelta(hours=2),
+            ),
+            (
+                lambda r: ItemizedDelta(days=1).subtract(  # type: ignore[deprecated]
+                    hours=1, relative_to=r, in_units=["hours"]
+                ),
+                ItemizedDelta(hours=23),
+            ),
+            (
+                lambda r: _DD.add(
+                    ItemizedDelta(hours=1), relative_to=r, in_units=["hours"]
+                ),
+                ItemizedDelta(hours=25),
+            ),
+        ],
+    )
+    def test_zoned_reference_shifted_into_a_gap(self, call, expect):
+        # The shifted reference is an intermediate value: the gap resolves
+        # as the default would, without ImplicitDisambiguationWarning
+        reference = ZonedDateTime(2024, 3, 30, 2, 30, tz="Europe/Amsterdam")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PotentialDstBugWarning)
+            assert call(reference) == expect
+
+
+@pytest.mark.filterwarnings("ignore::whenever.WheneverDeprecationWarning")
+class TestItemizedDateDeltaComposeAtReference:
+    """As above, for date deltas: the operands decide the result type, and
+    a date-only computation reads a datetime reference's date alone."""
+
+    @pytest.mark.parametrize(
+        "d1, d2, relative_to, expected, kwargs",
+        [
+            # simple case with no carry
+            (
+                ItemizedDateDelta(years=2, months=3),
+                ItemizedDateDelta(years=1, months=2),
+                Date("2021-12-31"),
+                ItemizedDateDelta(years=3, months=5),
+                {"in_units": ["years", "months"]},
+            ),
+            # with carry
+            (
+                ItemizedDateDelta(years=2, months=3, weeks=4, days=5),
+                ItemizedDateDelta(years=1, months=8, weeks=3, days=30),
+                Date("2021-12-31"),
+                ItemizedDateDelta(years=4, months=1, weeks=3, days=1),
+                {"in_units": ["years", "months", "weeks", "days"]},
+            ),
+            # different units
+            (
+                ItemizedDateDelta(years=2, days=5),
+                ItemizedDateDelta(years=1, months=8, days=30),
+                Date("0021-08-03"),
+                ItemizedDateDelta(years=3, months=9, days=5),
+                {"in_units": ["years", "months", "days"]},
+            ),
+            # customized output kwargs
+            (
+                ItemizedDateDelta(years=2, days=5),
+                ItemizedDateDelta(years=1, months=8, days=30),
+                Date("0021-08-03"),
+                ItemizedDateDelta(months=45, weeks=2),
+                {
+                    "in_units": ["months", "weeks"],
+                    "round_mode": "expand",
+                    "round_increment": 2,
+                },
+            ),
+            # zero result
+            (
+                ItemizedDateDelta(years=2, months=3),
+                ItemizedDateDelta(years=-2, months=-3),
+                Date("2021-12-31"),
+                ItemizedDateDelta(years=0, months=0),
+                {"in_units": ["years", "months"]},
+            ),
+            # negative arg, positive result
+            (
+                ItemizedDateDelta(years=2, months=3),
+                ItemizedDateDelta(years=-1, months=-4),
+                Date("2021-12-31"),
+                ItemizedDateDelta(years=0, months=11),
+                {"in_units": ["years", "months"]},
+            ),
+            # negative arg, negative result
+            (
+                ItemizedDateDelta(years=2, months=3),
+                ItemizedDateDelta(years=-1, months=-20),
+                Date("2021-12-31"),
+                ItemizedDateDelta(years=-0, months=-5),
+                {"in_units": ["years", "months"]},
+            ),
+        ],
+    )
+    def test_valid(
+        self,
+        d1: Any,
+        d2: Any,
+        relative_to: Date,
+        expected: ItemizedDateDelta,
+        kwargs: Any,
+    ):
+        result = d1.add(d2, relative_to=relative_to, **kwargs)
+        assert result.strict_eq(expected)
+
+        # same result with kwargs
+        assert d1.add(**d2, relative_to=relative_to, **kwargs).strict_eq(
+            expected
+        )
+
+        # same result with subtraction
+        if (
+            kwargs.get("round_increment", 1) == 1
+            and kwargs.get("round_mode", "trunc") == "trunc"
+        ):
+            assert d1.subtract(
+                -d2, relative_to=relative_to, **kwargs
+            ).strict_eq(expected)
+
+            assert d1.subtract(
+                **{k: -v for k, v in d2.items()},
+                relative_to=relative_to,
+                **kwargs,
+            ).strict_eq(expected)
+
+    def test_mixed_sign_in_kwargs_allowed(self):
+        d: Any = ItemizedDateDelta(years=2)
+        assert d.add(
+            years=-1,
+            months=3,
+            relative_to=Date("2021-12-31"),
+            in_units=["years", "months"],
+        ).strict_eq(ItemizedDateDelta(years=1, months=3))
+
+    def test_add_nothing_balances(self):
+        d: Any = ItemizedDateDelta(years=2)
+        assert d.add(
+            relative_to=Date("2021-12-31"), in_units=["years", "months"]
+        ).strict_eq(ItemizedDateDelta(years=2, months=0))
+        assert d.add(
+            relative_to=Date("2021-12-31"), in_units=["months", "days"]
+        ).strict_eq(ItemizedDateDelta(months=24, days=0))
+
+    def test_overflows(self):
+        with pytest.raises(ValueError, match="out of range"):
+            ItemizedDateDelta(years=5).add(  # type: ignore[deprecated]
+                months=29,
+                relative_to=Date("9994-12-31"),
+                in_units=["years", "months"],
+            )
+
+    def test_floor_round_mode_behaves_correctly_on_negative(self):
+        d1: Any = ItemizedDateDelta(years=4, months=5)
+        d2 = ItemizedDateDelta(years=-8, months=-2)
+
+        assert d1.add(
+            d2,
+            relative_to=Date("2021-11-20"),
+            round_mode="floor",
+            round_increment=2,
+            in_units=["years", "months"],
+        ).strict_eq(ItemizedDateDelta(years=-3, months=-10))
+
+    def test_sums_before_applying(self):
+        d: Any = ItemizedDateDelta(months=1)
+        assert d.add(
+            months=1, relative_to=Date(2021, 1, 31), in_units=["months"]
+        ).strict_eq(ItemizedDateDelta(months=2))
+
+    def test_full_delta_operand_with_datetime_reference(self):
+        d: Any = ItemizedDateDelta(months=1)
+        reference = ZonedDateTime(2021, 1, 31, tz="UTC")
+        result = d.add(
+            ItemizedDelta(months=1, hours=2),
+            relative_to=reference,
+            in_units=["months", "hours"],
+        )
+        assert type(result) is ItemizedDelta
+        assert result.strict_eq(ItemizedDelta(months=2, hours=2))
+
+        three_months: Any = ItemizedDateDelta(months=3)
+        result = three_months.subtract(
+            ItemizedDelta(months=1, hours=2),
+            relative_to=reference,
+            in_units=["hours"],
+        )
+        assert result.strict_eq(ItemizedDelta(hours=1414))
+
+    def test_full_delta_operand_requires_datetime_reference(self):
+        with pytest.raises(
+            TypeError,
+            match="^relative_to must be a ZonedDateTime, PlainDateTime, "
+            "or OffsetDateTime when composing with ItemizedDelta$",
+        ):
+            _DD.add(
+                ItemizedDelta(hours=1),
+                relative_to=Date(2021, 1, 31),
+                in_units=["hours"],
+            )
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_invalid_arguments(self, method: str):
+        operation = getattr(_DD, method)
+        with pytest.raises(TypeError, match="in_units"):
+            operation(days=1, relative_to=_DATE)
+        with pytest.raises(TypeError, match="relative_to"):
+            operation(days=1, in_units=["days"])
+        with pytest.raises(
+            TypeError,
+            match="round_mode and round_increment require relative_to",
+        ):
+            operation(days=1, round_mode="ceil")
+        with pytest.raises(TypeError, match="relative_to"):
+            operation(days=1, in_units=["days"], month_composition_ok=True)
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    @pytest.mark.parametrize(
+        "rounding, error",
+        [
+            ({"round_mode": ""}, ValueError),
+            ({"round_increment": 0}, ValueError),
+            ({"round_increment": 0.5}, TypeError),
+        ],
+    )
+    def test_invalid_rounding_arguments(
+        self,
+        method: str,
+        rounding: dict[str, str | int | float],
+        error: type[Exception],
+    ):
+        with pytest.raises(error):
+            getattr(_DD, method)(
+                days=1, relative_to=_DATE, in_units=["days"], **rounding
+            )
+
+    @pytest.mark.parametrize(
+        "call, error, message",
+        [
+            (
+                lambda: _DD.add(days=1, in_units=["days"]),
+                TypeError,
+                "in_units requires relative_to",
+            ),
+            (
+                lambda: _DD.add(days=1, relative_to=_DATE),
+                TypeError,
+                "in_units is required with relative_to",
+            ),
+            (
+                lambda: _DD.add(days=1, round_mode="ceil"),
+                TypeError,
+                "round_mode and round_increment require relative_to",
+            ),
+            (
+                lambda: _DD.add(days=1, relative_to=_DATE, in_units=["hours"]),
+                ValueError,
+                "invalid unit: 'hours'",
+            ),
+            (
+                lambda: _DD.add(
+                    days=1,
+                    relative_to=_DATE,
+                    in_units=["days"],
+                    round_increment=0,
+                ),
+                ValueError,
+                "round_increment must be a positive integer in range",
+            ),
+            (
+                lambda: _DD.add(
+                    days=1,
+                    relative_to=Instant.from_utc(2023, 1, 1),
+                    in_units=["days"],
+                ),
+                TypeError,
+                "relative_to must be a Date, ZonedDateTime, PlainDateTime, "
+                "or OffsetDateTime",
+            ),
+        ],
+    )
+    def test_messages(self, call, error, message):
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            with pytest.raises(error, match=f"^{re.escape(message)}$"):
+                call()
+        assert record == []
+
+    def test_units_is_any_iterable(self):
+        with pytest.raises(TypeError):
+            _DD.add(days=1, relative_to=_DATE, in_units=None)
+
+    REFERENCES = [
+        Date(2023, 1, 1),
+        ZonedDateTime(2023, 1, 1, 12, tz="Europe/Amsterdam"),
+        PlainDateTime(2023, 1, 1, 12),
+        OffsetDateTime(2023, 1, 1, 12, offset=hours(2)),
+    ]
+
+    @pytest.mark.parametrize("reference", REFERENCES)
+    def test_date_operands_give_a_date_delta(self, reference):
+        d: Any = ItemizedDateDelta(months=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PotentialDstBugWarning)
+            by_keyword = d.add(
+                days=30, relative_to=reference, in_units=["months", "days"]
+            )
+            by_delta = d.subtract(
+                ItemizedDateDelta(days=-30),
+                relative_to=reference,
+                in_units=["months", "days"],
+            )
+        assert type(by_keyword) is ItemizedDateDelta
+        assert by_keyword.strict_eq(ItemizedDateDelta(months=2, days=2))
+        assert by_delta.strict_eq(by_keyword)
+
+    @pytest.mark.parametrize("reference", REFERENCES)
+    def test_date_operands_take_date_units_only(self, reference):
+        with pytest.raises(ValueError, match="^invalid unit: 'hours'$"):
+            _DD.add(
+                days=30, relative_to=reference, in_units=["months", "hours"]
+            )
+
+    def test_full_delta_operand_gives_a_full_delta(self):
+        with warns_here(NaiveArithmeticWarning) as caught:
+            result = _DD.add(
+                ItemizedDelta(hours=1),
+                relative_to=PlainDateTime(2023, 1, 1),
+                in_units=["days", "hours"],
+            )
+        assert sum(w.category is NaiveArithmeticWarning for w in caught) == 1
+        assert type(result) is ItemizedDelta
+        assert result.strict_eq(ItemizedDelta(days=1, hours=1))
+
+    @pytest.mark.parametrize(
+        "units, warns, expected",
+        [
+            (["days"], False, ItemizedDelta(days=1)),
+            (["hours"], True, ItemizedDelta(hours=24)),
+        ],
+    )
+    def test_plain_datetime_zero_exact_component(self, units, warns, expected):
+        # A zero exact component is no clock arithmetic; a requested exact
+        # unit is.
+        ref = PlainDateTime(2020, 1, 1)
+        if warns:
+            with warns_here(NaiveArithmeticWarning):
+                result = _DD.add(
+                    ItemizedDelta(hours=0), relative_to=ref, in_units=units
+                )
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", PotentialDstBugWarning)
+                result = _DD.add(
+                    ItemizedDelta(hours=0), relative_to=ref, in_units=units
+                )
+        assert result.strict_eq(expected)
+
+    @pytest.mark.parametrize("method", ["add", "subtract"])
+    def test_full_delta_operand_reference_rule(self, method):
+        operation = getattr(ItemizedDateDelta(months=1), method)
+        with warns_here(StaleOffsetWarning) as caught:
+            operation(
+                ItemizedDelta(hours=1),
+                relative_to=OffsetDateTime(2023, 1, 1, offset=hours(2)),
+                in_units=["days", "hours"],
+            )
+        assert sum(w.category is StaleOffsetWarning for w in caught) == 1
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PotentialDstBugWarning)
+            operation(
+                ItemizedDelta(hours=1),
+                relative_to=OffsetDateTime(2023, 1, 1, offset=hours(2)),
+                in_units=["days", "hours"],
+                stale_offset_ok=True,
+            )
+            operation(
+                ItemizedDelta(hours=1),
+                relative_to=PlainDateTime(2023, 1, 1),
+                in_units=["days", "hours"],
+                naive_arithmetic_ok=True,
+            )
+            operation(
+                ItemizedDelta(hours=1),
+                relative_to=ZonedDateTime(2023, 1, 1, tz="Europe/Amsterdam"),
+                in_units=["days", "hours"],
+            )
+
+    def test_plain_datetime_reference(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", PotentialDstBugWarning)
+            result = _DD.add(
+                months=1,
+                relative_to=PlainDateTime(2024, 3, 30, 12),
+                in_units=["months", "days"],
+            )
+        assert result.strict_eq(ItemizedDateDelta(months=1, days=1))

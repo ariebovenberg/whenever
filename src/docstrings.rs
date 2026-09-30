@@ -5,38 +5,6 @@
 use std::ffi::CStr;
 
 pub(crate) const PYDANTIC_SCHEMA: &CStr = c"__get_pydantic_core_schema__(source_type, handler)\n--\n\n";
-pub(crate) const CALENDARUNITCOMPOSITIONWARNING: &CStr = c"\
-Warn when itemized deltas are composed component by component.
-
-Itemized deltas preserve the components they were given:
-``1 month`` remains ``1 month`` rather than being normalized to days.
-Composing two itemized deltas without a ``relative_to`` reference therefore
-performs literal component-wise arithmetic, such as
-``ItemizedDateDelta(months=1) + ItemizedDateDelta(months=1)`` becoming
-``ItemizedDateDelta(months=2)``.
-
-This is often useful for display and ISO 8601 round-tripping, but it is
-not the same as sequentially applying both deltas to a date or datetime.
-Calendar units do not compose reliably: for example, adding one month to
-January 31 may clamp to the end of February, so adding another month from
-there can differ from adding two months to January 31 in one step.
-The warning is only emitted when either operand contains a nonzero calendar
-unit; exact-only composition does not warn.
-
-Composition is flagged rather than refused (Temporal's ``Duration.add()``
-throws without a reference) because a warning serves strict, accepting,
-and unaware callers alike: see :ref:`flagged-not-forbidden`.
-
-To apply the deltas one after another, apply each one to the date or
-datetime in a separate step. ``relative_to=`` on
-:meth:`~whenever.ItemizedDelta.add` and
-:meth:`~whenever.ItemizedDateDelta.add` doesn't: it sums the components
-too, applies the sum to the reference, and expresses the result in
-``in_units=``. If component-wise composition is intentional, pass
-``cal_unit_composition_ok=True``, pass ``relative_to=`` and
-``in_units=`` for the combined delta in other units, or use Python's
-standard warning filters.
-";
 pub(crate) const DATE: &CStr = c"\
 A date without a time component.
 
@@ -158,6 +126,23 @@ The offset in the input matches no offset the time zone applies to
 the written local time. Raised by the ISO and pattern parsers, the
 ``datetime`` constructor overload, and ``assume_tz()`` under
 ``offset_mismatch=\"raise\"``.
+";
+pub(crate) const MONTHCOMPOSITIONWARNING: &CStr = c"\
+Warn when itemized deltas with years or months are composed
+component-wise.
+
+``ItemizedDateDelta(months=1) + ItemizedDateDelta(months=1)`` is
+``ItemizedDateDelta(months=2)``: the components add up, and the order
+the deltas would apply in is gone. With years or months that order
+matters, because they clamp at the end of the month. From January 31,
+one month and then another lands on March 28; two months at once land
+on March 31. Days, weeks, and exact units never clamp, and composing
+them doesn't warn.
+
+Composition is flagged rather than refused: see
+:ref:`flagged-not-forbidden`. To apply the deltas in turn, add each to
+the date or datetime. If the composed delta is what you want, pass
+``month_composition_ok=True`` to ``add()`` or ``subtract()``.
 ";
 pub(crate) const NAIVEARITHMETICWARNING: &CStr = c"\
 Emitted when exact-time arithmetic is performed on a

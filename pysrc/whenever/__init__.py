@@ -28,6 +28,16 @@ def __getattr__(name: str) -> object:
             stacklevel=2,
         )
         return DisambiguateStr
+    elif name == "CalendarUnitCompositionWarning":
+        from ._common import warn_deprecated
+        from ._ideltas import MonthCompositionWarning
+
+        warn_deprecated(
+            "CalendarUnitCompositionWarning is deprecated; "
+            "use MonthCompositionWarning instead",
+            stacklevel=2,
+        )
+        return MonthCompositionWarning
     elif name == "AnyDelta":
         from ._core import TimeDelta
         from ._ideltas import ItemizedDateDelta, ItemizedDelta
@@ -80,7 +90,7 @@ __all__ = (
     "DaysAssumed24HoursWarning",
     "StaleOffsetWarning",
     "NaiveArithmeticWarning",
-    "CalendarUnitCompositionWarning",
+    "MonthCompositionWarning",
     "WheneverWarning",
     "PotentialDstBugWarning",
     "PickleOffsetMismatchWarning",
@@ -164,7 +174,7 @@ _LAZY_MODULES = {
         "_unpkl_zoned",
     ),
     f"{__package__}._ideltas": (
-        "CalendarUnitCompositionWarning",
+        "MonthCompositionWarning",
         "ItemizedDelta",
         "ItemizedDateDelta",
         "_unpkl_iddelta",

@@ -11,7 +11,7 @@ myst:
 
 `whenever` emits warnings when operations may produce incorrect results,
 for example due to DST transitions, missing context, or component-wise
-composition of calendar units. This is intentional: the operations
+composition of months. This is intentional: the operations
 are classic "footguns", but forbidding them entirely would be too strict.
 Warnings are an ideal mechanism to ensure the potential issues don't pass unnoticed.
 
@@ -25,7 +25,7 @@ fully, giving you several levels of control.
 ```text
 UserWarning (stdlib)
 └── WheneverWarning
-    ├── CalendarUnitCompositionWarning
+    ├── MonthCompositionWarning
     ├── PickleOffsetMismatchWarning
     ├── PotentialDstBugWarning
     │   ├── DaysAssumed24HoursWarning
@@ -136,9 +136,9 @@ that suppresses it for that one call, and is named in the warning's message.
 | Keyword argument | Suppresses | Used on |
 |---|---|---|
 | `days_assumed_24h_ok=True` | {class}`~whenever.DaysAssumed24HoursWarning` | the {class}`~whenever.TimeDelta` constructor and methods, {class}`~whenever.Instant` `add`/`subtract`, {meth}`TimePatch.shift() <whenever.TimePatch.shift>` |
-| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` `add`/`subtract`, `since`/`until`, `now()`, `replace()`, `replace_date()`, `replace_time()`, `round()`, `start_of()`, `end_of()`; the delta methods `total()`, `in_units()`, `add()`, and `subtract()` with an {class}`~whenever.OffsetDateTime` as `relative_to`, except where an {class}`~whenever.ItemizedDateDelta` involves no exact units (its `total()` and `in_units()`, and its `add()`/`subtract()` of another date delta), which reads only the date |
-| `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods; the delta methods `total()`, `in_units()`, `add()`, and `subtract()` with a {class}`~whenever.PlainDateTime` as `relative_to`, except where an {class}`~whenever.ItemizedDateDelta` involves no exact units (its `total()` and `in_units()`, and its `add()`/`subtract()` of another date delta), which reads only the date |
-| `cal_unit_composition_ok=True` | {class}`~whenever.CalendarUnitCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
+| `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` `add`/`subtract`, `since`/`until`, `now()`, `replace()`, `replace_date()`, `replace_time()`, `round()`, `start_of()`, `end_of()`; the delta methods `total()` and `in_units()` with an {class}`~whenever.OffsetDateTime` as `relative_to`, except on an {class}`~whenever.ItemizedDateDelta`, which reads only the date |
+| `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods; the delta methods `total()` and `in_units()` with a {class}`~whenever.PlainDateTime` as `relative_to`, except on an {class}`~whenever.ItemizedDateDelta`, which reads only the date |
+| `month_composition_ok=True` | {class}`~whenever.MonthCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
 | `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `parse_iso()`, `parse()`, `replace()`, `replace_date()`, `replace_time()`, `add`/`subtract`; `assume_tz()` on {class}`~whenever.PlainDateTime` and {class}`~whenever.OffsetDateTime` |
 | none: filter the category | {class}`~whenever.PickleOffsetMismatchWarning` | `pickle.loads()` of a {class}`~whenever.ZonedDateTime` |
 | none: fix the pattern | the 12-hour {class}`~whenever.WheneverWarning` | `format()` and `parse()`: add `a`/`aa`, or use `H`/`HH` |
@@ -169,11 +169,9 @@ operators cannot accept keyword arguments. Use the method equivalents instead:
 - `dt_a - dt_b` → `dt_a.difference(dt_b)` (for {class}`~whenever.PlainDateTime`,
   pass `naive_arithmetic_ok=True`)
 
-For itemized-delta composition, operators emit
-{class}`~whenever.CalendarUnitCompositionWarning` when either operand contains
-nonzero calendar units. Exact-only composition does not warn. Use the method
-form if you want to pass `cal_unit_composition_ok=True` instead of relying on
-a global warning filter.
+Composing itemized deltas with `+` or `-` emits
+{class}`~whenever.MonthCompositionWarning` when either operand has years or
+months. `add()` and `subtract()` take `month_composition_ok=True` instead.
 
 Alternatively, suppress operator warnings with Python's standard
 {func}`warnings.filterwarnings`.

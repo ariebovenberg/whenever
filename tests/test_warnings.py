@@ -9,13 +9,13 @@ from datetime import (
 
 import pytest
 from whenever import (
-    CalendarUnitCompositionWarning,
     Date,
     DaysAssumed24HoursWarning,
     ImplicitDisambiguationWarning,
     Instant,
     InvalidOffsetError,
     ItemizedDelta,
+    MonthCompositionWarning,
     NaiveArithmeticWarning,
     OffsetDateTime,
     PickleOffsetMismatchWarning,
@@ -43,7 +43,7 @@ def test_hierarchy():
     assert issubclass(WheneverWarning, UserWarning)
     assert issubclass(PotentialDstBugWarning, WheneverWarning)
     assert issubclass(PickleOffsetMismatchWarning, WheneverWarning)
-    assert issubclass(CalendarUnitCompositionWarning, WheneverWarning)
+    assert issubclass(MonthCompositionWarning, WheneverWarning)
     assert issubclass(WheneverDeprecationWarning, WheneverWarning)
     assert not issubclass(WheneverDeprecationWarning, DeprecationWarning)
     assert issubclass(DaysAssumed24HoursWarning, PotentialDstBugWarning)

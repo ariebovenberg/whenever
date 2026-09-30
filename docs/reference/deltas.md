@@ -342,33 +342,34 @@ of the two deltas:
 TimeDelta("PT3h30m")
 ```
 
-"Itemized" delta composition can use a relative date or datetime context
-to resolve calendar units when adding or subtracting.
-The components are summed, the sum is applied to the reference, and the
-result is expressed in `in_units`. For example, "1 month" plus "30 days"
-depends on the starting date:
+The itemized deltas compose **component-wise**: like components add up,
+and the result stays itemized, so `1 month` plus `30 days` is
+`1 month 30 days` whatever the month. To balance the result, call
+{meth}`~ItemizedDelta.in_units` on it with a reference:
 
 ```python
->>> one_month = ItemizedDateDelta(months=1)
->>> one_month.add(days=30, relative_to=Date(2023, 1, 1), in_units=["months", "days"])
+>>> summed = ItemizedDateDelta(months=1).add(days=30, month_composition_ok=True)
+>>> summed
+ItemizedDateDelta("P1m30d")
+>>> summed.in_units(["months", "days"], relative_to=Date(2023, 1, 1))
 ItemizedDateDelta("P2m2d")
->>> one_month.add(days=30, relative_to=Date(2023, 2, 28), in_units=["months", "days"])
+>>> summed.in_units(["months", "days"], relative_to=Date(2023, 2, 28))
 ItemizedDateDelta("P1m30d")
 ```
 
-```{note}
-`in_units` is required together with `relative_to`, because the sum has no
-single representation. One month plus 30 days from January 1 is 2 months and
-2 days, 61 days, or 8 weeks and 5 days. The coarsest unit decides which one
-you get, so you name it, as you do for {meth}`~ZonedDateTime.since`.
-```
+The operands decide the result type: two {class}`ItemizedDateDelta`
+operands give an {class}`ItemizedDateDelta`, and any {class}`ItemizedDelta`
+operand gives an {class}`ItemizedDelta`.
 
-The operands decide the result type. Two {class}`ItemizedDateDelta` operands
-give an {class}`ItemizedDateDelta`, and the reference may then be a
-{class}`Date` or a datetime, of which only the date is read. Any
-{class}`ItemizedDelta` operand gives an {class}`ItemizedDelta`, and needs a
-datetime reference to resolve its exact units. Each reference type has its
-own warning:
+Composing years or months emits {class}`~whenever.MonthCompositionWarning`,
+which `month_composition_ok=True` accepts. A month clamps at the end of the
+month, so the composed delta can land on a different day than the deltas
+applied in turn; {ref}`delta-composition` shows an example. Days, weeks, and
+exact units never clamp, and compose without a warning.
+
+Each reference type on {meth}`~ItemizedDelta.in_units`,
+{meth}`~ItemizedDelta.total`, {meth}`~TimeDelta.in_units`, and
+{meth}`~TimeDelta.total` has its own warning:
 
 - A {class}`ZonedDateTime` resolves calendar units in its time zone and
   emits no warning.
@@ -379,17 +380,8 @@ own warning:
   calculation. It emits {class}`~whenever.StaleOffsetWarning` when calendar
   units are involved, which `stale_offset_ok=True` accepts.
 
-The same rule applies to `relative_to` on {meth}`~ItemizedDelta.in_units`,
-{meth}`~ItemizedDelta.total`, {meth}`~TimeDelta.in_units`, and
-{meth}`~TimeDelta.total`.
-
-Without a `relative_to` reference, itemized-delta composition is
-component-wise. That preserves the literal components, but it can change the meaning of later
-application to a datetime because calendar units do not reliably compose.
-The operation emits
-{class}`~whenever.CalendarUnitCompositionWarning` when either operand contains
-nonzero calendar units, unless you pass `cal_unit_composition_ok=True`.
-Exact-only composition does not warn.
+An {class}`ItemizedDateDelta` reads only the date of a datetime reference,
+without a warning.
 
 (delta-operators)=
 ## Operators
@@ -418,11 +410,9 @@ TimeDelta("PT1h15m")
 ```
 
 The itemized deltas are mappings, not numbers: they have `+`, `-`, unary
-`-`, and `abs()`. The binary operators perform component-wise composition
-and emit {class}`~whenever.CalendarUnitCompositionWarning` when either
-operand contains nonzero calendar units. Exact-only composition does not
-warn. Use the method forms if you want to pass `cal_unit_composition_ok=True`
-or a result in other units via `relative_to`. An itemized
+`-`, and `abs()`. The binary operators compose component-wise, with the
+same {class}`~whenever.MonthCompositionWarning` as the methods; only the
+methods take `month_composition_ok=True`. An itemized
 delta has one sign, so a composition that leaves components of both signs
 raises {class}`ValueError`: `ItemizedDelta(hours=1) + ItemizedDelta(minutes=-90)`
 is rejected with "mixed sign in delta". To split a delta into its date and
@@ -434,8 +424,8 @@ with `TimeDelta.ZERO`.
 
 Dates and datetimes support applying an itemized delta with `+` and `-`.
 Addition is also commutative in spelling, so both `datetime + delta` and
-`delta + datetime` are supported. These operations use the date or datetime
-as their reference and do not emit `CalendarUnitCompositionWarning`.
+`delta + datetime` are supported. Applying one delta composes nothing, so
+these operations never emit `MonthCompositionWarning`.
 As with the equivalent `add()` and `subtract()` methods, calendar units are
 applied before exact units, and years and months clamp; so adding and then
 subtracting the same delta is not always reversible.

@@ -49,7 +49,9 @@ from ._common import (
     expect_int,
     final,
     invalid,
+    normalize_renamed_keyword,
     warn_deprecated,
+    warn_renamed_keyword,
 )
 from ._math import (
     DATE_DELTA_UNITS,
@@ -134,7 +136,6 @@ RELATIVE_TO_DATE_MSG = (
     "relative_to must be a Date, ZonedDateTime, PlainDateTime, or "
     "OffsetDateTime"
 )
-IN_UNITS_REQUIRED_MSG = "in_units is required with relative_to"
 
 
 def _reference_and_warning(
@@ -258,27 +259,25 @@ def _items_add(
     return sum
 
 
-CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG = (
-    "Using `+` or `-` between two itemized deltas combines their components instead "
-    "of applying the deltas one after another. With calendar units such as "
-    "months or days, the combined delta can produce a different date because "
-    "calendar arithmetic may clamp at month boundaries. To apply the deltas "
-    "one after another, apply each one to the date or datetime in a separate "
-    "step. If component-wise composition is intentional, use the corresponding "
-    "`.add()` or `.subtract()` method with `cal_unit_composition_ok=True`, or "
-    "with `relative_to=...` and `in_units=...` to express the combined delta "
-    "in other units. " + WARNING_HANDLING_DOCS_MSG
+_MONTH_COMPOSITION_MSG = (
+    "which drops the order the deltas would apply in. With years or months "
+    "that order matters, because they clamp at the end of the month: "
+    "2023-01-31 + 1 month + 1 month is 2023-03-28, while "
+    "2023-01-31 + 2 months is 2023-03-31. To apply the deltas in turn, add "
+    "each to the date or datetime. "
 )
-
-CALENDAR_UNIT_METHOD_COMPOSITION_MSG = (
-    "Calling `.add()` or `.subtract()` without `relative_to` combines the "
-    "itemized deltas component by component. With calendar units such as months or "
-    "days, the resulting delta may behave differently from applying the deltas "
-    "one after another. To apply them one after another, apply each one to the "
-    "date or datetime in a separate step. If component-wise composition is "
-    "intentional, pass `cal_unit_composition_ok=True`, or `relative_to=...` and "
-    "`in_units=...` to express the combined delta in other units. "
+MONTH_OPERATOR_COMPOSITION_MSG = (
+    "`+` and `-` compose itemized deltas component-wise, "
+    + _MONTH_COMPOSITION_MSG
+    + "If the composed delta is what you want, use `.add()` or "
+    "`.subtract()` with `month_composition_ok=True`. "
     + WARNING_HANDLING_DOCS_MSG
+)
+MONTH_METHOD_COMPOSITION_MSG = (
+    "`.add()` and `.subtract()` compose itemized deltas component-wise, "
+    + _MONTH_COMPOSITION_MSG
+    + "If the composed delta is what you want, pass "
+    "`month_composition_ok=True`. " + WARNING_HANDLING_DOCS_MSG
 )
 
 
@@ -286,6 +285,14 @@ def _has_nonzero_calendar_units(
     delta: Mapping[str, int] | ItemizedDelta | ItemizedDateDelta,
 ) -> bool:
     return any(map(delta.get, DATE_DELTA_UNITS))
+
+
+# Only years and months clamp, so only they make the order of
+# application matter.
+def _has_clamping_units(
+    delta: Mapping[str, int] | ItemizedDelta | ItemizedDateDelta,
+) -> bool:
+    return bool(delta.get("years") or delta.get("months"))
 
 
 def _compose_operator(
@@ -296,10 +303,10 @@ def _compose_operator(
     """The body of ``+``/``-`` between itemized deltas, called directly by
     the operator method so the warning points at its caller."""
     result = _composed_type(a, b)(**_items_add(a, -b if negate else b))
-    if _has_nonzero_calendar_units(a) or _has_nonzero_calendar_units(b):
+    if _has_clamping_units(a) or _has_clamping_units(b):
         warn(
-            CALENDAR_UNIT_OPERATOR_COMPOSITION_MSG,
-            CalendarUnitCompositionWarning,
+            MONTH_OPERATOR_COMPOSITION_MSG,
+            MonthCompositionWarning,
             stacklevel=3,
         )
     return result
@@ -330,85 +337,59 @@ def _date_or_datetime_types() -> tuple[
     return (Date, *_datetime_types())
 
 
-def _compose(
+# The 0.10 keywords of add()/subtract(), which balanced the sum at a
+# reference. Deprecated: in_units() on the result does the same.
+_REFERENCE_KWARGS = (
+    "relative_to",
+    "in_units",
+    "round_mode",
+    "round_increment",
+    "naive_arithmetic_ok",
+    "stale_offset_ok",
+)
+REFERENCE_DEPRECATED_MSG = (
+    "'relative_to' on add() and subtract() is deprecated; "
+    "call in_units() on the result instead"
+)
+
+
+def _compose_at_reference(
     self: ItemizedDelta | ItemizedDateDelta,
-    arg: ItemizedDelta | ItemizedDateDelta,
-    components: Mapping[str, int],
+    other: Mapping[str, int],
     /,
     *,
-    relative_to: object,
-    in_units: Sequence[DeltaUnitStr],
-    round_mode: RoundModeStr,
-    round_increment: int,
-    cal_unit_composition_ok: bool,
-    naive_arithmetic_ok: bool,
-    stale_offset_ok: bool,
-    negate: bool,
-) -> ItemizedDelta | ItemizedDateDelta:
-    """The body of ``add()``/``subtract()``, called directly by them so the
-    warnings point at their caller. The result is an ``ItemizedDelta`` if
-    either operand is one, else an ``ItemizedDateDelta``."""
-    fname = "subtract" if negate else "add"
-    # Normalize the input into a single unit->value mapping
-    other: Mapping[str, int] = _read_components(components, negate)
-    if other:
-        if arg is not UNSET:
-            raise TypeError(
-                f"{fname}() cannot mix positional and keyword arguments"
-            )
-    elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
-        # Mypy can't see how itemized deltas are always valid str->int mappings
-        other = -arg if negate else arg  # type: ignore[assignment]
-    elif arg is not UNSET:
-        raise TypeError(
-            "argument must be an ItemizedDelta or ItemizedDateDelta"
-        )
-
-    if (
-        arg is UNSET
-        and not other
-        and relative_to is UNSET
-        and in_units is UNSET
-        and round_mode is UNSET
-        and round_increment is UNSET
-    ):
-        return self
-
-    type_ = _composed_type(self, other)
-
+    relative_to: object = UNSET,
+    in_units: Sequence[DeltaUnitStr] = UNSET,
+    round_mode: RoundModeStr = UNSET,
+    round_increment: int = UNSET,
+    naive_arithmetic_ok: bool = UNSET,
+    stale_offset_ok: bool = UNSET,
+) -> tuple[ItemizedDelta | ItemizedDateDelta, Warning | None]:
+    """The 0.10 semantics of ``add()``/``subtract()`` with a reference: the
+    summed components, applied to the reference in one step and measured
+    back in ``in_units``. The caller emits the returned warning, and the
+    deprecation, from its own frame."""
     if relative_to is UNSET:
         if in_units is not UNSET:
             raise TypeError("in_units requires relative_to")
-        if round_mode is not UNSET or round_increment is not UNSET:
-            raise TypeError(
-                "round_mode and round_increment require relative_to"
-            )
-        result = type_(**_items_add(self, other))
-        if not cal_unit_composition_ok and (
-            _has_nonzero_calendar_units(self)
-            or _has_nonzero_calendar_units(other)
-        ):
-            warn(
-                CALENDAR_UNIT_METHOD_COMPOSITION_MSG,
-                CalendarUnitCompositionWarning,
-                stacklevel=3,
-            )
-        return result
-
+        raise TypeError("round_mode and round_increment require relative_to")
     if in_units is UNSET:
-        raise TypeError(IN_UNITS_REQUIRED_MSG)
+        raise TypeError("in_units is required with relative_to")
     combined = _items_add(self, other)
-    if type_ is ItemizedDateDelta:
+    if _composed_type(self, other) is ItemizedDateDelta:
         date_units = normalize_units(in_units, DATE_DELTA_UNITS)
         round_mode, round_increment = resolve_date_rounding(
             round_mode, round_increment
         )
         date = _reference_date(relative_to)
-        return date.add(**combined).since(
-            date,
-            in_units=date_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
+        return (
+            date.add(**combined).since(
+                date,
+                in_units=date_units,
+                round_mode=round_mode,
+                round_increment=round_increment,
+            ),
+            None,
         )
     if isinstance(self, ItemizedDateDelta):
         from ._core import Date
@@ -425,14 +406,74 @@ def _compose(
         naive_arithmetic_ok,
         stale_offset_ok,
     )
-    result = _shift_reference(reference, combined).since(
-        reference,
-        in_units=units,
-        round_mode=round_mode,
-        round_increment=round_increment,
+    return (
+        _shift_reference(reference, combined).since(
+            reference,
+            in_units=units,
+            round_mode=round_mode,
+            round_increment=round_increment,
+        ),
+        warning,
     )
+
+
+def _compose(
+    self: ItemizedDelta | ItemizedDateDelta,
+    arg: ItemizedDelta | ItemizedDateDelta,
+    components: Mapping[str, int],
+    /,
+    *,
+    month_composition_ok: bool,
+    negate: bool,
+    kwargs: dict[str, Any],
+) -> ItemizedDelta | ItemizedDateDelta:
+    """The body of ``add()``/``subtract()``, called directly by them so the
+    warnings point at their caller. The result is an ``ItemizedDelta`` if
+    either operand is one, else an ``ItemizedDateDelta``. ``kwargs`` holds
+    the deprecated keywords."""
+    fname = "subtract" if negate else "add"
+    month_composition_ok, renamed = normalize_renamed_keyword(
+        month_composition_ok,
+        kwargs,
+        function_name=fname,
+        new_name="month_composition_ok",
+        old_name="cal_unit_composition_ok",
+    )
+    reference = {k: kwargs.pop(k) for k in _REFERENCE_KWARGS if k in kwargs}
+    check_no_kwargs(kwargs, f"{type(self).__name__}.{fname}")
+    other: Mapping[str, int] = _read_components(components, negate)
+    if other:
+        if arg is not UNSET:
+            raise TypeError(
+                f"{fname}() cannot mix positional and keyword arguments"
+            )
+    elif isinstance(arg, (ItemizedDelta, ItemizedDateDelta)):
+        # Mypy can't see how itemized deltas are always valid str->int mappings
+        other = -arg if negate else arg  # type: ignore[assignment]
+    elif arg is not UNSET:
+        raise TypeError(
+            "argument must be an ItemizedDelta or ItemizedDateDelta"
+        )
+    elif not reference:
+        return self
+
+    warning = None
+    if reference:
+        result, warning = _compose_at_reference(self, other, **reference)
+    else:
+        result = _composed_type(self, other)(**_items_add(self, other))
+        if not month_composition_ok and (
+            _has_clamping_units(self) or _has_clamping_units(other)
+        ):
+            warning = MonthCompositionWarning(MONTH_METHOD_COMPOSITION_MSG)
     if warning is not None:
         warn(warning, stacklevel=3)
+    if reference:
+        warn_deprecated(REFERENCE_DEPRECATED_MSG, stacklevel=3)
+    if renamed:
+        warn_renamed_keyword(
+            "month_composition_ok", "cal_unit_composition_ok", stacklevel=3
+        )
     return result
 
 
@@ -447,37 +488,22 @@ def _composed_type(
     return ItemizedDateDelta
 
 
-class CalendarUnitCompositionWarning(WheneverWarning):
-    """Warn when itemized deltas are composed component by component.
+class MonthCompositionWarning(WheneverWarning):
+    """Warn when itemized deltas with years or months are composed
+    component-wise.
 
-    Itemized deltas preserve the components they were given:
-    ``1 month`` remains ``1 month`` rather than being normalized to days.
-    Composing two itemized deltas without a ``relative_to`` reference therefore
-    performs literal component-wise arithmetic, such as
-    ``ItemizedDateDelta(months=1) + ItemizedDateDelta(months=1)`` becoming
-    ``ItemizedDateDelta(months=2)``.
+    ``ItemizedDateDelta(months=1) + ItemizedDateDelta(months=1)`` is
+    ``ItemizedDateDelta(months=2)``: the components add up, and the order
+    the deltas would apply in is gone. With years or months that order
+    matters, because they clamp at the end of the month. From January 31,
+    one month and then another lands on March 28; two months at once land
+    on March 31. Days, weeks, and exact units never clamp, and composing
+    them doesn't warn.
 
-    This is often useful for display and ISO 8601 round-tripping, but it is
-    not the same as sequentially applying both deltas to a date or datetime.
-    Calendar units do not compose reliably: for example, adding one month to
-    January 31 may clamp to the end of February, so adding another month from
-    there can differ from adding two months to January 31 in one step.
-    The warning is only emitted when either operand contains a nonzero calendar
-    unit; exact-only composition does not warn.
-
-    Composition is flagged rather than refused (Temporal's ``Duration.add()``
-    throws without a reference) because a warning serves strict, accepting,
-    and unaware callers alike: see :ref:`flagged-not-forbidden`.
-
-    To apply the deltas one after another, apply each one to the date or
-    datetime in a separate step. ``relative_to=`` on
-    :meth:`~whenever.ItemizedDelta.add` and
-    :meth:`~whenever.ItemizedDateDelta.add` doesn't: it sums the components
-    too, applies the sum to the reference, and expresses the result in
-    ``in_units=``. If component-wise composition is intentional, pass
-    ``cal_unit_composition_ok=True``, pass ``relative_to=`` and
-    ``in_units=`` for the combined delta in other units, or use Python's
-    standard warning filters.
+    Composition is flagged rather than refused: see
+    :ref:`flagged-not-forbidden`. To apply the deltas in turn, add each to
+    the date or datetime. If the composed delta is what you want, pass
+    ``month_composition_ok=True`` to ``add()`` or ``subtract()``.
     """
 
     __module__ = "whenever"
@@ -1354,62 +1380,38 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         minutes: int = UNSET,
         seconds: int = UNSET,
         nanoseconds: int = UNSET,
-        relative_to: _whenever.ZonedDateTime
-        | _whenever.PlainDateTime
-        | _whenever.OffsetDateTime = UNSET,
-        in_units: Sequence[DeltaUnitStr] = UNSET,
-        round_mode: RoundModeStr = UNSET,
-        round_increment: int = UNSET,
-        cal_unit_composition_ok: bool = UNSET,
-        naive_arithmetic_ok: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        month_composition_ok: bool = UNSET,
+        **kwargs: Any,
     ) -> ItemizedDelta:
-        """Add a delta to this one, returning a new delta.
+        """Add a delta to this one component-wise, returning a new delta.
 
         Pass either a delta or its components as keywords, not both.
 
-        >>> d = ItemizedDelta(months=1)
-        >>> d.add(days=30, relative_to=ZonedDateTime(2023, 1, 1, tz="UTC"), in_units=["months", "days"])
-        ItemizedDelta("P2m2d")
-        >>> d.add(hours=3, cal_unit_composition_ok=True)
-        ItemizedDelta("P1mT3h")
+        The result isn't balanced: ``1 hour`` plus ``90 minutes`` is
+        ``1 hour 90 minutes``, and ``1 month`` plus ``30 days`` is
+        ``1 month 30 days``. To balance it, call :meth:`in_units` on the
+        result.
+
+        .. deprecated:: 0.11
+           ``relative_to=``, with ``in_units=``, ``round_mode=``,
+           ``round_increment=``, ``naive_arithmetic_ok=``, and
+           ``stale_offset_ok=``. Call :meth:`in_units` on the result
+           instead. ``cal_unit_composition_ok=`` is now
+           ``month_composition_ok=``.
+
+        >>> ItemizedDelta(hours=1).add(minutes=30)
+        ItemizedDelta("PT1h30m")
+        >>> ItemizedDelta(months=1, hours=5).add(hours=3, month_composition_ok=True)
+        ItemizedDelta("P1mT8h")
 
         Parameters
         ----------
         delta
             The delta to add, or else its components as keywords, named
             as in the constructor.
-        relative_to
-            The reference that expresses the sum in ``in_units``: the
-            components of both deltas are summed, the sum is applied to the
-            reference in one step (not one delta after the other), and the
-            result is measured back from it in ``in_units``. Without a
-            reference, the summed components are the result.
-            A :class:`ZonedDateTime` emits no warning. A
-            :class:`PlainDateTime` ignores time zone transitions, and emits
-            :class:`NaiveArithmeticWarning` when the computation crosses the
-            calendar/exact boundary. An :class:`OffsetDateTime` holds its
-            offset fixed for the whole calculation, and emits
-            :class:`StaleOffsetWarning` when calendar units are involved.
-        in_units
-            The units of the result, largest first. Required with
-            ``relative_to``: the coarsest unit decides how the sum is
-            expressed, and no default fits every sum.
-        round_mode
-            The rounding mode for the smallest unit in ``in_units``, as on
-            :meth:`~ZonedDateTime.since`.
-        round_increment
-            The rounding increment for that unit.
-        cal_unit_composition_ok
-            Accepts :class:`~whenever.CalendarUnitCompositionWarning`, which
-            component-wise composition emits when a nonzero calendar unit is
-            involved.
-        naive_arithmetic_ok
-            Accepts the :class:`NaiveArithmeticWarning` of a
-            :class:`PlainDateTime` reference.
-        stale_offset_ok
-            Accepts the :class:`StaleOffsetWarning` of an
-            :class:`OffsetDateTime` reference.
+        month_composition_ok
+            Accepts the :class:`~whenever.MonthCompositionWarning` that
+            nonzero ``years`` or ``months`` in either operand emits.
         """
         return cast(
             ItemizedDelta,
@@ -1426,13 +1428,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                     "seconds": seconds,
                     "nanoseconds": nanoseconds,
                 },
-                relative_to=relative_to,
-                in_units=in_units,
-                round_mode=round_mode,
-                round_increment=round_increment,
-                cal_unit_composition_ok=cal_unit_composition_ok,
-                naive_arithmetic_ok=naive_arithmetic_ok,
-                stale_offset_ok=stale_offset_ok,
+                month_composition_ok=month_composition_ok,
+                kwargs=kwargs,
                 negate=False,
             ),
         )
@@ -1450,21 +1447,15 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         minutes: int = UNSET,
         seconds: int = UNSET,
         nanoseconds: int = UNSET,
-        relative_to: _whenever.ZonedDateTime
-        | _whenever.PlainDateTime
-        | _whenever.OffsetDateTime = UNSET,
-        in_units: Sequence[DeltaUnitStr] = UNSET,
-        round_mode: RoundModeStr = UNSET,
-        round_increment: int = UNSET,
-        cal_unit_composition_ok: bool = UNSET,
-        naive_arithmetic_ok: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        month_composition_ok: bool = UNSET,
+        **kwargs: Any,
     ) -> ItemizedDelta:
-        """Subtract a delta from this one, returning a new delta.
+        """Subtract a delta from this one component-wise, returning a new
+        delta.
 
         The inverse of :meth:`add`, with the same parameters and rules.
 
-        >>> ItemizedDelta(months=1, hours=5).subtract(hours=3, cal_unit_composition_ok=True)
+        >>> ItemizedDelta(months=1, hours=5).subtract(hours=3, month_composition_ok=True)
         ItemizedDelta("P1mT2h")
         """
         return cast(
@@ -1482,13 +1473,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                     "seconds": seconds,
                     "nanoseconds": nanoseconds,
                 },
-                relative_to=relative_to,
-                in_units=in_units,
-                round_mode=round_mode,
-                round_increment=round_increment,
-                cal_unit_composition_ok=cal_unit_composition_ok,
-                naive_arithmetic_ok=naive_arithmetic_ok,
-                stale_offset_ok=stale_offset_ok,
+                month_composition_ok=month_composition_ok,
+                kwargs=kwargs,
                 negate=True,
             ),
         )
@@ -1515,10 +1501,9 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> ItemizedDelta(hours=1) + ZonedDateTime(2023, 1, 1, tz="UTC")
         ZonedDateTime("2023-01-01 01:00:00+00:00[UTC]")
 
-        Composition emits :class:`~whenever.CalendarUnitCompositionWarning`
-        when a nonzero calendar unit is involved; :meth:`add` accepts that
-        with ``cal_unit_composition_ok=True``, or with ``relative_to`` to
-        express the sum in other units.
+        Nonzero ``years`` or ``months`` in either operand emit
+        :class:`~whenever.MonthCompositionWarning`, which :meth:`add`
+        accepts with ``month_composition_ok=True``.
         """
         if isinstance(other, _datetime_types()):
             return _shift_datetime_operator(other, self, False)
@@ -2352,28 +2337,34 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         months: int = UNSET,
         weeks: int = UNSET,
         days: int = UNSET,
-        relative_to: _whenever.Date
-        | _whenever.ZonedDateTime
-        | _whenever.PlainDateTime
-        | _whenever.OffsetDateTime = UNSET,
-        in_units: Sequence[DeltaUnitStr] = UNSET,
-        round_mode: RoundModeStr = UNSET,
-        round_increment: int = UNSET,
-        cal_unit_composition_ok: bool = UNSET,
-        naive_arithmetic_ok: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        month_composition_ok: bool = UNSET,
+        **kwargs: Any,
     ) -> ItemizedDateDelta | ItemizedDelta:
-        """Add a delta to this one, returning a new delta.
+        """Add a delta to this one component-wise, returning a new delta.
 
         Pass either a delta or its components as keywords, not both. The
         operands decide the result type: an :class:`ItemizedDateDelta` or
         date components give an :class:`ItemizedDateDelta`, an
         :class:`ItemizedDelta` gives an :class:`ItemizedDelta`.
 
+        The result isn't balanced: ``1 hour`` plus ``90 minutes`` is
+        ``1 hour 90 minutes``, and ``1 month`` plus ``30 days`` is
+        ``1 month 30 days``. To balance it, call :meth:`in_units` on the
+        result.
+
+        .. deprecated:: 0.11
+           ``relative_to=``, with ``in_units=``, ``round_mode=``,
+           ``round_increment=``, ``naive_arithmetic_ok=``, and
+           ``stale_offset_ok=``. Call :meth:`in_units` on the result
+           instead. ``cal_unit_composition_ok=`` is now
+           ``month_composition_ok=``.
+
+        >>> ItemizedDateDelta(weeks=1).add(days=3)
+        ItemizedDateDelta("P1w3d")
         >>> d = ItemizedDateDelta(months=1)
-        >>> d.add(days=30, relative_to=Date(2023, 1, 1), in_units=["months", "days"])
-        ItemizedDateDelta("P2m2d")
-        >>> d.add(ItemizedDelta(hours=3), cal_unit_composition_ok=True)
+        >>> d.add(days=3, month_composition_ok=True)
+        ItemizedDateDelta("P1m3d")
+        >>> d.add(ItemizedDelta(hours=3), month_composition_ok=True)
         ItemizedDelta("P1mT3h")
 
         Parameters
@@ -2381,41 +2372,9 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         delta
             The delta to add, or else its components as keywords, named
             as in the constructor.
-        relative_to
-            The reference that expresses the sum in ``in_units``: the
-            components of both deltas are summed, the sum is applied to the
-            reference in one step (not one delta after the other), and the
-            result is measured back from it in ``in_units``. Without a
-            reference, the summed components are the result.
-            For an :class:`ItemizedDateDelta` result, a :class:`Date` or a
-            datetime, of which only the date is read, without a warning.
-            For an :class:`ItemizedDelta` result, a datetime.
-            A :class:`ZonedDateTime` emits no warning. A
-            :class:`PlainDateTime` ignores time zone transitions, and emits
-            :class:`NaiveArithmeticWarning` when the computation crosses the
-            calendar/exact boundary. An :class:`OffsetDateTime` holds its
-            offset fixed for the whole calculation, and emits
-            :class:`StaleOffsetWarning` when calendar units are involved.
-        in_units
-            The units of the result, largest first: date units for an
-            :class:`ItemizedDateDelta` result. Required with
-            ``relative_to``: the coarsest unit decides how the sum is
-            expressed, and no default fits every sum.
-        round_mode
-            The rounding mode for the smallest unit in ``in_units``, as on
-            :meth:`~Date.since`.
-        round_increment
-            The rounding increment for that unit.
-        cal_unit_composition_ok
-            Accepts :class:`~whenever.CalendarUnitCompositionWarning`, which
-            component-wise composition emits when a nonzero calendar unit is
-            involved.
-        naive_arithmetic_ok
-            Accepts the :class:`NaiveArithmeticWarning` of a
-            :class:`PlainDateTime` reference.
-        stale_offset_ok
-            Accepts the :class:`StaleOffsetWarning` of an
-            :class:`OffsetDateTime` reference.
+        month_composition_ok
+            Accepts the :class:`~whenever.MonthCompositionWarning` that
+            nonzero ``years`` or ``months`` in either operand emits.
         """
         return _compose(
             self,
@@ -2426,13 +2385,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 "weeks": weeks,
                 "days": days,
             },
-            relative_to=relative_to,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-            cal_unit_composition_ok=cal_unit_composition_ok,
-            naive_arithmetic_ok=naive_arithmetic_ok,
-            stale_offset_ok=stale_offset_ok,
+            month_composition_ok=month_composition_ok,
+            kwargs=kwargs,
             negate=False,
         )
 
@@ -2445,22 +2399,15 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         months: int = UNSET,
         weeks: int = UNSET,
         days: int = UNSET,
-        relative_to: _whenever.Date
-        | _whenever.ZonedDateTime
-        | _whenever.PlainDateTime
-        | _whenever.OffsetDateTime = UNSET,
-        in_units: Sequence[DeltaUnitStr] = UNSET,
-        round_mode: RoundModeStr = UNSET,
-        round_increment: int = UNSET,
-        cal_unit_composition_ok: bool = UNSET,
-        naive_arithmetic_ok: bool = UNSET,
-        stale_offset_ok: bool = UNSET,
+        month_composition_ok: bool = UNSET,
+        **kwargs: Any,
     ) -> ItemizedDateDelta | ItemizedDelta:
-        """Subtract a delta from this one, returning a new delta.
+        """Subtract a delta from this one component-wise, returning a new
+        delta.
 
         The inverse of :meth:`add`, with the same parameters and rules.
 
-        >>> ItemizedDateDelta(months=1, days=5).subtract(days=3, cal_unit_composition_ok=True)
+        >>> ItemizedDateDelta(months=1, days=5).subtract(days=3, month_composition_ok=True)
         ItemizedDateDelta("P1m2d")
         """
         return _compose(
@@ -2472,13 +2419,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 "weeks": weeks,
                 "days": days,
             },
-            relative_to=relative_to,
-            in_units=in_units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-            cal_unit_composition_ok=cal_unit_composition_ok,
-            naive_arithmetic_ok=naive_arithmetic_ok,
-            stale_offset_ok=stale_offset_ok,
+            month_composition_ok=month_composition_ok,
+            kwargs=kwargs,
             negate=True,
         )
 
@@ -2508,11 +2450,9 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         Date("2023-02-28")
 
         The operands decide the result type: an :class:`ItemizedDelta` gives
-        an :class:`ItemizedDelta`. Composition emits
-        :class:`~whenever.CalendarUnitCompositionWarning` when a nonzero
-        calendar unit is involved; :meth:`add` accepts that with
-        ``cal_unit_composition_ok=True``, or with ``relative_to`` to express
-        the sum in other units.
+        an :class:`ItemizedDelta`. Nonzero ``years`` or ``months`` in either
+        operand emit :class:`~whenever.MonthCompositionWarning`, which
+        :meth:`add` accepts with ``month_composition_ok=True``.
         """
         if isinstance(other, _date_or_datetime_types()):
             return _shift_datetime_operator(other, self, False)

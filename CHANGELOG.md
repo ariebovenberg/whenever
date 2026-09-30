@@ -117,8 +117,19 @@ with a new glossary and a comparison with Arrow.
   `strict_eq()` takes only a delta of its own type, and raises `TypeError`
   for the other.
 
-- Arithmetic on date-only deltas stays date-only: composing two of them, or
-  `ItemizedDateDelta.in_units()`, returns an `ItemizedDateDelta` whatever
+- Itemized delta `add()` and `subtract()` are simplified: they compose, and
+  take no reference. `relative_to=` is deprecated, with `in_units=`,
+  `round_mode=`, `round_increment=`, `naive_arithmetic_ok=`, and
+  `stale_offset_ok=`; call `in_units()` on the result instead. The warning
+  is now more precise: `CalendarUnitCompositionWarning` is now
+  `MonthCompositionWarning`, escaped with `month_composition_ok=`, and only
+  years and months trigger it.
+
+  **Rationale**: `relative_to=` was `in_units()` combined with `add()`, and it
+  silenced the warning without avoiding the actual pitfall: it summed the deltas
+  before applying them, as composition always does.
+
+- `ItemizedDateDelta.in_units()` returns an `ItemizedDateDelta` whatever
   the reference, where a datetime reference gave an `ItemizedDelta`.
 
 - Two lossy calls now warn: `Date()` given a `datetime`, whose time it drops
@@ -150,11 +161,9 @@ with a new glossary and a comparison with Arrow.
 - Added millisecond and microsecond totals to datetime differences and
   `ItemizedDelta.total()`. `ItemizedDelta` and `ItemizedDateDelta` are
   hashable, so they can be `set` members and `dict` keys.
-- `ItemizedDelta.add()` and `subtract()` accept a `PlainDateTime` or
-  `OffsetDateTime` as `relative_to=`, as `in_units()` does. Calls with such
-  a reference, including `in_units()` and `total()` on `ItemizedDelta` and
-  `TimeDelta`, accept the escape their warning names:
-  `naive_arithmetic_ok=` or `stale_offset_ok=`.
+- `in_units()` and `total()` on `ItemizedDelta` and `TimeDelta` with a
+  `PlainDateTime` or `OffsetDateTime` as `relative_to=` accept the escape
+  their warning names: `naive_arithmetic_ok=` or `stale_offset_ok=`.
 - Integer-only arguments accept integer-like objects such as numpy integers.
 - Added LLM-friendly Markdown documentation, including `llms.txt`.
 - A source install selects the pure-Python backend with the build config
@@ -217,9 +226,7 @@ with a new glossary and a comparison with Arrow.
   documentation.
 - An `Instant` pickled by the pure-Python backend of 0.8.0 to 0.10.0 loads
   correctly in the Rust extension.
-- Adding itemized deltas raised when `nanoseconds` reached a whole second,
-  and an `ItemizedDateDelta` with a datetime reference failed with an
-  `AssertionError`.
+- Adding itemized deltas raised when `nanoseconds` reached a whole second.
 - The type stubs accept `Date + ItemizedDateDelta` and `sorted()` on mixed
   exact-time types, and reject `disambiguation=` where it can't apply.
 - An unknown time zone ID raises `TimeZoneNotFoundError` wherever it's
@@ -251,7 +258,8 @@ with a new glossary and a comparison with Arrow.
 Migration summary. Each spelling in this table warns at runtime. A type
 checker that implements PEP 702 (`@deprecated`) also flags each deprecated
 method, keyword, and value at the call site; `TZPATH`, `DisambiguateStr`,
-and the pattern specifiers warn at runtime only:
+`CalendarUnitCompositionWarning`, and the pattern specifiers warn at runtime
+only:
 
 | Deprecated spelling | Preferred spelling |
 |---|---|
@@ -276,6 +284,9 @@ and the pattern specifiers warn at runtime only:
 | `ZonedDateTime.now_in_system_tz()` | `ZonedDateTime.now(SYSTEM_TZ)` |
 | `ZonedDateTime.from_system_tz(...)` | `ZonedDateTime(..., tz=SYSTEM_TZ)` |
 | `ZonedDateTime.tz` | `ZonedDateTime.tz_id` |
+| `delta.add(other, relative_to=r, in_units=u)` | `delta.add(other, month_composition_ok=True).in_units(u, relative_to=r)` |
+| `cal_unit_composition_ok=` | `month_composition_ok=` |
+| `CalendarUnitCompositionWarning` | `MonthCompositionWarning` |
 | `exact_eq()` | `strict_eq()` |
 | `parse(..., format=p)` | `parse(..., pattern=p)` |
 | pattern `h` / `hh` | `H` / `HH` |

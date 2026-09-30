@@ -34,7 +34,7 @@ Warnings
 .. autoexception:: ImplicitDisambiguationWarning
    :show-inheritance:
 
-.. autoexception:: CalendarUnitCompositionWarning
+.. autoexception:: MonthCompositionWarning
    :show-inheritance:
 
 .. autoexception:: PickleOffsetMismatchWarning

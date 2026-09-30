@@ -162,7 +162,7 @@ from ._tz import (  # noqa: F401
 )
 from ._tz.ambiguity import check_disambiguation
 
-CalendarUnitCompositionWarning = _ideltas.CalendarUnitCompositionWarning
+MonthCompositionWarning = _ideltas.MonthCompositionWarning
 
 __all__ = (
     # Date and time
@@ -189,7 +189,7 @@ __all__ = (
     "DaysAssumed24HoursWarning",
     "StaleOffsetWarning",
     "NaiveArithmeticWarning",
-    "CalendarUnitCompositionWarning",
+    "MonthCompositionWarning",
     "WheneverWarning",
     "PotentialDstBugWarning",
     "PickleOffsetMismatchWarning",
