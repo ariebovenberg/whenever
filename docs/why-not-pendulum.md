@@ -720,7 +720,7 @@ and several already have a proposed fix.
 
 | | Issue | Open since | Proposed fix |
 |---|---|---|---|
-| `Timezone` and `FixedTimezone` are unhashable | [#1008](https://github.com/python-pendulum/pendulum/issues/1008) | Sep 2026 | [#1009](https://github.com/python-pendulum/pendulum/pull/1009) |
+| `Timezone` and `FixedTimezone` are unhashable | [#1008](https://github.com/python-pendulum/pendulum/issues/1008) | Sep 2026 | [#1021](https://github.com/python-pendulum/pendulum/pull/1021) (merged, unreleased) |
 | Values carrying a non-Pendulum `tzinfo` are treated as naive | [#527](https://github.com/python-pendulum/pendulum/issues/527), [#646](https://github.com/python-pendulum/pendulum/issues/646) | Dec 2020 | — |
 | `astimezone()` to a `dateutil` zone loses the time zone | [#820](https://github.com/python-pendulum/pendulum/issues/820) | Apr 2024 | [#1006](https://github.com/python-pendulum/pendulum/pull/1006) |
 | A `dateutil` zone passed as `tz=` becomes `+00:00` | — | unreported | — |
@@ -878,6 +878,9 @@ TypeError: cannot use 'pendulum.tz.timezone.Timezone' as a set element (unhashab
 
 Time zones as dictionary keys, set members, or `lru_cache` arguments are routine;
 none of that works.
+
+The fix ([#1021](https://github.com/python-pendulum/pendulum/pull/1021)) is merged,
+but not yet part of a release.
 
 (pendulum-serialization)=
 
