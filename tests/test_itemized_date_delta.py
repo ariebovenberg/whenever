@@ -12,10 +12,8 @@ from whenever import (
     ItemizedDateDelta,
     ItemizedDelta,
     MonthCompositionWarning,
-    NaiveArithmeticWarning,
     OffsetDateTime,
     PlainDateTime,
-    StaleOffsetWarning,
     ZonedDateTime,
     hours,
 )
