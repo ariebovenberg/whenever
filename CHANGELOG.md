@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.11.0 (2026-10-??)
+## 0.11.0 (2026-10-02)
 
 This release is intended as a soft 1.0 release: it establishes the planned
 1.0 API while retaining compatibility shims for newly deprecated interfaces.
