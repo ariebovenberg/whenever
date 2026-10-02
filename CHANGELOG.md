@@ -141,7 +141,9 @@ with a new glossary and a comparison with Arrow.
   `Time()`, a `"week"` rounding unit anywhere but `TimeDelta.round()`, an
   `increment=` alongside a `TimeDelta` unit in `round()`, and pattern
   fractions followed by a digit field. A non-integer `increment=` raises
-  `TypeError`, and a `.FFF` pattern no longer parses a bare trailing dot.
+  `TypeError`, as do bytes given to `YearMonth.parse_iso()` and
+  `IsoWeekDate.parse_iso()`, and a `.FFF` pattern no longer parses a bare
+  trailing dot.
   `reset_tzpath()` takes only a list or tuple: the search path is ordered,
   and a set gave a different one in each process.
 
