@@ -105,10 +105,10 @@ During a time zone conversion, the standard library's machinery
 (`ZoneInfo.fromutc()`) calls `+` on whatever datetime it was
 handed, expecting `datetime` semantics. On a Pendulum subclass, that
 dispatches to Pendulum's redefined `+`, which would misinterpret the
-value. Pendulum cannot restructure the conversion (it
+value. Pendulum cannot change the conversion code (it
 belongs to the standard library), cannot un-redefine `+` (that is the main
 attraction), and cannot stop being a subclass (that is the selling point).
-What's left is guessing, at runtime, whose semantics the caller expects —
+Its answer is to guess, at runtime, whose semantics the caller expects —
 from the caller's name. That's why `dt + timedelta` in *your* code depends
 on what your function happens to be called.
 
@@ -150,10 +150,10 @@ but its `+` is now hundreds of times slower than the standard library's:
 39.47
 ```
 
-The stack inspection is the cause. `ZoneInfo.fromutc()` calls `+`, so every
-`astimezone()`, `in_tz()`, and `+` walks the stack.
+The stack inspection is most of the cost. Every `+` walks the stack, and since
+`ZoneInfo.fromutc()` calls `+`, so does every `astimezone()` and `in_tz()`.
 `traceback` then consults `linecache`, which `stat()`s the source file.
-That is *a system call per datetime addition*.
+That is *at least one system call per datetime addition*.
 
 (pendulum-v2-v3)=
 
