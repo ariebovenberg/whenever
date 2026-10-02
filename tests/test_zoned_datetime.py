@@ -214,7 +214,7 @@ class TestInit:
         with pytest.raises(
             TypeError, match="^tz must be a string or SYSTEM_TZ$"
         ):
-            ZonedDateTime(
+            ZonedDateTime(  # type: ignore[call-overload]
                 2020,
                 8,
                 15,
@@ -955,7 +955,7 @@ class TestConversion:
         with pytest.raises(
             TypeError, match="^tz must be a string or SYSTEM_TZ$"
         ):
-            nyc.to_tz(3)
+            nyc.to_tz(3)  # type: ignore[arg-type]
 
         with pytest.raises(TimeZoneNotFoundError, match="not found"):
             nyc.to_tz("America/Nowhere")

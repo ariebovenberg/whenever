@@ -7,7 +7,7 @@ maintainers = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.11.0b2"
+version = "0.11.0b3"
 license = "MIT"
 description = "Type-safe datetimes for Python that get DST right, in Rust or pure Python"
 requires-python = ">=3.10"
@@ -50,7 +50,7 @@ test = [
     "typing-extensions>=4.16.0",
 ]
 typing = [
-    "mypy>=2.3,<2.4",
+    "mypy>=2.4,<2.5",
     "typing-extensions>=4.16.0",
 ]
 integrations = [

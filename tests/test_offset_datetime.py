@@ -2390,7 +2390,7 @@ class TestAssumeTz:
         with pytest.raises(
             TypeError, match="^tz must be a string or SYSTEM_TZ$"
         ):
-            OffsetDateTime(2020, 8, 15, offset=hours(2)).assume_tz(3)
+            OffsetDateTime(2020, 8, 15, offset=hours(2)).assume_tz(3)  # type: ignore[arg-type]
 
     @pytest.mark.parametrize("offset", [hours(1), hours(2)])
     def test_invalid_disambiguation(self, offset):

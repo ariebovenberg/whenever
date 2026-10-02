@@ -303,7 +303,7 @@ class TestAccessors:
         # passing as arguments
         assert dict(d) == expected
         assert Counter(d) == Counter(expected)
-        # mypy ignore awaiting release of https://github.com/python/mypy/pull/20416
+        # mypy accepts literal keys after ** only for a dict, not a Mapping
         assert ItemizedDelta(**d) == d  # type: ignore[arg-type]
 
         for key in expected:

@@ -172,7 +172,6 @@ TimestampUnitStr: TypeAlias = Literal[
     "second", "millisecond", "microsecond", "nanosecond"
 ]
 
-# Mypy doesn't yet support using a PEP 661 sentinel value as a type.
 SYSTEM_TZ = sentinel("SYSTEM_TZ")
 
 @type_check_only
@@ -195,7 +194,7 @@ class Date(_ISOMixin):
     @deprecated("use today(SYSTEM_TZ) instead")
     def today_in_system_tz(cls) -> Date: ...
     @classmethod
-    def today(cls, tz: str | SYSTEM_TZ, /) -> Self: ...  # type: ignore[valid-type]
+    def today(cls, tz: str | SYSTEM_TZ, /) -> Self: ...
     @property
     def year(self) -> int: ...
     @property
@@ -1849,7 +1848,7 @@ class _ExactTime(_PyDateTimeMixin):
     @overload
     @deprecated("pass a TimeDelta instead, for example hours(2)")
     def to_fixed_offset(self, offset: int, /) -> OffsetDateTime: ...
-    def to_tz(self, tz: str | SYSTEM_TZ, /) -> ZonedDateTime: ...  # type: ignore[valid-type]
+    def to_tz(self, tz: str | SYSTEM_TZ, /) -> ZonedDateTime: ...
     @deprecated("use to_tz(SYSTEM_TZ) instead")
     def to_system_tz(self) -> ZonedDateTime: ...
     def difference(self, other: _ExactTime, /) -> TimeDelta: ...
@@ -2271,7 +2270,7 @@ class OffsetDateTime(_ExactAndLocalTime):
     ) -> Self: ...
     def assume_tz(
         self,
-        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
+        tz: str | SYSTEM_TZ,
         /,
         *,
         offset_mismatch: Literal[
@@ -2450,7 +2449,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
+        tz: str | SYSTEM_TZ,
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
@@ -2467,7 +2466,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         second: int = 0,
         *,
         nanosecond: int = 0,
-        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
+        tz: str | SYSTEM_TZ,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> None: ...
     @property
@@ -2510,7 +2509,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @classmethod
-    def now(cls, tz: str | SYSTEM_TZ, /) -> Self: ...  # type: ignore[valid-type]
+    def now(cls, tz: str | SYSTEM_TZ, /) -> Self: ...
     @classmethod
     @deprecated("use now(SYSTEM_TZ) instead")
     def now_in_system_tz(cls) -> Self: ...
@@ -2521,7 +2520,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         value: int | float,
         /,
         *,
-        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
+        tz: str | SYSTEM_TZ,
     ) -> Self: ...
     @classmethod
     @deprecated(
@@ -2532,7 +2531,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         value: int,
         /,
         *,
-        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
+        tz: str | SYSTEM_TZ,
     ) -> Self: ...
     @classmethod
     @deprecated(
@@ -2543,7 +2542,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         value: int,
         /,
         *,
-        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
+        tz: str | SYSTEM_TZ,
     ) -> Self: ...
     @overload
     def replace(
@@ -2556,7 +2555,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         minute: int = ...,
         second: int = ...,
         nanosecond: int = ...,
-        tz: str | SYSTEM_TZ = ...,  # type: ignore[valid-type]
+        tz: str | SYSTEM_TZ = ...,
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
@@ -2573,7 +2572,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         minute: int = ...,
         second: int = ...,
         nanosecond: int = ...,
-        tz: str | SYSTEM_TZ = ...,  # type: ignore[valid-type]
+        tz: str | SYSTEM_TZ = ...,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
@@ -2958,7 +2957,7 @@ class PlainDateTime(_PyDateTimeMixin, _LocalTime):
     @overload
     def assume_tz(
         self,
-        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
+        tz: str | SYSTEM_TZ,
         /,
         *,
         disambiguation: Literal[
@@ -2969,7 +2968,7 @@ class PlainDateTime(_PyDateTimeMixin, _LocalTime):
     @deprecated("use disambiguation= instead")
     def assume_tz(
         self,
-        tz: str | SYSTEM_TZ,  # type: ignore[valid-type]
+        tz: str | SYSTEM_TZ,
         /,
         *,
         disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,

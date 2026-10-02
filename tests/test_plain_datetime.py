@@ -256,7 +256,7 @@ class TestAssumeTz:
         with pytest.raises(
             TypeError, match="^tz must be a string or SYSTEM_TZ$"
         ):
-            PlainDateTime(2020, 8, 15).assume_tz(3)
+            PlainDateTime(2020, 8, 15).assume_tz(3)  # type: ignore[call-overload]
 
     def test_unknown_tz_id(self):
         with pytest.raises(TimeZoneNotFoundError, match="not found"):

@@ -1316,7 +1316,7 @@ class TestConversion:
         with pytest.raises(
             TypeError, match="^tz must be a string or SYSTEM_TZ$"
         ):
-            d.to_tz(3)
+            d.to_tz(3)  # type: ignore[arg-type]
 
         with pytest.raises(TimeZoneNotFoundError, match="not found"):
             d.to_tz("America/Nowhere")
