@@ -31,7 +31,7 @@ from typing import (
     type_check_only,
 )
 
-from typing_extensions import Self, deprecated, sentinel
+from typing_extensions import Self, sentinel
 
 __all__ = (
     # Date and time
@@ -134,13 +134,6 @@ DeltaTotalUnitStr: TypeAlias = Literal[
     "microseconds",
     "nanoseconds",
 ]
-# Deprecated: use DisambiguationStr.
-DisambiguateStr: TypeAlias = Literal[
-    "compatible",
-    "later",
-    "earlier",
-    "raise",
-]
 DisambiguationStr: TypeAlias = Literal[
     "compatible",
     "later",
@@ -191,9 +184,6 @@ class Date(_ISOMixin):
     MIN: Final[Date]
     MAX: Final[Date]
     @classmethod
-    @deprecated("use today(SYSTEM_TZ) instead")
-    def today_in_system_tz(cls) -> Date: ...
-    @classmethod
     def today(cls, tz: str | SYSTEM_TZ, /) -> Self: ...
     @property
     def year(self) -> int: ...
@@ -238,13 +228,8 @@ class Date(_ISOMixin):
     def format_iso(self, *, basic: bool = False) -> str: ...
     def format(self, pattern: str, /) -> str: ...
     def __format__(self, spec: str, /) -> str: ...
-    @overload
     @classmethod
     def parse(cls, s: str, /, *, pattern: str) -> Date: ...
-    @overload
-    @classmethod
-    @deprecated("use pattern= instead")
-    def parse(cls, s: str, /, *, format: str) -> Date: ...
     def replace(
         self, *, year: int = ..., month: int = ..., day: int = ...
     ) -> Self: ...
@@ -359,8 +344,6 @@ class MonthDay(_ISOMixin):
     def day(self) -> int: ...
     def replace(self, *, month: int = ..., day: int = ...) -> Self: ...
     def in_year(self, year: int, /) -> Date: ...
-    @deprecated("use is_leap_day() instead")
-    def is_leap(self) -> bool: ...
     def is_leap_day(self) -> bool: ...
     def __lt__(self, other: Self, /) -> bool: ...
     def __le__(self, other: Self, /) -> bool: ...
@@ -489,13 +472,8 @@ class Time(_ISOMixin):
     ) -> str: ...
     def format(self, pattern: str, /) -> str: ...
     def __format__(self, spec: str, /) -> str: ...
-    @overload
     @classmethod
     def parse(cls, s: str, /, *, pattern: str) -> Time: ...
-    @overload
-    @classmethod
-    @deprecated("use pattern= instead")
-    def parse(cls, s: str, /, *, format: str) -> Time: ...
     def __lt__(self, other: Self, /) -> bool: ...
     def __le__(self, other: Self, /) -> bool: ...
     def __gt__(self, other: Self, /) -> bool: ...
@@ -1024,8 +1002,6 @@ class ItemizedDelta(
     def date_and_time_parts(
         self,
     ) -> tuple[ItemizedDateDelta | None, TimeDelta | None]: ...
-    @deprecated("use strict_eq() instead")
-    def exact_eq(self, other: Self, /) -> bool: ...
     def strict_eq(self, other: Self, /) -> bool: ...
     @overload
     def add(
@@ -1051,67 +1027,6 @@ class ItemizedDelta(
         month_composition_ok: bool = ...,
     ) -> ItemizedDelta: ...
     @overload
-    @deprecated("call in_units() on the composed delta instead")
-    def add(
-        self,
-        delta: ItemizedDelta | ItemizedDateDelta = ...,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        hours: int = ...,
-        minutes: int = ...,
-        seconds: int = ...,
-        nanoseconds: int = ...,
-        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
-        in_units: Sequence[
-            Literal[
-                "years",
-                "months",
-                "weeks",
-                "days",
-                "hours",
-                "minutes",
-                "seconds",
-                "nanoseconds",
-            ]
-        ],
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = ...,
-        round_increment: int = ...,
-        cal_unit_composition_ok: bool = ...,
-        naive_arithmetic_ok: bool = ...,
-        stale_offset_ok: bool = ...,
-    ) -> ItemizedDelta: ...
-    @overload
-    @deprecated("use month_composition_ok= instead")
-    def add(
-        self,
-        delta: ItemizedDelta | ItemizedDateDelta = ...,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        hours: int = ...,
-        minutes: int = ...,
-        seconds: int = ...,
-        nanoseconds: int = ...,
-        cal_unit_composition_ok: bool,
-    ) -> ItemizedDelta: ...
-    @overload
     def subtract(
         self,
         delta: ItemizedDelta | ItemizedDateDelta,
@@ -1133,67 +1048,6 @@ class ItemizedDelta(
         seconds: int = ...,
         nanoseconds: int = ...,
         month_composition_ok: bool = ...,
-    ) -> ItemizedDelta: ...
-    @overload
-    @deprecated("call in_units() on the composed delta instead")
-    def subtract(
-        self,
-        delta: ItemizedDelta | ItemizedDateDelta = ...,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        hours: int = ...,
-        minutes: int = ...,
-        seconds: int = ...,
-        nanoseconds: int = ...,
-        relative_to: ZonedDateTime | PlainDateTime | OffsetDateTime,
-        in_units: Sequence[
-            Literal[
-                "years",
-                "months",
-                "weeks",
-                "days",
-                "hours",
-                "minutes",
-                "seconds",
-                "nanoseconds",
-            ]
-        ],
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = ...,
-        round_increment: int = ...,
-        cal_unit_composition_ok: bool = ...,
-        naive_arithmetic_ok: bool = ...,
-        stale_offset_ok: bool = ...,
-    ) -> ItemizedDelta: ...
-    @overload
-    @deprecated("use month_composition_ok= instead")
-    def subtract(
-        self,
-        delta: ItemizedDelta | ItemizedDateDelta = ...,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        hours: int = ...,
-        minutes: int = ...,
-        seconds: int = ...,
-        nanoseconds: int = ...,
-        cal_unit_composition_ok: bool,
     ) -> ItemizedDelta: ...
     @overload
     def total(
@@ -1384,8 +1238,6 @@ class ItemizedDateDelta(
         ] = ...,
         round_increment: int = ...,
     ) -> ItemizedDateDelta: ...
-    @deprecated("use strict_eq() instead")
-    def exact_eq(self, other: Self, /) -> bool: ...
     def strict_eq(self, other: Self, /) -> bool: ...
     @overload
     def add(
@@ -1415,59 +1267,6 @@ class ItemizedDateDelta(
         month_composition_ok: bool = ...,
     ) -> ItemizedDateDelta: ...
     @overload
-    @deprecated("call in_units() on the composed delta instead")
-    def add(
-        self,
-        delta: ItemizedDateDelta | ItemizedDelta = ...,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        relative_to: Date | ZonedDateTime | PlainDateTime | OffsetDateTime,
-        in_units: Sequence[
-            Literal[
-                "years",
-                "months",
-                "weeks",
-                "days",
-                "hours",
-                "minutes",
-                "seconds",
-                "nanoseconds",
-            ]
-        ],
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = ...,
-        round_increment: int = ...,
-        cal_unit_composition_ok: bool = ...,
-        naive_arithmetic_ok: bool = ...,
-        stale_offset_ok: bool = ...,
-    ) -> ItemizedDateDelta | ItemizedDelta: ...
-    @overload
-    @deprecated("use month_composition_ok= instead")
-    def add(
-        self,
-        delta: ItemizedDateDelta | ItemizedDelta = ...,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        cal_unit_composition_ok: bool,
-    ) -> ItemizedDateDelta | ItemizedDelta: ...
-    @overload
     def subtract(
         self,
         delta: ItemizedDateDelta,
@@ -1494,59 +1293,6 @@ class ItemizedDateDelta(
         days: int = ...,
         month_composition_ok: bool = ...,
     ) -> ItemizedDateDelta: ...
-    @overload
-    @deprecated("call in_units() on the composed delta instead")
-    def subtract(
-        self,
-        delta: ItemizedDateDelta | ItemizedDelta = ...,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        relative_to: Date | ZonedDateTime | PlainDateTime | OffsetDateTime,
-        in_units: Sequence[
-            Literal[
-                "years",
-                "months",
-                "weeks",
-                "days",
-                "hours",
-                "minutes",
-                "seconds",
-                "nanoseconds",
-            ]
-        ],
-        round_mode: Literal[
-            "ceil",
-            "expand",
-            "floor",
-            "trunc",
-            "half_ceil",
-            "half_expand",
-            "half_floor",
-            "half_trunc",
-            "half_even",
-        ] = ...,
-        round_increment: int = ...,
-        cal_unit_composition_ok: bool = ...,
-        naive_arithmetic_ok: bool = ...,
-        stale_offset_ok: bool = ...,
-    ) -> ItemizedDateDelta | ItemizedDelta: ...
-    @overload
-    @deprecated("use month_composition_ok= instead")
-    def subtract(
-        self,
-        delta: ItemizedDateDelta | ItemizedDelta = ...,
-        /,
-        *,
-        years: int = ...,
-        months: int = ...,
-        weeks: int = ...,
-        days: int = ...,
-        cal_unit_composition_ok: bool,
-    ) -> ItemizedDateDelta | ItemizedDelta: ...
     def total(
         self,
         unit: Literal["years", "months", "weeks", "days"],
@@ -1837,27 +1583,16 @@ class _ExactTime(_PyDateTimeMixin):
             "second", "millisecond", "microsecond", "nanosecond"
         ] = "second",
     ) -> int: ...
-    @deprecated("use timestamp(unit='millisecond') instead")
-    def timestamp_millis(self) -> int: ...
-    @deprecated("use timestamp(unit='nanosecond') instead")
-    def timestamp_nanos(self) -> int: ...
     @overload
     def to_fixed_offset(self, /) -> OffsetDateTime: ...
     @overload
     def to_fixed_offset(self, offset: TimeDelta, /) -> OffsetDateTime: ...
-    @overload
-    @deprecated("pass a TimeDelta instead, for example hours(2)")
-    def to_fixed_offset(self, offset: int, /) -> OffsetDateTime: ...
     def to_tz(self, tz: str | SYSTEM_TZ, /) -> ZonedDateTime: ...
-    @deprecated("use to_tz(SYSTEM_TZ) instead")
-    def to_system_tz(self) -> ZonedDateTime: ...
     def difference(self, other: _ExactTime, /) -> TimeDelta: ...
     def __lt__(self, other: _ExactTime, /) -> bool: ...
     def __le__(self, other: _ExactTime, /) -> bool: ...
     def __gt__(self, other: _ExactTime, /) -> bool: ...
     def __ge__(self, other: _ExactTime, /) -> bool: ...
-    @deprecated("use strict_eq() instead")
-    def exact_eq(self, other: Self, /) -> bool: ...
     def strict_eq(self, other: Self, /) -> bool: ...
     def __add__(self, delta: TimeDelta, /) -> Self: ...
     @overload
@@ -1915,24 +1650,13 @@ class Instant(_ExactTime):
         *,
         unit: Literal["millisecond", "microsecond", "nanosecond"],
     ) -> Self: ...
-    @classmethod
-    @deprecated("use from_timestamp(..., unit='millisecond') instead")
-    def from_timestamp_millis(cls, value: int, /) -> Self: ...
-    @classmethod
-    @deprecated("use from_timestamp(..., unit='nanosecond') instead")
-    def from_timestamp_nanos(cls, value: int, /) -> Self: ...
     def format_rfc2822(self) -> str: ...
     @classmethod
     def parse_rfc2822(cls, s: str, /) -> Self: ...
     def format(self, pattern: str, /) -> str: ...
     def __format__(self, spec: str, /) -> str: ...
-    @overload
     @classmethod
     def parse(cls, s: str, /, *, pattern: str) -> Instant: ...
-    @overload
-    @classmethod
-    @deprecated("use pattern= instead")
-    def parse(cls, s: str, /, *, format: str) -> Instant: ...
     @overload
     def add(self, delta: TimeDelta, /) -> Self: ...
     @overload
@@ -2029,76 +1753,17 @@ class OffsetDateTime(_ExactAndLocalTime):
         nanosecond: int = 0,
         offset: TimeDelta,
     ) -> None: ...
-    @overload
-    @deprecated("pass a TimeDelta instead, for example hours(2)")
-    def __init__(
-        self,
-        year: int,
-        month: int,
-        day: int,
-        hour: int = 0,
-        minute: int = 0,
-        second: int = 0,
-        *,
-        nanosecond: int = 0,
-        offset: int,
-    ) -> None: ...
-    @overload
     @classmethod
     def now(
         cls, offset: TimeDelta, /, *, stale_offset_ok: bool = ...
-    ) -> Self: ...
-    @overload
-    @deprecated("pass a TimeDelta instead, for example hours(2)")
-    @classmethod
-    def now(cls, offset: int, /, *, stale_offset_ok: bool = ...) -> Self: ...
-    @classmethod
-    @deprecated("use Instant.from_timestamp(...).to_fixed_offset(...) instead")
-    def from_timestamp(
-        cls,
-        value: int | float,
-        /,
-        *,
-        offset: int | TimeDelta,
-        stale_offset_ok: bool = ...,
-    ) -> Self: ...
-    @classmethod
-    @deprecated(
-        "use Instant.from_timestamp(..., unit='millisecond').to_fixed_offset(...) instead"
-    )
-    def from_timestamp_millis(
-        cls,
-        value: int,
-        /,
-        *,
-        offset: int | TimeDelta,
-        stale_offset_ok: bool = ...,
-    ) -> Self: ...
-    @classmethod
-    @deprecated(
-        "use Instant.from_timestamp(..., unit='nanosecond').to_fixed_offset(...) instead"
-    )
-    def from_timestamp_nanos(
-        cls,
-        value: int,
-        /,
-        *,
-        offset: int | TimeDelta,
-        stale_offset_ok: bool = ...,
     ) -> Self: ...
     def format_rfc2822(self) -> str: ...
     @classmethod
     def parse_rfc2822(cls, s: str, /) -> Self: ...
     def format(self, pattern: str, /) -> str: ...
     def __format__(self, spec: str, /) -> str: ...
-    @overload
     @classmethod
     def parse(cls, s: str, /, *, pattern: str) -> OffsetDateTime: ...
-    @overload
-    @classmethod
-    @deprecated("use pattern= instead")
-    def parse(cls, s: str, /, *, format: str) -> OffsetDateTime: ...
-    @overload
     def replace(
         self,
         *,
@@ -2110,21 +1775,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         second: int = ...,
         nanosecond: int = ...,
         offset: TimeDelta = ...,
-        stale_offset_ok: bool = ...,
-    ) -> Self: ...
-    @overload
-    @deprecated("pass a TimeDelta instead, for example hours(2)")
-    def replace(
-        self,
-        *,
-        year: int = ...,
-        month: int = ...,
-        day: int = ...,
-        hour: int = ...,
-        minute: int = ...,
-        second: int = ...,
-        nanosecond: int = ...,
-        offset: int,
         stale_offset_ok: bool = ...,
     ) -> Self: ...
     def replace_date(
@@ -2454,97 +2104,10 @@ class ZonedDateTime(_ExactAndLocalTime):
             "compatible", "raise", "earlier", "later"
         ] = ...,
     ) -> None: ...
-    @overload
-    @deprecated("use disambiguation= instead")
-    def __init__(
-        self,
-        year: int,
-        month: int,
-        day: int,
-        hour: int = 0,
-        minute: int = 0,
-        second: int = 0,
-        *,
-        nanosecond: int = 0,
-        tz: str | SYSTEM_TZ,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> None: ...
-    @property
-    @deprecated("use tz_id instead")
-    def tz(self) -> str | None: ...
     @property
     def tz_id(self) -> str | None: ...
-    @overload
-    @classmethod
-    @deprecated("use ZonedDateTime(..., tz=SYSTEM_TZ) instead")
-    def from_system_tz(
-        cls,
-        year: int,
-        month: int,
-        day: int,
-        hour: int = 0,
-        minute: int = 0,
-        second: int = 0,
-        *,
-        nanosecond: int = 0,
-        disambiguation: Literal[
-            "compatible", "raise", "earlier", "later"
-        ] = ...,
-    ) -> Self: ...
-    @overload
-    @classmethod
-    @deprecated(
-        "use ZonedDateTime(..., tz=SYSTEM_TZ, disambiguation=...) instead"
-    )
-    def from_system_tz(
-        cls,
-        year: int,
-        month: int,
-        day: int,
-        hour: int = 0,
-        minute: int = 0,
-        second: int = 0,
-        *,
-        nanosecond: int = 0,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
     @classmethod
     def now(cls, tz: str | SYSTEM_TZ, /) -> Self: ...
-    @classmethod
-    @deprecated("use now(SYSTEM_TZ) instead")
-    def now_in_system_tz(cls) -> Self: ...
-    @classmethod
-    @deprecated("use Instant.from_timestamp(...).to_tz(...) instead")
-    def from_timestamp(
-        cls,
-        value: int | float,
-        /,
-        *,
-        tz: str | SYSTEM_TZ,
-    ) -> Self: ...
-    @classmethod
-    @deprecated(
-        "use Instant.from_timestamp(..., unit='millisecond').to_tz(...) instead"
-    )
-    def from_timestamp_millis(
-        cls,
-        value: int,
-        /,
-        *,
-        tz: str | SYSTEM_TZ,
-    ) -> Self: ...
-    @classmethod
-    @deprecated(
-        "use Instant.from_timestamp(..., unit='nanosecond').to_tz(...) instead"
-    )
-    def from_timestamp_nanos(
-        cls,
-        value: int,
-        /,
-        *,
-        tz: str | SYSTEM_TZ,
-    ) -> Self: ...
-    @overload
     def replace(
         self,
         *,
@@ -2560,22 +2123,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             "compatible", "raise", "earlier", "later"
         ] = ...,
     ) -> Self: ...
-    @overload
-    @deprecated("use disambiguation= instead")
-    def replace(
-        self,
-        *,
-        year: int = ...,
-        month: int = ...,
-        day: int = ...,
-        hour: int = ...,
-        minute: int = ...,
-        second: int = ...,
-        nanosecond: int = ...,
-        tz: str | SYSTEM_TZ = ...,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    @overload
     def replace_date(
         self,
         date: Date,
@@ -2585,16 +2132,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             "compatible", "raise", "earlier", "later"
         ] = ...,
     ) -> Self: ...
-    @overload
-    @deprecated("use disambiguation= instead")
-    def replace_date(
-        self,
-        date: Date,
-        /,
-        *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    @overload
     def replace_time(
         self,
         time: Time,
@@ -2603,15 +2140,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
-    ) -> Self: ...
-    @overload
-    @deprecated("use disambiguation= instead")
-    def replace_time(
-        self,
-        time: Time,
-        /,
-        *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
     def add(
@@ -2630,23 +2158,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
-    ) -> Self: ...
-    @overload
-    @deprecated("use disambiguation= instead")
-    def add(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
     def add(self, delta: TimeDelta, /) -> Self: ...
@@ -2661,15 +2172,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         ] = ...,
     ) -> Self: ...
     @overload
-    @deprecated("use disambiguation= instead")
-    def add(
-        self,
-        delta: ItemizedDelta | ItemizedDateDelta,
-        /,
-        *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    @overload
     def subtract(
         self,
         *,
@@ -2686,23 +2188,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
-    ) -> Self: ...
-    @overload
-    @deprecated("use disambiguation= instead")
-    def subtract(
-        self,
-        *,
-        years: int = 0,
-        months: int = 0,
-        weeks: int = 0,
-        days: int = 0,
-        hours: float = 0,
-        minutes: float = 0,
-        seconds: float = 0,
-        milliseconds: float = 0,
-        microseconds: float = 0,
-        nanoseconds: int = 0,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
     ) -> Self: ...
     @overload
     def subtract(self, delta: TimeDelta, /) -> Self: ...
@@ -2716,24 +2201,12 @@ class ZonedDateTime(_ExactAndLocalTime):
             "compatible", "raise", "earlier", "later"
         ] = ...,
     ) -> Self: ...
-    @overload
-    @deprecated("use disambiguation= instead")
-    def subtract(
-        self,
-        delta: ItemizedDelta | ItemizedDateDelta,
-        /,
-        *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
     def is_repeated(self) -> bool: ...
-    @deprecated("use is_repeated() instead")
-    def is_ambiguous(self) -> bool: ...
     def next_transition(self) -> ZonedDateTime | None: ...
     def prev_transition(self) -> ZonedDateTime | None: ...
     def dst_offset(self) -> TimeDelta: ...
     def tz_abbrev(self) -> str: ...
     def day_length(self) -> TimeDelta: ...
-    @overload
     def format_iso(
         self,
         *,
@@ -2752,83 +2225,8 @@ class ZonedDateTime(_ExactAndLocalTime):
             "required", "if_available", "omit"
         ] = "required",
     ) -> str: ...
-    @overload
-    @deprecated("use tz_id_display='required' instead")
-    def format_iso(
-        self,
-        *,
-        unit: Literal[
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-            "auto",
-        ] = "auto",
-        basic: bool = False,
-        sep: Literal["T", " "] = "T",
-        tz_id_display: Literal["always"],
-    ) -> str: ...
-    @overload
-    @deprecated("use tz_id_display='if_available' instead")
-    def format_iso(
-        self,
-        *,
-        unit: Literal[
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-            "auto",
-        ] = "auto",
-        basic: bool = False,
-        sep: Literal["T", " "] = "T",
-        tz_id_display: Literal["auto"],
-    ) -> str: ...
-    @overload
-    @deprecated("use tz_id_display='omit' instead")
-    def format_iso(
-        self,
-        *,
-        unit: Literal[
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-            "auto",
-        ] = "auto",
-        basic: bool = False,
-        sep: Literal["T", " "] = "T",
-        tz_id_display: Literal["never"],
-    ) -> str: ...
-    @overload
-    @deprecated("use tz_id_display= instead")
-    def format_iso(
-        self,
-        *,
-        unit: Literal[
-            "hour",
-            "minute",
-            "second",
-            "millisecond",
-            "microsecond",
-            "nanosecond",
-            "auto",
-        ] = "auto",
-        basic: bool = False,
-        sep: Literal["T", " "] = "T",
-        tz: Literal[
-            "required", "if_available", "omit", "always", "auto", "never"
-        ],
-    ) -> str: ...
     def format(self, pattern: str, /) -> str: ...
     def __format__(self, spec: str, /) -> str: ...
-    @overload
     @classmethod
     def parse_iso(
         cls,
@@ -2842,20 +2240,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             "raise", "keep_instant", "keep_local"
         ] = "raise",
     ) -> Self: ...
-    @overload
-    @deprecated("use disambiguation= instead")
-    @classmethod
-    def parse_iso(
-        cls,
-        s: str,
-        /,
-        *,
-        offset_mismatch: Literal[
-            "raise", "keep_instant", "keep_local"
-        ] = "raise",
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> Self: ...
-    @overload
     @classmethod
     def parse(
         cls,
@@ -2869,50 +2253,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         offset_mismatch: Literal[
             "raise", "keep_instant", "keep_local"
         ] = "raise",
-    ) -> ZonedDateTime: ...
-    @overload
-    @classmethod
-    @deprecated("use disambiguation= instead")
-    def parse(
-        cls,
-        s: str,
-        /,
-        *,
-        pattern: str,
-        offset_mismatch: Literal[
-            "raise", "keep_instant", "keep_local"
-        ] = "raise",
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
-    ) -> ZonedDateTime: ...
-    @overload
-    @classmethod
-    @deprecated("use pattern= instead")
-    def parse(
-        cls,
-        s: str,
-        /,
-        *,
-        format: str,
-        disambiguation: Literal[
-            "compatible", "raise", "earlier", "later"
-        ] = ...,
-        offset_mismatch: Literal[
-            "raise", "keep_instant", "keep_local"
-        ] = "raise",
-    ) -> ZonedDateTime: ...
-    @overload
-    @classmethod
-    @deprecated("use pattern= and disambiguation= instead")
-    def parse(
-        cls,
-        s: str,
-        /,
-        *,
-        format: str,
-        offset_mismatch: Literal[
-            "raise", "keep_instant", "keep_local"
-        ] = "raise",
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     def __add__(
         self,
@@ -2949,12 +2289,7 @@ class PlainDateTime(_PyDateTimeMixin, _LocalTime):
     MIN: Final[PlainDateTime]
     MAX: Final[PlainDateTime]
     def assume_utc(self) -> Instant: ...
-    @overload
     def assume_fixed_offset(self, offset: TimeDelta, /) -> OffsetDateTime: ...
-    @overload
-    @deprecated("pass a TimeDelta instead, for example hours(2)")
-    def assume_fixed_offset(self, offset: int, /) -> OffsetDateTime: ...
-    @overload
     def assume_tz(
         self,
         tz: str | SYSTEM_TZ,
@@ -2963,41 +2298,11 @@ class PlainDateTime(_PyDateTimeMixin, _LocalTime):
         disambiguation: Literal[
             "compatible", "raise", "earlier", "later"
         ] = ...,
-    ) -> ZonedDateTime: ...
-    @overload
-    @deprecated("use disambiguation= instead")
-    def assume_tz(
-        self,
-        tz: str | SYSTEM_TZ,
-        /,
-        *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"] = ...,
-    ) -> ZonedDateTime: ...
-    @overload
-    @deprecated("use assume_tz(SYSTEM_TZ) instead")
-    def assume_system_tz(
-        self,
-        *,
-        disambiguation: Literal[
-            "compatible", "raise", "earlier", "later"
-        ] = ...,
-    ) -> ZonedDateTime: ...
-    @overload
-    @deprecated("use assume_tz(SYSTEM_TZ, disambiguation=...) instead")
-    def assume_system_tz(
-        self,
-        *,
-        disambiguate: Literal["compatible", "raise", "earlier", "later"],
     ) -> ZonedDateTime: ...
     def format(self, pattern: str, /) -> str: ...
     def __format__(self, spec: str, /) -> str: ...
-    @overload
     @classmethod
     def parse(cls, s: str, /, *, pattern: str) -> PlainDateTime: ...
-    @overload
-    @classmethod
-    @deprecated("use pattern= instead")
-    def parse(cls, s: str, /, *, format: str) -> PlainDateTime: ...
     def replace(
         self,
         *,
@@ -3266,10 +2571,6 @@ class _TimePatchContextManager(ContextManager[TimePatch], Protocol):
 def patch_current_time(
     dt: Instant | OffsetDateTime | ZonedDateTime, /, *, keep_ticking: bool
 ) -> _TimePatchContextManager: ...
-
-# Deprecated: use get_tzpath().
-TZPATH: tuple[str, ...]
-
 def get_tzpath() -> tuple[str, ...]: ...
 def reset_tzpath(
     target: Sequence[str | PathLike[str]] | None = None, /
@@ -3283,9 +2584,6 @@ class PotentialDstBugWarning(WheneverWarning): ...
 class PickleOffsetMismatchWarning(WheneverWarning): ...
 class ImplicitDisambiguationWarning(PotentialDstBugWarning): ...
 class MonthCompositionWarning(WheneverWarning): ...
-
-CalendarUnitCompositionWarning = MonthCompositionWarning
-
 class DaysAssumed24HoursWarning(PotentialDstBugWarning): ...
 class StaleOffsetWarning(PotentialDstBugWarning): ...
 class NaiveArithmeticWarning(PotentialDstBugWarning): ...

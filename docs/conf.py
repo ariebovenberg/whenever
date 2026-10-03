@@ -18,12 +18,6 @@ sys.modules["whenever._whenever"] = None
 # set before the lazily imported modules read it.
 whenever._common.SPHINX_RUNNING = True
 
-# viewcode and autodoc resolve the deprecated ``TZPATH`` and
-# ``DisambiguateStr`` reference entries by attribute access, which is exactly
-# what the deprecation warns about. Remove together with the entries in 1.0.
-warnings.filterwarnings("ignore", message="TZPATH is deprecated")
-warnings.filterwarnings("ignore", message="DisambiguateStr is deprecated")
-
 # -- Project information -----------------------------------------------------
 
 metadata = importlib.metadata.metadata("whenever")
@@ -119,43 +113,9 @@ autodoc_type_aliases = {
     "DateDeltaUnitStr": "DateDeltaUnitStr",
     "ExactDeltaUnitStr": "ExactDeltaUnitStr",
     "DisambiguationStr": "DisambiguationStr",
-    "DisambiguateStr": "DisambiguateStr",
     "OffsetMismatchStr": "OffsetMismatchStr",
     "TimestampUnitStr": "TimestampUnitStr",
 }
-
-
-# The 0.11 compatibility shims absorb their old keyword through a `**kwargs`
-# catch-all. That's an implementation detail, so hide it from the rendered
-# signature. Remove along with the shims in 1.0.
-_SHIM_KWARGS_MEMBERS = frozenset(
-    {
-        "whenever.Date.parse",
-        "whenever.Instant.parse",
-        "whenever.OffsetDateTime.parse",
-        "whenever.PlainDateTime.parse",
-        "whenever.PlainDateTime.assume_tz",
-        "whenever.PlainDateTime.assume_system_tz",
-        "whenever.Time.parse",
-        "whenever.ZonedDateTime.parse",
-        "whenever.ZonedDateTime.parse_iso",
-        "whenever.ZonedDateTime.from_system_tz",
-        "whenever.ZonedDateTime.format_iso",
-        "whenever.ZonedDateTime.replace_date",
-        "whenever.ZonedDateTime.replace_time",
-    }
-)
-_SHIM_KWARGS_PARAM = re.compile(r",\s*\*\*kwargs(?::[^,)]*)?")
-
-
-def _hide_shim_kwargs(
-    app, what, name, obj, options, signature, return_annotation
-):
-    if name in _SHIM_KWARGS_MEMBERS and signature:
-        stripped = _SHIM_KWARGS_PARAM.sub("", signature)
-        assert stripped != signature, f"no catch-all to hide in {name}"
-        return stripped, return_annotation
-    return None
 
 
 # Two renderings Sphinx 9.1 gets wrong inside signatures, fixed on the doctree
@@ -223,7 +183,6 @@ def _depart_passthrough_md(self, node):
 
 
 def setup(app):
-    app.connect("autodoc-process-signature", _hide_shim_kwargs)
     app.connect("doctree-read", _fix_signature_nodes)
     for node, handlers in [
         (nodes.admonition, (_visit_admonition_md, None)),
