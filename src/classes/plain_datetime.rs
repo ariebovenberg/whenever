@@ -7,10 +7,7 @@ use crate::{
         time::{self, Time},
     },
     common::{
-        compat::{
-            FORMAT_KEYWORD_WARNING, parse_pattern_keyword, warn_deprecated,
-            warn_lossy_stdlib_subclass,
-        },
+        compat::warn_lossy_stdlib_subclass,
         disambiguation::*,
         fmt,
         format_args::{self, Suffix},
@@ -20,7 +17,6 @@ use crate::{
     docstrings as doc,
     domain::{
         difference::{self, CalendarIncrement, DifferenceSpec, DifferenceUnitSet},
-        local::ResolvePolicy,
         scalar::*,
         units::*,
     },
@@ -521,7 +517,6 @@ fn assume_fixed_offset(cls: PyClass<PlainDateTime>, slf: PlainDateTime, arg: PyO
     let result = slf
         .assume_offset(Offset::from_py(arg, state)?)
         .ok_or_range_err()?;
-    Offset::warn_if_int(arg, state)?;
     result.to_obj(*state.offset_datetime_type)
 }
 
@@ -534,45 +529,11 @@ fn assume_tz(
     let state = cls.state();
     let tz_obj = handle_one_arg("assume_tz", args)?;
 
-    let (dis, renamed) = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?;
+    let dis = Disambiguation::from_only_kwarg(kwargs, "assume_tz", state)?;
     let tz = state.load_tz(tz_obj)?;
     let result = slf
         .resolve_with_disambiguation(&tz, dis, state)?
         .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type)?;
-    if renamed {
-        warn_disambiguate(state, 1)?;
-    }
-    Ok(result)
-}
-
-fn assume_system_tz(
-    cls: PyClass<PlainDateTime>,
-    slf: PlainDateTime,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    let state = cls.state();
-    handle_no_args("assume_system_tz", args)?;
-
-    let mut dis_arg = DisambiguationArg::default();
-    handle_kwargs("assume_system_tz", kwargs, |k, v, eq| {
-        Ok(dis_arg.handle_kwarg(k, v, eq, state))
-    })?;
-    let (dis, renamed) = dis_arg.finish("assume_system_tz", state)?;
-    let dis = dis.unwrap_or(Disambiguation::Compatible);
-    let tz = state.tz_store.get_system_tz()?;
-    // Validate and compute first, so a call that raises emits no warning.
-    let result = slf
-        .resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
-        .into_zoned_obj_unchecked(tz, *state.zoned_datetime_type)?;
-    warn_deprecated(
-        state,
-        c"assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
-        1,
-    )?;
-    if renamed {
-        warn_disambiguate(state, 1)?;
-    }
     Ok(result)
 }
 
@@ -880,7 +841,7 @@ fn format(cls: PyClass<PlainDateTime>, slf: PlainDateTime, pattern_obj: PyObj) -
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::DATE_TIME, "PlainDateTime")?;
     let result = pattern.format(&slf.pattern_values())?;
-    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
+    pattern.warn(*cls.state().warn_whenever)?;
     Ok(result)
 }
 
@@ -899,7 +860,8 @@ fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
-    let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
+    let fmt_obj = handle_one_kwarg("parse", *cls.state().strs.pattern, kwargs)?
+        .ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")?;
     let fmt_pystr = fmt_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
@@ -911,10 +873,7 @@ fn parse(cls: PyClass<PlainDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let date = parsed.date()?;
     parsed.validate_weekday(date)?;
     let result = date.at(parsed.time()?).to_obj(cls)?;
-    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
-    if renamed {
-        warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
-    }
+    pattern.warn(*cls.state().warn_whenever)?;
     Ok(result)
 }
 
@@ -942,11 +901,6 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
         doc::PLAINDATETIME_ASSUME_FIXED_OFFSET
     ),
     method_kwargs!(PlainDateTime, assume_tz, doc::PLAINDATETIME_ASSUME_TZ),
-    method_kwargs!(
-        PlainDateTime,
-        assume_system_tz,
-        doc::PLAINDATETIME_ASSUME_SYSTEM_TZ
-    ),
     method1!(PlainDateTime, replace_date, doc::PLAINDATETIME_REPLACE_DATE),
     method1!(PlainDateTime, replace_time, doc::PLAINDATETIME_REPLACE_TIME),
     method_kwargs!(PlainDateTime, add, doc::PLAINDATETIME_ADD),

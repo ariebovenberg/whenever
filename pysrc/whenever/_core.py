@@ -16,7 +16,6 @@ try:  # pragma: no cover
         _unpkl_offset,
         _unpkl_tdelta,
         _unpkl_time,
-        _unpkl_utc,
         _unpkl_zoned,
     )
 
@@ -40,7 +39,6 @@ except ModuleNotFoundError as e:
         _unpkl_offset,
         _unpkl_tdelta,
         _unpkl_time,
-        _unpkl_utc,
         _unpkl_zoned,
     )
 

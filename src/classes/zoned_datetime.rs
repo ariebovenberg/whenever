@@ -8,9 +8,7 @@ use crate::{
         time_delta::TimeDelta,
     },
     common::{
-        compat::{
-            FORMAT_KEYWORD_WARNING, RenamedKeyword, warn_deprecated, warn_lossy_stdlib_subclass,
-        },
+        compat::warn_lossy_stdlib_subclass,
         disambiguation::*,
         fmt,
         format_args::{self, Suffix},
@@ -32,7 +30,7 @@ use crate::{
     tz::{posix::abbrev_text, tzif::TimeZone},
 };
 use core::{
-    ffi::{CStr, c_int, c_void},
+    ffi::{c_int, c_void},
     ptr::null_mut as NULL,
 };
 use pyo3_ffi::*;
@@ -156,20 +154,6 @@ impl PlainDateTime {
         self.resolve_mapping_or_raise(mapping, policy, tz, state)
     }
 
-    pub(crate) fn resolve_or_raise(
-        self,
-        tz: &TimeZone,
-        policy: ResolvePolicy,
-        state: &State,
-    ) -> PyResult<OffsetDateTime> {
-        self.resolve_mapping_or_raise(
-            tz.mapping_for_local(self.local_seconds()),
-            policy,
-            tz,
-            state,
-        )
-    }
-
     fn resolve_mapping_or_raise(
         self,
         mapping: LocalMapping,
@@ -230,24 +214,22 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
     if args.len() == 1 {
         let arg = args.iter().next().unwrap();
         if PyStr::isinstance(arg) {
-            let (dis, mismatch, _) = match kwargs {
-                Some(d) => parse_iso_kwargs(d.iteritems(), "ZonedDateTime", false, cls.state())?,
+            let (dis, mismatch) = match kwargs {
+                Some(d) => parse_iso_kwargs(d.iteritems(), "ZonedDateTime", cls.state())?,
                 None => parse_iso_kwargs(
                     std::iter::empty::<(PyObj, PyObj)>(),
                     "ZonedDateTime",
-                    false,
                     cls.state(),
                 )?,
             };
             return parse_iso_inner(cls, arg, dis, mismatch);
         }
         if let Some(dt) = arg.cast_allow_subclass::<PyDateTime>() {
-            let (dis, mismatch, _) = match kwargs {
-                Some(d) => parse_iso_kwargs(d.iteritems(), "ZonedDateTime", false, cls.state())?,
+            let (dis, mismatch) = match kwargs {
+                Some(d) => parse_iso_kwargs(d.iteritems(), "ZonedDateTime", cls.state())?,
                 None => parse_iso_kwargs(
                     std::iter::empty::<(PyObj, PyObj)>(),
                     "ZonedDateTime",
-                    false,
                     cls.state(),
                 )?,
             };
@@ -272,12 +254,11 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
     let mut nanosecond: i64 = 0;
     let mut tz: *mut PyObject = NULL();
     let mut disambiguation: *mut PyObject = NULL();
-    let mut disambiguate: *mut PyObject = NULL();
 
     let fmt = if IS_LP64 {
-        c"lll|lll$lOOO:ZonedDateTime"
+        c"lll|lll$lOO:ZonedDateTime"
     } else {
-        c"LLL|LLL$LOOO:ZonedDateTime"
+        c"LLL|LLL$LOO:ZonedDateTime"
     };
     parse_args_kwargs!(
         args,
@@ -291,8 +272,7 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
         second,
         nanosecond,
         tz,
-        disambiguation,
-        disambiguate
+        disambiguation
     );
 
     let tz =
@@ -303,21 +283,14 @@ fn __new__(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -
     let date = Date::from_i64_components(year, month, day).ok_or_value_err("invalid date")?;
     let time = Time::from_i64_components(hour, minute, second, nanosecond)
         .ok_or_value_err("invalid time")?;
-    let mut dis_arg = DisambiguationArg::default();
-    if let Some(value) = disambiguation.borrow_opt() {
-        dis_arg.set_new(value);
-    }
-    if let Some(value) = disambiguate.borrow_opt() {
-        dis_arg.set_old(value);
-    }
-    let (dis, renamed) = dis_arg.finish("ZonedDateTime", state)?;
+    let dis = disambiguation
+        .borrow_opt()
+        .map(|v| Disambiguation::from_py(v, state))
+        .transpose()?;
     let result = date
         .at(time)
         .resolve_with_disambiguation(&tz, dis, state)?
         .into_zoned_obj_unchecked(tz, cls)?;
-    if renamed {
-        warn_disambiguate(state, 1)?;
-    }
     Ok(result)
 }
 
@@ -474,16 +447,6 @@ fn strict_eq(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> 
     }
 }
 
-fn exact_eq(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, obj_b: PyObj) -> PyReturn {
-    let result = strict_eq(cls, slf, obj_b)?;
-    warn_deprecated(
-        cls.state(),
-        c"exact_eq() is deprecated; use strict_eq() instead",
-        1,
-    )?;
-    Ok(result)
-}
-
 fn to_tz(cls: PyClass<ZonedDateTime>, slf: PyRef<'_, ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     let tz = cls.state().load_tz(tz_obj)?;
     // Cached time zones normally share an Arc. Avoid comparing every transition in that common case.
@@ -536,26 +499,12 @@ fn to_fixed_offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, args: &[PyO
     let state = cls.state();
     match handle_opt_arg("to_fixed_offset", args)? {
         None => slf.to_plain().assume_offset_unchecked(slf.offset),
-        Some(arg) => {
-            let result = slf
-                .to_instant()
-                .to_offset(Offset::from_py(arg, state)?)
-                .ok_or_range_err()?;
-            Offset::warn_if_int(arg, state)?;
-            result
-        }
+        Some(arg) => slf
+            .to_instant()
+            .to_offset(Offset::from_py(arg, state)?)
+            .ok_or_range_err()?,
     }
     .to_obj(*state.offset_datetime_type)
-}
-
-fn to_system_tz(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    warn_deprecated(
-        cls.state(),
-        c"to_system_tz() is deprecated; use to_tz(SYSTEM_TZ) instead",
-        1,
-    )?;
-    slf.to_instant()
-        .into_zoned_obj(cls.state().tz_store.get_system_tz()?, cls)
 }
 
 fn date(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -609,7 +558,7 @@ fn replace_date(
 
     let arg = handle_one_arg("replace_date", args)?;
 
-    let (dis, renamed) = Disambiguation::from_only_kwarg(kwargs, "replace_date", state)?;
+    let dis = Disambiguation::from_only_kwarg(kwargs, "replace_date", state)?;
     let ZonedDateTime {
         time,
         offset,
@@ -622,9 +571,6 @@ fn replace_date(
         .at(time)
         .resolve_with_disambiguation_or_offset(tz, dis, offset, 1, state)?
         .into_zoned_obj_unchecked(tz.clone(), cls)?;
-    if renamed {
-        warn_disambiguate(state, 1)?;
-    }
     Ok(result)
 }
 
@@ -637,7 +583,7 @@ fn replace_time(
     let state = cls.state();
     let arg = handle_one_arg("replace_time", args)?;
 
-    let (dis, renamed) = Disambiguation::from_only_kwarg(kwargs, "replace_time", state)?;
+    let dis = Disambiguation::from_only_kwarg(kwargs, "replace_time", state)?;
     let ZonedDateTime {
         date,
         offset,
@@ -650,9 +596,6 @@ fn replace_time(
         .on(date)
         .resolve_with_disambiguation_or_offset(tz, dis, offset, 1, state)?
         .into_zoned_obj_unchecked(tz.clone(), cls)?;
-    if renamed {
-        warn_disambiguate(state, 1)?;
-    }
     Ok(result)
 }
 
@@ -674,22 +617,15 @@ fn format_iso(
 
 fn parse_iso(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let arg = handle_one_arg("parse_iso", args)?;
-    let (dis, mismatch, renamed) = parse_iso_kwargs(kwargs, "parse_iso", true, cls.state())?;
-    let result = parse_iso_inner(cls, arg, dis, mismatch)?;
-    if renamed {
-        warn_disambiguate(cls.state(), 1)?;
-    }
-    Ok(result)
+    let (dis, mismatch) = parse_iso_kwargs(kwargs, "parse_iso", cls.state())?;
+    parse_iso_inner(cls, arg, dis, mismatch)
 }
 
-/// The policies, and whether `disambiguate=` was used: the caller warns
-/// once its call has succeeded.
 fn parse_iso_kwargs<K>(
     kwargs: K,
     fname: &str,
-    allow_deprecated: bool,
     state: &State,
-) -> PyResult<(Option<Disambiguation>, OffsetMismatch, bool)>
+) -> PyResult<(Option<Disambiguation>, OffsetMismatch)>
 where
     K: IntoIterator<Item = (PyObj, PyObj)>,
 {
@@ -698,19 +634,12 @@ where
     handle_kwargs(fname, kwargs, |k, v, eq| {
         if eq(k, *state.strs.offset_mismatch) {
             mismatch = OffsetMismatch::from_py(v, state)?;
-        } else if allow_deprecated {
-            if !dis_arg.handle_kwarg(k, v, eq, state) {
-                return Ok(false);
-            }
-        } else if eq(k, *state.strs.disambiguation) {
-            dis_arg.set_new(v);
-        } else {
+        } else if !dis_arg.handle_kwarg(k, v, eq, state) {
             return Ok(false);
         }
         Ok(true)
     })?;
-    let (dis, renamed) = dis_arg.finish(fname, state)?;
-    Ok((dis, mismatch, renamed))
+    Ok((dis_arg.finish(state)?, mismatch))
 }
 
 /// What a written offset identifies about a local time in a time zone.
@@ -864,7 +793,7 @@ fn replace(
     })?;
 
     let tz = tz_new.unwrap_or_else(|| tz.clone());
-    let (dis, renamed) = dis_arg.finish("replace", state)?;
+    let dis = dis_arg.finish(state)?;
     let local = components.into_plain()?;
     let result = if tz_changed {
         // The old offset says nothing about the new time zone, so an omitted
@@ -874,88 +803,12 @@ fn replace(
         local.resolve_with_disambiguation_or_offset(&tz, dis, offset, 1, state)?
     }
     .into_zoned_obj_unchecked(tz, cls)?;
-    if renamed {
-        warn_disambiguate(state, 1)?;
-    }
     Ok(result)
 }
 
 fn now(cls: PyClass<ZonedDateTime>, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
     state.now()?.into_zoned_obj(state.load_tz(tz_obj)?, cls)
-}
-
-fn now_in_system_tz(cls: PyClass<ZonedDateTime>) -> PyReturn {
-    let state = cls.state();
-    warn_deprecated(
-        state,
-        c"now_in_system_tz() is deprecated; use now(SYSTEM_TZ) instead",
-        1,
-    )?;
-    state
-        .now()?
-        .into_zoned_obj(state.tz_store.get_system_tz()?, cls)
-}
-
-fn from_system_tz(cls: PyClass<ZonedDateTime>, args: PyTuple, kwargs: Option<PyDict>) -> PyReturn {
-    let state = cls.state();
-    let mut year: i64 = 0;
-    let mut month: i64 = 0;
-    let mut day: i64 = 0;
-    let mut hour: i64 = 0;
-    let mut minute: i64 = 0;
-    let mut second: i64 = 0;
-    let mut nanosecond: i64 = 0;
-    let mut disambiguation: *mut PyObject = NULL();
-    let mut disambiguate: *mut PyObject = NULL();
-
-    let fmt = if IS_LP64 {
-        c"lll|lll$lOO:from_system_tz"
-    } else {
-        c"LLL|LLL$LOO:from_system_tz"
-    };
-    parse_args_kwargs!(
-        args,
-        kwargs,
-        fmt,
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        nanosecond,
-        disambiguation,
-        disambiguate
-    );
-
-    let mut dis_arg = DisambiguationArg::default();
-    if let Some(value) = disambiguation.borrow_opt() {
-        dis_arg.set_new(value);
-    }
-    if let Some(value) = disambiguate.borrow_opt() {
-        dis_arg.set_old(value);
-    }
-
-    let tz = state.tz_store.get_system_tz()?;
-    let (dis, renamed) = dis_arg.finish("from_system_tz", state)?;
-    let dis = dis.unwrap_or(Disambiguation::Compatible);
-    // Validate and compute first, so a call that raises emits no warning.
-    let result = Date::from_i64_components(year, month, day)
-        .ok_or_value_err("invalid date")?
-        .at(Time::from_i64_components(hour, minute, second, nanosecond)
-            .ok_or_value_err("invalid time")?)
-        .resolve_or_raise(&tz, ResolvePolicy::Disambiguate(dis), state)?
-        .into_zoned_obj_unchecked(tz, cls)?;
-    warn_deprecated(
-        state,
-        c"from_system_tz() is deprecated; use ZonedDateTime(..., tz=SYSTEM_TZ) instead",
-        1,
-    )?;
-    if renamed {
-        warn_disambiguate(state, 1)?;
-    }
-    Ok(result)
 }
 
 fn from_stdlib_datetime_inner(
@@ -1016,24 +869,6 @@ fn timestamp(
     unit.timestamp(slf.to_instant()).to_py()
 }
 
-fn timestamp_millis(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    warn_deprecated(
-        cls.state(),
-        c"timestamp_millis() is deprecated; use timestamp(unit='millisecond') instead",
-        1,
-    )?;
-    slf.to_instant().timestamp_millis().to_py()
-}
-
-fn timestamp_nanos(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    warn_deprecated(
-        cls.state(),
-        c"timestamp_nanos() is deprecated; use timestamp(unit='nanosecond') instead",
-        1,
-    )?;
-    slf.to_instant().timestamp_nanos().to_py()
-}
-
 fn __reduce__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     let tz_key = slf
         .tz
@@ -1048,102 +883,12 @@ fn __reduce__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     .into_pytuple()
 }
 
-/// The deprecated `from_timestamp*` shims: (ts, /, *, tz).
-/// Validate and compute first, so a call that raises emits no warning.
-fn from_timestamp_deprecated(
-    cls: PyClass<ZonedDateTime>,
-    fname: &str,
-    unit: TimestampUnit,
-    deprecation: &CStr,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    let state = cls.state();
-    let mut tz = None;
-    handle_kwargs(fname, kwargs, |key, value, eq| {
-        if eq(key, *state.strs.tz) {
-            tz = Some(value);
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    })?;
-    if args.len() != 1 {
-        raise_type_err(format!(
-            "{}() takes 1 positional argument but {} were given",
-            fname,
-            args.len()
-        ))?
-    }
-    let tz = state.load_tz(tz.ok_or_else_type_err(|| {
-        format!("{fname}() missing 1 required keyword-only argument: 'tz'")
-    })?)?;
-    let result = unit.parse(args[0])?.into_zoned_obj(tz, cls)?;
-
-    warn_deprecated(state, deprecation, 1)?;
-    Ok(result)
-}
-
-fn from_timestamp(
-    cls: PyClass<ZonedDateTime>,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    from_timestamp_deprecated(
-        cls,
-        "from_timestamp",
-        TimestampUnit::Second,
-        c"ZonedDateTime.from_timestamp() is deprecated; use Instant.from_timestamp(...).to_tz(...) instead",
-        args,
-        kwargs,
-    )
-}
-
-fn from_timestamp_millis(
-    cls: PyClass<ZonedDateTime>,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    from_timestamp_deprecated(
-        cls,
-        "from_timestamp_millis",
-        TimestampUnit::Millisecond,
-        c"ZonedDateTime.from_timestamp_millis() is deprecated; use Instant.from_timestamp(..., unit='millisecond').to_tz(...) instead",
-        args,
-        kwargs,
-    )
-}
-
-fn from_timestamp_nanos(
-    cls: PyClass<ZonedDateTime>,
-    args: &[PyObj],
-    kwargs: &mut IterKwargs,
-) -> PyReturn {
-    from_timestamp_deprecated(
-        cls,
-        "from_timestamp_nanos",
-        TimestampUnit::Nanosecond,
-        c"ZonedDateTime.from_timestamp_nanos() is deprecated; use Instant.from_timestamp(..., unit='nanosecond').to_tz(...) instead",
-        args,
-        kwargs,
-    )
-}
-
 fn is_repeated(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     matches!(
         slf.tz.mapping_for_local(slf.to_plain().local_seconds()),
         LocalMapping::Fold { .. }
     )
     .to_py()
-}
-
-fn is_ambiguous(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    warn_deprecated(
-        cls.state(),
-        c"is_ambiguous() is deprecated; use is_repeated() instead",
-        1,
-    )?;
-    is_repeated(cls.into(), slf)
 }
 
 fn next_transition(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -1245,12 +990,9 @@ fn shift_method(
         None => parse_datetime_shift_kwargs(fname, kwargs, state, &mut handle)?,
     };
 
-    let (dis, renamed) = dis_arg.finish(fname, state)?;
+    let dis = dis_arg.finish(state)?;
 
     let result = slf.shift(shift.negate_if(negate), dis, warn_stacklevel, state, cls)?;
-    if renamed {
-        warn_disambiguate(state, warn_stacklevel)?;
-    }
     Ok(result)
 }
 
@@ -1421,7 +1163,7 @@ fn format(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) 
             .with_offset(slf.offset)
             .with_timezone(slf.tz.key.as_deref(), abbrev_str),
     )?;
-    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
+    pattern.warn(*cls.state().warn_whenever)?;
     Ok(result)
 }
 
@@ -1441,14 +1183,12 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     let s = s_pystr.as_utf8()?;
 
     let state = cls.state();
-    let mut pattern_arg = RenamedKeyword::default();
+    let mut pattern_obj = None;
     let mut dis_arg = DisambiguationArg::default();
     let mut mismatch = OffsetMismatch::Raise;
     handle_kwargs("parse", kwargs, |k, v, eq| {
         if eq(k, *state.strs.pattern) {
-            pattern_arg.set_new(v);
-        } else if eq(k, *state.strs.format) {
-            pattern_arg.set_old(v);
+            pattern_obj = Some(v);
         } else if dis_arg.handle_kwarg(k, v, eq, state) {
         } else if eq(k, *state.strs.offset_mismatch) {
             mismatch = OffsetMismatch::from_py(v, state)?;
@@ -1458,10 +1198,9 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         Ok(true)
     })?;
 
-    let (fmt_obj, renamed) = pattern_arg.finish("parse", "pattern", "format")?;
-    let (dis, dis_renamed) = dis_arg.finish("parse", state)?;
-    let fmt_obj =
-        fmt_obj.ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")?;
+    let dis = dis_arg.finish(state)?;
+    let fmt_obj = pattern_obj
+        .ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")?;
     let fmt_pystr = fmt_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
@@ -1496,13 +1235,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
             .resolve_with_disambiguation(&tz, dis, state)?
             .into_zoned_obj_unchecked(tz, cls),
     }?;
-    pattern.warn(*state.warn_whenever, *state.warn_deprecation)?;
-    if renamed {
-        warn_deprecated(state, FORMAT_KEYWORD_WARNING, 1)?;
-    }
-    if dis_renamed {
-        warn_disambiguate(state, 1)?;
-    }
+    pattern.warn(*state.warn_whenever)?;
     Ok(result)
 }
 
@@ -1511,13 +1244,11 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     DEEPCOPY_METHOD,
     method0!(ZonedDateTime, __reduce__, c""),
     method1!(ZonedDateTime, to_tz, doc::ZONEDDATETIME_TO_TZ),
-    method0!(ZonedDateTime, to_system_tz, doc::EXACTTIME_TO_SYSTEM_TZ),
     method_vararg!(
         ZonedDateTime,
         to_fixed_offset,
         doc::EXACTTIME_TO_FIXED_OFFSET
     ),
-    method1!(ZonedDateTime, exact_eq, doc::ZONEDDATETIME_EXACT_EQ),
     method1!(ZonedDateTime, strict_eq, doc::ZONEDDATETIME_STRICT_EQ),
     method0!(ZonedDateTime, to_stdlib, doc::ZONEDDATETIME_TO_STDLIB),
     method0!(ZonedDateTime, to_instant, doc::EXACTANDLOCALTIME_TO_INSTANT),
@@ -1534,52 +1265,11 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     method_kwargs!(ZonedDateTime, format_iso, doc::ZONEDDATETIME_FORMAT_ISO),
     classmethod_kwargs!(ZonedDateTime, parse_iso, doc::ZONEDDATETIME_PARSE_ISO),
     classmethod1!(ZonedDateTime, now, doc::ZONEDDATETIME_NOW),
-    classmethod0!(
-        ZonedDateTime,
-        now_in_system_tz,
-        doc::ZONEDDATETIME_NOW_IN_SYSTEM_TZ
-    ),
     // This method is defined different because it
     // makes use of the arg/kwargs processing macro.
     // Other types only use it for the __new__ method.
-    PyMethodDef {
-        ml_name: c"from_system_tz".as_ptr(),
-        ml_meth: PyMethodDefPointer {
-            PyCFunctionWithKeywords: {
-                unsafe extern "C" fn _wrap(
-                    cls: *mut PyObject,
-                    args: *mut PyObject,
-                    kwargs: *mut PyObject,
-                ) -> *mut PyObject {
-                    catch_panic!(
-                        from_system_tz(
-                            unsafe { PyClass::from_ptr_unchecked(cls.cast()) },
-                            unsafe { PyTuple::from_ptr_unchecked(args) },
-                            (!kwargs.is_null())
-                                .then(|| unsafe { PyDict::from_ptr_unchecked(kwargs) }),
-                        )
-                        .to_py_owned_ptr()
-                    )
-                }
-                _wrap
-            },
-        },
-        ml_flags: METH_CLASS | METH_VARARGS | METH_KEYWORDS,
-        ml_doc: doc::ZONEDDATETIME_FROM_SYSTEM_TZ.as_ptr(),
-    },
     method_kwargs!(ZonedDateTime, timestamp, doc::EXACTTIME_TIMESTAMP),
-    method0!(
-        ZonedDateTime,
-        timestamp_millis,
-        doc::EXACTTIME_TIMESTAMP_MILLIS
-    ),
-    method0!(
-        ZonedDateTime,
-        timestamp_nanos,
-        doc::EXACTTIME_TIMESTAMP_NANOS
-    ),
     method0!(ZonedDateTime, is_repeated, doc::ZONEDDATETIME_IS_REPEATED),
-    method0!(ZonedDateTime, is_ambiguous, doc::ZONEDDATETIME_IS_AMBIGUOUS),
     method0!(
         ZonedDateTime,
         next_transition,
@@ -1592,21 +1282,6 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     ),
     method0!(ZonedDateTime, dst_offset, doc::ZONEDDATETIME_DST_OFFSET),
     method0!(ZonedDateTime, tz_abbrev, doc::ZONEDDATETIME_TZ_ABBREV),
-    classmethod_kwargs!(
-        ZonedDateTime,
-        from_timestamp,
-        doc::ZONEDDATETIME_FROM_TIMESTAMP
-    ),
-    classmethod_kwargs!(
-        ZonedDateTime,
-        from_timestamp_millis,
-        doc::ZONEDDATETIME_FROM_TIMESTAMP_MILLIS
-    ),
-    classmethod_kwargs!(
-        ZonedDateTime,
-        from_timestamp_nanos,
-        doc::ZONEDDATETIME_FROM_TIMESTAMP_NANOS
-    ),
     method_kwargs!(ZonedDateTime, replace, doc::ZONEDDATETIME_REPLACE),
     method_kwargs!(ZonedDateTime, replace_date, doc::ZONEDDATETIME_REPLACE_DATE),
     method_kwargs!(ZonedDateTime, replace_time, doc::ZONEDDATETIME_REPLACE_TIME),
@@ -1663,11 +1338,6 @@ fn tz_id(_: PyType, slf: &ZonedDateTime) -> PyReturn {
     }
 }
 
-fn tz(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
-    warn_deprecated(cls.state(), c"tz is deprecated; use tz_id instead", 1)?;
-    tz_id(cls.into(), slf)
-}
-
 fn offset(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
     slf.offset.to_delta().to_obj(*cls.state().time_delta_type)
 }
@@ -1680,7 +1350,6 @@ static GETSETTERS: PyDefSlice<PyGetSetDef> = PyDefSlice::new(&[
     getter!(ZonedDateTime, minute, doc::LOCALTIME_MINUTE),
     getter!(ZonedDateTime, second, doc::LOCALTIME_SECOND),
     getter!(ZonedDateTime, nanosecond, doc::LOCALTIME_NANOSECOND),
-    getter!(ZonedDateTime, tz, doc::ZONEDDATETIME_TZ),
     getter!(ZonedDateTime, tz_id, doc::ZONEDDATETIME_TZ_ID),
     getter!(ZonedDateTime, offset, doc::EXACTANDLOCALTIME_OFFSET),
     PyGetSetDef {

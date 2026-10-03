@@ -31,12 +31,6 @@ impl Offset {
         }
     }
 
-    pub(crate) fn from_hours(hrs: i64) -> Option<Self> {
-        (-23..=23)
-            .contains(&hrs)
-            .then(|| Self::new_unchecked(hrs as i32 * S_PER_HOUR))
-    }
-
     pub(crate) fn from_i64(secs: i64) -> Option<Self> {
         (secs >= Self::MIN.get() as i64 && secs <= Self::MAX.get() as i64)
             .then(|| Self::new_unchecked(secs as i32))

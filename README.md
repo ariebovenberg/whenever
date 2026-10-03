@@ -198,9 +198,9 @@ or [API reference](https://whenever.readthedocs.io/en/latest/reference/datetime.
 ## Stability policy
 
 *Whenever* follows semantic versioning.
-Version 0.11 establishes the 1.0 API: unless significant issues arise,
-1.0 differs from it only by removing the spellings 0.11 deprecates.
-Breaking changes are meticulously explained in the changelog.
+Since 1.0, changes are additive and backwards compatible:
+an API that becomes discouraged gets a soft deprecation and stays supported.
+Earlier breaking changes are meticulously explained in the changelog.
 Since the API is fully typed, your typechecker and/or IDE
 will help you adjust to any API changes.
 
