@@ -17,7 +17,6 @@ from whenever import (
     PlainDateTime,
     StaleOffsetWarning,
     TimeDelta,
-    WheneverDeprecationWarning,
     ZonedDateTime,
     hours,
     microseconds,
@@ -170,8 +169,7 @@ class TestInit:
     def test_valid(self, kwargs, expected_nanos):
         d = TimeDelta(**kwargs)
 
-        with suppress(WheneverDeprecationWarning):
-            assert d.total("nanoseconds") == expected_nanos
+        assert d.total("nanoseconds") == expected_nanos
         # the components are not accessible directly
         assert not hasattr(d, "hours")
 

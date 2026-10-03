@@ -9,10 +9,8 @@ Same rules as the public glossary: use the headword in code, comments, and
 messages; the "preferred over" words are rejected synonyms.
 
 **compatibility shim** (public glossary)
-: A deprecated pattern spelling is one too; the compiler variants that keep
-  it (`_Hour24Legacy`, `Hour24Legacy`, `_SecondOpt`, `_ColonSec`) and their
-  tests keep "legacy" in their names until 1.0 deletes them, rather than
-  being renamed first.
+: A deprecated pattern spelling is one too. 1.0 has none; the term stays
+  for the next deprecation cycle.
 
 **field**
 : The value a specifier sets: year, month, day, weekday, hour, minute,
@@ -20,11 +18,6 @@ messages; the "preferred over" words are rejected synonyms.
   duplicate detection reason about fields; a message shown to a user names
   the specifier instead.
   Preferred over *slot*, *component*, and *state key*.
-
-**replacement**
-: What a deprecated path migrates to, as named in its warning message
-  ("use X instead").
-  Preferred over *preferred spelling* and *preferred path*.
 
 **boundary method**
 : One of `start_of()`, `end_of()`, `round()`, and `day_length()` on

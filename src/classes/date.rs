@@ -10,10 +10,7 @@ pub(crate) use crate::domain::date::DateBoundaryUnit;
 use crate::{
     classes::itemized_date_delta::ItemizedDateDelta,
     common::{
-        compat::{
-            FORMAT_KEYWORD_WARNING, parse_pattern_keyword, warn_deprecated,
-            warn_lossy_stdlib_subclass,
-        },
+        compat::warn_lossy_stdlib_subclass,
         format_args, pattern, pickle, round_args as round,
         shift_args::{parse_calendar_shift_arg, parse_calendar_shift_kwargs},
     },
@@ -547,22 +544,6 @@ fn at(cls: PyClass<Date>, date: Date, time_obj: PyObj) -> PyReturn {
     date.at(time).to_obj(*state.plain_datetime_type)
 }
 
-fn today_in_system_tz(cls: PyClass<Date>) -> PyReturn {
-    let state = cls.state();
-    warn_deprecated(
-        state,
-        c"today_in_system_tz() is deprecated; use today(SYSTEM_TZ) instead",
-        1,
-    )?;
-    let tz = state.tz_store.get_system_tz()?;
-    state
-        .now()?
-        .to_offset_in(&tz)
-        .ok_or_range_err()?
-        .date
-        .to_obj(cls)
-}
-
 fn today(cls: PyClass<Date>, tz_obj: PyObj) -> PyReturn {
     let state = cls.state();
     let tz = state.load_tz(tz_obj)?;
@@ -582,7 +563,7 @@ fn format(cls: PyClass<Date>, slf: Date, pattern_obj: PyObj) -> PyReturn {
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::DATE, "Date")?;
     let result = pattern.format(&slf.pattern_values())?;
-    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
+    pattern.warn(*cls.state().warn_whenever)?;
     Ok(result)
 }
 
@@ -601,7 +582,8 @@ fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
-    let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
+    let fmt_obj = handle_one_kwarg("parse", *cls.state().strs.pattern, kwargs)?
+        .ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")?;
     let fmt_pystr = fmt_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
@@ -613,17 +595,13 @@ fn parse(cls: PyClass<Date>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
     let date = parsed.date()?;
     parsed.validate_weekday(date)?;
     let result = date.to_obj(cls)?;
-    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
-    if renamed {
-        warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
-    }
+    pattern.warn(*cls.state().warn_whenever)?;
     Ok(result)
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     method0!(Date, to_stdlib, doc::DATE_TO_STDLIB),
     method_kwargs!(Date, format_iso, doc::DATE_FORMAT_ISO),
-    classmethod0!(Date, today_in_system_tz, doc::DATE_TODAY_IN_SYSTEM_TZ),
     classmethod1!(Date, today, doc::DATE_TODAY),
     classmethod1!(Date, parse_iso, doc::DATE_PARSE_ISO),
     COPY_METHOD,
