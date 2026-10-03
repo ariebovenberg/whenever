@@ -7,12 +7,12 @@ maintainers = [
     {name = "Arie Bovenberg", email = "a.c.bovenberg@gmail.com"},
 ]
 readme = "README.md"
-version = "0.11.0"
+version = "1.0.0b0"
 license = "MIT"
 description = "Type-safe datetimes for Python that get DST right, in Rust or pure Python"
 requires-python = ">=3.10"
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",

@@ -3,8 +3,8 @@ myst:
   html_meta:
     description: >-
       Reference for patterns: date, time, offset, and time zone specifiers,
-      literal text rules, parsing requirements, migrating patterns in 0.11,
-      and how it differs from strftime.
+      literal text rules, parsing requirements, and how it differs from
+      strftime.
 ---
 
 (pattern-format)=
@@ -255,24 +255,6 @@ Month names, weekday names, and AM/PM are matched case-insensitively:
 
 A second value of ``60`` (leap second) is accepted and normalized to ``59``.
 See [](faq-leap-seconds) for details.
-
-## Migrating patterns in 0.11
-
-Version 0.11 accepts both the final spellings and the previous forms. Previous
-forms emit {class}`WheneverDeprecationWarning` on every `format()` or `parse()`
-call and will be rejected in 1.0.
-
-| Previous pattern | Replacement |
-|:-----------------|:------------|
-| `h` | `H` |
-| `hh` | `HH` |
-| `:SS` | `[:ss]` |
-| `:SS.FFF` | `[:ss.FFF]` |
-| separator-free `SS` | `[ss]` |
-
-The same bracketed spelling applies to exact fractions, such as replacing
-`:SS.fff` with `[:ss.fff]`. Keeping the separator inside the brackets makes
-it disappear with the seconds.
 
 ## Comparison with strftime
 

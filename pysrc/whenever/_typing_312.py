@@ -40,7 +40,6 @@ type DateDeltaUnitStr = Literal["years", "months", "weeks", "days"]
 type ExactDeltaUnitStr = Literal[
     "weeks", "days", "hours", "minutes", "seconds", "nanoseconds"
 ]
-type DisambiguateStr = Literal["compatible", "earlier", "later", "raise"]
 type DisambiguationStr = Literal["compatible", "earlier", "later", "raise"]
 type OffsetMismatchStr = Literal["raise", "keep_instant", "keep_local"]
 type TimestampUnitStr = Literal[

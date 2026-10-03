@@ -202,9 +202,9 @@ call-local escape
   See {ref}`warnings`.
 
 compatibility shim
-  A deprecated spelling kept until 1.0: it does what its replacement does
-  and emits `WheneverDeprecationWarning`. The changelog's migration table
-  lists each one.
+  A deprecated spelling kept through a deprecation cycle: it does what its
+  replacement does and emits `WheneverDeprecationWarning`. 1.0 ships none;
+  the 0.11.0 changelog entry lists the ones it removed.
   Also called *wrapper*, *alias*, and *legacy path*.
 
 time patch
