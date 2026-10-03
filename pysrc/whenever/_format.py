@@ -13,7 +13,6 @@ from itertools import pairwise
 from typing import TYPE_CHECKING, Literal
 
 from ._common import (
-    WheneverDeprecationWarning,
     WheneverWarning,
     format_offset_secs,
     round_offset_to_minute,
@@ -181,7 +180,6 @@ class _ParseState:
         "offset_is_z",
         "tz_id",
         "weekday",
-        "second_absent",
     )
 
     def __init__(self) -> None:
@@ -198,7 +196,6 @@ class _ParseState:
         self.offset_is_z: bool = False
         self.tz_id: str | None = None
         self.weekday: int | None = None
-        self.second_absent: bool = False
 
     def resolve(self) -> None:
         """Apply AM/PM adjustment after all fields are parsed."""
@@ -450,14 +447,6 @@ class _Hour24Unpadded(_UnpaddedDigitField):
         return pos
 
 
-class _Hour24Legacy(_Hour24):
-    pattern = ("h", 2)
-
-
-class _Hour24UnpaddedLegacy(_Hour24Unpadded):
-    pattern = ("h", 1)
-
-
 class _Hour12(_DigitField):
     pattern = ("i", 2)
     category = "time"
@@ -552,62 +541,6 @@ class _SecondUnpadded(_UnpaddedDigitField):
         return pos
 
 
-class _SecondOpt(_DigitField):
-    pattern = ("S", 2)
-    category = "time"
-    state_field = "second"
-    can_be_empty = True
-    needs_digit_terminator = True
-
-    def format_value(self, v: _FormatValues) -> str:
-        return f"{v.second:02d}" if (v.second or v.nanos) else ""
-
-    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        if pos < len(s) and s[pos].isdigit():
-            state.second, pos = parse_digits(s, pos, 2)
-            if state.second == 60:
-                state.second = 59
-        else:
-            state.second = 0
-            state.second_absent = True
-        return pos
-
-    def apply_pending(self, ch: str) -> list[_Element]:
-        if ch == ":":
-            return [_ColonSec()]
-        return [_Literal(ch), self]
-
-
-class _ColonSec(_Field):
-    """Colon + optional seconds: written as ``:ss`` only when second > 0 or nanos > 0.
-
-    Produced by the compiler when a ``:`` literal immediately precedes ``SS``.
-    """
-
-    category = "time"
-    state_field = "second"
-    can_be_empty = True
-    can_start_with_colon = True
-    needs_colon_terminator = True
-
-    def format_value(self, v: _FormatValues) -> str:
-        return f":{v.second:02d}" if (v.second or v.nanos) else ""
-
-    def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        if pos < len(s) and s[pos] == ":":
-            pos += 1  # consume the colon
-            state.second, pos = parse_digits(s, pos, 2)
-            if state.second == 60:
-                state.second = 59
-        else:
-            state.second = 0
-            state.second_absent = True
-        return pos
-
-    def __repr__(self) -> str:
-        return ":SS"
-
-
 class _OptionalSeconds(_Field):
     """Optional seconds, with an optional literal separator."""
 
@@ -647,7 +580,6 @@ class _OptionalSeconds(_Field):
         if not present:
             state.second = 0
             state.nanos = 0
-            state.second_absent = True
             return pos
 
         state.second, pos = parse_digits(s, pos + len(self.separator), 2)
@@ -721,9 +653,6 @@ class _FracTrim(_DigitField):
         return f"{v.nanos:09d}"[: self.width].rstrip("0")
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        if state.second_absent:
-            state.nanos = 0
-            return pos
         count = 0
         while (
             count < self.width
@@ -770,12 +699,7 @@ class _DotFrac(_Field):
         return f".{trimmed}" if trimmed else ""
 
     def parse_value(self, s: str, pos: int, state: _ParseState) -> int:
-        if (
-            state.second_absent
-            or pos + 1 >= len(s)
-            or s[pos] != "."
-            or not s[pos + 1].isdigit()
-        ):
+        if pos + 1 >= len(s) or s[pos] != "." or not s[pos + 1].isdigit():
             state.nanos = 0
             return pos
         pos += 1  # consume the dot
@@ -1026,15 +950,12 @@ _FIXED_FIELDS: list[type[_Field]] = [
     _WeekdayFull,
     _Hour24,
     _Hour24Unpadded,
-    _Hour24Legacy,
-    _Hour24UnpaddedLegacy,
     _Hour12,
     _Hour12Unpadded,
     _Minute,
     _MinuteUnpadded,
     _Second,
     _SecondUnpadded,
-    _SecondOpt,
     _AmPmShort,
     _AmPmFull,
     _TzId,
@@ -1103,15 +1024,7 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
                         "trimmed optional seconds cannot be followed by an "
                         "element that starts with '.'"
                     )
-        if isinstance(
-            el,
-            (
-                _Hour24,
-                _Hour24Unpadded,
-                _Hour24Legacy,
-                _Hour24UnpaddedLegacy,
-            ),
-        ):
+        if isinstance(el, (_Hour24, _Hour24Unpadded)):
             has_24h = True
         elif isinstance(el, (_AmPmShort, _AmPmFull)):
             has_ampm = True
@@ -1136,13 +1049,7 @@ def _validate_cross_fields(elements: Iterable[_Element]) -> None:
     for el, follower in pairwise(elements):
         if not isinstance(el, _Field):
             continue
-        if (
-            el.needs_digit_terminator
-            and follower.can_start_with_digit
-            and not (
-                isinstance(el, _SecondOpt) and isinstance(follower, _FracTrim)
-            )
-        ):
+        if el.needs_digit_terminator and follower.can_start_with_digit:
             raise ValueError(
                 f"specifier {el!r} cannot be followed by an element "
                 "that starts with a digit"
@@ -1297,8 +1204,8 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
         raise ValueError("pattern too long (max 1000 characters)")
     elements: list[_Element] = []
     # A trailing '.' or ':' from the last literal run that may be consumed
-    # by the next specifier as part of a compound token (.FFF → _DotFrac,
-    # :SS → _ColonSec). Flushed as a plain literal if not consumed.
+    # by the next specifier as part of a compound token (.FFF → _DotFrac).
+    # Flushed as a plain literal if not consumed.
     pending: str | None = None
     i = 0
     n = len(pattern)
@@ -1338,6 +1245,16 @@ def compile_pattern(pattern: str) -> tuple[_Element, ...]:
             elements.append(_Literal(pending))
             pending = None
 
+        if ch == "h":
+            raise ValueError(
+                "`h` and `hh` were removed in 1.0; use `H` or `HH` for the "
+                "24-hour clock, or `i` and `ii` for the 12-hour clock"
+            )
+        if ch == "S":
+            raise ValueError(
+                "`SS` was removed in 1.0; use optional seconds such as "
+                "`[:ss]` or `[ss]`, or `ss` for required seconds"
+            )
         # Other ASCII letters are errors (reserved for future specifiers)
         if ch.isalpha():
             raise ValueError(
@@ -1406,41 +1323,6 @@ def warn_pattern(elements: Sequence[_Element], *, stacklevel: int) -> None:
             WheneverWarning,
             stacklevel=stacklevel,
         )
-
-    for i, el in enumerate(elements):
-        if isinstance(el, _Hour24UnpaddedLegacy):
-            warnings.warn(
-                "specifier 'h' is deprecated; use 'H' instead",
-                WheneverDeprecationWarning,
-                stacklevel=stacklevel,
-            )
-        elif isinstance(el, _Hour24Legacy):
-            warnings.warn(
-                "specifier 'hh' is deprecated; use 'HH' instead",
-                WheneverDeprecationWarning,
-                stacklevel=stacklevel,
-            )
-        elif isinstance(el, (_ColonSec, _SecondOpt)):
-            separator = ":" if isinstance(el, _ColonSec) else ""
-            replacement = f"[{separator}ss]"
-            next_el = elements[i + 1] if i + 1 < len(elements) else None
-            if isinstance(next_el, _DotFrac):
-                replacement = f"[{separator}ss.{'F' * next_el.width}]"
-            elif (
-                i + 2 < len(elements)
-                and isinstance(next_el, _Literal)
-                and next_el.text == "."
-            ):
-                frac_el = elements[i + 2]
-                if isinstance(frac_el, _FracExact):
-                    replacement = f"[{separator}ss.{'f' * frac_el.width}]"
-            legacy = f"{separator}SS"
-            warnings.warn(
-                f"specifier {legacy!r} is deprecated; use "
-                f"{replacement!r} instead",
-                WheneverDeprecationWarning,
-                stacklevel=stacklevel,
-            )
 
 
 # --- Format ---

@@ -2,7 +2,7 @@
 use crate::{
     classes::{
         date::{self, unpickle as _unpkl_date},
-        instant::{self, unpickle as _unpkl_inst, unpickle_pre_0_8 as _unpkl_utc},
+        instant::{self, unpickle as _unpkl_inst},
         offset_datetime::{self, unpickle as _unpkl_offset},
         plain_datetime::{self, unpickle as _unpkl_local},
         time::{self, unpickle as _unpkl_time},
@@ -60,7 +60,6 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     modmethod1!(_unpkl_tdelta, c""),
     modmethod1!(_unpkl_local, c""),
     modmethod1!(_unpkl_inst, c""),
-    modmethod1!(_unpkl_utc, c""), // for backwards compatibility
     modmethod1!(_unpkl_offset, c""),
     modmethod_vararg!(_unpkl_zoned, c""),
     modmethod1!(hours, doc::HOURS),
@@ -139,7 +138,6 @@ pub(crate) struct InternedStrings {
     pub(crate) earlier: Owned<PyObj>,
     pub(crate) later: Owned<PyObj>,
     pub(crate) tz: Owned<PyObj>,
-    pub(crate) disambiguate: Owned<PyObj>,
     pub(crate) disambiguation: Owned<PyObj>,
     pub(crate) warn_stacklevel: Owned<PyObj>,
     pub(crate) offset: Owned<PyObj>,
@@ -160,18 +158,15 @@ pub(crate) struct InternedStrings {
     pub(crate) half_even: Owned<PyObj>,
     pub(crate) half_trunc: Owned<PyObj>,
     pub(crate) half_expand: Owned<PyObj>,
-    pub(crate) format: Owned<PyObj>,
     pub(crate) pattern: Owned<PyObj>,
     pub(crate) sep: Owned<PyObj>,
     pub(crate) space: Owned<PyObj>,
     pub(crate) t: Owned<PyObj>,
     pub(crate) auto: Owned<PyObj>,
     pub(crate) basic: Owned<PyObj>,
-    pub(crate) always: Owned<PyObj>,
     pub(crate) if_available: Owned<PyObj>,
     pub(crate) omit: Owned<PyObj>,
     pub(crate) required: Owned<PyObj>,
-    pub(crate) never: Owned<PyObj>,
     pub(crate) tz_id_display: Owned<PyObj>,
     pub(crate) offset_mismatch: Owned<PyObj>,
     pub(crate) keep_instant: Owned<PyObj>,
@@ -214,7 +209,6 @@ fn intern_strings() -> PyResult<InternedStrings> {
         earlier: intern(c"earlier")?,
         later: intern(c"later")?,
         tz: intern(c"tz")?,
-        disambiguate: intern(c"disambiguate")?,
         disambiguation: intern(c"disambiguation")?,
         warn_stacklevel: intern(c"_warn_stacklevel")?,
         offset: intern(c"offset")?,
@@ -235,18 +229,15 @@ fn intern_strings() -> PyResult<InternedStrings> {
         half_even: intern(c"half_even")?,
         half_trunc: intern(c"half_trunc")?,
         half_expand: intern(c"half_expand")?,
-        format: intern(c"format")?,
         pattern: intern(c"pattern")?,
         sep: intern(c"sep")?,
         space: intern(c" ")?,
         t: intern(c"T")?,
         auto: intern(c"auto")?,
         basic: intern(c"basic")?,
-        always: intern(c"always")?,
         if_available: intern(c"if_available")?,
         omit: intern(c"omit")?,
         required: intern(c"required")?,
-        never: intern(c"never")?,
         tz_id_display: intern(c"tz_id_display")?,
         offset_mismatch: intern(c"offset_mismatch")?,
         keep_instant: intern(c"keep_instant")?,
@@ -292,9 +283,6 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
     )?;
     let (zoned_datetime_type, unpickle_zoned_datetime) =
         new_class(module, *module_name, &zoned_datetime::SPEC, c"_unpkl_zoned")?;
-    module
-        .getattr(c"_unpkl_utc")?
-        .setattr(c"__module__", *module_name)?;
     // As the pure-Python helpers report, so help() and pickling agree.
     for name in [
         c"hours",
@@ -444,7 +432,6 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
         warn_days_not_always_24h,
         warn_potentially_stale_offset,
         warn_naive_arithmetic,
-        warn_deprecation,
 
         unpickle_date,
         unpickle_time,
@@ -568,7 +555,6 @@ fn module_traverse(mod_ptr: *mut PyObject, visit: visitproc, arg: *mut c_void) -
         *state.warn_days_not_always_24h,
         *state.warn_potentially_stale_offset,
         *state.warn_naive_arithmetic,
-        *state.warn_deprecation,
     ] {
         exc.gc_traverse(visit, arg)?;
     }
@@ -645,7 +631,6 @@ pub(crate) struct State {
     pub(crate) warn_days_not_always_24h: Owned<PyObj>,
     pub(crate) warn_potentially_stale_offset: Owned<PyObj>,
     pub(crate) warn_naive_arithmetic: Owned<PyObj>,
-    pub(crate) warn_deprecation: Owned<PyObj>,
 
     // unpickling functions
     pub(crate) unpickle_date: Owned<PyObj>,
