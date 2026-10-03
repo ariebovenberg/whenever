@@ -1,10 +1,7 @@
 #[cfg(test)]
 use crate::common::parse::Scan;
 use crate::{
-    common::{
-        compat::{FORMAT_KEYWORD_WARNING, parse_pattern_keyword, warn_deprecated},
-        fmt, format_args, pattern, pickle, round_args as round,
-    },
+    common::{fmt, format_args, pattern, pickle, round_args as round},
     docstrings as doc,
     domain::scalar::*,
     py::*,
@@ -326,7 +323,7 @@ fn format(cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::TIME, "Time")?;
     let result = pattern.format(&slf.pattern_values())?;
-    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
+    pattern.warn(*cls.state().warn_whenever)?;
     Ok(result)
 }
 
@@ -345,7 +342,8 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
-    let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
+    let fmt_obj = handle_one_kwarg("parse", *cls.state().strs.pattern, kwargs)?
+        .ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")?;
     let fmt_pystr = fmt_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
@@ -354,10 +352,7 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
     pattern.validate(pattern::CategorySet::TIME, "Time")?;
     let result = pattern.parse(s).into_value_err()?.time()?.to_obj(cls)?;
-    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
-    if renamed {
-        warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
-    }
+    pattern.warn(*cls.state().warn_whenever)?;
     Ok(result)
 }
 

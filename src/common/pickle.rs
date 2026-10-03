@@ -20,7 +20,7 @@ use crate::domain::{
     scalar::{EpochSecs, Month, Offset, SubSecNanos, Year},
     time::Time,
     time_delta::TimeDelta,
-    units::{NS_PER_SECOND, S_PER_DAY},
+    units::NS_PER_SECOND,
 };
 
 pub(crate) const DATE_LEN: usize = 4;
@@ -88,16 +88,6 @@ pub(crate) fn decode_instant(data: &[u8]) -> Option<Instant> {
     let data: &[u8; INSTANT_LEN] = data.try_into().ok()?;
     Some(Instant {
         epoch: EpochSecs::new(i64::from_le_bytes(data[..8].try_into().unwrap()))?,
-        subsec: decode_subsec(&data[8..])?,
-    })
-}
-
-pub(crate) fn decode_pre_0_8_instant(data: &[u8]) -> Option<Instant> {
-    let data: &[u8; INSTANT_LEN] = data.try_into().ok()?;
-    let legacy_epoch = i64::from_le_bytes(data[..8].try_into().unwrap());
-    let epoch = legacy_epoch.checked_add(EpochSecs::MIN.get() - i64::from(S_PER_DAY))?;
-    Some(Instant {
-        epoch: EpochSecs::new(epoch)?,
         subsec: decode_subsec(&data[8..])?,
     })
 }
@@ -226,20 +216,6 @@ mod tests {
     }
 
     #[test]
-    fn decodes_pre_0_8_instant() {
-        let data = [
-            0x49, 0xb4, 0xcb, 0xd6, 0x0e, 0x00, 0x00, 0x00, 0x38, 0x68, 0xde, 0x3a,
-        ];
-        assert_eq!(
-            decode_pre_0_8_instant(&data),
-            Some(Instant {
-                epoch: EpochSecs::new(1_597_533_129).unwrap(),
-                subsec: SubSecNanos::new(987_654_200).unwrap(),
-            })
-        );
-    }
-
-    #[test]
     fn rejects_malformed_payloads() {
         assert_eq!(decode_date(&[1, 2, 3]), None);
         assert_eq!(decode_date(&[0, 0, 1, 1]), None);
@@ -270,9 +246,5 @@ mod tests {
         let mut offset = encode_offset(PlainDateTime::MIN.assume_offset(Offset::ZERO).unwrap());
         offset[PLAIN_DATETIME_LEN..].copy_from_slice(&1_i32.to_le_bytes());
         assert_eq!(decode_offset(&offset), None);
-
-        let mut legacy = [0; INSTANT_LEN];
-        legacy[..8].copy_from_slice(&i64::MIN.to_le_bytes());
-        assert_eq!(decode_pre_0_8_instant(&legacy), None);
     }
 }

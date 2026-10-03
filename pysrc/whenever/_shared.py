@@ -25,7 +25,6 @@ from ._common import (
     final,
     replace_fields,
     unpack_pickle,
-    warn_deprecated,
 )
 from ._math import days_in_month, is_leap
 from ._parse import (
@@ -498,18 +497,6 @@ class MonthDay(_Base):
         False
         """
         return self._py.month == 2 and self._py.day == 29
-
-    def is_leap(self) -> bool:
-        """Check if the month-day is February 29th.
-
-        .. deprecated:: 0.11
-           Use :meth:`is_leap_day` instead.
-        """
-        warn_deprecated(
-            "is_leap() is deprecated; use is_leap_day() instead",
-            stacklevel=2,
-        )
-        return self.is_leap_day()
 
     def __str__(self) -> str:
         return self.format_iso()

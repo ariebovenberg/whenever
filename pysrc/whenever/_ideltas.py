@@ -49,9 +49,6 @@ from ._common import (
     expect_int,
     final,
     invalid,
-    normalize_renamed_keyword,
-    warn_deprecated,
-    warn_renamed_keyword,
 )
 from ._math import (
     DATE_DELTA_UNITS,
@@ -337,86 +334,6 @@ def _date_or_datetime_types() -> tuple[
     return (Date, *_datetime_types())
 
 
-# The 0.10 keywords of add()/subtract(), which balanced the sum at a
-# reference. Deprecated: in_units() on the result does the same.
-_REFERENCE_KWARGS = (
-    "relative_to",
-    "in_units",
-    "round_mode",
-    "round_increment",
-    "naive_arithmetic_ok",
-    "stale_offset_ok",
-)
-REFERENCE_DEPRECATED_MSG = (
-    "'relative_to' on add() and subtract() is deprecated; "
-    "call in_units() on the result instead"
-)
-
-
-def _compose_at_reference(
-    self: ItemizedDelta | ItemizedDateDelta,
-    other: Mapping[str, int],
-    /,
-    *,
-    relative_to: object = UNSET,
-    in_units: Sequence[DeltaUnitStr] = UNSET,
-    round_mode: RoundModeStr = UNSET,
-    round_increment: int = UNSET,
-    naive_arithmetic_ok: bool = UNSET,
-    stale_offset_ok: bool = UNSET,
-) -> tuple[ItemizedDelta | ItemizedDateDelta, Warning | None]:
-    """The 0.10 semantics of ``add()``/``subtract()`` with a reference: the
-    summed components, applied to the reference in one step and measured
-    back in ``in_units``. The caller emits the returned warning, and the
-    deprecation, from its own frame."""
-    if relative_to is UNSET:
-        if in_units is not UNSET:
-            raise TypeError("in_units requires relative_to")
-        raise TypeError("round_mode and round_increment require relative_to")
-    if in_units is UNSET:
-        raise TypeError("in_units is required with relative_to")
-    combined = _items_add(self, other)
-    if _composed_type(self, other) is ItemizedDateDelta:
-        date_units = normalize_units(in_units, DATE_DELTA_UNITS)
-        round_mode, round_increment = resolve_date_rounding(
-            round_mode, round_increment
-        )
-        date = _reference_date(relative_to)
-        return (
-            date.add(**combined).since(
-                date,
-                in_units=date_units,
-                round_mode=round_mode,
-                round_increment=round_increment,
-            ),
-            None,
-        )
-    if isinstance(self, ItemizedDateDelta):
-        from ._core import Date
-
-        if isinstance(relative_to, Date):
-            raise TypeError(
-                RELATIVE_TO_DATETIME_MSG + " when composing with ItemizedDelta"
-            )
-    units = normalize_units(in_units, DELTA_UNITS)
-    round_mode, round_increment = resolve_rounding(round_mode, round_increment)
-    reference, warning = _reference_and_warning(
-        relative_to,
-        *_has_unit_kinds(combined, units),
-        naive_arithmetic_ok,
-        stale_offset_ok,
-    )
-    return (
-        _shift_reference(reference, combined).since(
-            reference,
-            in_units=units,
-            round_mode=round_mode,
-            round_increment=round_increment,
-        ),
-        warning,
-    )
-
-
 def _compose(
     self: ItemizedDelta | ItemizedDateDelta,
     arg: ItemizedDelta | ItemizedDateDelta,
@@ -425,22 +342,11 @@ def _compose(
     *,
     month_composition_ok: bool,
     negate: bool,
-    kwargs: dict[str, Any],
 ) -> ItemizedDelta | ItemizedDateDelta:
     """The body of ``add()``/``subtract()``, called directly by them so the
     warnings point at their caller. The result is an ``ItemizedDelta`` if
-    either operand is one, else an ``ItemizedDateDelta``. ``kwargs`` holds
-    the deprecated keywords."""
+    either operand is one, else an ``ItemizedDateDelta``."""
     fname = "subtract" if negate else "add"
-    month_composition_ok, renamed = normalize_renamed_keyword(
-        month_composition_ok,
-        kwargs,
-        function_name=fname,
-        new_name="month_composition_ok",
-        old_name="cal_unit_composition_ok",
-    )
-    reference = {k: kwargs.pop(k) for k in _REFERENCE_KWARGS if k in kwargs}
-    check_no_kwargs(kwargs, f"{type(self).__name__}.{fname}")
     other: Mapping[str, int] = _read_components(components, negate)
     if other:
         if arg is not UNSET:
@@ -454,25 +360,15 @@ def _compose(
         raise TypeError(
             "argument must be an ItemizedDelta or ItemizedDateDelta"
         )
-    elif not reference:
+    else:
         return self
 
-    warning = None
-    if reference:
-        result, warning = _compose_at_reference(self, other, **reference)
-    else:
-        result = _composed_type(self, other)(**_items_add(self, other))
-        if not month_composition_ok and (
-            _has_clamping_units(self) or _has_clamping_units(other)
-        ):
-            warning = MonthCompositionWarning(MONTH_METHOD_COMPOSITION_MSG)
-    if warning is not None:
-        warn(warning, stacklevel=3)
-    if reference:
-        warn_deprecated(REFERENCE_DEPRECATED_MSG, stacklevel=3)
-    if renamed:
-        warn_renamed_keyword(
-            "month_composition_ok", "cal_unit_composition_ok", stacklevel=3
+    result = _composed_type(self, other)(**_items_add(self, other))
+    if not month_composition_ok and (
+        _has_clamping_units(self) or _has_clamping_units(other)
+    ):
+        warn(
+            MonthCompositionWarning(MONTH_METHOD_COMPOSITION_MSG), stacklevel=3
         )
     return result
 
@@ -1310,19 +1206,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             and self._nanoseconds == other._nanoseconds
         )
 
-    def exact_eq(self, other: ItemizedDelta, /) -> bool:
-        """Deprecated alias for :meth:`strict_eq`.
-
-        .. deprecated:: 0.11
-           Use :meth:`strict_eq` instead.
-        """
-        result = self.strict_eq(other)
-        warn_deprecated(
-            "exact_eq() is deprecated; use strict_eq() instead",
-            stacklevel=2,
-        )
-        return result
-
     def __abs__(self) -> ItemizedDelta:
         """If the components are negative, return the positive version
 
@@ -1380,8 +1263,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         minutes: int = UNSET,
         seconds: int = UNSET,
         nanoseconds: int = UNSET,
-        month_composition_ok: bool = UNSET,
-        **kwargs: Any,
+        month_composition_ok: bool = False,
     ) -> ItemizedDelta:
         """Add a delta to this one component-wise, returning a new delta.
 
@@ -1391,13 +1273,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         ``1 hour 90 minutes``, and ``1 month`` plus ``30 days`` is
         ``1 month 30 days``. To balance it, call :meth:`in_units` on the
         result.
-
-        .. deprecated:: 0.11
-           ``relative_to=``, with ``in_units=``, ``round_mode=``,
-           ``round_increment=``, ``naive_arithmetic_ok=``, and
-           ``stale_offset_ok=``. Call :meth:`in_units` on the result
-           instead. ``cal_unit_composition_ok=`` is now
-           ``month_composition_ok=``.
 
         >>> ItemizedDelta(hours=1).add(minutes=30)
         ItemizedDelta("PT1h30m")
@@ -1429,7 +1304,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                     "nanoseconds": nanoseconds,
                 },
                 month_composition_ok=month_composition_ok,
-                kwargs=kwargs,
                 negate=False,
             ),
         )
@@ -1447,8 +1321,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         minutes: int = UNSET,
         seconds: int = UNSET,
         nanoseconds: int = UNSET,
-        month_composition_ok: bool = UNSET,
-        **kwargs: Any,
+        month_composition_ok: bool = False,
     ) -> ItemizedDelta:
         """Subtract a delta from this one component-wise, returning a new
         delta.
@@ -1474,7 +1347,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                     "nanoseconds": nanoseconds,
                 },
                 month_composition_ok=month_composition_ok,
-                kwargs=kwargs,
                 negate=True,
             ),
         )
@@ -2279,19 +2151,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             and self._days == other._days
         )
 
-    def exact_eq(self, other: ItemizedDateDelta, /) -> bool:
-        """Deprecated alias for :meth:`strict_eq`.
-
-        .. deprecated:: 0.11
-           Use :meth:`strict_eq` instead.
-        """
-        result = self.strict_eq(other)
-        warn_deprecated(
-            "exact_eq() is deprecated; use strict_eq() instead",
-            stacklevel=2,
-        )
-        return result
-
     def __abs__(self) -> ItemizedDateDelta:
         """If the components are negative, return the positive version
 
@@ -2337,8 +2196,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         months: int = UNSET,
         weeks: int = UNSET,
         days: int = UNSET,
-        month_composition_ok: bool = UNSET,
-        **kwargs: Any,
+        month_composition_ok: bool = False,
     ) -> ItemizedDateDelta | ItemizedDelta:
         """Add a delta to this one component-wise, returning a new delta.
 
@@ -2351,13 +2209,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         ``1 hour 90 minutes``, and ``1 month`` plus ``30 days`` is
         ``1 month 30 days``. To balance it, call :meth:`in_units` on the
         result.
-
-        .. deprecated:: 0.11
-           ``relative_to=``, with ``in_units=``, ``round_mode=``,
-           ``round_increment=``, ``naive_arithmetic_ok=``, and
-           ``stale_offset_ok=``. Call :meth:`in_units` on the result
-           instead. ``cal_unit_composition_ok=`` is now
-           ``month_composition_ok=``.
 
         >>> ItemizedDateDelta(weeks=1).add(days=3)
         ItemizedDateDelta("P1w3d")
@@ -2386,7 +2237,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 "days": days,
             },
             month_composition_ok=month_composition_ok,
-            kwargs=kwargs,
             negate=False,
         )
 
@@ -2399,8 +2249,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         months: int = UNSET,
         weeks: int = UNSET,
         days: int = UNSET,
-        month_composition_ok: bool = UNSET,
-        **kwargs: Any,
+        month_composition_ok: bool = False,
     ) -> ItemizedDateDelta | ItemizedDelta:
         """Subtract a delta from this one component-wise, returning a new
         delta.
@@ -2420,7 +2269,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
                 "days": days,
             },
             month_composition_ok=month_composition_ok,
-            kwargs=kwargs,
             negate=True,
         )
 
