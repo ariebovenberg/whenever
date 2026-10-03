@@ -605,7 +605,7 @@ class TestFormatIso:
         with pytest.raises(ValueError, match="invalid sep"):
             dt.format_iso(sep=1)  # type: ignore[arg-type]
 
-        # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
+        # tz is not a format_iso() keyword on any type
         with pytest.raises(TypeError, match="tz"):
             dt.format_iso(tz="always")  # type: ignore[call-arg]
 
@@ -1322,7 +1322,7 @@ class TestConversion:
             d.to_tz("America/Nowhere")
 
     @system_tz("America/New_York")
-    def test_to_system_tz(self):
+    def test_to_tz_with_system_tz(self):
         d = Instant.from_utc(2020, 8, 15, 20)
         assert d.to_tz(SYSTEM_TZ).strict_eq(
             ZonedDateTime(2020, 8, 15, 16, tz="America/New_York")
