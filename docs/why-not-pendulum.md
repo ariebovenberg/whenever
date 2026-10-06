@@ -37,6 +37,7 @@ None of these can be fixed without breaking existing code.
 A sample of behavior you can reproduce today:
 
 - [`dt + timedelta` *inspects the call stack* to decide the outcome](#pendulum-add-stack)
+  (fixed on `master`)
 - [The result of `parse("12:00")` depends on *when* you run it](#pendulum-parse-now)
 - [`today("Africa/Cairo")` is *yesterday*](#pendulum-today-yesterday), for
   one whole day each year
@@ -132,6 +133,21 @@ caller whose expectations have to be guessed. And the guessing isn't free: it
 runs on every `+`, every `astimezone()` and every `in_tz()`, and inspects
 the call stack every time.
 
+:::{admonition} Fixed on `master`, not yet released
+:class: note
+
+[#1032](https://github.com/python-pendulum/pendulum/pull/1032) removes the stack inspection:
+`astimezone()` now passes the standard library a plain `datetime`.
+That fixes the caller-name and `dateutil` cases above, and most of the slowdown below.
+It can't fix code Pendulum doesn't control.
+Anything handed a `DateTime` as a `datetime` still gets Pendulum's `+`:
+
+```python
+>>> datetime.astimezone(pendulum.datetime(2024, 7, 1, 12, tz="UTC"), ZoneInfo("Europe/Paris"))
+DateTime(2024, 7, 1, 12, 0, 0)                 # naive, and not 14:00
+```
+:::
+
 (pendulum-performance)=
 
 ### Every addition pays for the guess
@@ -154,6 +170,8 @@ The stack inspection is most of the cost. Every `+` walks the stack, and since
 `ZoneInfo.fromutc()` calls `+`, so does every `astimezone()` and `in_tz()`.
 `traceback` then consults `linecache`, which `stat()`s the source file.
 That is *at least one system call per datetime addition*.
+Without the stack inspection ([#1032](https://github.com/python-pendulum/pendulum/pull/1032)), `+` is still about 120 times slower:
+the rest is Pendulum's arithmetic, written in pure Python.
 
 (pendulum-v2-v3)=
 
@@ -171,7 +189,7 @@ The workaround appears in the same release.
 :::{admonition} How `whenever` does it
 :class: tip
 
-`whenever`'s types don't subclass `datetime`, so `+` means one thing.
+`whenever`'s types don't subclass `datetime`, so no code can mistake one for a `datetime` and apply the wrong arithmetic.
 [Converting to and from the standard library](guide/stdlib-convert.md) is an explicit step.
 It's also part of why `whenever`'s own types {ref}`can't be subclassed <faq-why-no-subclassing>`.
 :::
@@ -550,6 +568,17 @@ as do floor division, modulo, and `divmod()`
 these operators ignore months altogether,
 [#799](https://github.com/python-pendulum/pendulum/issues/799)).
 
+Code written against `timedelta` can't rely on its guarantees either.
+Pendulum skips `timedelta`'s normalization, so `.seconds` can be negative,
+and a standard library `datetime` reads a month as 30 days:
+
+```python
+>>> timedelta(seconds=-1).seconds, pendulum.duration(seconds=-1).seconds
+(86399, -1)                                    # timedelta guarantees 0 <= seconds < 86400
+>>> datetime(2024, 1, 31) + month              # Pendulum's DateTime gives Feb 29
+datetime.datetime(2024, 3, 1, 0, 0)
+```
+
 (pendulum-implicit-arithmetic)=
 
 #### Calendar and exact arithmetic are chosen implicitly
@@ -722,7 +751,9 @@ and several already have a proposed fix.
 |---|---|---|---|
 | `Timezone` and `FixedTimezone` are unhashable | [#1008](https://github.com/python-pendulum/pendulum/issues/1008) | Sep 2026 | [#1021](https://github.com/python-pendulum/pendulum/pull/1021) (merged, unreleased) |
 | Values carrying a non-Pendulum `tzinfo` are treated as naive | [#527](https://github.com/python-pendulum/pendulum/issues/527), [#646](https://github.com/python-pendulum/pendulum/issues/646) | Dec 2020 | — |
-| `astimezone()` to a `dateutil` zone loses the time zone | [#820](https://github.com/python-pendulum/pendulum/issues/820) | Apr 2024 | [#1006](https://github.com/python-pendulum/pendulum/pull/1006) |
+| `astimezone()` to a `dateutil` zone loses the time zone | [#820](https://github.com/python-pendulum/pendulum/issues/820) | Apr 2024 | [#1032](https://github.com/python-pendulum/pendulum/pull/1032) (merged, unreleased) |
+| On PyPy, `astimezone()` and `in_tz()` are an hour off around DST transitions | — | unreported | [#1032](https://github.com/python-pendulum/pendulum/pull/1032) (merged, unreleased) |
+| On PyPy, `astimezone()` to a non-Pendulum time zone raises `ValueError` | — | unreported | [#1032](https://github.com/python-pendulum/pendulum/pull/1032) (merged, unreleased) |
 | A `dateutil` zone passed as `tz=` becomes `+00:00` | — | unreported | — |
 | `Duration / timedelta`, `//`, `%`, and `divmod()` raise `AttributeError` | [#382](https://github.com/python-pendulum/pendulum/issues/382) | Jun 2019 | — |
 | `//`, `%`, and `divmod()` ignore calendar units | [#799](https://github.com/python-pendulum/pendulum/issues/799) | Jan 2024 | — |
@@ -1033,6 +1064,8 @@ class, removed the transition-rule API, and replaced the C extension with a
 Rust one. Development slowed after that release. Since 2025 the project lives under the `python-pendulum`
 organization. Its new maintainers picked up a codebase they didn't write,
 and have kept it going: 3.1 shipped in April 2025 and 3.2 in January 2026.
+Fixes are being merged too, including the removal of the stack inspection
+([#1032](https://github.com/python-pendulum/pendulum/pull/1032)) in October 2026.
 
 Their options are limited:
 most of what this page describes follows from the
@@ -1054,9 +1087,10 @@ And guessing (at the caller's intent, at missing time zones, at incomplete input
 can't be patched into correctness.
 Reversing any of these decisions would break the code that depends on them.
 
-`whenever` makes the opposite trade: there's no drop-in path,
-and you have to decide what each value in your program actually is.
-In exchange, nothing is guessed.
+`whenever` makes the opposite trade: there's no drop-in path.
+In return, you decide what each value in your program actually is,
+and its type holds you to it. Nothing is guessed silently.
 
 [^versions]: This page is up to date as of Pendulum 3.2.0. Every example was
     run against that version on CPython 3.14, unless stated otherwise.
+    Fixes merged since are noted where relevant.
