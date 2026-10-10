@@ -156,6 +156,7 @@ Browse the sidebar to navigate the documentation, or jump directly to a topic be
    examples
    performance
    design
+   stability
    faq
    glossary
 
