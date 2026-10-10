@@ -202,10 +202,22 @@ call-local escape
   See {ref}`warnings`.
 
 compatibility shim
-  A deprecated spelling kept through a deprecation cycle: it does what its
-  replacement does and emits `WheneverDeprecationWarning`. 1.0 ships none;
-  the 0.11.0 changelog entry lists the ones it removed.
+  A deprecated spelling: it does what its replacement does and emits
+  `WheneverDeprecationWarning`. 1.0 ships none; the 0.11.0 changelog entry
+  lists the ones it removed.
   Also called *wrapper*, *alias*, and *legacy path*.
+
+deprecation
+  The status of an API that a better one replaces: documented with its
+  replacement, marked `@deprecated` in the type stubs, warning with
+  `WheneverDeprecationWarning` when called, and supported for every 1.x
+  release.
+  See {ref}`stability`.
+
+provisional API
+  A new API that may change incompatibly in a minor release, for at most
+  two minor releases after it ships. Its documentation says so.
+  See {ref}`stability`.
 
 time patch
   A test-only override of the current time as Whenever sees it, created by
