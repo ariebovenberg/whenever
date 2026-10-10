@@ -3,8 +3,10 @@
 ## 1.0.0b0 (2026-10-??)
 
 The API 0.11 established, with its compatibility shims removed.
-From here on, changes are additive and backwards compatible: an API that
-becomes discouraged gets a soft deprecation and stays supported.
+From here on, code that works with 1.0 keeps working on every 1.x release.
+The new [stability policy](https://whenever.readthedocs.io/en/latest/stability.html)
+spells out what that covers: additions, deprecation, warnings, and the
+exceptions.
 
 **Removed**
 
@@ -34,7 +36,8 @@ exceptions that name their replacement: the pattern letters `h`, `hh`, and
 - `Instant` pickles written before 0.8.0 no longer load. Pickles written
   by 0.8.0 or later do; see the compatibility section of the pickling guide.
 
-`WheneverDeprecationWarning` stays, for soft deprecations to come.
+`WheneverDeprecationWarning` stays: a deprecated API emits it, and stays
+supported for the rest of 1.x.
 
 **Changed**
 
