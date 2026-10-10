@@ -6,14 +6,12 @@ be used to format values to strings or parse strings into values.
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Iterable
 from functools import lru_cache
 from itertools import pairwise
 from typing import TYPE_CHECKING, Literal
 
 from ._common import (
-    WheneverWarning,
     format_offset_secs,
     round_offset_to_minute,
 )
@@ -1307,24 +1305,6 @@ def validate_fields(
             raise ValueError(f"{type_name} does not support specifier {el!r}")
 
 
-def warn_pattern(elements: Sequence[_Element], *, stacklevel: int) -> None:
-    """Emit the pattern warnings. Called after a successful format or
-    parse: a call that raises warns about nothing."""
-    has_12h = any(
-        isinstance(el, (_Hour12, _Hour12Unpadded)) for el in elements
-    )
-    has_ampm = any(isinstance(el, (_AmPmShort, _AmPmFull)) for el in elements)
-    if has_12h and not has_ampm:
-        warnings.warn(
-            "the pattern uses a 12-hour clock ('i' or 'ii') without an "
-            "AM/PM specifier ('a' or 'aa'); a value such as '03:00' could "
-            "mean 3 AM or 3 PM: add 'a' or 'aa', or use the 24-hour clock "
-            "('H' or 'HH')",
-            WheneverWarning,
-            stacklevel=stacklevel,
-        )
-
-
 # --- Format ---
 
 
@@ -1376,6 +1356,13 @@ def parse_fields(
     s: str,
 ) -> _ParseState:
     """Parse a string using compiled pattern elements."""
+    if any(
+        isinstance(el, (_Hour12, _Hour12Unpadded)) for el in elements
+    ) and not any(isinstance(el, (_AmPmShort, _AmPmFull)) for el in elements):
+        raise ValueError(
+            "12-hour clock (i/ii) requires AM/PM (a/aa) to parse: "
+            "add a/aa, or use the 24-hour clock (H/HH)"
+        )
     if not isinstance(s, str):
         raise TypeError("parse() argument must be a string")
     if not s.isascii():
