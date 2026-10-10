@@ -997,7 +997,7 @@ class TestConversion:
             big_zdt.to_fixed_offset(hours(4))
 
     @system_tz("Europe/Amsterdam")
-    def test_to_system_tz(self):
+    def test_to_tz_with_system_tz(self):
         d = ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
         assert d.to_tz(SYSTEM_TZ).strict_eq(
             ZonedDateTime(2023, 10, 28, 2, 15, tz="Europe/Amsterdam")
@@ -1275,7 +1275,7 @@ class TestFormatIso:
         with pytest.raises(
             TypeError, match="unexpected keyword argument 'foo'"
         ):
-            ZonedDateTime(2020, 8, 15, tz="UTC").format_iso(foo=1)  # type: ignore[call-overload]
+            ZonedDateTime(2020, 8, 15, tz="UTC").format_iso(foo=1)  # type: ignore[call-arg]
 
     @pytest.mark.parametrize(
         "d, expected",
@@ -1436,19 +1436,19 @@ class TestFormatIso:
 
     def test_invalid(self):
         with pytest.raises(ValueError, match="unit"):
-            ZDT1.format_iso(unit="foo")  # type: ignore[call-overload]
+            ZDT1.format_iso(unit="foo")  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="invalid unit"):
-            ZDT1.format_iso(unit=True)  # type: ignore[call-overload]
+            ZDT1.format_iso(unit=True)  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="sep"):
-            ZDT1.format_iso(sep="_")  # type: ignore[call-overload]
+            ZDT1.format_iso(sep="_")  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="invalid sep"):
-            ZDT1.format_iso(sep=1)  # type: ignore[call-overload]
+            ZDT1.format_iso(sep=1)  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="tz_id_display"):
-            ZDT1.format_iso(tz_id_display="sometimes")  # type: ignore[call-overload]
+            ZDT1.format_iso(tz_id_display="sometimes")  # type: ignore[arg-type]
 
     def test_str_without_tz_id(self):
         """str() never raises: without an ID it gives the offset form."""
@@ -2578,7 +2578,7 @@ class TestReplace:
         with pytest.raises(
             ValueError, match=r"^invalid disambiguation: 'bogus'$"
         ):
-            d.replace(hour=2, disambiguation="bogus")  # type: ignore[call-overload]
+            d.replace(hour=2, disambiguation="bogus")  # type: ignore[arg-type]
 
     @pytest.mark.parametrize(
         "tz",
@@ -2769,13 +2769,13 @@ class TestReplace:
         d = ZonedDateTime(2020, 8, 15, tz="Europe/Amsterdam")
 
         with pytest.raises(TypeError, match="tzinfo"):
-            d.replace(tzinfo=py_timezone.utc, disambiguation="compatible")  # type: ignore[call-overload]
+            d.replace(tzinfo=py_timezone.utc, disambiguation="compatible")  # type: ignore[call-arg]
 
         with pytest.raises(TypeError, match="fold"):
-            d.replace(fold=1, disambiguation="compatible")  # type: ignore[call-overload]
+            d.replace(fold=1, disambiguation="compatible")  # type: ignore[call-arg]
 
         with pytest.raises(TypeError, match="foo"):
-            d.replace(foo="bar", disambiguation="compatible")  # type: ignore[call-overload]
+            d.replace(foo="bar", disambiguation="compatible")  # type: ignore[call-arg]
 
         with pytest.raises(TimeZoneNotFoundError, match="Nowhere"):
             d.replace(tz="Nowhere", disambiguation="compatible")
@@ -2868,16 +2868,16 @@ class TestReplace:
     def test_date_invalid(self):
         d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
         with pytest.raises(TypeError, match="must be a Date"):
-            d.replace_date(object(), disambiguation="compatible")  # type: ignore[call-overload]
+            d.replace_date(object(), disambiguation="compatible")  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="disambig"):
-            d.replace_date(Date(2020, 8, 15), disambiguation="foo")  # type: ignore[call-overload]
+            d.replace_date(Date(2020, 8, 15), disambiguation="foo")  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="got 2|foo"):
-            d.replace_date(Date(2020, 8, 15), disambiguation="raise", foo=4)  # type: ignore[call-overload]
+            d.replace_date(Date(2020, 8, 15), disambiguation="raise", foo=4)  # type: ignore[call-arg]
 
         with pytest.raises(TypeError, match="foo"):
-            d.replace_date(Date(2020, 8, 15), foo="raise")  # type: ignore[call-overload]
+            d.replace_date(Date(2020, 8, 15), foo="raise")  # type: ignore[call-arg]
 
     def test_date_out_of_range_due_to_offset(self):
         d = ZonedDateTime(2020, 1, 1, tz="Asia/Tokyo")
@@ -2987,16 +2987,16 @@ class TestReplace:
     def test_time_invalid(self):
         d = ZonedDateTime(2020, 8, 15, 14, tz="Europe/Amsterdam")
         with pytest.raises(TypeError, match="must be a Time"):
-            d.replace_time(object(), disambiguation="later")  # type: ignore[call-overload]
+            d.replace_time(object(), disambiguation="later")  # type: ignore[arg-type]
 
         with pytest.raises(ValueError, match="disambig"):
-            d.replace_time(Time(1, 2, 3), disambiguation="foo")  # type: ignore[call-overload]
+            d.replace_time(Time(1, 2, 3), disambiguation="foo")  # type: ignore[arg-type]
 
         with pytest.raises(TypeError, match="got 2|foo"):
-            d.replace_time(Time(1, 2, 3), disambiguation="raise", foo=4)  # type: ignore[call-overload]
+            d.replace_time(Time(1, 2, 3), disambiguation="raise", foo=4)  # type: ignore[call-arg]
 
         with pytest.raises(TypeError, match="foo"):
-            d.replace_time(Time(1, 2, 3), foo="raise")  # type: ignore[call-overload]
+            d.replace_time(Time(1, 2, 3), foo="raise")  # type: ignore[call-arg]
 
     def test_time_out_of_range_due_to_offset(self):
         d = ZonedDateTime(1, 1, 1, hour=23, tz="Asia/Tokyo")

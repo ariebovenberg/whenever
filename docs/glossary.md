@@ -202,10 +202,22 @@ call-local escape
   See {ref}`warnings`.
 
 compatibility shim
-  A deprecated spelling kept until 1.0: it does what its replacement does
-  and emits `WheneverDeprecationWarning`. The changelog's migration table
-  lists each one.
+  A deprecated spelling: it does what its replacement does and emits
+  `WheneverDeprecationWarning`. 1.0 ships none; the 0.11.0 changelog entry
+  lists the ones it removed.
   Also called *wrapper*, *alias*, and *legacy path*.
+
+deprecation
+  The status of an API that a better one replaces: documented with its
+  replacement, marked `@deprecated` in the type stubs, warning with
+  `WheneverDeprecationWarning` when called, and supported for every 1.x
+  release.
+  See {ref}`stability`.
+
+provisional API
+  A new API that may change incompatibly in a minor release, for at most
+  two minor releases after it ships. Its documentation says so.
+  See {ref}`stability`.
 
 time patch
   A test-only override of the current time as Whenever sees it, created by
@@ -241,9 +253,9 @@ optional seconds
   See {ref}`pattern-format`.
 
 12-hour clock
-  Hours 1 through 12 together with an AM/PM specifier, written with `i`/`ii`
-  and `a`/`aa`. A pattern with `i`/`ii` but no AM/PM specifier warns; an
-  AM/PM specifier without `i`/`ii` doesn't.
+  Hours 1 through 12, written with `i`/`ii`, together with an AM/PM
+  specifier (`a`/`aa`). Formatting may leave the specifier out; parsing
+  requires it.
   Also called *12-hour format*, *12-hour time*, and *AM/PM time*.
   See {ref}`pattern-format`.
 

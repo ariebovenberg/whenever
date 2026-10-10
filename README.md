@@ -44,10 +44,6 @@ Rather not depend on a Rust extension? A **pure-Python backend** is available to
 
 </div>
 
-> ⚠️ Note: 0.11 ships the 1.0 API. The deprecated spellings keep working
-> as compatibility shims until 1.0, and the changelog's migration table lists each one.
-> Leave a ⭐️ on GitHub if you'd like to see how this project develops!
-
 ## Why not the standard library?
 
 Over 20+ years, Python's `datetime` has grown
@@ -198,11 +194,9 @@ or [API reference](https://whenever.readthedocs.io/en/latest/reference/datetime.
 ## Stability policy
 
 *Whenever* follows semantic versioning.
-Version 0.11 establishes the 1.0 API: unless significant issues arise,
-1.0 differs from it only by removing the spellings 0.11 deprecates.
-Breaking changes are meticulously explained in the changelog.
-Since the API is fully typed, your typechecker and/or IDE
-will help you adjust to any API changes.
+Code that works with 1.0 keeps working on every 1.x release:
+changes are additive, and deprecated APIs stay supported.
+For the details, see the [stability policy](https://whenever.readthedocs.io/en/latest/stability.html).
 
 ## License
 

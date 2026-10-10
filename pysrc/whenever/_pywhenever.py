@@ -72,23 +72,19 @@ from ._common import (
     format_offset_secs,
     invalid,
     mk_fixed_tzinfo,
-    normalize_renamed_keyword,
     replace_fields,
     round_offset_to_minute,
     split_timestamp,
     timestamp_from_parts,
     tzid_display,
     unpack_pickle,
-    warn_deprecated,
     warn_lossy_stdlib_subclass,
-    warn_renamed_keyword,
 )
 from ._format import (
     compile_pattern,
     format_fields,
     parse_fields,
     validate_fields,
-    warn_pattern,
 )
 from ._math import (
     DATE_DELTA_UNITS,
@@ -211,7 +207,6 @@ __all__ = (
     "_unpkl_offset",
     "_unpkl_tdelta",
     "_unpkl_time",
-    "_unpkl_utc",
     "_unpkl_zoned",
 )
 
@@ -230,66 +225,10 @@ IMPLICIT_DISAMBIGUATION_MSG = (
     "https://whenever.readthedocs.io/en/latest/guide/"
     "resolving-local-times.html"
 )
-INTEGER_OFFSET_DEPRECATION_MSG = (
-    "integer offsets are deprecated because their unit is implicit; "
-    "pass a TimeDelta instead, for example hours(2)"
-)
 
 
 def _load_tz(tz: Any, /) -> TimeZone:
     return get_system_tz() if tz is SYSTEM_TZ else get_tz(tz)
-
-
-def _normalize_disambiguation(
-    value: Any,
-    kwargs: dict[str, Any],
-    /,
-    *,
-    function_name: str,
-) -> tuple[Any, bool]:
-    """The policy, and whether it came as ``disambiguate=``: the caller
-    validates, computes, then warns with ``_warn_disambiguate``.
-    """
-    return normalize_renamed_keyword(
-        value,
-        kwargs,
-        function_name=function_name,
-        new_name="disambiguation",
-        old_name="disambiguate",
-    )
-
-
-def _warn_disambiguate(*, stacklevel: int) -> None:
-    warn_renamed_keyword(
-        "disambiguation", "disambiguate", stacklevel=stacklevel + 1
-    )
-
-
-def _normalize_pattern(
-    value: Any,
-    kwargs: dict[str, Any],
-    /,
-) -> tuple[str, bool]:
-    """The pattern, and whether it came as ``format=``: the caller parses,
-    then warns with ``_warn_format``.
-    """
-    value, renamed = normalize_renamed_keyword(
-        value,
-        kwargs,
-        function_name="parse",
-        new_name="pattern",
-        old_name="format",
-    )
-    check_no_kwargs(kwargs, "parse")
-    if value is UNSET:
-        raise TypeError(
-            "parse() missing 1 required keyword-only argument: 'pattern'"
-        )
-    return cast(str, value), renamed
-
-
-def _warn_format(*, stacklevel: int) -> None:
-    warn_renamed_keyword("pattern", "format", stacklevel=stacklevel + 1)
 
 
 def _warn_implicit_disambiguation(*, stacklevel: int) -> None:
@@ -601,24 +540,6 @@ class Date(_Base):
     __init__ = add_alternate_constructors(__init__, _date)
 
     @classmethod
-    def today_in_system_tz(cls) -> Date:
-        """Get the current date in the system time zone.
-
-        .. deprecated:: 0.11
-           Use ``Date.today(SYSTEM_TZ)`` instead.
-
-        Equivalent to ``today(SYSTEM_TZ)``.
-
-        >>> Date.today_in_system_tz()
-        Date("2021-01-02")
-        """
-        warn_deprecated(
-            "today_in_system_tz() is deprecated; use today(SYSTEM_TZ) instead",
-            stacklevel=2,
-        )
-        return cls.today(SYSTEM_TZ)
-
-    @classmethod
     def today(cls, tz: str | _SystemTZ, /) -> Date:
         """Get the current date in the given time zone.
         Pass ``SYSTEM_TZ`` for the system time zone.
@@ -924,29 +845,22 @@ class Date(_Base):
         >>> Date(2024, 3, 15).format("DD MMM YYYY")
         '15 Mar 2024'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "Date")
         d = self._py_date
-        result = format_fields(
+        return format_fields(
             elements,
             year=d.year,
             month=d.month,
             day=d.day,
             weekday=d.weekday(),
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any) -> Date:
+    def parse(cls, s: str, /, *, pattern: str) -> Date:
         """Parse a date from a custom pattern string.
 
         See :ref:`pattern-format` for details.
@@ -956,7 +870,6 @@ class Date(_Base):
         >>> Date.parse("15 Mar 2024", pattern="DD MMM YYYY")
         Date("2024-03-15")
         """
-        pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "Date")
         state = parse_fields(elements, s)
@@ -968,9 +881,6 @@ class Date(_Base):
             and result._py_date.weekday() != state.weekday
         ):
             raise ValueError("weekday does not match the date")
-        warn_pattern(elements, stacklevel=3)
-        if renamed:
-            _warn_format(stacklevel=2)
         return result
 
     if not TYPE_CHECKING:  # for a nice autodoc
@@ -1503,29 +1413,22 @@ class Time(_Base):
         >>> Time(14, 30).format("ii:mm aa")
         '02:30 PM'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "Time")
         t = self._py
-        result = format_fields(
+        return format_fields(
             elements,
             hour=t.hour,
             minute=t.minute,
             second=t.second,
             nanos=self._nanos,
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any) -> Time:
+    def parse(cls, s: str, /, *, pattern: str) -> Time:
         """Parse a time from a custom pattern string.
 
         See :ref:`pattern-format` for details.
@@ -1535,7 +1438,6 @@ class Time(_Base):
         >>> Time.parse("02:30 PM", pattern="ii:mm aa")
         Time("14:30:00")
         """
-        pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "Time")
         state = parse_fields(elements, s)
@@ -1545,9 +1447,6 @@ class Time(_Base):
             second=state.second or 0,
             nanosecond=state.nanos,
         )
-        warn_pattern(elements, stacklevel=3)
-        if renamed:
-            _warn_format(stacklevel=2)
         return result
 
     if not TYPE_CHECKING:  # for a nice autodoc
@@ -2879,7 +2778,7 @@ class _ExactTime(_BasicConversions):
     _STRICT_EQ_TYPE_MSG: ClassVar[str]
 
     def timestamp(self, *, unit: TimestampUnitStr = "second") -> int:
-        """The UNIX timestamp in the requested unit. Inverse of :meth:`from_timestamp`.
+        """The UNIX timestamp in the requested unit. Inverse of :meth:`Instant.from_timestamp`.
 
         >>> Instant.from_utc(1970, 1, 1).timestamp()
         0
@@ -2905,30 +2804,6 @@ class _ExactTime(_BasicConversions):
             unit,
         )
 
-    def timestamp_millis(self) -> int:
-        """Like :meth:`timestamp`, but with millisecond precision.
-
-        .. deprecated:: 0.11
-           Use ``timestamp(unit="millisecond")`` instead.
-        """
-        warn_deprecated(
-            "timestamp_millis() is deprecated; use timestamp(unit='millisecond') instead",
-            stacklevel=2,
-        )
-        return self.timestamp(unit="millisecond")
-
-    def timestamp_nanos(self) -> int:
-        """Like :meth:`timestamp`, but with nanosecond precision.
-
-        .. deprecated:: 0.11
-           Use ``timestamp(unit="nanosecond")`` instead.
-        """
-        warn_deprecated(
-            "timestamp_nanos() is deprecated; use timestamp(unit='nanosecond') instead",
-            stacklevel=2,
-        )
-        return self.timestamp(unit="nanosecond")
-
     @overload
     def to_fixed_offset(self, /) -> OffsetDateTime: ...
 
@@ -2951,7 +2826,6 @@ class _ExactTime(_BasicConversions):
             shifted = self._py_dt.astimezone(tzinfo)
         except OverflowError:
             raise ValueError(RANGE_MSG) from None
-        _warn_integer_offset(offset, stacklevel=3)
         return OffsetDateTime._from_py_unchecked(shifted, self._nanos)
 
     def to_tz(self, tz: str | _SystemTZ, /) -> ZonedDateTime:
@@ -2967,18 +2841,6 @@ class _ExactTime(_BasicConversions):
         return ZonedDateTime._from_py_unchecked(
             _tz.convert(self._py_dt), self._nanos, _tz
         )
-
-    def to_system_tz(self) -> ZonedDateTime:
-        """Convert to a ZonedDateTime of the system time zone.
-
-        .. deprecated:: 0.11
-           Use ``to_tz(SYSTEM_TZ)`` instead.
-        """
-        warn_deprecated(
-            "to_system_tz() is deprecated; use to_tz(SYSTEM_TZ) instead",
-            stacklevel=2,
-        )
-        return self.to_tz(SYSTEM_TZ)
 
     def strict_eq(self, other: Any, /) -> bool:
         """Compare two values, including what ``==`` ignores.
@@ -3010,19 +2872,6 @@ class _ExactTime(_BasicConversions):
             other._py_dt.utcoffset(),
             other._nanos,
         )
-
-    def exact_eq(self, other: Any, /) -> bool:
-        """Deprecated alias for :meth:`strict_eq`.
-
-        .. deprecated:: 0.11
-           Use :meth:`strict_eq` instead.
-        """
-        result = self.strict_eq(other)
-        warn_deprecated(
-            "exact_eq() is deprecated; use strict_eq() instead",
-            stacklevel=2,
-        )
-        return result
 
     def difference(
         self,
@@ -3315,38 +3164,6 @@ class Instant(_ExactTime):
         secs, nanos = split_timestamp(value, unit)
         return cls._from_py_unchecked(_from_epoch_utc(secs), nanos)
 
-    @classmethod
-    def from_timestamp_millis(cls, value: int, /) -> Instant:
-        """Create an Instant from a UNIX timestamp (in milliseconds).
-
-        .. deprecated:: 0.11
-           Use ``from_timestamp(..., unit="millisecond")`` instead.
-
-        The inverse of the ``timestamp_millis()`` method.
-        """
-        result = cls.from_timestamp(value, unit="millisecond")
-        warn_deprecated(
-            "from_timestamp_millis() is deprecated; use from_timestamp(..., unit='millisecond') instead",
-            stacklevel=2,
-        )
-        return result
-
-    @classmethod
-    def from_timestamp_nanos(cls, value: int, /) -> Instant:
-        """Create an Instant from a UNIX timestamp (in nanoseconds).
-
-        .. deprecated:: 0.11
-           Use ``from_timestamp(..., unit="nanosecond")`` instead.
-
-        The inverse of the ``timestamp_nanos()`` method.
-        """
-        result = cls.from_timestamp(value, unit="nanosecond")
-        warn_deprecated(
-            "from_timestamp_nanos() is deprecated; use from_timestamp(..., unit='nanosecond') instead",
-            stacklevel=2,
-        )
-        return result
-
     def _init_from_py(self, d: _datetime) -> None:
         py_dt = _strip_subclasses(d)
         if py_dt.utcoffset() is None:
@@ -3458,15 +3275,10 @@ class Instant(_ExactTime):
         >>> Instant.from_utc(2024, 3, 15, 14, 30).format("YYYY-MM-DD HH:mm:ssXXX")
         '2024-03-15 14:30:00Z'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "Instant")
         d = self._py_dt
-        result = format_fields(
+        return format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -3478,16 +3290,12 @@ class Instant(_ExactTime):
             nanos=self._nanos,
             offset_secs=0,
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(
-        cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any
-    ) -> Instant:
+    def parse(cls, s: str, /, *, pattern: str) -> Instant:
         """Parse an instant from a custom pattern string.
 
         The pattern **must** include an offset specifier (``x``/``X``)
@@ -3506,7 +3314,6 @@ class Instant(_ExactTime):
         >>> Instant.parse("2024-03-15 14:30+05:30", pattern="YYYY-MM-DD HH:mmxxx")
         Instant("2024-03-15 09:00:00Z")
         """
-        pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "Instant")
         state = parse_fields(elements, s)
@@ -3526,9 +3333,6 @@ class Instant(_ExactTime):
         if state.weekday is not None and local.weekday() != state.weekday:
             raise ValueError("weekday does not match the date")
         dt = check_utc_bounds(local).astimezone(_UTC)
-        warn_pattern(elements, stacklevel=3)
-        if renamed:
-            _warn_format(stacklevel=2)
         return cls._from_py_unchecked(dt, state.nanos)
 
     if not TYPE_CHECKING:  # for a nicer autodoc
@@ -3697,19 +3501,6 @@ class Instant(_ExactTime):
         )
 
 
-# Backwards compatibility for instances pickled before 0.8.0
-def _unpkl_utc(data: bytes) -> Instant:
-    secs, nanos = unpack_pickle("<qL", data)
-    if nanos >= 1_000_000_000:
-        raise ValueError("invalid pickle data")
-    try:
-        return Instant._from_py_unchecked(
-            _from_epoch_utc(secs - 62_135_683_200), nanos
-        )
-    except ValueError:
-        raise ValueError("invalid pickle data") from None
-
-
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
 def _unpkl_inst(data: bytes) -> Instant:
@@ -3798,7 +3589,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             _datetime(year, month, day, hour, minute, second, 0, tzinfo)
         )
         self._nanos = check_nanos(nanosecond)
-        _warn_integer_offset(offset, stacklevel=4)
 
     __init__ = add_alternate_constructors(__init__, _datetime)
 
@@ -3828,7 +3618,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         result = cls._from_py_unchecked(
             _from_epoch_offset(secs, offset_secs), nanos
         )
-        _warn_integer_offset(offset, stacklevel=3)
         if not stale_offset_ok:
             warn(
                 OFFSET_NOW_STALE_MSG,
@@ -3895,118 +3684,6 @@ class OffsetDateTime(_ExactAndLocalTime):
     def _init_from_iso(self, s: str) -> None:
         self._py_dt, self._nanos = offset_dt_from_iso(s)
 
-    @classmethod
-    def from_timestamp(
-        cls,
-        value: int | float,
-        /,
-        *,
-        offset: int | TimeDelta,
-        stale_offset_ok: bool = UNSET,
-    ) -> OffsetDateTime:
-        """Create an instance from a UNIX timestamp (in seconds).
-
-        .. deprecated:: 0.11
-           Create an :class:`Instant` and call ``to_fixed_offset()`` instead.
-
-        The inverse of the ``timestamp()`` method.
-
-        Warning
-        -------
-        Converting a UNIX timestamp to ``OffsetDateTime`` with a fixed UTC offset
-        is correct for that offset, but the offset may be stale for the region you
-        intend at that timestamp: a fixed offset contains no DST or other time zone
-        rules. Use ``Instant.from_timestamp(ts).to_tz('<tz>')`` if you know the
-        time zone, or ``Instant.from_timestamp()`` for exact time independent of
-        any time zone. Pass ``stale_offset_ok=True`` to suppress.
-        """
-        return cls._from_timestamp_deprecated(
-            value,
-            "second",
-            offset,
-            stale_offset_ok,
-            "OffsetDateTime.from_timestamp() is deprecated; use Instant.from_timestamp(...).to_fixed_offset(...) instead",
-        )
-
-    @classmethod
-    def from_timestamp_millis(
-        cls,
-        value: int,
-        /,
-        *,
-        offset: int | TimeDelta,
-        stale_offset_ok: bool = UNSET,
-    ) -> OffsetDateTime:
-        """Create an instance from a UNIX timestamp (in milliseconds).
-
-        .. deprecated:: 0.11
-           Use ``Instant.from_timestamp(..., unit="millisecond").to_fixed_offset()``.
-
-        The inverse of the ``timestamp_millis()`` method.
-
-        See :meth:`from_timestamp` for more information.
-        """
-        return cls._from_timestamp_deprecated(
-            value,
-            "millisecond",
-            offset,
-            stale_offset_ok,
-            "OffsetDateTime.from_timestamp_millis() is deprecated; use Instant.from_timestamp(..., unit='millisecond').to_fixed_offset(...) instead",
-        )
-
-    @classmethod
-    def from_timestamp_nanos(
-        cls,
-        value: int,
-        /,
-        *,
-        offset: int | TimeDelta,
-        stale_offset_ok: bool = UNSET,
-    ) -> OffsetDateTime:
-        """Create an instance from a UNIX timestamp (in nanoseconds).
-
-        .. deprecated:: 0.11
-           Use ``Instant.from_timestamp(..., unit="nanosecond").to_fixed_offset()``.
-
-        The inverse of the ``timestamp_nanos()`` method.
-
-        See :meth:`from_timestamp` for more information.
-        """
-        return cls._from_timestamp_deprecated(
-            value,
-            "nanosecond",
-            offset,
-            stale_offset_ok,
-            "OffsetDateTime.from_timestamp_nanos() is deprecated; use Instant.from_timestamp(..., unit='nanosecond').to_fixed_offset(...) instead",
-        )
-
-    @classmethod
-    def _from_timestamp_deprecated(
-        cls,
-        value: int | float,
-        unit: TimestampUnitStr,
-        offset: int | TimeDelta,
-        stale_offset_ok: bool,
-        deprecation: str,
-        /,
-    ) -> OffsetDateTime:
-        # Validate and compute first: a call that raises emits no warning.
-        secs, nanos = split_timestamp(value, unit)
-        tzinfo = _load_offset(offset)
-        try:
-            local = _from_epoch_utc(secs).astimezone(tzinfo)
-        except OverflowError:
-            raise ValueError(RANGE_MSG) from None
-        _warn_integer_offset(offset, stacklevel=4)
-        warn_deprecated(deprecation, stacklevel=3)
-        if not stale_offset_ok:
-            warn(
-                OFFSET_FROM_TIMESTAMP_STALE_MSG,
-                StaleOffsetWarning,
-                stacklevel=3,
-            )
-        return cls._from_py_unchecked(local, nanos)
-
     def _init_from_py(self, d: _datetime, **kwargs: Any) -> None:
         check_no_kwargs(kwargs, "OffsetDateTime")
         py_dt = _strip_subclasses(d)
@@ -4072,7 +3749,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         result = self._from_py_unchecked(
             check_utc_bounds(replace_fields(self._py_dt, **kwargs)), nanos
         )
-        _warn_integer_offset(offset, stacklevel=3)
         if not (offset_stated or stale_offset_ok):
             warn(
                 OFFSET_REPLACE_STALE_MSG,
@@ -4347,15 +4023,10 @@ class OffsetDateTime(_ExactAndLocalTime):
         ... )
         '2024-03-15 14:30+02:00'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "OffsetDateTime")
         d = self._py_dt
-        result = format_fields(
+        return format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -4367,16 +4038,12 @@ class OffsetDateTime(_ExactAndLocalTime):
             nanos=self._nanos,
             offset_secs=self._current_offset_secs(),
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(
-        cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any
-    ) -> OffsetDateTime:
+    def parse(cls, s: str, /, *, pattern: str) -> OffsetDateTime:
         """Parse an offset datetime from a custom pattern string.
 
         The pattern **must** include an offset specifier (``x``/``X``).
@@ -4392,7 +4059,6 @@ class OffsetDateTime(_ExactAndLocalTime):
         >>> OffsetDateTime.parse("2024-03-15 14:30+02:00", pattern="YYYY-MM-DD HH:mmxxx")
         OffsetDateTime("2024-03-15 14:30:00+02:00")
         """
-        pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "OffsetDateTime")
         state = parse_fields(elements, s)
@@ -4415,9 +4081,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             and result._py_dt.weekday() != state.weekday
         ):
             raise ValueError("weekday does not match the date")
-        warn_pattern(elements, stacklevel=3)
-        if renamed:
-            _warn_format(stacklevel=2)
         return result
 
     if not TYPE_CHECKING:  # for a nicer autodoc
@@ -4903,14 +4566,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         nanosecond: int = 0,
         tz: str | _SystemTZ,
         disambiguation: DisambiguationStr = UNSET,
-        **kwargs: Any,
     ) -> None:
-        disambiguation, renamed = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="ZonedDateTime",
-        )
-        check_no_kwargs(kwargs, "ZonedDateTime")
         self._nanos = check_nanos(nanosecond)
         self._py_dt, implicit = _resolve_disambiguation(
             _datetime(year, month, day, hour, minute, second),
@@ -4923,62 +4579,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         # One frame further: the alternate-constructor wrapper of __init__
         if implicit:
             _warn_implicit_disambiguation(stacklevel=3)
-        if renamed:
-            _warn_disambiguate(stacklevel=3)
 
     __init__ = add_alternate_constructors(__init__, _datetime)
-
-    @classmethod
-    def from_system_tz(
-        cls,
-        year: int,
-        month: int,
-        day: int,
-        hour: int = 0,
-        minute: int = 0,
-        second: int = 0,
-        *,
-        nanosecond: int = 0,
-        disambiguation: DisambiguationStr = UNSET,
-        **kwargs: Any,
-    ) -> ZonedDateTime:
-        """Create an instance in the system time zone.
-
-        .. deprecated:: 0.11
-           Use ``ZonedDateTime(..., tz=SYSTEM_TZ)`` instead.
-
-        Equivalent to ``ZonedDateTime(..., tz=SYSTEM_TZ)``.
-
-        >>> ZonedDateTime.from_system_tz(2020, 8, 15, hour=23, minute=12)
-        ZonedDateTime("2020-08-15 23:12:00+02:00[Europe/Berlin]")
-        """
-        disambiguation, renamed = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="from_system_tz",
-        )
-        check_no_kwargs(kwargs, "from_system_tz")
-        if disambiguation is UNSET:
-            disambiguation = "compatible"
-        # Validate and compute first: a call that raises emits no warning.
-        result = cls(
-            year,
-            month,
-            day,
-            hour,
-            minute,
-            second,
-            nanosecond=nanosecond,
-            tz=SYSTEM_TZ,
-            disambiguation=disambiguation,
-        )
-        warn_deprecated(
-            "from_system_tz() is deprecated; use ZonedDateTime(..., tz=SYSTEM_TZ) instead",
-            stacklevel=2,
-        )
-        if renamed:
-            _warn_disambiguate(stacklevel=2)
-        return result
 
     @classmethod
     def now(cls, tz: str | _SystemTZ, /) -> ZonedDateTime:
@@ -4997,21 +4599,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         _tz = _load_tz(tz)
         return cls._from_py_unchecked(_from_epoch(secs, _tz), nanos, _tz)
 
-    @classmethod
-    def now_in_system_tz(cls) -> ZonedDateTime:
-        """Create an instance from the current time in the system time zone.
-
-        .. deprecated:: 0.11
-           Use ``ZonedDateTime.now(SYSTEM_TZ)`` instead.
-
-        Equivalent to ``now(SYSTEM_TZ)``.
-        """
-        warn_deprecated(
-            "now_in_system_tz() is deprecated; use now(SYSTEM_TZ) instead",
-            stacklevel=2,
-        )
-        return cls.now(SYSTEM_TZ)
-
     def format_iso(
         self,
         *,
@@ -5027,9 +4614,8 @@ class ZonedDateTime(_ExactAndLocalTime):
         basic: bool = False,
         sep: Literal["T", " "] = "T",
         tz_id_display: Literal[
-            "required", "if_available", "omit", "always", "auto", "never"
-        ] = UNSET,
-        **kwargs: Any,
+            "required", "if_available", "omit"
+        ] = "required",
     ) -> str:
         """Format as an ISO 8601 string, such as
         ``2020-08-15T23:12:00+01:00[Europe/London]``.
@@ -5068,21 +4654,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         Although it is gaining popularity, it is not yet widely supported
         by ISO 8601 parsers.
         """
-        tz_id_display, renamed = normalize_renamed_keyword(
-            tz_id_display,
-            kwargs,
-            function_name="format_iso",
-            new_name="tz_id_display",
-            old_name="tz",
-        )
-        check_no_kwargs(kwargs, "format_iso")
-        deprecated_value = None
-        if tz_id_display is UNSET:
-            tz_id_display = "required"
-        elif tz_id_display in _TZ_ID_DISPLAY_DEPRECATED:
-            deprecated_value = tz_id_display
-            tz_id_display = _TZ_ID_DISPLAY_DEPRECATED[tz_id_display]
-
         if tz_id_display == "required":
             if self._tz.key is None:
                 raise ValueError(FORMAT_ISO_NO_TZ_MSG)
@@ -5105,14 +4676,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             )
             + suffix
         )
-        if renamed:
-            warn_renamed_keyword("tz_id_display", "tz", stacklevel=2)
-        if deprecated_value is not None:
-            warn_deprecated(
-                f"tz_id_display='{deprecated_value}' is deprecated; "
-                f"use '{tz_id_display}' instead",
-                stacklevel=2,
-            )
         return result
 
     @classmethod
@@ -5123,7 +4686,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         *,
         disambiguation: DisambiguationStr = UNSET,
         offset_mismatch: OffsetMismatchStr = "raise",
-        **kwargs: Any,
     ) -> ZonedDateTime:
         """Parse an ISO 8601 string with a bracketed time zone ID, such as
         ``2020-08-15T23:12:00+01:00[Europe/London]``.
@@ -5154,20 +4716,12 @@ class ZonedDateTime(_ExactAndLocalTime):
             If the offset matches no offset the time zone applies to the
             local time, under ``offset_mismatch="raise"``.
         """
-        disambiguation, renamed = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="parse_iso",
-        )
-        check_no_kwargs(kwargs, "parse_iso")
         self = _object_new(cls)
         self._init_from_iso(
             s,
             disambiguation=disambiguation,
             offset_mismatch=offset_mismatch,
         )
-        if renamed:
-            _warn_disambiguate(stacklevel=2)
         return self
 
     def _init_from_iso(
@@ -5203,15 +4757,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         ... )
         '2024-03-15 14:30+01:00[Europe/Paris]'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "ZonedDateTime")
         d = self._py_dt
-        result = format_fields(
+        return format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -5225,11 +4774,9 @@ class ZonedDateTime(_ExactAndLocalTime):
             tz_id=self._tz.key,
             tz_abbrev=self.tz_abbrev(),
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
     def parse(
@@ -5237,10 +4784,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         s: str,
         /,
         *,
-        pattern: str = UNSET,
+        pattern: str,
         disambiguation: DisambiguationStr = UNSET,
         offset_mismatch: OffsetMismatchStr = "raise",
-        **kwargs: Any,
     ) -> ZonedDateTime:
         """Parse a zoned datetime from a custom pattern string.
 
@@ -5275,10 +4821,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             If the offset matches no offset the time zone applies to the
             local time, under ``offset_mismatch="raise"``.
         """
-        disambiguation, disambiguate_renamed = _normalize_disambiguation(
-            disambiguation, kwargs, function_name="parse"
-        )
-        pattern, renamed = _normalize_pattern(pattern, kwargs)
         if disambiguation is not UNSET:
             check_disambiguation(disambiguation)
         elements = compile_pattern(pattern)
@@ -5324,82 +4866,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._tz = written.tz
         if implicit:
             _warn_implicit_disambiguation(stacklevel=2)
-        warn_pattern(elements, stacklevel=3)
-        if renamed:
-            _warn_format(stacklevel=2)
-        if disambiguate_renamed:
-            _warn_disambiguate(stacklevel=2)
         return self
-
-    @classmethod
-    def from_timestamp(
-        cls, value: int | float, /, *, tz: str | _SystemTZ
-    ) -> ZonedDateTime:
-        """Create an instance from a UNIX timestamp (in seconds).
-
-        .. deprecated:: 0.11
-           Create an :class:`Instant` and call ``to_tz()`` instead.
-
-        The inverse of the ``timestamp()`` method.
-        """
-        return cls._from_timestamp_deprecated(
-            value,
-            "second",
-            tz,
-            "ZonedDateTime.from_timestamp() is deprecated; use Instant.from_timestamp(...).to_tz(...) instead",
-        )
-
-    @classmethod
-    def from_timestamp_millis(
-        cls, value: int, /, *, tz: str | _SystemTZ
-    ) -> ZonedDateTime:
-        """Create an instance from a UNIX timestamp (in milliseconds).
-
-        .. deprecated:: 0.11
-           Use ``Instant.from_timestamp(..., unit="millisecond").to_tz()``.
-
-        The inverse of the ``timestamp_millis()`` method.
-        """
-        return cls._from_timestamp_deprecated(
-            value,
-            "millisecond",
-            tz,
-            "ZonedDateTime.from_timestamp_millis() is deprecated; use Instant.from_timestamp(..., unit='millisecond').to_tz(...) instead",
-        )
-
-    @classmethod
-    def from_timestamp_nanos(
-        cls, value: int, /, *, tz: str | _SystemTZ
-    ) -> ZonedDateTime:
-        """Create an instance from a UNIX timestamp (in nanoseconds).
-
-        .. deprecated:: 0.11
-           Use ``Instant.from_timestamp(..., unit="nanosecond").to_tz()``.
-
-        The inverse of the ``timestamp_nanos()`` method.
-        """
-        return cls._from_timestamp_deprecated(
-            value,
-            "nanosecond",
-            tz,
-            "ZonedDateTime.from_timestamp_nanos() is deprecated; use Instant.from_timestamp(..., unit='nanosecond').to_tz(...) instead",
-        )
-
-    @classmethod
-    def _from_timestamp_deprecated(
-        cls,
-        value: int | float,
-        unit: TimestampUnitStr,
-        tz: str | _SystemTZ,
-        deprecation: str,
-        /,
-    ) -> ZonedDateTime:
-        # Validate and compute first: a call that raises emits no warning.
-        secs, nanos = split_timestamp(value, unit)
-        _tz = _load_tz(tz)
-        py_dt = _tz.convert(_from_epoch_utc(secs))
-        warn_deprecated(deprecation, stacklevel=3)
-        return cls._from_py_unchecked(py_dt, nanos, _tz)
 
     def _init_from_py(
         self,
@@ -5457,7 +4924,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         /,
         *,
         disambiguation: DisambiguationStr = UNSET,
-        **kwargs: Any,
     ) -> ZonedDateTime:
         """Create a new instance with the date replaced
 
@@ -5471,17 +4937,9 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         if not isinstance(date, Date):
             raise TypeError("replace_date() argument must be a Date")
-        disambiguation, renamed = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="replace_date",
-        )
-        check_no_kwargs(kwargs, "replace_date")
         result, implicit = self._replace_date(date, disambiguation)
         if implicit:
             _warn_implicit_disambiguation(stacklevel=2)
-        if renamed:
-            _warn_disambiguate(stacklevel=2)
         return result
 
     def _replace_date(
@@ -5510,7 +4968,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         /,
         *,
         disambiguation: DisambiguationStr = UNSET,
-        **kwargs: Any,
     ) -> ZonedDateTime:
         """Create a new instance with the time replaced
 
@@ -5524,12 +4981,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         """
         if not isinstance(time, Time):
             raise TypeError("replace_time() argument must be a Time")
-        disambiguation, renamed = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="replace_time",
-        )
-        check_no_kwargs(kwargs, "replace_time")
         resolved, implicit = _resolve_disambiguation(
             _datetime.combine(self._py_dt, time._py),
             self._tz,
@@ -5540,8 +4991,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         result = self._from_py_unchecked(resolved, time._nanos, self._tz)
         if implicit:
             _warn_implicit_disambiguation(stacklevel=2)
-        if renamed:
-            _warn_disambiguate(stacklevel=2)
         return result
 
     if not TYPE_CHECKING:  # for a nicer autodoc
@@ -5603,11 +5052,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             If the time zone ID is not found in the time zone database.
         """
 
-        disambiguation, renamed = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="replace",
-        )
         nanos = _pop_replace_nanos(kwargs, self._nanos)
         try:
             tzid = kwargs.pop("tz")
@@ -5628,22 +5072,7 @@ class ZonedDateTime(_ExactAndLocalTime):
         result = self._from_py_unchecked(resolved, nanos, tz)
         if implicit:
             _warn_implicit_disambiguation(stacklevel=2)
-        if renamed:
-            _warn_disambiguate(stacklevel=2)
         return result
-
-    @property
-    def tz(self) -> str | None:
-        """Deprecated alias of :attr:`tz_id`.
-
-        .. deprecated:: 0.11
-           Use :attr:`tz_id` instead.
-        """
-        warn_deprecated(
-            "tz is deprecated; use tz_id instead",
-            stacklevel=2,
-        )
-        return self.tz_id
 
     @property
     def tz_id(self) -> str | None:
@@ -5796,9 +5225,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         # and re-emit the warning.
         extra = kwargs.pop("_warn_stacklevel", 1) - 1
         fname = "add" if sign == 1 else "subtract"
-        disambiguation, renamed = _normalize_disambiguation(
-            disambiguation, kwargs, function_name=fname
-        )
         # Validated on entry, whether or not the shift consults it.
         if disambiguation is not UNSET:
             check_disambiguation(disambiguation)
@@ -5816,8 +5242,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         )
         if implicit:
             _warn_implicit_disambiguation(stacklevel=3 + extra)
-        if renamed:
-            _warn_disambiguate(stacklevel=3 + extra)
         return result
 
     def _shift_kwargs(
@@ -5968,18 +5392,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             )
             is not Unique
         )
-
-    def is_ambiguous(self) -> bool:
-        """Whether this local time occurs twice in its time zone.
-
-        .. deprecated:: 0.11
-           Use :meth:`is_repeated` instead.
-        """
-        warn_deprecated(
-            "is_ambiguous() is deprecated; use is_repeated() instead",
-            stacklevel=2,
-        )
-        return self.is_repeated()
 
     def next_transition(self) -> ZonedDateTime | None:
         """The next change of the time zone's rules strictly after this
@@ -6415,19 +5827,6 @@ class ZonedDateTime(_ExactAndLocalTime):
             and self._tz == other._tz  # same time zone definition
         )
 
-    def exact_eq(self, other: ZonedDateTime, /) -> bool:
-        """Deprecated alias for :meth:`strict_eq`.
-
-        .. deprecated:: 0.11
-           Use :meth:`strict_eq` instead.
-        """
-        result = self.strict_eq(other)
-        warn_deprecated(
-            "exact_eq() is deprecated; use strict_eq() instead",
-            stacklevel=2,
-        )
-        return result
-
     # An override with shortcut for efficiency if the time zone stays the same
     def to_tz(self, tz: str | _SystemTZ, /) -> ZonedDateTime:
         """Convert to the same moment in time in another time zone.
@@ -6659,15 +6058,10 @@ class PlainDateTime(_LocalTime):
         >>> PlainDateTime(2024, 3, 15, 14, 30).format("YYYY-MM-DD HH:mm")
         '2024-03-15 14:30'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "PlainDateTime")
         d = self._py_dt
-        result = format_fields(
+        return format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -6678,16 +6072,12 @@ class PlainDateTime(_LocalTime):
             second=d.second,
             nanos=self._nanos,
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
-    def parse(
-        cls, s: str, /, *, pattern: str = UNSET, **kwargs: Any
-    ) -> PlainDateTime:
+    def parse(cls, s: str, /, *, pattern: str) -> PlainDateTime:
         """Parse a plain datetime from a custom pattern string.
 
         See :ref:`pattern-format` for details.
@@ -6695,7 +6085,6 @@ class PlainDateTime(_LocalTime):
         >>> PlainDateTime.parse("2024-03-15 14:30", pattern="YYYY-MM-DD HH:mm")
         PlainDateTime("2024-03-15 14:30:00")
         """
-        pattern, renamed = _normalize_pattern(pattern, kwargs)
         elements = compile_pattern(pattern)
         validate_fields(elements, cls._PATTERN_CATS, "PlainDateTime")
         state = parse_fields(elements, s)
@@ -6715,9 +6104,6 @@ class PlainDateTime(_LocalTime):
             and result._py_dt.weekday() != state.weekday
         ):
             raise ValueError("weekday does not match the date")
-        warn_pattern(elements, stacklevel=3)
-        if renamed:
-            _warn_format(stacklevel=2)
         return result
 
     def _init_from_py(self, d: _datetime, **kwargs: Any) -> None:
@@ -7256,9 +6642,7 @@ class PlainDateTime(_LocalTime):
             self._py_dt.replace(tzinfo=_UTC), self._nanos
         )
 
-    def assume_fixed_offset(
-        self, offset: int | TimeDelta, /
-    ) -> OffsetDateTime:
+    def assume_fixed_offset(self, offset: TimeDelta, /) -> OffsetDateTime:
         """Assume the datetime has the given offset, creating an ``OffsetDateTime``.
 
         >>> PlainDateTime(2020, 8, 15, 23, 12).assume_fixed_offset(hours(2))
@@ -7268,7 +6652,6 @@ class PlainDateTime(_LocalTime):
             check_utc_bounds(self._py_dt.replace(tzinfo=_load_offset(offset))),
             self._nanos,
         )
-        _warn_integer_offset(offset, stacklevel=3)
         return result
 
     def assume_tz(
@@ -7277,7 +6660,6 @@ class PlainDateTime(_LocalTime):
         /,
         *,
         disambiguation: DisambiguationStr = UNSET,
-        **kwargs: Any,
     ) -> ZonedDateTime:
         """Assume the datetime is in the given time zone,
         creating a ``ZonedDateTime``. Pass ``SYSTEM_TZ`` for the system
@@ -7301,17 +6683,9 @@ class PlainDateTime(_LocalTime):
         ~whenever.TimeZoneNotFoundError
             If the time zone ID is not found in the time zone database.
         """
-        disambiguation, renamed = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="assume_tz",
-        )
-        check_no_kwargs(kwargs, "assume_tz")
         result, implicit = self._assume_tz(tz, disambiguation)
         if implicit:
             _warn_implicit_disambiguation(stacklevel=2)
-        if renamed:
-            _warn_disambiguate(stacklevel=2)
         return result
 
     def _assume_tz(
@@ -7328,50 +6702,6 @@ class PlainDateTime(_LocalTime):
             ZonedDateTime._from_py_unchecked(resolved, self._nanos, _tz),
             implicit,
         )
-
-    def assume_system_tz(
-        self,
-        *,
-        disambiguation: DisambiguationStr = UNSET,
-        **kwargs: Any,
-    ) -> ZonedDateTime:
-        """Assume the datetime is in the system time zone,
-        creating a ``ZonedDateTime``.
-
-        .. deprecated:: 0.11
-           Use ``assume_tz(SYSTEM_TZ)`` instead.
-
-        Note
-        ----
-        The local time may be repeated or skipped in the system time zone
-        (e.g. during a DST transition). You can explicitly
-        specify how to handle such a situation using ``disambiguation``.
-        See `the documentation
-        <https://whenever.readthedocs.io/en/latest/guide/resolving-local-times.html>`__
-        for more information.
-
-        >>> d = PlainDateTime(2020, 8, 15, 23, 12)
-        >>> # assuming system time zone is America/New_York
-        >>> d.assume_tz(SYSTEM_TZ, disambiguation="raise")
-        ZonedDateTime("2020-08-15 23:12:00-04:00[America/New_York]")
-        """
-        disambiguation, renamed = _normalize_disambiguation(
-            disambiguation,
-            kwargs,
-            function_name="assume_system_tz",
-        )
-        check_no_kwargs(kwargs, "assume_system_tz")
-        if disambiguation is UNSET:
-            disambiguation = "compatible"
-        # Validate and compute first: a call that raises emits no warning.
-        result = self.assume_tz(SYSTEM_TZ, disambiguation=disambiguation)
-        warn_deprecated(
-            "assume_system_tz() is deprecated; use assume_tz(SYSTEM_TZ) instead",
-            stacklevel=2,
-        )
-        if renamed:
-            _warn_disambiguate(stacklevel=2)
-        return result
 
     def round(
         self,
@@ -7606,18 +6936,6 @@ OFFSET_NOW_STALE_MSG = (
     + WARNING_HANDLING_DOCS_MSG
 )
 
-OFFSET_FROM_TIMESTAMP_STALE_MSG = (
-    "You are converting a timestamp using a fixed UTC offset. The result is "
-    "correct for that offset, but the offset may be stale relative to the "
-    "region you intend at this timestamp. If you "
-    "mean a named time zone, use Instant.from_timestamp(ts).to_tz('<tz>'); "
-    "if you only need the instant, use Instant.from_timestamp(ts). If the fixed "
-    "offset is intentional, pass `stale_offset_ok=True`. "
-    + OFFSET_DATETIME_DOCS_MSG
-    + " "
-    + WARNING_HANDLING_DOCS_MSG
-)
-
 OFFSET_REPLACE_STALE_MSG = (
     "Replacing fields of an OffsetDateTime is valid and preserves its observed "
     "UTC offset. That offset may be stale relative to the source time zone if "
@@ -7687,13 +7005,6 @@ ZONEINFO_NO_KEY_MSG = (
     "ZoneInfo.from_file(), or use OffsetDateTime() to keep only the offset"
 )
 
-_TZ_ID_DISPLAY_DEPRECATED: dict[
-    str, Literal["required", "if_available", "omit"]
-] = {
-    "always": "required",
-    "auto": "if_available",
-    "never": "omit",
-}
 FORMAT_ISO_NO_TZ_MSG = (
     "the time zone has no ID; use tz_id_display='if_available' or 'omit'"
 )
@@ -7740,27 +7051,15 @@ def _from_epoch_offset(ts: int, offset: int) -> _datetime:
         )
 
 
-def _load_offset(offset: int | TimeDelta, /) -> _timezone:
-    """Read an offset; a caller that succeeds then calls
-    :func:`_warn_integer_offset`, so a call that raises emits no warning."""
-    if isinstance(offset, int):
-        secs = offset * 3_600
-    elif isinstance(offset, TimeDelta):
-        if offset._total_ns % 1_000_000_000:
-            raise ValueError("offset must be a whole number of seconds")
-        secs = offset._total_ns // 1_000_000_000
-    else:
-        raise TypeError("offset must be a TimeDelta")
+def _load_offset(offset: TimeDelta, /) -> _timezone:
+    if not isinstance(offset, TimeDelta):
+        raise TypeError("offset must be a TimeDelta, for example hours(2)")
+    if offset._total_ns % 1_000_000_000:
+        raise ValueError("offset must be a whole number of seconds")
+    secs = offset._total_ns // 1_000_000_000
     if not -86_400 < secs < 86_400:
         raise ValueError("offset must be between -24 and 24 hours")
     return mk_fixed_tzinfo(secs)
-
-
-def _warn_integer_offset(
-    offset: int | TimeDelta, /, *, stacklevel: int
-) -> None:
-    if isinstance(offset, int):
-        warn_deprecated(INTEGER_OFFSET_DEPRECATION_MSG, stacklevel=stacklevel)
 
 
 # Helpers that pre-compute/lookup as much as possible

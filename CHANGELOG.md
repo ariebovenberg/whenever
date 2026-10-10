@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.0.0b0 (2026-10-??)
+
+The API 0.11 established, with its compatibility shims removed.
+From here on, code that works with 1.0 keeps working on every 1.x release.
+The new [stability policy](https://whenever.readthedocs.io/en/latest/stability.html)
+spells out what that covers: additions, deprecation, warnings, and the
+exceptions.
+
+**Removed**
+
+Every spelling in the 0.11.0 migration table below is gone. A removed
+spelling now fails the way any unknown name or keyword does, with two
+exceptions that name their replacement: the pattern letters `h`, `hh`, and
+`SS` raise `ValueError` pointing at `H`/`HH` and `[:ss]`, and an integer
+`offset=` raises `TypeError` pointing at `hours(2)`.
+
+- Renamed members: `exact_eq()`, `ZonedDateTime.tz`, `MonthDay.is_leap()`,
+  `ZonedDateTime.is_ambiguous()`, `TZPATH`, and `DisambiguateStr`.
+- Timestamp wrappers: `timestamp_millis()`, `timestamp_nanos()`,
+  `Instant.from_timestamp_millis()`, `Instant.from_timestamp_nanos()`, and
+  every `from_timestamp*()` on `OffsetDateTime` and `ZonedDateTime`.
+- The system time zone methods: `Date.today_in_system_tz()`,
+  `to_system_tz()`, `ZonedDateTime.now_in_system_tz()`,
+  `ZonedDateTime.from_system_tz()`, and `PlainDateTime.assume_system_tz()`.
+- Renamed keywords and values: `disambiguate=`, `parse(format=)`,
+  `format_iso(tz=)` with its values `"always"`, `"auto"`, and `"never"`,
+  `cal_unit_composition_ok=`, and `CalendarUnitCompositionWarning`.
+- `relative_to=` on itemized `add()` and `subtract()`, with `in_units=`,
+  `round_mode=`, `round_increment=`, `naive_arithmetic_ok=`, and
+  `stale_offset_ok=`.
+- Integer offsets, in `OffsetDateTime()`, `OffsetDateTime.now()`,
+  `replace()`, `to_fixed_offset()`, and `assume_fixed_offset()`.
+- The pattern letters `h`, `hh`, and `SS`.
+- `Instant` pickles written before 0.8.0 no longer load. Pickles written
+  by 0.8.0 or later do; see the compatibility section of the pickling guide.
+
+`WheneverDeprecationWarning` stays: a deprecated API emits it, and stays
+supported for the rest of 1.x.
+
+**Changed**
+
+- A pattern with a 12-hour clock (`i` or `ii`) and no AM/PM specifier no
+  longer warns. `format()` accepts it; `parse()` raises `ValueError`.
+
+  **Rationale**: the distinct `i` already marks the 12-hour clock, so the
+  warning only repeated what the pattern says. Parsing is another matter:
+  `03:00` could mean 3 AM or 3 PM, and other libraries disagree on which.
+
 ## 0.11.0 (2026-10-02)
 
 This release is intended as a soft 1.0 release: it establishes the planned

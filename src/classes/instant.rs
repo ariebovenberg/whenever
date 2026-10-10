@@ -14,10 +14,7 @@ use crate::{
         time_delta::{TimeDelta, timedelta_from_kwargs},
     },
     common::{
-        compat::{
-            FORMAT_KEYWORD_WARNING, parse_pattern_keyword, warn_deprecated,
-            warn_lossy_stdlib_subclass,
-        },
+        compat::warn_lossy_stdlib_subclass,
         fmt,
         format_args::{self, Suffix},
         instant::{TimestampUnit, extract_instant, parse_instant_arg},
@@ -252,16 +249,6 @@ fn strict_eq(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     }
 }
 
-fn exact_eq(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
-    let result = strict_eq(cls, slf, obj_b)?;
-    warn_deprecated(
-        cls.state(),
-        c"exact_eq() is deprecated; use strict_eq() instead",
-        1,
-    )?;
-    Ok(result)
-}
-
 fn __reduce__(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
     let data = pickle::encode_instant(slf);
     [
@@ -273,13 +260,6 @@ fn __reduce__(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
 
 pub(crate) fn unpickle(state: &State, arg: PyObj) -> PyReturn {
     pickle::decode_instant(arg.expect_bytes()?)
-        .ok_or_value_err(pickle::INVALID_DATA)?
-        .to_obj(*state.instant_type)
-}
-
-// Backwards compatibility: an unpickler for Instants pickled before 0.8.0
-pub(crate) fn unpickle_pre_0_8(state: &State, arg: PyObj) -> PyReturn {
-    pickle::decode_pre_0_8_instant(arg.expect_bytes()?)
         .ok_or_value_err(pickle::INVALID_DATA)?
         .to_obj(*state.instant_type)
 }
@@ -298,24 +278,6 @@ fn timestamp(
     unit.timestamp(slf).to_py()
 }
 
-fn timestamp_millis(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
-    warn_deprecated(
-        cls.state(),
-        c"timestamp_millis() is deprecated; use timestamp(unit='millisecond') instead",
-        1,
-    )?;
-    slf.timestamp_millis().to_py()
-}
-
-fn timestamp_nanos(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
-    warn_deprecated(
-        cls.state(),
-        c"timestamp_nanos() is deprecated; use timestamp(unit='nanosecond') instead",
-        1,
-    )?;
-    slf.timestamp_nanos().to_py()
-}
-
 fn from_timestamp(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
     let value = handle_one_arg("from_timestamp", args)?;
     let unit = handle_one_kwarg("from_timestamp", *cls.state().strs.unit, kwargs)?
@@ -323,26 +285,6 @@ fn from_timestamp(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs
         .transpose()?
         .unwrap_or(TimestampUnit::Second);
     unit.parse(value)?.to_obj(cls)
-}
-
-fn from_timestamp_millis(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
-    let result = TimestampUnit::Millisecond.parse(ts)?;
-    warn_deprecated(
-        cls.state(),
-        c"from_timestamp_millis() is deprecated; use from_timestamp(..., unit='millisecond') instead",
-        1,
-    )?;
-    result.to_obj(cls)
-}
-
-fn from_timestamp_nanos(cls: PyClass<Instant>, ts: PyObj) -> PyReturn {
-    let result = TimestampUnit::Nanosecond.parse(ts)?;
-    warn_deprecated(
-        cls.state(),
-        c"from_timestamp_nanos() is deprecated; use from_timestamp(..., unit='nanosecond') instead",
-        1,
-    )?;
-    result.to_obj(cls)
 }
 
 fn to_stdlib(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
@@ -443,25 +385,11 @@ fn to_fixed_offset(cls: PyClass<Instant>, slf: Instant, args: &[PyObj]) -> PyRet
     let state = cls.state();
     match handle_opt_arg("to_fixed_offset", args)? {
         None => slf.to_utc_plain().assume_offset_unchecked(Offset::ZERO),
-        Some(arg) => {
-            let result = slf
-                .to_offset(Offset::from_py(arg, state)?)
-                .ok_or_range_err()?;
-            Offset::warn_if_int(arg, state)?;
-            result
-        }
+        Some(arg) => slf
+            .to_offset(Offset::from_py(arg, state)?)
+            .ok_or_range_err()?,
     }
     .to_obj(*state.offset_datetime_type)
-}
-
-fn to_system_tz(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
-    let state = cls.state();
-    warn_deprecated(
-        state,
-        c"to_system_tz() is deprecated; use to_tz(SYSTEM_TZ) instead",
-        1,
-    )?;
-    slf.into_zoned_obj(state.tz_store.get_system_tz()?, *state.zoned_datetime_type)
 }
 
 fn format_rfc2822(_: PyType, slf: Instant) -> PyReturn {
@@ -500,20 +428,18 @@ fn round(cls: PyClass<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterK
     slf.round(increment_ns, mode).ok_or_range_err()?.to_obj(cls)
 }
 
-fn format(cls: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
+fn format(_: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "Instant")?;
-    let result = pattern.format(
+    pattern.format(
         &slf.to_utc_plain()
             .pattern_values()
             .with_offset(Offset::ZERO),
-    )?;
-    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
-    Ok(result)
+    )
 }
 
 fn __format__(cls: PyClass<Instant>, slf: Instant, spec_obj: PyObj) -> PyReturn {
@@ -531,7 +457,8 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
         .ok_or_type_err("parse() argument must be a string")?;
     let s = s_pystr.as_utf8()?;
 
-    let (fmt_obj, renamed) = parse_pattern_keyword(kwargs, cls.state())?;
+    let fmt_obj = handle_one_kwarg("parse", *cls.state().strs.pattern, kwargs)?
+        .ok_or_type_err("parse() missing 1 required keyword-only argument: 'pattern'")?;
     let fmt_pystr = fmt_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("pattern must be a string")?;
@@ -547,39 +474,20 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
     parsed.validate_weekday(date)?;
     let time = parsed.time()?;
     // offset is already validated (scalar::Offset) — no range check needed here.
-    let result = date
-        .at(time)
+    date.at(time)
         .assume_utc()
         .shift_by_offset(-offset)
         .ok_or_range_err()?
-        .to_obj(cls)?;
-    pattern.warn(*cls.state().warn_whenever, *cls.state().warn_deprecation)?;
-    if renamed {
-        warn_deprecated(cls.state(), FORMAT_KEYWORD_WARNING, 1)?;
-    }
-    Ok(result)
+        .to_obj(cls)
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(Instant, __reduce__, c""),
-    method1!(Instant, exact_eq, doc::EXACTTIME_EXACT_EQ),
     method1!(Instant, strict_eq, doc::EXACTTIME_STRICT_EQ),
     method_kwargs!(Instant, timestamp, doc::EXACTTIME_TIMESTAMP),
-    method0!(Instant, timestamp_millis, doc::EXACTTIME_TIMESTAMP_MILLIS),
-    method0!(Instant, timestamp_nanos, doc::EXACTTIME_TIMESTAMP_NANOS),
     classmethod_kwargs!(Instant, from_timestamp, doc::INSTANT_FROM_TIMESTAMP),
-    classmethod1!(
-        Instant,
-        from_timestamp_millis,
-        doc::INSTANT_FROM_TIMESTAMP_MILLIS
-    ),
-    classmethod1!(
-        Instant,
-        from_timestamp_nanos,
-        doc::INSTANT_FROM_TIMESTAMP_NANOS
-    ),
     // This method is defined different because it
     // makes use of the arg/kwargs processing macro.
     // Other types only use it for the __new__ method.
@@ -617,7 +525,6 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     method_kwargs!(Instant, add, doc::INSTANT_ADD),
     method_kwargs!(Instant, subtract, doc::INSTANT_SUBTRACT),
     method1!(Instant, to_tz, doc::EXACTTIME_TO_TZ),
-    method0!(Instant, to_system_tz, doc::EXACTTIME_TO_SYSTEM_TZ),
     method_vararg!(Instant, to_fixed_offset, doc::EXACTTIME_TO_FIXED_OFFSET),
     method1!(Instant, difference, doc::EXACTTIME_DIFFERENCE),
     method_kwargs!(Instant, round, doc::INSTANT_ROUND),

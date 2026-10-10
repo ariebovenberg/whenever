@@ -471,7 +471,7 @@ class TestFormatIso:
         with pytest.raises(ValueError, match="invalid sep"):
             dt.format_iso(sep=1)  # type: ignore[arg-type]
 
-        # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
+        # tz is not a format_iso() keyword on any type
         with pytest.raises(TypeError, match="tz"):
             dt.format_iso(tz="always")  # type: ignore[call-arg]
 
@@ -640,7 +640,7 @@ class TestReplace:
             d.replace(year=9999, month=12, day=31, offset=hours(-5))
 
         with pytest.raises(TypeError, match="tzinfo"):
-            d.replace(tzinfo=timezone.utc, stale_offset_ok=True)  # type: ignore[call-overload]
+            d.replace(tzinfo=timezone.utc, stale_offset_ok=True)  # type: ignore[call-arg]
 
     def test_replace_date(self):
         d = OffsetDateTime(
@@ -2655,7 +2655,7 @@ class TestConversion:
             big_dt.to_tz("Asia/Tokyo")
 
     @system_tz("America/New_York")
-    def test_to_system_tz(self):
+    def test_to_tz_with_system_tz(self):
         d = OffsetDateTime(
             2020,
             8,
