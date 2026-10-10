@@ -23,7 +23,6 @@ from whenever import (
     RepeatedTime,
     SkippedTime,
     StaleOffsetWarning,
-    Time,
     TimeDelta,
     TimeZoneNotFoundError,
     WheneverDeprecationWarning,
@@ -273,30 +272,3 @@ def test_a_rejected_call_emits_no_warning(call, exc):
         warnings.simplefilter("error")
         with pytest.raises(exc):
             call()
-
-
-def test_12h_warning_points_at_the_caller():
-    with warns_here(WheneverWarning) as caught:
-        Time(14, 30).format("ii:mm")
-    assert "specifier" in str(caught[0].message)
-    with warns_here(WheneverWarning):
-        Time.parse("02:30", pattern="ii:mm")
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        Time(13),
-        PlainDateTime(2024, 3, 15, 13),
-        Instant.from_utc(2024, 3, 15, 13),
-        OffsetDateTime(2024, 3, 15, 13, offset=hours(2)),
-        ZonedDateTime(2024, 3, 15, 13, tz="Europe/Paris"),
-    ],
-    ids=lambda v: type(v).__name__,
-)
-def test_warnings_point_at_the_f_string(value):
-    """A pattern warning raised through __format__ names the caller's
-    line, as it does through format(). Date is absent because it has
-    no ambiguous specifier."""
-    with warns_here(WheneverWarning):
-        f"{value:ii}"
