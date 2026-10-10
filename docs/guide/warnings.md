@@ -143,6 +143,7 @@ that suppresses it for that one call, and is named in the warning's message.
 | `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `parse_iso()`, `parse()`, `replace()`, `replace_date()`, `replace_time()`, `add`/`subtract`; `assume_tz()` on {class}`~whenever.PlainDateTime` and {class}`~whenever.OffsetDateTime` |
 | none: filter the category | {class}`~whenever.PickleOffsetMismatchWarning` | `pickle.loads()` of a {class}`~whenever.ZonedDateTime` |
 | none: convert explicitly | the lossy-subclass {class}`~whenever.WheneverWarning` | constructors given a `pandas` or `pendulum` object, or `Date()` given a `datetime` |
+| none: switch to the replacement | {class}`~whenever.WheneverDeprecationWarning` | any deprecated API; see {ref}`stability` |
 
 For example:
 
