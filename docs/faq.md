@@ -243,8 +243,8 @@ with
 (faq-production-ready)=
 ## Is it production-ready?
 
-Yes. Since 1.0, changes are additive and backwards compatible: an API that
-becomes discouraged gets a soft deprecation and stays supported. Please try
+Yes. Code that works with 1.0 keeps working on every 1.x release; the
+{ref}`stability policy <stability>` spells out what that covers. Please try
 it out and report any issues!
 
 ## Where do the benchmarks come from?
