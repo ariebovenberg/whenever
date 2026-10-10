@@ -869,16 +869,14 @@ fn offset_since(
     }
 }
 
-fn format(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -> PyReturn {
+fn format(_: PyClass<OffsetDateTime>, slf: OffsetDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "OffsetDateTime")?;
-    let result = pattern.format(&slf.to_plain().pattern_values().with_offset(slf.offset))?;
-    pattern.warn(*cls.state().warn_whenever)?;
-    Ok(result)
+    pattern.format(&slf.to_plain().pattern_values().with_offset(slf.offset))
 }
 
 fn __format__(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, spec_obj: PyObj) -> PyReturn {
@@ -913,13 +911,10 @@ fn parse(cls: PyClass<OffsetDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) 
     parsed.validate_weekday(date)?;
     let time = parsed.time()?;
     // offset is already validated (scalar::Offset) — no range check needed here.
-    let result = date
-        .at(time)
+    date.at(time)
         .assume_offset(offset)
         .ok_or_range_err()?
-        .to_obj(cls)?;
-    pattern.warn(*cls.state().warn_whenever)?;
-    Ok(result)
+        .to_obj(cls)
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
