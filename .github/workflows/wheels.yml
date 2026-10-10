@@ -144,7 +144,7 @@ jobs:
               scripts/test_wheel.sh python wheel True test-requirements.txt
           done
       - name: Upload wheels
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wheels-binary-${{ matrix.os }}-${{ matrix.target }}-${{ matrix.manylinux || 'auto' }}
           path: dist/*
@@ -173,7 +173,7 @@ jobs:
         env:
           WHENEVER_NO_BUILD_RUST_EXT: 1
       - name: Upload pure Python wheels and sdist
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wheels-pure-python
           path: dist/*
