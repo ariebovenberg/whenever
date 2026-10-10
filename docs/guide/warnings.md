@@ -35,11 +35,12 @@ UserWarning (stdlib)
     └── WheneverDeprecationWarning
 ```
 
-Two warnings have no class of their own and emit `WheneverWarning` itself:
-a pattern with a 12-hour clock (`i` or `ii`) and no AM/PM specifier, and a
-conversion that loses data, such as `Date()` given a `datetime` or a
-constructor given a `pandas` object. Filter them by message if either case
-needs separate handling.
+One warning has no class of its own and emits `WheneverWarning` itself:
+a conversion that loses data, such as `Date()` given a `datetime` or a
+constructor given a `pandas` object. It points at the code rather than at a
+value passing through it: the type you convert from is known when you write
+the call. Fix the call instead of filtering the warning; the table under
+[Suppress specific calls](#suppress-specific-calls) says how.
 
 ## Turn warnings into errors
 
@@ -141,7 +142,6 @@ that suppresses it for that one call, and is named in the warning's message.
 | `month_composition_ok=True` | {class}`~whenever.MonthCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
 | `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `parse_iso()`, `parse()`, `replace()`, `replace_date()`, `replace_time()`, `add`/`subtract`; `assume_tz()` on {class}`~whenever.PlainDateTime` and {class}`~whenever.OffsetDateTime` |
 | none: filter the category | {class}`~whenever.PickleOffsetMismatchWarning` | `pickle.loads()` of a {class}`~whenever.ZonedDateTime` |
-| none: fix the pattern | the 12-hour {class}`~whenever.WheneverWarning` | `format()` and `parse()`: add `a`/`aa`, or use `H`/`HH` |
 | none: convert explicitly | the lossy-subclass {class}`~whenever.WheneverWarning` | constructors given a `pandas` or `pendulum` object, or `Date()` given a `datetime` |
 
 For example:

@@ -24,7 +24,6 @@ from whenever import (
     TimeDelta,
     TimeZoneNotFoundError,
     Weekday,
-    WheneverWarning,
     YearMonth,
     ZonedDateTime,
     hours,
@@ -164,15 +163,32 @@ class TestCompilePattern:
         ):
             Time(14, 30).format(pattern)
 
-    def test_12h_without_ampm_warns(self):
-        t = Time(14, 30)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            t.format("ii:mm")
-            assert len(w) == 1
-            assert w[0].category is WheneverWarning
-            assert "without an AM/PM specifier" in str(w[0].message)
-            assert "24-hour clock" in str(w[0].message)
+    @pytest.mark.parametrize(
+        "cls, value, pattern",
+        [
+            (Time, "02:30", "ii:mm"),
+            (Time, "2:30", "i:mm"),
+            (PlainDateTime, "2024-03-15 02:30", "YYYY-MM-DD ii:mm"),
+            (Instant, "2024-03-15 02:30Z", "YYYY-MM-DD ii:mmXXX"),
+            (OffsetDateTime, "2024-03-15 02:30+02:00", "YYYY-MM-DD ii:mmxxx"),
+            (
+                ZonedDateTime,
+                "2024-03-15 02:30 Europe/Paris",
+                "YYYY-MM-DD ii:mm VV",
+            ),
+        ],
+    )
+    def test_12h_without_ampm_parse_raises(self, cls, value, pattern):
+        with pytest.raises(
+            ValueError,
+            match=r"^12-hour clock \(i/ii\) requires AM/PM \(a/aa\) to "
+            r"parse: add a/aa, or use the 24-hour clock \(H/HH\)$",
+        ):
+            cls.parse(value, pattern=pattern)
+
+    def test_12h_without_ampm_formats(self):
+        assert Time(14, 30).format("ii:mm") == "02:30"
+        assert Time(0, 30).format("i:mm") == "12:30"
 
     def test_yy_parse_disabled(self):
         with pytest.raises(ValueError, match="YY.*only.*formatting"):
@@ -2036,12 +2052,3 @@ class TestRemovedSpecifiers:
             Time.parse("12:00", pattern=pattern)
         with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
             Time(12).format(pattern)
-
-
-def test_cached_pattern_warns_at_each_call_site():
-    # Compiled patterns are cached; the warning is still raised on every use
-    t = Time(3)
-    with warns_here(WheneverWarning):
-        t.format("ii")
-    with warns_here(WheneverWarning):
-        t.format("ii")

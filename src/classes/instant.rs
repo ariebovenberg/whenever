@@ -428,20 +428,18 @@ fn round(cls: PyClass<Instant>, slf: Instant, args: &[PyObj], kwargs: &mut IterK
     slf.round(increment_ns, mode).ok_or_range_err()?.to_obj(cls)
 }
 
-fn format(cls: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
+fn format(_: PyClass<Instant>, slf: Instant, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET, "Instant")?;
-    let result = pattern.format(
+    pattern.format(
         &slf.to_utc_plain()
             .pattern_values()
             .with_offset(Offset::ZERO),
-    )?;
-    pattern.warn(*cls.state().warn_whenever)?;
-    Ok(result)
+    )
 }
 
 fn __format__(cls: PyClass<Instant>, slf: Instant, spec_obj: PyObj) -> PyReturn {
@@ -476,14 +474,11 @@ fn parse(cls: PyClass<Instant>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRe
     parsed.validate_weekday(date)?;
     let time = parsed.time()?;
     // offset is already validated (scalar::Offset) — no range check needed here.
-    let result = date
-        .at(time)
+    date.at(time)
         .assume_utc()
         .shift_by_offset(-offset)
         .ok_or_range_err()?
-        .to_obj(cls)?;
-    pattern.warn(*cls.state().warn_whenever)?;
-    Ok(result)
+        .to_obj(cls)
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[

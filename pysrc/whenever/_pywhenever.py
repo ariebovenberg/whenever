@@ -85,7 +85,6 @@ from ._format import (
     format_fields,
     parse_fields,
     validate_fields,
-    warn_pattern,
 )
 from ._math import (
     DATE_DELTA_UNITS,
@@ -846,26 +845,19 @@ class Date(_Base):
         >>> Date(2024, 3, 15).format("DD MMM YYYY")
         '15 Mar 2024'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "Date")
         d = self._py_date
-        result = format_fields(
+        return format_fields(
             elements,
             year=d.year,
             month=d.month,
             day=d.day,
             weekday=d.weekday(),
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
     def parse(cls, s: str, /, *, pattern: str) -> Date:
@@ -889,7 +881,6 @@ class Date(_Base):
             and result._py_date.weekday() != state.weekday
         ):
             raise ValueError("weekday does not match the date")
-        warn_pattern(elements, stacklevel=3)
         return result
 
     if not TYPE_CHECKING:  # for a nice autodoc
@@ -1422,26 +1413,19 @@ class Time(_Base):
         >>> Time(14, 30).format("ii:mm aa")
         '02:30 PM'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "Time")
         t = self._py
-        result = format_fields(
+        return format_fields(
             elements,
             hour=t.hour,
             minute=t.minute,
             second=t.second,
             nanos=self._nanos,
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
     def parse(cls, s: str, /, *, pattern: str) -> Time:
@@ -1463,7 +1447,6 @@ class Time(_Base):
             second=state.second or 0,
             nanosecond=state.nanos,
         )
-        warn_pattern(elements, stacklevel=3)
         return result
 
     if not TYPE_CHECKING:  # for a nice autodoc
@@ -3292,15 +3275,10 @@ class Instant(_ExactTime):
         >>> Instant.from_utc(2024, 3, 15, 14, 30).format("YYYY-MM-DD HH:mm:ssXXX")
         '2024-03-15 14:30:00Z'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "Instant")
         d = self._py_dt
-        result = format_fields(
+        return format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -3312,11 +3290,9 @@ class Instant(_ExactTime):
             nanos=self._nanos,
             offset_secs=0,
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
     def parse(cls, s: str, /, *, pattern: str) -> Instant:
@@ -3357,7 +3333,6 @@ class Instant(_ExactTime):
         if state.weekday is not None and local.weekday() != state.weekday:
             raise ValueError("weekday does not match the date")
         dt = check_utc_bounds(local).astimezone(_UTC)
-        warn_pattern(elements, stacklevel=3)
         return cls._from_py_unchecked(dt, state.nanos)
 
     if not TYPE_CHECKING:  # for a nicer autodoc
@@ -4048,15 +4023,10 @@ class OffsetDateTime(_ExactAndLocalTime):
         ... )
         '2024-03-15 14:30+02:00'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "OffsetDateTime")
         d = self._py_dt
-        result = format_fields(
+        return format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -4068,11 +4038,9 @@ class OffsetDateTime(_ExactAndLocalTime):
             nanos=self._nanos,
             offset_secs=self._current_offset_secs(),
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
     def parse(cls, s: str, /, *, pattern: str) -> OffsetDateTime:
@@ -4113,7 +4081,6 @@ class OffsetDateTime(_ExactAndLocalTime):
             and result._py_dt.weekday() != state.weekday
         ):
             raise ValueError("weekday does not match the date")
-        warn_pattern(elements, stacklevel=3)
         return result
 
     if not TYPE_CHECKING:  # for a nicer autodoc
@@ -4790,15 +4757,10 @@ class ZonedDateTime(_ExactAndLocalTime):
         ... )
         '2024-03-15 14:30+01:00[Europe/Paris]'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "ZonedDateTime")
         d = self._py_dt
-        result = format_fields(
+        return format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -4812,11 +4774,9 @@ class ZonedDateTime(_ExactAndLocalTime):
             tz_id=self._tz.key,
             tz_abbrev=self.tz_abbrev(),
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
     def parse(
@@ -4906,7 +4866,6 @@ class ZonedDateTime(_ExactAndLocalTime):
         self._tz = written.tz
         if implicit:
             _warn_implicit_disambiguation(stacklevel=2)
-        warn_pattern(elements, stacklevel=3)
         return self
 
     def _init_from_py(
@@ -6099,15 +6058,10 @@ class PlainDateTime(_LocalTime):
         >>> PlainDateTime(2024, 3, 15, 14, 30).format("YYYY-MM-DD HH:mm")
         '2024-03-15 14:30'
         """
-        return self._format(pattern)
-
-    def _format(self, pattern: str, /) -> str:
-        # Shared by format() and __format__(); the stack level counts
-        # from warn_pattern() through here to the caller of either.
         elements = compile_pattern(pattern)
         validate_fields(elements, self._PATTERN_CATS, "PlainDateTime")
         d = self._py_dt
-        result = format_fields(
+        return format_fields(
             elements,
             year=d.year,
             month=d.month,
@@ -6118,11 +6072,9 @@ class PlainDateTime(_LocalTime):
             second=d.second,
             nanos=self._nanos,
         )
-        warn_pattern(elements, stacklevel=4)
-        return result
 
     def __format__(self, spec: str, /) -> str:
-        return str(self) if not spec else self._format(spec)
+        return str(self) if not spec else self.format(spec)
 
     @classmethod
     def parse(cls, s: str, /, *, pattern: str) -> PlainDateTime:
@@ -6152,7 +6104,6 @@ class PlainDateTime(_LocalTime):
             and result._py_dt.weekday() != state.weekday
         ):
             raise ValueError("weekday does not match the date")
-        warn_pattern(elements, stacklevel=3)
         return result
 
     def _init_from_py(self, d: _datetime, **kwargs: Any) -> None:

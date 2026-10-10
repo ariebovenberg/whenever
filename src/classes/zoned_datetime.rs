@@ -1148,7 +1148,7 @@ fn zoned_since(
     }
 }
 
-fn format(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) -> PyReturn {
+fn format(_: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("format() argument must be a string")?;
@@ -1157,14 +1157,12 @@ fn format(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, pattern_obj: PyObj) 
     pattern.validate(pattern::CategorySet::DATE_TIME_OFFSET_TZ, "ZonedDateTime")?;
     let meta = slf.tz.meta_for_instant(slf.to_instant().epoch);
     let abbrev_str = abbrev_text(meta.abbrev);
-    let result = pattern.format(
+    pattern.format(
         &slf.to_plain()
             .pattern_values()
             .with_offset(slf.offset)
             .with_timezone(slf.tz.key.as_deref(), abbrev_str),
-    )?;
-    pattern.warn(*cls.state().warn_whenever)?;
-    Ok(result)
+    )
 }
 
 fn __format__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime, spec_obj: PyObj) -> PyReturn {
@@ -1219,7 +1217,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
     parsed.validate_weekday(date)?;
     let dt = date.at(parsed.time()?);
     let tz = state.tz_store.get(tz_id)?;
-    let result = match parsed.offset_secs {
+    match parsed.offset_secs {
         Some(_) if parsed.offset_is_z => dt.assume_utc().into_zoned_obj(tz, cls),
         Some(offset) => resolve_zoned_local(
             cls,
@@ -1234,9 +1232,7 @@ fn parse(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -
         None => dt
             .resolve_with_disambiguation(&tz, dis, state)?
             .into_zoned_obj_unchecked(tz, cls),
-    }?;
-    pattern.warn(*state.warn_whenever)?;
-    Ok(result)
+    }
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[

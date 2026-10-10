@@ -36,6 +36,15 @@ exceptions that name their replacement: the pattern letters `h`, `hh`, and
 
 `WheneverDeprecationWarning` stays, for soft deprecations to come.
 
+**Changed**
+
+- A pattern with a 12-hour clock (`i` or `ii`) and no AM/PM specifier no
+  longer warns. `format()` accepts it; `parse()` raises `ValueError`.
+
+  **Rationale**: the distinct `i` already marks the 12-hour clock, so the
+  warning only repeated what the pattern says. Parsing is another matter:
+  `03:00` could mean 3 AM or 3 PM, and other libraries disagree on which.
+
 ## 0.11.0 (2026-10-02)
 
 This release is intended as a soft 1.0 release: it establishes the planned

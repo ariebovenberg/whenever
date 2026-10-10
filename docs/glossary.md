@@ -241,9 +241,9 @@ optional seconds
   See {ref}`pattern-format`.
 
 12-hour clock
-  Hours 1 through 12 together with an AM/PM specifier, written with `i`/`ii`
-  and `a`/`aa`. A pattern with `i`/`ii` but no AM/PM specifier warns; an
-  AM/PM specifier without `i`/`ii` doesn't.
+  Hours 1 through 12, written with `i`/`ii`, together with an AM/PM
+  specifier (`a`/`aa`). Formatting may leave the specifier out; parsing
+  requires it.
   Also called *12-hour format*, *12-hour time*, and *AM/PM time*.
   See {ref}`pattern-format`.
 

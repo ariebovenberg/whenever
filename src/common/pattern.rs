@@ -17,8 +17,8 @@ use crate::{
         units::{S_PER_HOUR, S_PER_MINUTE},
     },
     py::{
-        PyAsciiStrBuilder, PyObj, PyResult, PyReturn,
-        exc::{RaiseExt, ResultExt, raise_value_err, warn_with_class},
+        PyAsciiStrBuilder, PyResult, PyReturn,
+        exc::{RaiseExt, ResultExt, raise_value_err},
     },
     tz::tzif::is_tz_id_char,
 };
@@ -269,17 +269,21 @@ impl<'a> CompiledPattern<'a> {
         validate_fields(&self.elements, allowed, type_name)
     }
 
-    /// Emit the pattern warnings. Called after a successful format or
-    /// parse: a call that raises warns about nothing.
-    pub(crate) fn warn(&self, warning_cls: PyObj) -> PyResult<()> {
-        warn_pattern(&self.elements, warning_cls)
-    }
-
     pub(crate) fn format(&self, values: &PatternValues<'_>) -> PyReturn {
         format_to_py(&self.elements, values)
     }
 
     pub(crate) fn parse(&self, input: &[u8]) -> Result<ParseState, String> {
+        let has_field = |pred: fn(Field) -> bool| {
+            self.elements
+                .iter()
+                .any(|el| matches!(el, Element::Field(f) if pred(*f)))
+        };
+        if has_field(|f| matches!(f, Field::Hour12 | Field::Hour12Unpadded))
+            && !has_field(|f| matches!(f, Field::AmPmShort | Field::AmPmFull))
+        {
+            return Err("12-hour clock (i/ii) requires AM/PM (a/aa) to parse: add a/aa, or use the 24-hour clock (H/HH)".into());
+        }
         parse_to_state(&self.elements, input)
     }
 }
@@ -1004,8 +1008,6 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
             );
         }
     }
-    // 12h without AM/PM: we return Ok but the Python side emits a warning.
-    // The warning is handled by the caller since we don't have Python API access here.
     Ok(())
 }
 
@@ -1115,20 +1117,6 @@ fn state_key_name(key: u8) -> &'static str {
         11 => "tz_abbrev",
         _ => unreachable!(),
     }
-}
-
-/// Check if the pattern has 12-hour without AM/PM (for warning by caller).
-fn has_12h_without_ampm(elements: &[Element<'_>]) -> bool {
-    let mut has_12h = false;
-    let mut has_ampm = false;
-    for el in elements {
-        match el {
-            Element::Field(Field::Hour12 | Field::Hour12Unpadded) => has_12h = true,
-            Element::Field(Field::AmPmShort | Field::AmPmFull) => has_ampm = true,
-            _ => {}
-        }
-    }
-    has_12h && !has_ampm
 }
 
 // ---- Formatting ----
@@ -1931,18 +1919,6 @@ fn validate_fields(
             ));
         }
     }
-    Ok(())
-}
-
-fn warn_pattern(elements: &[Element<'_>], warning_cls: PyObj) -> PyResult<()> {
-    if has_12h_without_ampm(elements) {
-        warn_with_class(
-            warning_cls,
-            c"the pattern uses a 12-hour clock ('i' or 'ii') without an AM/PM specifier ('a' or 'aa'); a value such as '03:00' could mean 3 AM or 3 PM: add 'a' or 'aa', or use the 24-hour clock ('H' or 'HH')",
-            1,
-        )?;
-    }
-
     Ok(())
 }
 
