@@ -315,16 +315,14 @@ fn round(cls: PyClass<Time>, slf: Time, args: &[PyObj], kwargs: &mut IterKwargs)
     slf.round(increment_ns, mode).0.to_obj(cls)
 }
 
-fn format(cls: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
+fn format(_: PyClass<Time>, slf: Time, pattern_obj: PyObj) -> PyReturn {
     let pattern_pystr = pattern_obj
         .cast_allow_subclass::<PyStr>()
         .ok_or_type_err("format() argument must be a string")?;
     let pattern_str = pattern_pystr.as_utf8()?;
     let pattern = pattern::CompiledPattern::compile(pattern_str).into_value_err()?;
     pattern.validate(pattern::CategorySet::TIME, "Time")?;
-    let result = pattern.format(&slf.pattern_values())?;
-    pattern.warn(*cls.state().warn_whenever)?;
-    Ok(result)
+    pattern.format(&slf.pattern_values())
 }
 
 fn __format__(cls: PyClass<Time>, slf: Time, spec_obj: PyObj) -> PyReturn {
@@ -351,9 +349,7 @@ fn parse(cls: PyClass<Time>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyRetur
 
     let pattern = pattern::CompiledPattern::compile(fmt_bytes).into_value_err()?;
     pattern.validate(pattern::CategorySet::TIME, "Time")?;
-    let result = pattern.parse(s).into_value_err()?.time()?.to_obj(cls)?;
-    pattern.warn(*cls.state().warn_whenever)?;
-    Ok(result)
+    pattern.parse(s).into_value_err()?.time()?.to_obj(cls)
 }
 
 static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
