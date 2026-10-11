@@ -42,21 +42,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # `test` marks the wheels their runner can execute without
-          # emulation. checks.yml covers source builds per OS and Python;
-          # this covers what it cannot: missing files, stripping, ABI tags,
-          # and the targets it never builds.
+          # `native` marks the wheels their runner can execute without
+          # emulation, so they are tested. checks.yml covers source builds
+          # per OS and Python; the tests here cover what it cannot: missing
+          # files, stripping, ABI tags, and the targets it never builds.
+          # `pgo` marks the native targets worth profile-guided
+          # optimization, which costs about 20% in extension size.
 
           # manylinux targets
           - os: linux
             target: x86_64
-            test: true
+            native: true
+            pgo: true
           - os: linux
             target: x86
           - os: linux
             target: aarch64
             runner: ubuntu-24.04-arm
-            test: true
+            native: true
+            pgo: true
           - os: linux
             target: armv7
           - os: linux
@@ -68,7 +72,8 @@ jobs:
           - os: linux
             target: x86_64
             manylinux: musllinux_1_2
-            test: true
+            native: true
+            pgo: true
           - os: linux
             target: x86
             manylinux: musllinux_1_2
@@ -76,7 +81,8 @@ jobs:
             target: aarch64
             manylinux: musllinux_1_2
             runner: ubuntu-24.04-arm
-            test: true
+            native: true
+            pgo: true
           - os: linux
             target: armv7
             manylinux: musllinux_1_2
@@ -84,21 +90,30 @@ jobs:
           # windows
           - os: windows
             target: x86_64
-            test: true
+            native: true
+            pgo: true
           - os: windows
             python-architecture: x86
             target: x86
-            test: true
+            native: true
 
           # macos
           - os: macos
             target: x86_64
           - os: macos
             target: aarch64
-            test: true
+            native: true
+            pgo: true
 
     runs-on: ${{ matrix.runner || format('{0}-latest', (matrix.os == 'linux' && 'ubuntu') || matrix.os) }}
     timeout-minutes: 30
+    env:
+      # The interpreters the PGO profile is trained on. Python versions
+      # compile parts of the extension differently, and a function trained
+      # on another version gets no profile. 3.15 and 3.15t compile like
+      # 3.14 and 3.14t. When adding a version, check the final build for
+      # "hash mismatch" warnings.
+      PGO_PYTHONS: 3.10 3.11 3.12 3.13 3.14 3.14t
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -118,6 +133,47 @@ jobs:
           git checkout -- Cargo.toml Cargo.lock
       - name: Sync Python environment
         run: uv sync --locked --group dev-extra --no-install-project
+      # Profile-guided optimization: build instrumented wheels, run the
+      # training workload against each, and build the release wheels with
+      # the merged profile. The compiler picks each function's profile by
+      # its shape, so one file serves every interpreter.
+      - name: Build the instrumented wheels
+        if: matrix.pgo
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out pgo-wheel --interpreter ${{ env.PGO_PYTHONS }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+        env:
+          RUSTFLAGS: -Cprofile-generate=${{ github.workspace }}/pgo-profiles
+      - name: Run the training workload
+        if: matrix.pgo && !matrix.manylinux
+        shell: bash
+        run: |
+          for version in $PGO_PYTHONS; do
+            uv python install "$version"
+            scripts/pgo_train.sh "$(uv python find --managed-python "$version")"
+          done
+      - name: Run the training workload (musllinux)
+        if: matrix.pgo && matrix.manylinux
+        # The same path inside the container, where the wheels write their
+        # profiles. Alpine has no free-threaded image, so the free-threaded
+        # musl wheels get a profile only where they compile like 3.14.
+        run: |
+          for version in $PGO_PYTHONS; do
+            case $version in *t) continue ;; esac
+            docker run --rm -v "$PWD:$PWD" -w "$PWD" "python:$version-alpine" \
+              scripts/pgo_train.sh python
+          done
+      - name: Merge the profiles
+        if: matrix.pgo
+        shell: bash
+        run: |
+          rustup component add llvm-tools
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          "$(rustc --print sysroot)/lib/rustlib/$host/bin/llvm-profdata" \
+            merge -o pgo.profdata pgo-profiles
+          echo "RUSTFLAGS=-Cprofile-use=${{ github.workspace }}/pgo.profdata" >> "$GITHUB_ENV"
       - name: build wheels
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
@@ -126,11 +182,11 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
       - run: uv run twine check --strict dist/*
       - name: Export the test requirements
-        if: matrix.test
+        if: matrix.native
         run: uv export --locked --only-group test --no-hashes --no-emit-project -o test-requirements.txt
       # The oldest, the newest, and the free-threaded interpreter
       - name: Test the wheels
-        if: matrix.test && !matrix.manylinux
+        if: matrix.native && !matrix.manylinux
         shell: bash
         run: |
           for version in 3.10 3.14 3.14t; do
@@ -141,7 +197,7 @@ jobs:
       # musl wheels run in an Alpine container of the host architecture,
       # which has no free-threaded image
       - name: Test the wheels (musllinux)
-        if: matrix.test && matrix.manylinux
+        if: matrix.native && matrix.manylinux
         run: |
           for version in 3.10 3.14; do
             docker run --rm -v "$PWD:/io" -w /io "python:$version-alpine" \
