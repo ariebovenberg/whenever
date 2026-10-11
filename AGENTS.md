@@ -52,7 +52,8 @@ CI runs this coverage check on Python 3.14.
   unreleased entry, or a message that named values the same entry
   introduced.
 - When changing the public API, update the Python reference, Rust extension,
-  type stubs, tests, documentation, and changelog as applicable.
+  type stubs, tests, PGO training workload (`scripts/pgo_workload.py`),
+  documentation, and changelog as applicable.
 - Code coverage for Python code must be complete, with exceptions only for
   hard-to-test cases involving (for example) system configuration.
 - Don't put things in docstrings that are already described in the type annotations.

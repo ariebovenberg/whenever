@@ -48,6 +48,13 @@ supported for the rest of 1.x.
   warning only repeated what the pattern says. Parsing is another matter:
   `03:00` could mean 3 AM or 3 PM, and other libraries disagree on which.
 
+**Improved**
+
+- The binary wheels for x86-64 and ARM64 Linux (glibc and musl), 64-bit
+  Windows, and Apple Silicon macOS are built with profile-guided
+  optimization. Common operations such as parsing, formatting, and
+  arithmetic run up to 20% faster.
+
 ## 0.11.0 (2026-10-02)
 
 This release is intended as a soft 1.0 release: it establishes the planned
