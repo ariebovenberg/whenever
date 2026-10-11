@@ -165,6 +165,12 @@ bench-compare-fast:
 	$(MAKE) build-release
 	uv $(UV_ARGS) run --no-sync --group benchmark benchmarks/comparison/run.sh --fast
 
+.PHONY: bench-pgo
+bench-pgo:
+	uv $(UV_ARGS) sync --locked --group benchmark
+	rustup component add llvm-tools
+	uv $(UV_ARGS) run --no-sync --group benchmark scripts/bench_pgo.sh
+
 .PHONY: bench-compare-docs
 bench-compare-docs:
 	uv $(UV_ARGS) sync --locked --group benchmark
