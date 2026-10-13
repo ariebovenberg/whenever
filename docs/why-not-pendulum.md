@@ -31,13 +31,11 @@ Pendulum also {ref}`assumes UTC <pendulum-decision-naive>` when a time zone is m
 and {ref}`completes input <pendulum-decision-parse>` instead of rejecting it.
 None of these can be fixed without breaking existing code.
 
-```{admonition} Pendulum 3.2.0 at a glance
+```{admonition} Pendulum 3.3 at a glance
 :class: caution
 
 A sample of behavior you can reproduce today:
 
-- [`dt + timedelta` *inspects the call stack* to decide the outcome](#pendulum-add-stack)
-  (fixed on `master`)
 - [The result of `parse("12:00")` depends on *when* you run it](#pendulum-parse-now)
 - [`today("Africa/Cairo")` is *yesterday*](#pendulum-today-yesterday), for
   one whole day each year
@@ -66,125 +64,82 @@ knows about DST, is exactly such a behavior change.
 A subclass of `datetime` either fixes how `+` behaves,
 *or* is a drop-in replacement. It cannot be both.
 
-After all: a subclass can't reliably guess which semantics the caller expects.
-
 (pendulum-add-stack)=
 
-### Pendulum guesses which semantics the caller expects
+### Code written for `datetime` gets Pendulum's `+`
 
-The best *and* worst part of Python is that you can do almost anything.
-Here's how Pendulum [reconciles the two](https://github.com/python-pendulum/pendulum/blob/aea611d7a1c15ed0da56505c3f370fe4446ba733/src/pendulum/datetime.py#L1237-L1245):
-
-```python
-# src/pendulum/datetime.py (3.2.0)
-def __add__(self, other):
-    ...
-    caller = traceback.extract_stack(limit=2)[0].name
-    if caller == "astimezone":
-        return super().__add__(other)
-    return self._add_timedelta_(other)
-```
-
-Pendulum walks the call stack and picks between two kinds of arithmetic based on
-the *name of the function that called it*.
-Name a function of your own `astimezone`, and `+` changes meaning inside it:
+A `DateTime` *is* a `datetime`, so it goes wherever a `datetime` is accepted:
+into your own code, into other libraries, and into the standard library itself.
+All of that code was written for the standard library's `+`, and now gets Pendulum's.
+Take a helper that moves a datetime to the same time tomorrow.
+For a `datetime`, that is exactly what `+ timedelta(days=1)` does:
 
 ```python
->>> from datetime import timedelta
->>> def astimezone(x):
-...     return x + timedelta(hours=24)
->>> base = pendulum.datetime(2013, 3, 30, 12, tz="Europe/Paris")
->>> base + timedelta(hours=24)
+>>> from datetime import datetime, timedelta
+>>> from zoneinfo import ZoneInfo
+>>> def same_time_tomorrow(d: datetime) -> datetime:
+...     return d + timedelta(days=1)
+>>> same_time_tomorrow(datetime(2013, 3, 30, 12, tzinfo=ZoneInfo("Europe/Paris")))
+datetime.datetime(2013, 3, 31, 12, 0, tzinfo=zoneinfo.ZoneInfo(key='Europe/Paris'))
+>>> same_time_tomorrow(pendulum.datetime(2013, 3, 30, 12, tz="Europe/Paris"))
 DateTime(2013, 3, 31, 13, 0, 0, tzinfo=Timezone('Europe/Paris'))
->>> astimezone(base)
-DateTime(2013, 3, 31, 12, 0, 0, tzinfo=Timezone('Europe/Paris'))
 ```
 
-Why do this? Why this particular name?
-
-During a time zone conversion, the standard library's machinery
-(`ZoneInfo.fromutc()`) calls `+` on whatever datetime it was
-handed, expecting `datetime` semantics. On a Pendulum subclass, that
-dispatches to Pendulum's redefined `+`, which would misinterpret the
-value. Pendulum cannot change the conversion code (it
-belongs to the standard library), cannot un-redefine `+` (that is the main
-attraction), and cannot stop being a subclass (that is the selling point).
-Its answer is to guess, at runtime, whose semantics the caller expects —
-from the caller's name. That's why `dt + timedelta` in *your* code depends
-on what your function happens to be called.
-
-And the guess covers only the one caller it names. Any other `tzinfo` whose
-`fromutc()` does arithmetic, `dateutil`'s for example, goes through the
-"wrong" branch, and the time zone is lost along the way:
+The standard library's own methods are no exception.
+`datetime.astimezone()` converts through the time zone's `fromutc()`,
+which calls `+`. Called on a Pendulum value, that `+` is Pendulum's,
+and the conversion goes wrong:
 
 ```python
->>> from dateutil import tz
 >>> d = pendulum.datetime(2024, 7, 1, 12, tz="UTC")
->>> d.astimezone(tz.gettz("Europe/Paris"))
-DateTime(2024, 7, 1, 12, 0, 0)                 # naive, and not 14:00
->>> datetime(2024, 7, 1, 12, tzinfo=pendulum.UTC).astimezone(tz.gettz("Europe/Paris"))
-datetime.datetime(2024, 7, 1, 14, 0, tzinfo=tzfile('/usr/share/zoneinfo/Europe/Paris'))
-```
-
-The list of names can be extended, but it cannot be completed. Once `+` means
-something different on the subclass, every caller that adds a `timedelta` —
-stdlib internals, `dateutil`, any third-party `tzinfo`, your own code — is a
-caller whose expectations have to be guessed. And the guessing isn't free: it
-runs on every `+`, every `astimezone()` and every `in_tz()`, and inspects
-the call stack every time.
-
-:::{admonition} Fixed on `master`, not yet released
-:class: note
-
-[#1032](https://github.com/python-pendulum/pendulum/pull/1032) removes the stack inspection:
-`astimezone()` now passes the standard library a plain `datetime`.
-That fixes the caller-name and `dateutil` cases above, and most of the slowdown below.
-It can't fix code Pendulum doesn't control.
-Anything handed a `DateTime` as a `datetime` still gets Pendulum's `+`:
-
-```python
->>> datetime.astimezone(pendulum.datetime(2024, 7, 1, 12, tz="UTC"), ZoneInfo("Europe/Paris"))
+>>> d.astimezone(ZoneInfo("Europe/Paris"))            # Pendulum's method
+DateTime(2024, 7, 1, 14, 0, 0, tzinfo=zoneinfo.ZoneInfo(key='Europe/Paris'))
+>>> datetime.astimezone(d, ZoneInfo("Europe/Paris"))  # the standard library's
 DateTime(2024, 7, 1, 12, 0, 0)                 # naive, and not 14:00
 ```
-:::
 
-(pendulum-performance)=
+Pendulum's own `astimezone()` avoids this by handing the standard library a
+plain `datetime`. It can't do the same for code it doesn't control: every
+function that does arithmetic on a `datetime` it is given is in the position of
+`same_time_tomorrow()`. Pendulum cannot change that code, cannot un-redefine
+`+` (that is the main attraction), and cannot stop being a subclass (that is
+the selling point).
 
-### Every addition pays for the guess
+Until version 3.3, Pendulum handled the conversion case by inspecting the call
+stack inside `+`.
+"[Why Pendulum had to write the most cursed `+` operator in all of Python](https://dev.arie.bovenberg.net/blog/pendulum-cursed-plus-operator/)"
+tells how it got there.
 
-Pendulum's FAQ lists [improved performance](https://pendulum.eustace.io/faq/) as a goal,
-but its `+` is now hundreds of times slower than the standard library's:
+(pendulum-duration-dropin)=
+
+### Code written for `timedelta` gets Pendulum's `Duration`
+
+`Duration` subclasses `timedelta`, and changes its behavior the same way.
+A `timedelta` is normalized: `days` carries the sign, and `seconds` is always
+between 0 and 86399. Code that splits a `timedelta` into its fields relies on
+this. Pendulum skips the normalization, so a `Duration`'s fields no longer add
+up to its value:
 
 ```python
->>> from timeit import timeit
->>> hour = timedelta(hours=1)
->>> std = datetime(2024, 1, 1, tzinfo=ZoneInfo("Europe/Paris"))
->>> pdl = pendulum.datetime(2024, 1, 1, tz="Europe/Paris")
->>> timeit("std + hour", globals=globals(), number=1_000_000)   # seconds
-0.06
->>> timeit("pdl + hour", globals=globals(), number=1_000_000)
-39.47
+>>> timedelta(seconds=-1).days, timedelta(seconds=-1).seconds
+(-1, 86399)
+>>> delta = pendulum.duration(seconds=-1)
+>>> delta.days, delta.seconds
+(-1, -1)
+>>> timedelta(days=delta.days, seconds=delta.seconds)    # rebuilt from its fields
+datetime.timedelta(days=-2, seconds=86399)
 ```
 
-The stack inspection is most of the cost. Every `+` walks the stack, and since
-`ZoneInfo.fromutc()` calls `+`, so does every `astimezone()` and `in_tz()`.
-`traceback` then consults `linecache`, which `stat()`s the source file.
-That is *at least one system call per datetime addition*.
-Without the stack inspection ([#1032](https://github.com/python-pendulum/pendulum/pull/1032)), `+` is still about 120 times slower:
-the rest is Pendulum's arithmetic, written in pure Python.
+Months exist only on Pendulum's side. Code written for `timedelta`
+sees a month as 30 days, so the standard library's `+` lands on a different date:
 
-(pendulum-v2-v3)=
-
-:::{admonition} Why did Pendulum use to be faster?
-:class: hint
-
-Version 2 had the same design, but paid for it differently.
-It shipped its own time zone implementation, whose `fromutc()` never called `+`.
-Version 3.0 replaced that implementation with a `ZoneInfo` subclass.
-The standard library's conversion code, which does call `+`,
-entered the path of every conversion.
-The workaround appears in the same release.
-:::
+```python
+>>> month = pendulum.duration(months=1)
+>>> pendulum.datetime(2024, 1, 31) + month
+DateTime(2024, 2, 29, 0, 0, 0, tzinfo=Timezone('UTC'))
+>>> datetime(2024, 1, 31) + month
+datetime.datetime(2024, 3, 1, 0, 0)
+```
 
 :::{admonition} How `whenever` does it
 :class: tip
@@ -232,11 +187,32 @@ serves only the exact base type. When no `Timezone("Asia/Tokyo")` object
 is alive, the next `tz="Asia/Tokyo"` re-reads and re-parses the tzdata file:
 
 ```python
+>>> from timeit import timeit
 >>> timeit('ZoneInfo("Asia/Tokyo")', globals=globals(), number=10_000)
 0.003
 >>> timeit('pendulum.timezone("Asia/Tokyo")', globals=globals(), number=10_000)
 0.75
 ```
+
+(pendulum-performance)=
+
+### Arithmetic is about 100 times slower
+
+Pendulum's FAQ lists [improved performance](https://pendulum.eustace.io/faq/) as a goal,
+but its `+` is about 100 times slower than the standard library's:
+
+```python
+>>> hour = timedelta(hours=1)
+>>> std = datetime(2024, 1, 1, tzinfo=ZoneInfo("Europe/Paris"))
+>>> pdl = pendulum.datetime(2024, 1, 1, tz="Europe/Paris")
+>>> timeit("std + hour", globals=globals(), number=1_000_000)   # seconds
+0.08
+>>> timeit("pdl + hour", globals=globals(), number=1_000_000)
+8.6
+```
+
+Pendulum's arithmetic is written in pure Python, even in the build with the Rust
+extension.
 
 ## Four more decisions with a cost
 
@@ -404,7 +380,6 @@ And since `pendulum.datetime()` defaults to `fold=1`,
 Pendulum's own entry points disagree about the same wall time:
 
 ```python
->>> from zoneinfo import ZoneInfo
 >>> std = datetime(2013, 3, 31, 2, 30, tzinfo=ZoneInfo("Europe/Paris"))   # skipped time
 >>> std.timestamp()
 1364693400.0
@@ -567,17 +542,7 @@ as do floor division, modulo, and `divmod()`
 ([#382](https://github.com/python-pendulum/pendulum/issues/382), since 2019;
 these operators ignore months altogether,
 [#799](https://github.com/python-pendulum/pendulum/issues/799)).
-
-Code written against `timedelta` can't rely on its guarantees either.
-Pendulum skips `timedelta`'s normalization, so `.seconds` can be negative,
-and a standard library `datetime` reads a month as 30 days:
-
-```python
->>> timedelta(seconds=-1).seconds, pendulum.duration(seconds=-1).seconds
-(86399, -1)                                    # timedelta guarantees 0 <= seconds < 86400
->>> datetime(2024, 1, 31) + month              # Pendulum's DateTime gives Feb 29
-datetime.datetime(2024, 3, 1, 0, 0)
-```
+Code written for `timedelta` meets {ref}`further surprises <pendulum-duration-dropin>`.
 
 (pendulum-implicit-arithmetic)=
 
@@ -598,6 +563,8 @@ DateTime(2024, 3, 31, 3, 30, 0, tzinfo=Timezone('Europe/Paris'))
 >>> b.add(days=1).add(hours=2)
 DateTime(2024, 3, 31, 4, 30, 0, tzinfo=Timezone('Europe/Paris'))
 ```
+
+Reported in [#838](https://github.com/python-pendulum/pendulum/issues/838); a fix is proposed in [#1038](https://github.com/python-pendulum/pendulum/pull/1038).
 
 `+` decomposes a `Duration` into units; `-` collapses it to seconds.
 So `dt - delta` differs from both `dt.subtract(...)` and `dt + -delta`:
@@ -749,14 +716,10 @@ and several already have a proposed fix.
 
 | | Issue | Open since | Proposed fix |
 |---|---|---|---|
-| `Timezone` and `FixedTimezone` are unhashable | [#1008](https://github.com/python-pendulum/pendulum/issues/1008) | Sep 2026 | [#1021](https://github.com/python-pendulum/pendulum/pull/1021) (merged, unreleased) |
 | Values carrying a non-Pendulum `tzinfo` are treated as naive | [#527](https://github.com/python-pendulum/pendulum/issues/527), [#646](https://github.com/python-pendulum/pendulum/issues/646) | Dec 2020 | — |
-| `astimezone()` to a `dateutil` zone loses the time zone | [#820](https://github.com/python-pendulum/pendulum/issues/820) | Apr 2024 | [#1032](https://github.com/python-pendulum/pendulum/pull/1032) (merged, unreleased) |
-| On PyPy, `astimezone()` and `in_tz()` are an hour off around DST transitions | — | unreported | [#1032](https://github.com/python-pendulum/pendulum/pull/1032) (merged, unreleased) |
-| On PyPy, `astimezone()` to a non-Pendulum time zone raises `ValueError` | — | unreported | [#1032](https://github.com/python-pendulum/pendulum/pull/1032) (merged, unreleased) |
 | A `dateutil` zone passed as `tz=` becomes `+00:00` | — | unreported | — |
-| `Duration / timedelta`, `//`, `%`, and `divmod()` raise `AttributeError` | [#382](https://github.com/python-pendulum/pendulum/issues/382) | Jun 2019 | — |
-| `//`, `%`, and `divmod()` ignore calendar units | [#799](https://github.com/python-pendulum/pendulum/issues/799) | Jan 2024 | — |
+| `Duration / timedelta`, `//`, `%`, and `divmod()` raise `AttributeError` | [#382](https://github.com/python-pendulum/pendulum/issues/382) | Jun 2019 | [#1042](https://github.com/python-pendulum/pendulum/pull/1042) |
+| `//`, `%`, and `divmod()` ignore calendar units | [#799](https://github.com/python-pendulum/pendulum/issues/799) | Jan 2024 | [#1051](https://github.com/python-pendulum/pendulum/pull/1051) |
 | Durations lose microseconds beyond ~136 years | [#332](https://github.com/python-pendulum/pendulum/issues/332) | Jan 2019 | [#1003](https://github.com/python-pendulum/pendulum/pull/1003) |
 | `Time` arithmetic drops the time zone and microseconds | [#362](https://github.com/python-pendulum/pendulum/issues/362), [#584](https://github.com/python-pendulum/pendulum/issues/584) | Apr 2019 | — |
 | A naive value's `is_dst()` is `True` while its `dst()` is `None` | — | unreported | — |
@@ -765,14 +728,14 @@ and several already have a proposed fix.
 | A negative `Interval` contains neither endpoint, yet `range()` iterates it | — | unreported | — |
 | Pickling and `copy.copy` drop `fold` | [#908](https://github.com/python-pendulum/pendulum/issues/908) | Aug 2025 | [#909](https://github.com/python-pendulum/pendulum/pull/909) |
 | `precise_diff` ignores the end's time of day | [#906](https://github.com/python-pendulum/pendulum/issues/906) | Aug 2025 | [#953](https://github.com/python-pendulum/pendulum/pull/953) |
-| `precise_diff` month detection is not monotonic — 29 days is "1 month", 30 days is "4 weeks 2 days" | — | unreported | — |
+| `precise_diff` month detection is not monotonic — 29 days is "1 month", 30 days is "4 weeks 2 days" | [#790](https://github.com/python-pendulum/pendulum/issues/790) | Jan 2024 | [#1043](https://github.com/python-pendulum/pendulum/pull/1043) |
 | The two builds disagree on ISO 8601 durations | [#534](https://github.com/python-pendulum/pendulum/issues/534), [#833](https://github.com/python-pendulum/pendulum/issues/833) | Feb 2021 | [#993](https://github.com/python-pendulum/pendulum/pull/993), [#1005](https://github.com/python-pendulum/pendulum/pull/1005) |
 | No parity tests between the two builds | [#907](https://github.com/python-pendulum/pendulum/issues/907) | Aug 2025 | — |
 | `from_format(..., "X", tz=...)` returns the wrong instant | — | unreported | — |
-| Out-of-range offsets parse, then fail on use | — | unreported | — |
+| Out-of-range offsets parse, then fail on use | — | unreported | [#1015](https://github.com/python-pendulum/pendulum/pull/1015) (pure-Python build only) |
 | Offsets in time-only strings are silently discarded | — | unreported | — |
 | Formatter tokens are recognized but not implemented | — | unreported | — |
-| Locale data is wrong or missing in ~15 locales | — | unreported | [#1001](https://github.com/python-pendulum/pendulum/pull/1001) (for `zh`; merged, unreleased) |
+| Locale data is wrong or missing in ~15 locales | — | unreported | — |
 | `TZ` is ignored on macOS | [#905](https://github.com/python-pendulum/pendulum/issues/905) | Jul 2025 | [#942](https://github.com/python-pendulum/pendulum/pull/942) |
 | The classes declare no `__slots__` | — | unreported | — |
 | `timezone(2)` means seconds, `datetime(tz=2)` means hours | — | unreported | — |
@@ -872,6 +835,7 @@ Pendulum quietly turns a `dateutil` zone passed as `tz=` into a fixed offset
 or UTC:
 
 ```python
+>>> from dateutil import tz
 >>> pendulum.datetime(2024, 7, 1, 12, tz=tz.gettz("Europe/Paris"))
 DateTime(2024, 7, 1, 12, 0, 0, tzinfo=FixedTimezone(0, name="+00:00"))
 ```
@@ -885,33 +849,6 @@ DateTime(2024, 1, 1, 0, 0, 0, tzinfo=FixedTimezone(7200, name="+02:00"))
 >>> pendulum.timezone(2)
 FixedTimezone(2, name="+00:00")                # two seconds; name truncated
 ```
-
-### Equality contracts Pendulum breaks on its own types
-
-Where Pendulum defines equality for its own types, it breaks contracts
-the standard library keeps: `timedelta`'s equality is a sound equivalence
-relation, while `Interval`'s is not
-({ref}`shown above <pendulum-interval-equality>`); `zoneinfo.ZoneInfo` is
-hashable, while Pendulum's subclass of it is not. `Timezone` and
-`FixedTimezone` define `__eq__` but not `__hash__` — in Python, that
-combination makes a class unhashable:
-
-```python
->>> hash(pendulum.UTC)
-Traceback (most recent call last):
-  ...
-TypeError: unhashable type: 'Timezone'
->>> {pendulum.timezone("Europe/Paris")}
-Traceback (most recent call last):
-  ...
-TypeError: cannot use 'pendulum.tz.timezone.Timezone' as a set element (unhashable type: 'Timezone')
-```
-
-Time zones as dictionary keys, set members, or `lru_cache` arguments are routine;
-none of that works.
-
-The fix ([#1021](https://github.com/python-pendulum/pendulum/pull/1021)) is merged,
-but not yet part of a release.
 
 (pendulum-serialization)=
 
@@ -957,8 +894,6 @@ unrelated part of the program, or by a library it happens to import.
   first gives one-day and eight-day weeks (`pendulum.week_starts_at(SUNDAY)`;
   a Sunday's `start_of("week")` and `end_of("week")` are both itself), and
   `week_of_month` and `week_of_year` ignore the setting.
-- `first_of("month", pendulum.MONDAY)` returns January 7 instead of January 1
-  after the *standard library's* `calendar.setfirstweekday(calendar.SUNDAY)`.
 - `set_locale()` is process-global and, as shown below, reaches the RFC
   formats.
 
@@ -1045,11 +980,11 @@ Pendulum's documentation is primarily a guide, rather than a complete API
 reference. A request for a usable reference has remained open since 2018
 ([#199](https://github.com/python-pendulum/pendulum/issues/199)).
 
-Several published examples no longer match version 3.2.0:
+Several published examples no longer match version 3.3.0:
 
 - the time zone guide still recommends `dst_rule`, `PRE_TRANSITION`,
   `POST_TRANSITION`, and `TRANSITION_ERROR`, all removed in 3.0
-  ([#789](https://github.com/python-pendulum/pendulum/issues/789));
+  ([#789](https://github.com/python-pendulum/pendulum/issues/789); a fix is proposed in [#1053](https://github.com/python-pendulum/pendulum/pull/1053));
 - parts of the documentation still call the result of `diff()` a `Period`,
   although the public class is now `Interval`;
 - examples for `Duration.total_days()` disagree with the actual result;
@@ -1063,9 +998,8 @@ release, 3.0 (December 2023), broke compatibility: it renamed the `Period`
 class, removed the transition-rule API, and replaced the C extension with a
 Rust one. Development slowed after that release. Since 2025 the project lives under the `python-pendulum`
 organization. Its new maintainers picked up a codebase they didn't write,
-and have kept it going: 3.1 shipped in April 2025 and 3.2 in January 2026.
-Fixes are being merged too, including the removal of the stack inspection
-([#1032](https://github.com/python-pendulum/pendulum/pull/1032)) in October 2026.
+and have kept it going: 3.1 shipped in April 2025, 3.2 in January 2026,
+and 3.3 in October 2026, with a batch of fixes.
 
 Their options are limited:
 most of what this page describes follows from the
@@ -1083,14 +1017,13 @@ including some with a tested fix ready
 
 Pendulum's problems follow from its design.
 A subclass can't fix `datetime` and stay a drop-in replacement.
-And guessing (at the caller's intent, at missing time zones, at incomplete input)
-can't be patched into correctness.
+And guessing (at missing time zones, at incomplete input, at which kind of
+arithmetic a call means) can't be patched into correctness.
 Reversing any of these decisions would break the code that depends on them.
 
 `whenever` makes the opposite trade: there's no drop-in path.
 In return, you decide what each value in your program actually is,
 and its type holds you to it. Nothing is guessed silently.
 
-[^versions]: This page is up to date as of Pendulum 3.2.0. Every example was
+[^versions]: This page is up to date as of Pendulum 3.3.0. Every example was
     run against that version on CPython 3.14, unless stated otherwise.
-    Fixes merged since are noted where relevant.
