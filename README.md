@@ -103,9 +103,9 @@ make mistakes *harder* for type checkers to catch, not easier.
 [**Pendulum**](https://pypi.org/project/pendulum/)
 promised to fix `datetime` as a drop-in replacement — but a subclass
 can't change behavior *and* stay drop-in. The result is an API built on
-guesswork: `+` inspects the call stack to guess which semantics the caller
-expects, missing time zones become UTC, and incomplete input is completed
-from the clock. Bugs follow: `today()` can even return yesterday.
+guesswork: missing time zones become UTC, incomplete input is completed
+from the clock, and until 3.3, `+` inspected the call stack to guess which
+semantics the caller expected. Bugs follow: `today()` can even return yesterday.
 [Full comparison →](https://whenever.readthedocs.io/en/latest/why-not-pendulum.html)
 
 ## Why use whenever?
