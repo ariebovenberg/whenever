@@ -170,6 +170,8 @@ Browse the sidebar to navigate the documentation, or jump directly to a topic be
    reference/datetime.md
    reference/partial-types
    reference/deltas.md
+   reference/binary-format.md
+   reference/c-api.md
    reference/misc.rst
 
 .. toctree::

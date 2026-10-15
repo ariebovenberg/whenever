@@ -193,6 +193,18 @@ def test_call_without_argument_array(call):
     assert result.returncode == 0, result.stderr
 
 
+def test_c_api_capsule_only_with_extension():
+    import whenever
+
+    if _EXTENSION_LOADED:
+        capsule = whenever.C_API_v1  # type: ignore[attr-defined]
+        assert type(capsule).__name__ == "PyCapsule"
+    else:
+        assert not hasattr(whenever, "C_API_v1")
+        with pytest.raises(AttributeError, match="C_API_v1"):
+            whenever.C_API_v1  # type: ignore[attr-defined]
+
+
 def test_no_attr_on_module():
     with pytest.raises((AttributeError, ImportError), match="DoesntExist"):
         from whenever import DoesntExist  # type: ignore[attr-defined] # noqa

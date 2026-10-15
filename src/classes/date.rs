@@ -350,6 +350,16 @@ fn extract_weekday(state: &State, arg: PyObj) -> PyResult<Weekday> {
         .ok_or_type_err("weekday must be a Weekday")
 }
 
+fn to_bytes(_: PyType, slf: Date) -> PyReturn {
+    pickle::encode_date(slf).to_py()
+}
+
+fn from_bytes(cls: PyClass<Date>, arg: PyObj) -> PyReturn {
+    pickle::decode_date(arg.expect_bytes()?)
+        .ok_or_else_value_err(|| format!("invalid bytes for Date: {arg}"))?
+        .to_obj(cls)
+}
+
 fn __reduce__(cls: PyClass<Date>, slf: Date) -> PyReturn {
     let data = pickle::encode_date(slf);
     [
@@ -618,6 +628,8 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     method1!(Date, start_of, doc::DATE_START_OF),
     method1!(Date, end_of, doc::DATE_END_OF),
     method0!(Date, __reduce__, c""),
+    method0!(Date, to_bytes, doc::DATE_TO_BYTES),
+    classmethod1!(Date, from_bytes, doc::DATE_FROM_BYTES),
     method_kwargs!(Date, add, doc::DATE_ADD),
     method_kwargs!(Date, subtract, doc::DATE_SUBTRACT),
     method_kwargs!(Date, since, doc::DATE_SINCE),

@@ -251,6 +251,22 @@ def unpack_pickle(fmt: str, data: bytes, /) -> tuple[Any, ...]:
         raise ValueError("invalid pickle data") from None
 
 
+def invalid_bytes(type_name: str, data: bytes, /) -> ValueError:
+    return ValueError(f"invalid bytes for {type_name}: {data!r}")
+
+
+def unpack_bytes(fmt: str, type_name: str, data: bytes, /) -> tuple[Any, ...]:
+    """Unpack a ``from_bytes()`` payload, or raise the one error for a
+    payload that is not one. Only ``bytes`` is accepted, as on the Rust
+    backend; a buffer would pass here and fail there."""
+    if not isinstance(data, bytes):
+        raise TypeError("expected bytes argument")
+    try:
+        return _unpack(fmt, data)
+    except _struct_error:
+        raise invalid_bytes(type_name, data) from None
+
+
 def check_no_kwargs(
     kwargs: dict[str, Any],
     function_name: str,

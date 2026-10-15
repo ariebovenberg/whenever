@@ -448,6 +448,16 @@ fn difference(
     }
 }
 
+fn to_bytes(_: PyType, slf: PlainDateTime) -> PyReturn {
+    pickle::encode_plain(slf).to_py()
+}
+
+fn from_bytes(cls: PyClass<PlainDateTime>, arg: PyObj) -> PyReturn {
+    pickle::decode_plain(arg.expect_bytes()?)
+        .ok_or_else_value_err(|| format!("invalid bytes for PlainDateTime: {arg}"))?
+        .to_obj(cls)
+}
+
 fn __reduce__(cls: PyClass<PlainDateTime>, slf: PlainDateTime) -> PyReturn {
     let data = pickle::encode_plain(slf);
     [
@@ -877,6 +887,8 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(PlainDateTime, __reduce__, c""),
+    method0!(PlainDateTime, to_bytes, doc::PLAINDATETIME_TO_BYTES),
+    classmethod1!(PlainDateTime, from_bytes, doc::PLAINDATETIME_FROM_BYTES),
     method0!(PlainDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),
     method0!(PlainDateTime, date, doc::LOCALTIME_DATE),
     method0!(PlainDateTime, time, doc::LOCALTIME_TIME),

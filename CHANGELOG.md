@@ -48,6 +48,21 @@ supported for the rest of 1.x.
   warning only repeated what the pattern says. Parsing is another matter:
   `03:00` could mean 3 AM or 3 PM, and other libraries disagree on which.
 
+**Added**
+
+- `to_bytes()` and `from_bytes()` on `Date`, `Time`, `PlainDateTime`,
+  `Instant`, `TimeDelta`, `OffsetDateTime`, and `ZonedDateTime`, which
+  write and read a compact
+  [binary format](https://whenever.readthedocs.io/en/latest/reference/binary-format.html)
+  without `pickle`. The bytes are the payload pickles have carried since
+  0.8.0. `ZonedDateTime.from_bytes()` takes `offset_mismatch=` and
+  `disambiguation=` as `parse_iso()` does.
+- A [C API](https://whenever.readthedocs.io/en/latest/reference/c-api.html)
+  for extension modules. The Rust extension publishes the capsule
+  `whenever.C_API_v1`; through it, compiled code reads and builds values
+  without Python calls. The `pyo3-whenever` crate wraps it for Rust, with
+  jiff conversions.
+
 **Improved**
 
 - The binary wheels for x86-64 and ARM64 Linux (glibc and musl), 64-bit

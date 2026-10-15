@@ -253,6 +253,16 @@ fn parse_iso(cls: PyClass<Time>, s: PyObj) -> PyReturn {
     .to_obj(cls)
 }
 
+fn to_bytes(_: PyType, slf: Time) -> PyReturn {
+    pickle::encode_time(slf).to_py()
+}
+
+fn from_bytes(cls: PyClass<Time>, arg: PyObj) -> PyReturn {
+    pickle::decode_time(arg.expect_bytes()?)
+        .ok_or_else_value_err(|| format!("invalid bytes for Time: {arg}"))?
+        .to_obj(cls)
+}
+
 fn __reduce__(cls: PyClass<Time>, slf: Time) -> PyReturn {
     let data = pickle::encode_time(slf);
     [
@@ -356,6 +366,8 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(Time, __reduce__, c""),
+    method0!(Time, to_bytes, doc::TIME_TO_BYTES),
+    classmethod1!(Time, from_bytes, doc::TIME_FROM_BYTES),
     method0!(Time, to_stdlib, doc::TIME_TO_STDLIB),
     method_kwargs!(Time, replace, doc::TIME_REPLACE),
     method_kwargs!(Time, format_iso, doc::TIME_FORMAT_ISO),
