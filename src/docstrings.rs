@@ -575,6 +575,15 @@ Parameters
 basic
     Whether to use the basic ISO format (without separators) instead of the extended one.
 ";
+pub(crate) const DATE_FROM_BYTES: &CStr = c"\
+Deserialize from the :ref:`binary format <binary-format>`.
+Inverse of :meth:`to_bytes`.
+
+Raises
+------
+ValueError
+    If the data is not a valid payload.
+";
 pub(crate) const DATE_IN_LEAP_YEAR: &CStr = c"\
 Whether this date's year is a leap year
 
@@ -745,6 +754,10 @@ Date(\"2019-10-30\")
 >>> Date(2021, 3, 1).subtract(years=1)
 Date(\"2020-03-01\")
 ";
+pub(crate) const DATE_TO_BYTES: &CStr = c"\
+Serialize to the :ref:`binary format <binary-format>`.
+Inverse of :meth:`from_bytes`.
+";
 pub(crate) const DATE_TO_STDLIB: &CStr = c"\
 Convert to a standard library :class:`~datetime.date`";
 pub(crate) const DATE_TODAY: &CStr = c"\
@@ -820,6 +833,15 @@ Note
 This is also the IMF-fixdate representation used to generate HTTP dates
 under the stricter RFC 9110 standard.
 
+";
+pub(crate) const INSTANT_FROM_BYTES: &CStr = c"\
+Deserialize from the :ref:`binary format <binary-format>`.
+Inverse of :meth:`to_bytes`.
+
+Raises
+------
+ValueError
+    If the data is not a valid payload.
 ";
 pub(crate) const INSTANT_FROM_TIMESTAMP: &CStr = c"\
 from_timestamp(value, /, *, unit='second')
@@ -938,6 +960,10 @@ Warning
 which emits :class:`~whenever.DaysAssumed24HoursWarning`.
 Pass ``days_assumed_24h_ok=True`` when that is intentional.
 ";
+pub(crate) const INSTANT_TO_BYTES: &CStr = c"\
+Serialize to the :ref:`binary format <binary-format>`.
+Inverse of :meth:`from_bytes`.
+";
 pub(crate) const OFFSETDATETIME_ADD: &CStr = c"\
 add($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, hours=0, minutes=0, seconds=0, milliseconds=0, microseconds=0, nanoseconds=0, stale_offset_ok=False)
 --
@@ -1026,6 +1052,15 @@ nearest minute, as the ``xx`` pattern does.
 
 >>> OffsetDateTime(2020, 8, 15, 23, 12, offset=hours(2)).format_rfc2822()
 \"Sat, 15 Aug 2020 23:12:00 +0200\"
+";
+pub(crate) const OFFSETDATETIME_FROM_BYTES: &CStr = c"\
+Deserialize from the :ref:`binary format <binary-format>`.
+Inverse of :meth:`to_bytes`.
+
+Raises
+------
+ValueError
+    If the data is not a valid payload.
 ";
 pub(crate) const OFFSETDATETIME_NOW: &CStr = c"\
 now(offset, /, *, stale_offset_ok=...)
@@ -1216,6 +1251,10 @@ Subtract a time amount from this datetime.
 
 See :meth:`add` for more information.
 ";
+pub(crate) const OFFSETDATETIME_TO_BYTES: &CStr = c"\
+Serialize to the :ref:`binary format <binary-format>`.
+Inverse of :meth:`from_bytes`.
+";
 pub(crate) const OFFSETDATETIME_UNTIL: &CStr = c"\
 until($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=..., stale_offset_ok=...)
 --
@@ -1332,6 +1371,15 @@ Inverse of :meth:`parse_iso`.
 ``unit``, ``basic``, and ``sep`` are as on
 :meth:`ZonedDateTime.format_iso`.
 ";
+pub(crate) const PLAINDATETIME_FROM_BYTES: &CStr = c"\
+Deserialize from the :ref:`binary format <binary-format>`.
+Inverse of :meth:`to_bytes`.
+
+Raises
+------
+ValueError
+    If the data is not a valid payload.
+";
 pub(crate) const PLAINDATETIME_PARSE: &CStr = c"\
 parse(s, /, *, pattern)
 --
@@ -1436,6 +1484,10 @@ Subtract a time amount from this datetime.
 
 See :meth:`add` for more information.
 ";
+pub(crate) const PLAINDATETIME_TO_BYTES: &CStr = c"\
+Serialize to the :ref:`binary format <binary-format>`.
+Inverse of :meth:`from_bytes`.
+";
 pub(crate) const PLAINDATETIME_UNTIL: &CStr = c"\
 until($self, other, /, *, total=..., in_units=..., round_mode=..., round_increment=..., naive_arithmetic_ok=...)
 --
@@ -1474,6 +1526,15 @@ unit
     ``unit=\"hour\"`` writes ``23``.
 basic
     Whether to use the basic ISO format (without separators) instead of the extended one.
+";
+pub(crate) const TIME_FROM_BYTES: &CStr = c"\
+Deserialize from the :ref:`binary format <binary-format>`.
+Inverse of :meth:`to_bytes`.
+
+Raises
+------
+ValueError
+    If the data is not a valid payload.
 ";
 pub(crate) const TIME_HOUR: &CStr = c"\
 The hour component of the time";
@@ -1554,6 +1615,10 @@ tie toward the even multiple counted from there.
 ";
 pub(crate) const TIME_SECOND: &CStr = c"\
 The second component of the time";
+pub(crate) const TIME_TO_BYTES: &CStr = c"\
+Serialize to the :ref:`binary format <binary-format>`.
+Inverse of :meth:`from_bytes`.
+";
 pub(crate) const TIME_TO_STDLIB: &CStr = c"\
 Convert to a standard library :class:`~datetime.time`
 
@@ -1586,6 +1651,15 @@ Inverse of :meth:`parse_iso`.
 
 >>> TimeDelta(hours=1, minutes=30).format_iso()
 'PT1H30M'
+";
+pub(crate) const TIMEDELTA_FROM_BYTES: &CStr = c"\
+Deserialize from the :ref:`binary format <binary-format>`.
+Inverse of :meth:`to_bytes`.
+
+Raises
+------
+ValueError
+    If the data is not a valid payload.
 ";
 pub(crate) const TIMEDELTA_IN_UNITS: &CStr = c"\
 in_units($self, units, /, *, round_mode='trunc', round_increment=1, relative_to=..., days_assumed_24h_ok=..., naive_arithmetic_ok=..., stale_offset_ok=...)
@@ -1680,6 +1754,10 @@ which emits a :class:`~whenever.DaysAssumed24HoursWarning` unless
 
 >>> TimeDelta(hours=1).subtract(minutes=30)
 TimeDelta(\"PT30m\")
+";
+pub(crate) const TIMEDELTA_TO_BYTES: &CStr = c"\
+Serialize to the :ref:`binary format <binary-format>`.
+Inverse of :meth:`from_bytes`.
 ";
 pub(crate) const TIMEDELTA_TO_STDLIB: &CStr = c"\
 Convert to a :class:`~datetime.timedelta`
@@ -1841,6 +1919,28 @@ Important
 The time zone ID is a recent extension to the ISO 8601 format (RFC 9557).
 Although it is gaining popularity, it is not yet widely supported
 by ISO 8601 parsers.
+";
+pub(crate) const ZONEDDATETIME_FROM_BYTES: &CStr = c"\
+from_bytes(data, /, *, disambiguation=..., offset_mismatch='raise')
+--
+
+Deserialize from the :ref:`binary format <binary-format>`.
+Inverse of :meth:`to_bytes`.
+
+Checks the stored offset against the time zone rules of this
+machine, as :meth:`parse_iso` checks a written offset.
+See the :ref:`time zone resolution guide <offset-mismatch>`
+for how ``offset_mismatch`` interacts with ``disambiguation``.
+
+Raises
+------
+ValueError
+    If the data is not a valid payload.
+~whenever.TimeZoneNotFoundError
+    If the time zone ID is not found in the time zone database.
+~whenever.InvalidOffsetError
+    If the offset matches no offset the time zone applies to the
+    local time, under ``offset_mismatch=\"raise\"``.
 ";
 pub(crate) const ZONEDDATETIME_IS_REPEATED: &CStr = c"\
 Whether this local time occurs twice in its time zone
@@ -2115,6 +2215,16 @@ subtract($self, delta=..., /, *, years=0, months=0, weeks=0, days=0, hours=0, mi
 --
 
 The inverse of the ``add()`` method. See :meth:`add` for more information.";
+pub(crate) const ZONEDDATETIME_TO_BYTES: &CStr = c"\
+Serialize to the :ref:`binary format <binary-format>`: the
+``OffsetDateTime`` payload followed by the time zone ID.
+Inverse of :meth:`from_bytes`.
+
+Raises
+------
+ValueError
+    If the time zone has no time zone ID (see :ref:`systemtime`).
+";
 pub(crate) const ZONEDDATETIME_TO_STDLIB: &CStr = c"\
 Convert to a standard library :class:`~datetime.datetime`
 with a :class:`~zoneinfo.ZoneInfo` tzinfo.

@@ -16,6 +16,7 @@ use crate::{
     docstrings as doc,
     py::*,
     pymodule::{
+        capi,
         patch::{_patch_time_frozen, _patch_time_keep_ticking, _unpatch_time, Patch},
         tzconf::*,
         utils::*,
@@ -283,6 +284,16 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
     )?;
     let (zoned_datetime_type, unpickle_zoned_datetime) =
         new_class(module, *module_name, &zoned_datetime::SPEC, c"_unpkl_zoned")?;
+    let capi = capi::table(
+        *date_type,
+        *time_type,
+        *plain_datetime_type,
+        *instant_type,
+        *offset_datetime_type,
+        *zoned_datetime_type,
+        *time_delta_type,
+    );
+    module.setattr(c"C_API_v1", *capi::capsule(&capi)?)?;
     // As the pure-Python helpers report, so help() and pickling agree.
     for name in [
         c"hours",
@@ -449,6 +460,7 @@ fn module_exec(mut module: PyModule) -> PyResult<()> {
 
         time_patch,
         tz_store,
+        capi,
     };
     // SAFETY: only accessed under CPython's own synchronization (module-init exclusivity).
     unsafe { module.state_mut().assume_init_mut() }.replace(state);
@@ -655,6 +667,10 @@ pub(crate) struct State {
 
     pub(crate) time_patch: SyncCell<Patch>,
     pub(crate) tz_store: TzStore,
+    // The C API table the `C_API_v1` capsule points into; it lives as long
+    // as the module state.
+    #[allow(dead_code)]
+    pub(crate) capi: Box<capi::Whenever_CAPI>,
 }
 
 impl State {

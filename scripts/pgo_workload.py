@@ -131,6 +131,8 @@ def roundtrip(x: object) -> None:
     str(x)
     repr(x)
     pickle.loads(pickle.dumps(x))
+    if hasattr(x, "to_bytes"):
+        type(x).from_bytes(x.to_bytes())
 
 
 def local_fields(x: ZonedDateTime | OffsetDateTime | PlainDateTime) -> None:

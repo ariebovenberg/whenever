@@ -106,11 +106,17 @@ sync-llms-summaries:
 check-llms-summaries:
 	uv $(UV_ARGS) run --no-sync python scripts/llms_summaries.py
 
+.PHONY: check-header
+check-header:
+	PYINC=$$(uv $(UV_ARGS) run --no-sync python -c 'import sysconfig; print(sysconfig.get_paths()["include"])'); \
+	cc -fsyntax-only -x c -std=c99 -Wall -Wextra -pedantic -Werror -Iinclude -I"$$PYINC" include/whenever.h && \
+	c++ -fsyntax-only -x c++ -std=c++17 -Wall -Wextra -pedantic -Werror -Iinclude -I"$$PYINC" include/whenever.h
+
 .PHONY: test
 test: test-py test-rs
 
 .PHONY: ci-lint
-ci-lint: check-readme check-docstrings check-llms-summaries
+ci-lint: check-readme check-docstrings check-llms-summaries check-header
 	uv $(UV_ARGS) lock --check
 	uv $(UV_ARGS) run ruff check $(RUFF_ARGS) pysrc/ tests/ scripts/
 	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check pysrc/ tests/ scripts/

@@ -316,4 +316,16 @@ pure-Python backend
   *pure-Python option*, and *pure-Python fallback*. The *pure-Python wheel*
   is the package artifact that contains only this backend.
   See {ref}`faq-pure-python`.
+
+binary format
+  The fixed-size little-endian bytes that `to_bytes()` writes and
+  `from_bytes()` reads, one layout per type. A pickle carries the same
+  bytes, and a C API record holds the same fields.
+  See {ref}`binary-format`.
+
+C API
+  The table of C functions the Rust extension publishes as the capsule
+  `whenever.C_API_v1`. Through it, an extension module reads and builds
+  values without Python calls.
+  See {ref}`c-api`.
 ```

@@ -21,7 +21,9 @@ but there is no plan for a 2.0:
 the churn of a major release is exactly what this policy avoids.
 
 The promise covers both the {term}`Rust extension`
-and the {term}`pure-Python backend`.
+and the {term}`pure-Python backend`,
+the {ref}`binary format <binary-format>`,
+and the {ref}`C API <c-api>`.
 Releases before 1.0 did make breaking changes;
 the {doc}`changelog` explains each one.
 
