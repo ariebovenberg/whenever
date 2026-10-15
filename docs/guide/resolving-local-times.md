@@ -23,7 +23,8 @@ instant—sometimes requires more information:
 These rules apply to the {class}`~whenever.ZonedDateTime` constructor,
 whether you pass it an ISO string or a standard library datetime, and to
 {meth}`~whenever.ZonedDateTime.parse_iso`, patterned
-{meth}`~whenever.ZonedDateTime.parse`, and
+{meth}`~whenever.ZonedDateTime.parse`,
+{meth}`~whenever.ZonedDateTime.from_bytes`, and
 {meth}`~whenever.OffsetDateTime.assume_tz`. A local time derived from an
 existing value follows a related rule, described in
 {ref}`offset-preserving resolution <offset-preserving>`.

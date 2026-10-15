@@ -23,6 +23,8 @@ parts/
 sdist/
 var/
 include/
+# The C API header is not a virtualenv directory
+!/include/
 man/
 venv/
 *.egg-info/

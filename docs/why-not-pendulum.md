@@ -717,7 +717,7 @@ and several already have a proposed fix.
 | | Issue | Open since | Proposed fix |
 |---|---|---|---|
 | Values carrying a non-Pendulum `tzinfo` are treated as naive | [#527](https://github.com/python-pendulum/pendulum/issues/527), [#646](https://github.com/python-pendulum/pendulum/issues/646) | Dec 2020 | — |
-| A `dateutil` zone passed as `tz=` becomes `+00:00` | — | unreported | — |
+| A `dateutil` 2.9 zone passed as `tz=` becomes `+00:00` | — | unreported | — |
 | `Duration / timedelta`, `//`, `%`, and `divmod()` raise `AttributeError` | [#382](https://github.com/python-pendulum/pendulum/issues/382) | Jun 2019 | [#1042](https://github.com/python-pendulum/pendulum/pull/1042) |
 | `//`, `%`, and `divmod()` ignore calendar units | [#799](https://github.com/python-pendulum/pendulum/issues/799) | Jan 2024 | [#1051](https://github.com/python-pendulum/pendulum/pull/1051) |
 | Durations lose microseconds beyond ~136 years | [#332](https://github.com/python-pendulum/pendulum/issues/332) | Jan 2019 | [#1003](https://github.com/python-pendulum/pendulum/pull/1003) |
@@ -831,8 +831,8 @@ DateTime(2024, 1, 1, 8, 0, 0)                  # naive; 13:00+05:00 expected
 True
 ```
 
-Pendulum quietly turns a `dateutil` zone passed as `tz=` into a fixed offset
-or UTC:
+With python-dateutil 2.9, Pendulum quietly turns a `dateutil` zone passed as
+`tz=` into a fixed offset or UTC; with python-dateutil 3.0 the zone survives:
 
 ```python
 >>> from dateutil import tz

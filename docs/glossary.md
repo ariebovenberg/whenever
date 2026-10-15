@@ -203,7 +203,7 @@ call-local escape
 
 compatibility shim
   A deprecated spelling: it does what its replacement does and emits
-  `WheneverDeprecationWarning`. 1.0 ships none; the 0.11.0 changelog entry
+  `WheneverDeprecationWarning`. 1.0 ships none; the 1.0.0 changelog entry
   lists the ones it removed.
   Also called *wrapper*, *alias*, and *legacy path*.
 
@@ -316,4 +316,16 @@ pure-Python backend
   *pure-Python option*, and *pure-Python fallback*. The *pure-Python wheel*
   is the package artifact that contains only this backend.
   See {ref}`faq-pure-python`.
+
+binary format
+  The fixed-size little-endian bytes that `to_bytes()` writes and
+  `from_bytes()` reads, one layout per type. A pickle and a C API
+  record hold the same fields.
+  See {ref}`binary-format`.
+
+C API
+  The table of C functions the Rust extension publishes as the capsule
+  `whenever.C_API_v1`. Through it, an extension module reads and builds
+  values without Python calls.
+  See {ref}`c-api`.
 ```

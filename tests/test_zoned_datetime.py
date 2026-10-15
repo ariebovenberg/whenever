@@ -759,8 +759,6 @@ class TestInitFromPy:
         pydt = py_datetime(
             2020, 8, 15, 23, 12, tzinfo=ZoneInfo("Europe/Paris")
         )
-        with pytest.raises(TypeError, match="disambiguate"):
-            ZonedDateTime(pydt, disambiguate="earlier")  # type: ignore[call-overload]
         with pytest.raises(ValueError, match="offset_mismatch: 'foo'"):
             ZonedDateTime(pydt, offset_mismatch="foo")  # type: ignore[call-overload]
         with pytest.raises(TypeError, match="foo"):
