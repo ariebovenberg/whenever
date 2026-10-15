@@ -249,6 +249,16 @@ fn strict_eq(cls: PyClass<Instant>, slf: Instant, obj_b: PyObj) -> PyReturn {
     }
 }
 
+fn to_bytes(_: PyType, slf: Instant) -> PyReturn {
+    pickle::encode_instant(slf).to_py()
+}
+
+fn from_bytes(cls: PyClass<Instant>, arg: PyObj) -> PyReturn {
+    pickle::decode_instant(arg.expect_bytes()?)
+        .ok_or_else_value_err(|| format!("invalid bytes for Instant: {arg}"))?
+        .to_obj(cls)
+}
+
 fn __reduce__(cls: PyClass<Instant>, slf: Instant) -> PyReturn {
     let data = pickle::encode_instant(slf);
     [
@@ -485,6 +495,8 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(Instant, __reduce__, c""),
+    method0!(Instant, to_bytes, doc::INSTANT_TO_BYTES),
+    classmethod1!(Instant, from_bytes, doc::INSTANT_FROM_BYTES),
     method1!(Instant, strict_eq, doc::EXACTTIME_STRICT_EQ),
     method_kwargs!(Instant, timestamp, doc::EXACTTIME_TIMESTAMP),
     classmethod_kwargs!(Instant, from_timestamp, doc::INSTANT_FROM_TIMESTAMP),

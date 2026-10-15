@@ -71,12 +71,14 @@ from ._common import (
     final,
     format_offset_secs,
     invalid,
+    invalid_bytes,
     mk_fixed_tzinfo,
     replace_fields,
     round_offset_to_minute,
     split_timestamp,
     timestamp_from_parts,
     tzid_display,
+    unpack_bytes,
     unpack_pickle,
     warn_lossy_stdlib_subclass,
 )
@@ -1194,9 +1196,30 @@ class Date(_Base):
     def _init_from_inner(self, d: _date, /) -> None:
         self._py_date = d
 
+    def to_bytes(self) -> bytes:
+        """Serialize to the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`from_bytes`.
+        """
+        return pack("<HBB", self.year, self.month, self.day)
+
+    @classmethod
+    def from_bytes(cls, data: bytes, /) -> Date:
+        """Deserialize from the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`to_bytes`.
+
+        Raises
+        ------
+        ValueError
+            If the data is not a valid payload.
+        """
+        try:
+            return cls(*unpack_bytes("<HBB", "Date", data))
+        except ValueError:
+            raise invalid_bytes("Date", data) from None
+
     @no_type_check
     def __reduce__(self):
-        return _unpkl_date, (pack("<HBB", self.year, self.month, self.day),)
+        return _unpkl_date, (self.to_bytes(),)
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -1604,20 +1627,37 @@ class Time(_Base):
             return NotImplemented
         return (self._py, self._nanos) >= (other._py, other._nanos)
 
+    def to_bytes(self) -> bytes:
+        """Serialize to the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`from_bytes`.
+        """
+        return pack(
+            "<BBBI",
+            self._py.hour,
+            self._py.minute,
+            self._py.second,
+            self._nanos,
+        )
+
+    @classmethod
+    def from_bytes(cls, data: bytes, /) -> Time:
+        """Deserialize from the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`to_bytes`.
+
+        Raises
+        ------
+        ValueError
+            If the data is not a valid payload.
+        """
+        *args, nanos = unpack_bytes("<BBBI", "Time", data)
+        try:
+            return cls(*args, nanosecond=nanos)
+        except ValueError:
+            raise invalid_bytes("Time", data) from None
+
     @no_type_check
     def __reduce__(self):
-        return (
-            _unpkl_time,
-            (
-                pack(
-                    "<BBBI",
-                    self._py.hour,
-                    self._py.minute,
-                    self._py.second,
-                    self._nanos,
-                ),
-            ),
-        )
+        return _unpkl_time, (self.to_bytes(),)
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -2570,11 +2610,33 @@ class TimeDelta(_Base):
         cased = iso[:3] + iso[3:].lower()
         return f'TimeDelta("{cased}")'
 
+    def to_bytes(self) -> bytes:
+        """Serialize to the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`from_bytes`.
+        """
+        return pack("<qI", *divmod(self._total_ns, 1_000_000_000))
+
+    @classmethod
+    def from_bytes(cls, data: bytes, /) -> TimeDelta:
+        """Deserialize from the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`to_bytes`.
+
+        Raises
+        ------
+        ValueError
+            If the data is not a valid payload.
+        """
+        s, ns = unpack_bytes("<qI", "TimeDelta", data)
+        if ns >= 1_000_000_000:
+            raise invalid_bytes("TimeDelta", data)
+        try:
+            return cls(seconds=s, nanoseconds=ns)
+        except ValueError:
+            raise invalid_bytes("TimeDelta", data) from None
+
     @no_type_check
     def __reduce__(self):
-        return _unpkl_tdelta, (
-            pack("<qI", *divmod(self._total_ns, 1_000_000_000)),
-        )
+        return _unpkl_tdelta, (self.to_bytes(),)
 
     @classmethod
     def _from_nanos_unchecked(cls, ns: int) -> TimeDelta:
@@ -3493,12 +3555,33 @@ class Instant(_ExactTime):
     def __repr__(self) -> str:
         return f'Instant("{str(self).replace("T", " ")}")'
 
+    def to_bytes(self) -> bytes:
+        """Serialize to the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`from_bytes`.
+        """
+        return pack("<qL", int(self._py_dt.timestamp()), self._nanos)
+
+    @classmethod
+    def from_bytes(cls, data: bytes, /) -> Instant:
+        """Deserialize from the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`to_bytes`.
+
+        Raises
+        ------
+        ValueError
+            If the data is not a valid payload.
+        """
+        secs, nanos = unpack_bytes("<qL", "Instant", data)
+        if nanos >= 1_000_000_000:
+            raise invalid_bytes("Instant", data)
+        try:
+            return cls._from_py_unchecked(_from_epoch_utc(secs), nanos)
+        except ValueError:
+            raise invalid_bytes("Instant", data) from None
+
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
-        return (
-            _unpkl_inst,
-            (pack("<qL", int(self._py_dt.timestamp()), self._nanos),),
-        )
+        return _unpkl_inst, (self.to_bytes(),)
 
 
 # A separate unpickling function allows us to make backwards-compatible changes
@@ -4443,19 +4526,40 @@ class OffsetDateTime(_ExactAndLocalTime):
     def __repr__(self) -> str:
         return f'OffsetDateTime("{str(self).replace("T", " ")}")'
 
+    def to_bytes(self) -> bytes:
+        """Serialize to the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`from_bytes`.
+        """
+        return pack(
+            "<HBBBBBil",
+            *self._py_dt.timetuple()[:6],
+            self._nanos,
+            self._current_offset_secs(),
+        )
+
+    @classmethod
+    def from_bytes(cls, data: bytes, /) -> OffsetDateTime:
+        """Deserialize from the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`to_bytes`.
+
+        Raises
+        ------
+        ValueError
+            If the data is not a valid payload.
+        """
+        *args, nanos, offset_secs = unpack_bytes(
+            "<HBBBBBil", "OffsetDateTime", data
+        )
+        try:
+            return cls(
+                *args, nanosecond=nanos, offset=TimeDelta(seconds=offset_secs)
+            )
+        except ValueError:
+            raise invalid_bytes("OffsetDateTime", data) from None
+
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
-        return (
-            _unpkl_offset,
-            (
-                pack(
-                    "<HBBBBBil",
-                    *self._py_dt.timetuple()[:6],
-                    self._nanos,
-                    self._current_offset_secs(),
-                ),
-            ),
-        )
+        return _unpkl_offset, (self.to_bytes(),)
 
 
 # A separate function is needed for unpickling, because the
@@ -5889,24 +5993,90 @@ class ZonedDateTime(_ExactAndLocalTime):
     def __str__(self) -> str:
         return self.format_iso(tz_id_display="if_available")
 
+    def to_bytes(self) -> bytes:
+        """Serialize to the :ref:`binary format <binary-format>`: the
+        ``OffsetDateTime`` payload followed by the time zone ID.
+        Inverse of :meth:`from_bytes`.
+
+        Raises
+        ------
+        ValueError
+            If the time zone has no time zone ID (see :ref:`systemtime`).
+        """
+        if (key := self._tz.key) is None:
+            raise ValueError(
+                "cannot convert a ZonedDateTime without a time zone ID "
+                "to bytes"
+            )
+        return self._offset_bytes() + key.encode()
+
+    @classmethod
+    def from_bytes(
+        cls,
+        data: bytes,
+        /,
+        *,
+        disambiguation: DisambiguationStr = UNSET,
+        offset_mismatch: OffsetMismatchStr = "raise",
+    ) -> ZonedDateTime:
+        """Deserialize from the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`to_bytes`.
+
+        Checks the stored offset against the time zone rules of this
+        machine, as :meth:`parse_iso` checks a written offset.
+        See the :ref:`time zone resolution guide <offset-mismatch>`
+        for how ``offset_mismatch`` interacts with ``disambiguation``.
+
+        Raises
+        ------
+        ValueError
+            If the data is not a valid payload.
+        ~whenever.TimeZoneNotFoundError
+            If the time zone ID is not found in the time zone database.
+        ~whenever.InvalidOffsetError
+            If the offset matches no offset the time zone applies to the
+            local time, under ``offset_mismatch="raise"``.
+        """
+        if disambiguation is not UNSET:
+            check_disambiguation(disambiguation)
+        *args, nanos, offset_secs = unpack_bytes(
+            "<HBBBBBil", "ZonedDateTime", data[:15]
+        )
+        try:
+            check_nanos(nanos)
+            local = _datetime(*args)
+            offset = mk_fixed_tzinfo(offset_secs)
+            check_utc_bounds(local.replace(tzinfo=offset))
+            tzid = data[15:].decode()
+        except ValueError:
+            raise invalid_bytes("ZonedDateTime", data) from None
+        tz = get_tz(tzid)
+        py_dt, implicit = _resolve_zoned_local(
+            ZonedInput(local, nanos, tz, offset, True),
+            False,
+            disambiguation,
+            offset_mismatch,
+        )
+        self = cls._from_py_unchecked(py_dt, nanos, tz)
+        if implicit:
+            _warn_implicit_disambiguation(stacklevel=2)
+        return self
+
+    def _offset_bytes(self) -> bytes:
+        return pack(
+            "<HBBBBBil",
+            *self._py_dt.timetuple()[:6],
+            self._nanos,
+            self._current_offset_secs(),
+        )
+
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
         if (key := self._tz.key) is None:
             raise ValueError(
                 "cannot pickle ZonedDateTime without a time zone ID"
             )
-        return (
-            _unpkl_zoned,
-            (
-                pack(
-                    "<HBBBBBil",
-                    *self._py_dt.timetuple()[:6],
-                    self._nanos,
-                    self._current_offset_secs(),
-                ),
-                key,
-            ),
-        )
+        return _unpkl_zoned, (self._offset_bytes(), key)
 
 
 # A separate function is needed for unpickling, because the
@@ -6774,12 +6944,31 @@ class PlainDateTime(_LocalTime):
     def __repr__(self) -> str:
         return f'PlainDateTime("{str(self).replace("T", " ")}")'
 
+    def to_bytes(self) -> bytes:
+        """Serialize to the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`from_bytes`.
+        """
+        return pack("<HBBBBBi", *self._py_dt.timetuple()[:6], self._nanos)
+
+    @classmethod
+    def from_bytes(cls, data: bytes, /) -> PlainDateTime:
+        """Deserialize from the :ref:`binary format <binary-format>`.
+        Inverse of :meth:`to_bytes`.
+
+        Raises
+        ------
+        ValueError
+            If the data is not a valid payload.
+        """
+        *args, nanos = unpack_bytes("<HBBBBBi", "PlainDateTime", data)
+        try:
+            return cls(*args, nanosecond=nanos)
+        except ValueError:
+            raise invalid_bytes("PlainDateTime", data) from None
+
     # a custom pickle implementation with a smaller payload
     def __reduce__(self) -> tuple[object, ...]:
-        return (
-            _unpkl_local,
-            (pack("<HBBBBBi", *self._py_dt.timetuple()[:6], self._nanos),),
-        )
+        return _unpkl_local, (self.to_bytes(),)
 
 
 # A separate unpickling function allows us to make backwards-compatible changes

@@ -680,6 +680,16 @@ fn difference(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime, arg: PyObj) -> 
         .to_obj(*state.time_delta_type)
 }
 
+fn to_bytes(_: PyType, slf: OffsetDateTime) -> PyReturn {
+    pickle::encode_offset(slf).to_py()
+}
+
+fn from_bytes(cls: PyClass<OffsetDateTime>, arg: PyObj) -> PyReturn {
+    pickle::decode_offset(arg.expect_bytes()?)
+        .ok_or_else_value_err(|| format!("invalid bytes for OffsetDateTime: {arg}"))?
+        .to_obj(cls)
+}
+
 fn __reduce__(cls: PyClass<OffsetDateTime>, slf: OffsetDateTime) -> PyReturn {
     let data = pickle::encode_offset(slf);
     [
@@ -921,6 +931,8 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(OffsetDateTime, __reduce__, c""),
+    method0!(OffsetDateTime, to_bytes, doc::OFFSETDATETIME_TO_BYTES),
+    classmethod1!(OffsetDateTime, from_bytes, doc::OFFSETDATETIME_FROM_BYTES),
     classmethod_kwargs!(OffsetDateTime, now, doc::OFFSETDATETIME_NOW),
     method1!(OffsetDateTime, strict_eq, doc::EXACTTIME_STRICT_EQ),
     method0!(OffsetDateTime, to_stdlib, doc::BASICCONVERSIONS_TO_STDLIB),

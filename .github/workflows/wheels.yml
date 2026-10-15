@@ -180,7 +180,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --strip --out dist --interpreter '3.10 3.11 3.12 3.13 3.14 3.14t 3.15 3.15t'
           manylinux: ${{ matrix.manylinux || 'auto' }}
-      - run: uv run twine check --strict dist/*
+      - run: uv run --no-sync twine check --strict dist/*
       - name: Export the test requirements
         if: matrix.native
         run: uv export --locked --only-group test --no-hashes --no-emit-project -o test-requirements.txt
@@ -222,7 +222,7 @@ jobs:
       - name: Build sdist and pure-Python wheel
         run: |
           uv build -C rust-extension=skip
-      - run: uv run twine check --strict dist/*
+      - run: uv run --no-sync twine check --strict dist/*
       - name: Test the pure-Python wheel and the sdist
         run: |
           uv export --locked --only-group test --no-hashes --no-emit-project -o test-requirements.txt

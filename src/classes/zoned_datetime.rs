@@ -693,7 +693,7 @@ fn matching_local_offset(
 /// between raising, keeping the exact time, and keeping the local time and
 /// consulting `dis`.
 #[allow(clippy::too_many_arguments)]
-fn resolve_zoned_local(
+pub(crate) fn resolve_zoned_local(
     cls: PyClass<ZonedDateTime>,
     dt: PlainDateTime,
     tz: Arc<TimeZone>,
@@ -867,6 +867,43 @@ fn timestamp(
         .transpose()?
         .unwrap_or(TimestampUnit::Second);
     unit.timestamp(slf.to_instant()).to_py()
+}
+
+fn to_bytes(_: PyType, slf: &ZonedDateTime) -> PyReturn {
+    let key = slf
+        .tz
+        .key
+        .as_ref()
+        .ok_or_value_err("cannot convert a ZonedDateTime without a time zone ID to bytes")?;
+    let mut data = Vec::with_capacity(pickle::OFFSET_DATETIME_LEN + key.len());
+    data.extend_from_slice(&pickle::encode_offset(slf.to_fixed_offset()));
+    data.extend_from_slice(key.as_bytes());
+    data.as_slice().to_py()
+}
+
+fn from_bytes(cls: PyClass<ZonedDateTime>, args: &[PyObj], kwargs: &mut IterKwargs) -> PyReturn {
+    let arg = handle_one_arg("from_bytes", args)?;
+    let state = cls.state();
+    let (dis, mismatch) = parse_iso_kwargs(kwargs, "from_bytes", state)?;
+    let data = arg.expect_bytes()?;
+    let invalid = || format!("invalid bytes for ZonedDateTime: {arg}");
+    let (stored, tz_id) = data
+        .split_at_checked(pickle::OFFSET_DATETIME_LEN)
+        .and_then(|(head, tail)| Some((pickle::decode_offset(head)?, tail)))
+        .ok_or_else_value_err(invalid)?;
+    let tz = state
+        .tz_store
+        .get(str::from_utf8(tz_id).ok().ok_or_else_value_err(invalid)?)?;
+    resolve_zoned_local(
+        cls,
+        stored.to_plain(),
+        tz,
+        stored.offset,
+        true,
+        false,
+        dis,
+        mismatch,
+    )
 }
 
 fn __reduce__(cls: PyClass<ZonedDateTime>, slf: &ZonedDateTime) -> PyReturn {
@@ -1239,6 +1276,8 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(ZonedDateTime, __reduce__, c""),
+    method0!(ZonedDateTime, to_bytes, doc::ZONEDDATETIME_TO_BYTES),
+    classmethod_kwargs!(ZonedDateTime, from_bytes, doc::ZONEDDATETIME_FROM_BYTES),
     method1!(ZonedDateTime, to_tz, doc::ZONEDDATETIME_TO_TZ),
     method_vararg!(
         ZonedDateTime,
