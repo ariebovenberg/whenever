@@ -19,6 +19,9 @@ time zone ID: pickling it raises `ValueError` (see {ref}`systemtime`).
 `copy.copy()` and `copy.deepcopy()` return the value itself, because values
 are immutable.
 
+The payload of a pickle is the {ref}`binary format <binary-format>`, which
+`to_bytes()` writes and `from_bytes()` reads without `pickle`.
+
 ## Zoned datetimes across time zone data updates
 
 A pickled {class}`~whenever.ZonedDateTime` stores its local fields, observed

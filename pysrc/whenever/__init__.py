@@ -16,6 +16,13 @@ def __getattr__(name: str) -> object:
             TimeDelta | ItemizedDelta | ItemizedDateDelta
         )
         return val
+    elif name == "C_API_v1":
+        # The C API capsule, which only the Rust extension provides
+        from . import _core
+
+        if _core._EXTENSION_LOADED:  # pragma: no cover
+            globals()[name] = capsule = _core.C_API_v1  # type: ignore[attr-defined]
+            return capsule
     elif name == "__version__":
         globals()["__version__"] = version = __import__(
             "importlib.metadata"
