@@ -484,7 +484,7 @@ class TestTzCache:
             reset_tzpath(previous)
 
     # This test is run last, because it modifies the tz cache
-    # which can affect other tests (namely those using exact_eq)
+    # which can affect other tests (namely those using strict_eq)
     @pytest.mark.order(-1)
     def test_tz_cache_adjustments(self):
         nyc = "America/New_York"
@@ -559,7 +559,7 @@ class TestTzCache:
 
         # We can request proper time zones now again
         assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc) == d
-        # exact_eq() works again
+        # strict_eq() works again
         assert ZonedDateTime(2020, 8, 15, 5, 12, tz=nyc).strict_eq(d)
 
         repeated = ZonedDateTime(
