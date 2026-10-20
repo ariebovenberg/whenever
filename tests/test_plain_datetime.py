@@ -256,7 +256,7 @@ class TestAssumeTz:
         with pytest.raises(
             TypeError, match="^tz must be a string or SYSTEM_TZ$"
         ):
-            PlainDateTime(2020, 8, 15).assume_tz(3)  # type: ignore[call-overload]
+            PlainDateTime(2020, 8, 15).assume_tz(3)  # type: ignore[arg-type]
 
     def test_unknown_tz_id(self):
         with pytest.raises(TimeZoneNotFoundError, match="not found"):
@@ -283,7 +283,7 @@ class TestAssumeTz:
         )
 
 
-class TestAssumeSystemTz:
+class TestAssumeTzWithSystemTz:
     @pytest.mark.parametrize(
         "tz",
         [
@@ -452,7 +452,7 @@ class TestFormatIso:
         with pytest.raises(ValueError, match="invalid sep"):
             dt.format_iso(sep=1)  # type: ignore[arg-type]
 
-        # tz is a valid kwarg for ZonedDateTime.format_iso(), but not here
+        # tz is not a format_iso() keyword on any type
         with pytest.raises(TypeError, match="tz"):
             dt.format_iso(tz="always")  # type: ignore[call-arg]
 

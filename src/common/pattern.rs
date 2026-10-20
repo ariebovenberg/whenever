@@ -7,8 +7,6 @@
 // rest of the codebase. But it's fast enough for now.
 // Optimizations can always be done in a future release.
 
-use std::ffi::CString;
-
 use crate::{
     common::fmt::{Sink, format_2_digits, format_4_digits},
     domain::{
@@ -19,8 +17,8 @@ use crate::{
         units::{S_PER_HOUR, S_PER_MINUTE},
     },
     py::{
-        PyAsciiStrBuilder, PyObj, PyResult, PyReturn,
-        exc::{RaiseExt, ResultExt, raise_value_err, warn_with_class},
+        PyAsciiStrBuilder, PyResult, PyReturn,
+        exc::{RaiseExt, ResultExt, raise_value_err},
     },
     tz::tzif::is_tz_id_char,
 };
@@ -167,7 +165,6 @@ pub(crate) struct ParseState {
     pub(crate) offset_is_z: bool,
     pub(crate) tz_id: Option<String>,
     weekday: Option<Weekday>,
-    second_absent: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -272,17 +269,21 @@ impl<'a> CompiledPattern<'a> {
         validate_fields(&self.elements, allowed, type_name)
     }
 
-    /// Emit the pattern warnings. Called after a successful format or
-    /// parse: a call that raises warns about nothing.
-    pub(crate) fn warn(&self, warning_cls: PyObj, deprecation_cls: PyObj) -> PyResult<()> {
-        warn_pattern(&self.elements, warning_cls, deprecation_cls)
-    }
-
     pub(crate) fn format(&self, values: &PatternValues<'_>) -> PyReturn {
         format_to_py(&self.elements, values)
     }
 
     pub(crate) fn parse(&self, input: &[u8]) -> Result<ParseState, String> {
+        let has_field = |pred: fn(Field) -> bool| {
+            self.elements
+                .iter()
+                .any(|el| matches!(el, Element::Field(f) if pred(*f)))
+        };
+        if has_field(|f| matches!(f, Field::Hour12 | Field::Hour12Unpadded))
+            && !has_field(|f| matches!(f, Field::AmPmShort | Field::AmPmFull))
+        {
+            return Err("12-hour clock (i/ii) requires AM/PM (a/aa) to parse: add a/aa, or use the 24-hour clock (H/HH)".into());
+        }
         parse_to_state(&self.elements, input)
     }
 }
@@ -302,16 +303,12 @@ enum Field {
     WeekdayFull,
     Hour24,
     Hour24Unpadded,
-    Hour24Legacy,
-    Hour24UnpaddedLegacy,
     Hour12,
     Hour12Unpadded,
     Minute,
     MinuteUnpadded,
     Second,
     SecondUnpadded,
-    SecondOpt,
-    ColonSec,
     FracExact(u8), // width 1-9
     FracTrim(u8),  // width 1-9
     DotFrac(u8),   // decimal point followed by trimmed fractional seconds (width 1-9)
@@ -340,16 +337,12 @@ impl Field {
             | Self::WeekdayFull => Category::Date,
             Self::Hour24
             | Self::Hour24Unpadded
-            | Self::Hour24Legacy
-            | Self::Hour24UnpaddedLegacy
             | Self::Hour12
             | Self::Hour12Unpadded
             | Self::Minute
             | Self::MinuteUnpadded
             | Self::Second
             | Self::SecondUnpadded
-            | Self::SecondOpt
-            | Self::ColonSec
             | Self::FracExact(_)
             | Self::FracTrim(_)
             | Self::DotFrac(_)
@@ -368,14 +361,9 @@ impl Field {
             Self::MonthNum | Self::MonthNumUnpadded | Self::MonthAbbr | Self::MonthFull => 1,
             Self::Day | Self::DayUnpadded => 2,
             Self::WeekdayAbbr | Self::WeekdayFull => 3,
-            Self::Hour24
-            | Self::Hour24Unpadded
-            | Self::Hour24Legacy
-            | Self::Hour24UnpaddedLegacy
-            | Self::Hour12
-            | Self::Hour12Unpadded => 4,
+            Self::Hour24 | Self::Hour24Unpadded | Self::Hour12 | Self::Hour12Unpadded => 4,
             Self::Minute | Self::MinuteUnpadded => 5,
-            Self::Second | Self::SecondUnpadded | Self::SecondOpt | Self::ColonSec => 6,
+            Self::Second | Self::SecondUnpadded => 6,
             Self::FracExact(_) | Self::FracTrim(_) | Self::DotFrac(_) => 7,
             Self::AmPmShort | Self::AmPmFull => 8,
             Self::OffsetLower(_) | Self::OffsetUpper(_) => 9,
@@ -394,11 +382,9 @@ impl Field {
             Self::MonthNumUnpadded
                 | Self::DayUnpadded
                 | Self::Hour24Unpadded
-                | Self::Hour24UnpaddedLegacy
                 | Self::Hour12Unpadded
                 | Self::MinuteUnpadded
                 | Self::SecondUnpadded
-                | Self::SecondOpt
                 | Self::FracTrim(_)
                 | Self::DotFrac(_)
                 | Self::OffsetLower(4)
@@ -407,10 +393,7 @@ impl Field {
     }
 
     fn needs_colon_terminator(self) -> bool {
-        matches!(
-            self,
-            Self::ColonSec | Self::OffsetLower(5) | Self::OffsetUpper(5)
-        )
+        matches!(self, Self::OffsetLower(5) | Self::OffsetUpper(5))
     }
 
     fn needs_dot_terminator(self) -> bool {
@@ -432,16 +415,12 @@ impl Field {
             Self::WeekdayFull => "EEEE",
             Self::Hour24 => "HH",
             Self::Hour24Unpadded => "H",
-            Self::Hour24Legacy => "hh",
-            Self::Hour24UnpaddedLegacy => "h",
             Self::Hour12 => "ii",
             Self::Hour12Unpadded => "i",
             Self::Minute => "mm",
             Self::MinuteUnpadded => "m",
             Self::Second => "ss",
             Self::SecondUnpadded => "s",
-            Self::SecondOpt => "SS",
-            Self::ColonSec => ":SS",
             Self::FracExact(w) => match w {
                 1 => "f",
                 2 => "ff",
@@ -577,7 +556,7 @@ fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
     let n = pattern.len();
     let mut i = 0;
     // Index into `pattern` of a pending '.' or ':' that may be consumed by
-    // the next specifier to form a compound token (.FFF → DotFrac, :SS → ColonSec).
+    // the next specifier to form a compound token (.FFF → DotFrac).
     // Flushed as a plain literal if not consumed.
     let mut pending: Option<usize> = None;
 
@@ -608,7 +587,6 @@ fn compile(pattern: &[u8]) -> Result<Vec<Element<'_>>, String> {
             let (new_i, field) = compile_specifier(pattern, i, n, ch)?;
             let actual = match (pending.take(), field) {
                 (Some(pos), Field::FracTrim(w)) if pattern[pos] == b'.' => Field::DotFrac(w),
-                (Some(pos), Field::SecondOpt) if pattern[pos] == b':' => Field::ColonSec,
                 (Some(pos), f) => {
                     // pending not consumed — flush as a literal first
                     elements.push(Element::Literal(&pattern[pos..pos + 1]));
@@ -874,11 +852,9 @@ fn compile_specifier(
             2 => Field::Hour24,
             _ => return Err(bad_count_err(ch, count, start, "1, 2")),
         },
-        b'h' => match count {
-            1 => Field::Hour24UnpaddedLegacy,
-            2 => Field::Hour24Legacy,
-            _ => return Err(bad_count_err(ch, count, start, "1, 2")),
-        },
+        b'h' => {
+            return Err("`h` and `hh` were removed in 1.0; use `H` or `HH` for the 24-hour clock, or `i` and `ii` for the 12-hour clock".to_string());
+        }
         b'i' => match count {
             1 => Field::Hour12Unpadded,
             2 => Field::Hour12,
@@ -894,10 +870,9 @@ fn compile_specifier(
             2 => Field::Second,
             _ => return Err(bad_count_err(ch, count, start, "1, 2")),
         },
-        b'S' => match count {
-            2 => Field::SecondOpt,
-            _ => return Err(bad_count_err(ch, count, start, "2")),
-        },
+        b'S' => {
+            return Err("`SS` was removed in 1.0; use optional seconds such as `[:ss]` or `[ss]`, or `ss` for required seconds".to_string());
+        }
         b'a' => match count {
             1 => Field::AmPmShort,
             2 => Field::AmPmFull,
@@ -986,10 +961,7 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
         };
 
         match field {
-            Field::Hour24
-            | Field::Hour24Unpadded
-            | Field::Hour24Legacy
-            | Field::Hour24UnpaddedLegacy => has_24h = true,
+            Field::Hour24 | Field::Hour24Unpadded => has_24h = true,
             Field::AmPmShort | Field::AmPmFull => has_ampm = true,
             _ => {}
         }
@@ -1010,13 +982,7 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
             continue;
         };
         let follower = &pair[1];
-        if field.needs_digit_terminator()
-            && element_can_start_with_digit(follower)
-            && !matches!(
-                (field, follower),
-                (Field::SecondOpt, Element::Field(Field::FracTrim(_)))
-            )
-        {
+        if field.needs_digit_terminator() && element_can_start_with_digit(follower) {
             return Err(format!(
                 "specifier {} cannot be followed by an element that starts with a digit",
                 field.display_name()
@@ -1042,18 +1008,13 @@ fn validate_cross_fields(elements: &[Element<'_>]) -> Result<(), String> {
             );
         }
     }
-    // 12h without AM/PM: we return Ok but the Python side emits a warning.
-    // The warning is handled by the caller since we don't have Python API access here.
     Ok(())
 }
 
 fn element_can_be_empty(element: &Element<'_>) -> bool {
     matches!(
         element,
-        Element::OptionalSeconds { .. }
-            | Element::Field(
-                Field::SecondOpt | Field::ColonSec | Field::FracTrim(_) | Field::DotFrac(_)
-            )
+        Element::OptionalSeconds { .. } | Element::Field(Field::FracTrim(_) | Field::DotFrac(_))
     )
 }
 
@@ -1071,15 +1032,12 @@ fn element_can_start_with_digit(element: &Element<'_>) -> bool {
                 | Field::DayUnpadded
                 | Field::Hour24
                 | Field::Hour24Unpadded
-                | Field::Hour24Legacy
-                | Field::Hour24UnpaddedLegacy
                 | Field::Hour12
                 | Field::Hour12Unpadded
                 | Field::Minute
                 | Field::MinuteUnpadded
                 | Field::Second
                 | Field::SecondUnpadded
-                | Field::SecondOpt
                 | Field::FracExact(_)
                 | Field::FracTrim(_)
                 | Field::TzId
@@ -1092,7 +1050,7 @@ fn element_can_start_with_colon(element: &Element<'_>) -> bool {
     match element {
         Element::Literal(s) => s[0] == b':',
         Element::OptionalSeconds { separator, .. } => *separator == Some(b':'),
-        Element::Field(field) => matches!(field, Field::ColonSec),
+        Element::Field(_) => false,
     }
 }
 
@@ -1159,20 +1117,6 @@ fn state_key_name(key: u8) -> &'static str {
         11 => "tz_abbrev",
         _ => unreachable!(),
     }
-}
-
-/// Check if the pattern has 12-hour without AM/PM (for warning by caller).
-fn has_12h_without_ampm(elements: &[Element<'_>]) -> bool {
-    let mut has_12h = false;
-    let mut has_ampm = false;
-    for el in elements {
-        match el {
-            Element::Field(Field::Hour12 | Field::Hour12Unpadded) => has_12h = true,
-            Element::Field(Field::AmPmShort | Field::AmPmFull) => has_ampm = true,
-            _ => {}
-        }
-    }
-    has_12h && !has_ampm
 }
 
 // ---- Formatting ----
@@ -1305,8 +1249,8 @@ fn write_field<S: Sink>(field: Field, vals: &PatternValues, sink: &mut S) -> Res
         Field::WeekdayFull => {
             sink.write(WEEKDAY_FULL[vals.weekday.iso() as usize - 1].as_bytes());
         }
-        Field::Hour24 | Field::Hour24Legacy => sink.write(&format_2_digits(vals.hour)),
-        Field::Hour24Unpadded | Field::Hour24UnpaddedLegacy => {
+        Field::Hour24 => sink.write(&format_2_digits(vals.hour)),
+        Field::Hour24Unpadded => {
             let mut buf = [0u8; 2];
             sink.write(fmt_unpadded(vals.hour, &mut buf));
         }
@@ -1336,17 +1280,6 @@ fn write_field<S: Sink>(field: Field, vals: &PatternValues, sink: &mut S) -> Res
         Field::SecondUnpadded => {
             let mut buf = [0u8; 2];
             sink.write(fmt_unpadded(vals.second, &mut buf));
-        }
-        Field::SecondOpt => {
-            if vals.second > 0 || vals.nanos.get() > 0 {
-                sink.write(&format_2_digits(vals.second));
-            }
-        }
-        Field::ColonSec => {
-            if vals.second > 0 || vals.nanos.get() > 0 {
-                sink.write_byte(b':');
-                sink.write(&format_2_digits(vals.second));
-            }
         }
         Field::FracExact(w) => write_nanos_digits(vals.nanos, w as usize, sink),
         Field::FracTrim(w) => write_nanos_trimmed(vals.nanos, w as usize, sink),
@@ -1744,7 +1677,6 @@ fn parse_optional_seconds(
     if !present {
         state.second = Some(0);
         state.nanos = SubSecNanos::MIN;
-        state.second_absent = true;
         return Ok(pos);
     }
 
@@ -1831,12 +1763,12 @@ fn parse_field(
             state.weekday = Some(unsafe { Weekday::from_iso_unchecked((v + 1) as u8) });
             Ok(p)
         }
-        Field::Hour24 | Field::Hour24Legacy => {
+        Field::Hour24 => {
             let (v, p) = parse_digits(s, pos, 2)?;
             state.hour = Some(v as u8);
             Ok(p)
         }
-        Field::Hour24Unpadded | Field::Hour24UnpaddedLegacy => {
+        Field::Hour24Unpadded => {
             let (v, p) = parse_1or2_digits(s, pos)?;
             state.hour = Some(v as u8);
             Ok(p)
@@ -1877,28 +1809,6 @@ fn parse_field(
             state.second = Some(if v == 60 { 59 } else { v as u8 });
             Ok(p)
         }
-        Field::SecondOpt => {
-            if pos < s.len() && s[pos].is_ascii_digit() {
-                let (v, p) = parse_digits(s, pos, 2)?;
-                state.second = Some(if v == 60 { 59 } else { v as u8 });
-                Ok(p)
-            } else {
-                state.second = Some(0);
-                state.second_absent = true;
-                Ok(pos)
-            }
-        }
-        Field::ColonSec => {
-            if pos < s.len() && s[pos] == b':' {
-                let (v, p) = parse_digits(s, pos + 1, 2)?;
-                state.second = Some(if v == 60 { 59 } else { v as u8 });
-                Ok(p)
-            } else {
-                state.second = Some(0);
-                state.second_absent = true;
-                Ok(pos)
-            }
-        }
         Field::FracExact(width) => {
             let (v, p) = parse_digits(s, pos, width as usize)?;
             // SAFETY: v is at most `width` fractional digits scaled to ns (max 999_999_999).
@@ -1906,10 +1816,6 @@ fn parse_field(
             Ok(p)
         }
         Field::FracTrim(width) => {
-            if state.second_absent {
-                state.nanos = SubSecNanos::MIN;
-                return Ok(pos);
-            }
             let mut count = 0usize;
             while count < width as usize && pos + count < s.len() && s[pos + count].is_ascii_digit()
             {
@@ -1924,13 +1830,7 @@ fn parse_field(
             }
             Ok(pos + count)
         }
-        Field::DotFrac(width) => {
-            if state.second_absent {
-                state.nanos = SubSecNanos::MIN;
-                return Ok(pos);
-            }
-            parse_dot_frac(s, pos, width as usize, state)
-        }
+        Field::DotFrac(width) => parse_dot_frac(s, pos, width as usize, state),
         Field::AmPmShort => {
             let chunk = &s[pos..s.len().min(pos + 1)];
             match chunk.first().map(u8::to_ascii_uppercase) {
@@ -2022,62 +1922,6 @@ fn validate_fields(
     Ok(())
 }
 
-fn warn_pattern(
-    elements: &[Element<'_>],
-    warning_cls: PyObj,
-    deprecation_cls: PyObj,
-) -> PyResult<()> {
-    if has_12h_without_ampm(elements) {
-        warn_with_class(
-            warning_cls,
-            c"the pattern uses a 12-hour clock ('i' or 'ii') without an AM/PM specifier ('a' or 'aa'); a value such as '03:00' could mean 3 AM or 3 PM: add 'a' or 'aa', or use the 24-hour clock ('H' or 'HH')",
-            1,
-        )?;
-    }
-
-    for (i, el) in elements.iter().enumerate() {
-        let (legacy, separator) = match el {
-            Element::Field(Field::Hour24UnpaddedLegacy) => {
-                warn_with_class(
-                    deprecation_cls,
-                    c"specifier 'h' is deprecated; use 'H' instead",
-                    1,
-                )?;
-                continue;
-            }
-            Element::Field(Field::Hour24Legacy) => {
-                warn_with_class(
-                    deprecation_cls,
-                    c"specifier 'hh' is deprecated; use 'HH' instead",
-                    1,
-                )?;
-                continue;
-            }
-            Element::Field(Field::ColonSec) => (":SS", ":"),
-            Element::Field(Field::SecondOpt) => ("SS", ""),
-            _ => continue,
-        };
-        let replacement = match elements.get(i + 1..i + 2) {
-            Some([Element::Field(Field::DotFrac(w))]) => {
-                format!("[{}ss.{}]", separator, "F".repeat(*w as usize))
-            }
-            _ => match elements.get(i + 1..i + 3) {
-                Some([Element::Literal(b"."), Element::Field(Field::FracExact(w))]) => {
-                    format!("[{}ss.{}]", separator, "f".repeat(*w as usize))
-                }
-                _ => format!("[{}ss]", separator),
-            },
-        };
-        let message = CString::new(format!(
-            "specifier '{}' is deprecated; use '{}' instead",
-            legacy, replacement
-        ))
-        .expect("deprecation warning contains no NUL bytes");
-        warn_with_class(deprecation_cls, &message, 1)?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2101,10 +1945,6 @@ mod tests {
         assert!(matches!(e[0], Element::Field(Field::Hour24Unpadded)));
         let e = compile(b"HH").unwrap();
         assert!(matches!(e[0], Element::Field(Field::Hour24)));
-        let e = compile(b"h").unwrap();
-        assert!(matches!(e[0], Element::Field(Field::Hour24UnpaddedLegacy)));
-        let e = compile(b"hh").unwrap();
-        assert!(matches!(e[0], Element::Field(Field::Hour24Legacy)));
     }
 
     #[test]
@@ -2178,7 +2018,6 @@ mod tests {
 
         let p = parse_to_state(&e, b"14:30").unwrap();
         assert_eq!(p.second, Some(0));
-        assert!(p.second_absent);
     }
 
     #[test]

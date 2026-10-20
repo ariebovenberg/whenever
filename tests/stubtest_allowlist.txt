@@ -10,7 +10,6 @@ whenever\._.*
 whenever\.DateDeltaUnitStr
 whenever\.DeltaTotalUnitStr
 whenever\.DeltaUnitStr
-whenever\.DisambiguateStr
 whenever\.DisambiguationStr
 whenever\.ExactDeltaUnitStr
 whenever\.OffsetMismatchStr
@@ -47,17 +46,3 @@ whenever\..*\.__get_pydantic_core_schema__
 whenever\.TimeDelta\.__r(add|sub|truediv|floordiv|mod)__
 whenever\.(OffsetDateTime|PlainDateTime|ZonedDateTime)\.__r(add|sub)__
 
-# The 0.11 deprecation shims absorb their old keyword (`format=`,
-# `disambiguate=`, `tz=`) through a catch-all that the Rust text signatures
-# do not list. Remove with the shims in 1.0.
-whenever\..*\.parse
-whenever\.PlainDateTime\.assume_system_tz
-whenever\.PlainDateTime\.assume_tz
-whenever\.ZonedDateTime\.add
-whenever\.ZonedDateTime\.format_iso
-whenever\.ZonedDateTime\.from_system_tz
-whenever\.ZonedDateTime\.parse_iso
-whenever\.ZonedDateTime\.replace
-whenever\.ZonedDateTime\.replace_date
-whenever\.ZonedDateTime\.replace_time
-whenever\.ZonedDateTime\.subtract
