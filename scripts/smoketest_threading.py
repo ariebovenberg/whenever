@@ -27,7 +27,7 @@ TIMEZONE_SAMPLE = [
     "Europe/Vienna",
     "America/Rainy_River",
     "Asia/Ulaanbaatar",
-    "US/Alaska",
+    "America/Anchorage",
     "America/Rankin_Inlet",
     "Arctic/Longyearbyen",
     "Pacific/Bougainville",
@@ -38,10 +38,10 @@ TIMEZONE_SAMPLE = [
     "Asia/Tashkent",
     "Pacific/Saipan",
     "Europe/Tallinn",
-    "Europe/Uzhgorod",
+    "Europe/Kyiv",
     "Africa/Nairobi",
     "America/Argentina/Ushuaia",
-    "Brazil/Acre",
+    "America/Rio_Branco",
 ]
 assert len(TIMEZONE_SAMPLE) % NUM_THREADS, (
     "Time zone sample should not be evenly divisible by number of threads"

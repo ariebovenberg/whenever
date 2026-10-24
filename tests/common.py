@@ -357,7 +357,7 @@ INVALID_ISO_STRINGS = [
     "2020-08-15T12:08:30+05:00stuff",  # trailing stuff
     "2020-08-15T12:𝟘8:30+00:00",  # non-ASCII
     "2020-08-15T12:08:30.0034+05:𝟙0",  # non-ASCII
-    "2020-08-15T12:08:30[Iceland]",  # time zone ID but no offset
+    "2020-08-15T12:08:30[Atlantic/Reykjavik]",  # time zone ID but no offset
     # not enough content
     "",
     "T",

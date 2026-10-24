@@ -65,6 +65,9 @@ dev-extra = [
     "packaging>=26.2",
     "setuptools-rust",
     "twine>=7,<8",
+    "zizmor>=1.30,<2",
+    "actionlint-py>=1.7.12,<2",
+    "shellcheck-py>=0.11,<0.12",
 ]
 benchmark = [
     "arrow>=1.4,<2",

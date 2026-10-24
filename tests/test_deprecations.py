@@ -680,8 +680,8 @@ class TestZonedTimestampFactoryWrapperArguments:
         ],
     )
     def test_all(self, method, factor):
-        assert method(0, tz="Iceland").strict_eq(
-            ZonedDateTime(1970, 1, 1, tz="Iceland")
+        assert method(0, tz="Atlantic/Reykjavik").strict_eq(
+            ZonedDateTime(1970, 1, 1, tz="Atlantic/Reykjavik")
         )
         assert method(1_597_493_310 * factor, tz="America/Nuuk").strict_eq(
             ZonedDateTime(2020, 8, 15, 10, 8, 30, tz="America/Nuuk")
