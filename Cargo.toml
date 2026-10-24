@@ -35,7 +35,7 @@ default-features = false
 features = ["extension-module", "generate-import-lib"]
 
 [build-dependencies]
-pyo3-build-config = { version = "^0.29.0" }
+pyo3-build-config = { version = "^0.30.1" }
 
 [dev-dependencies]
 criterion = "^0.8.1"
