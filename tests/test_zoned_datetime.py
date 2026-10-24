@@ -769,9 +769,9 @@ class TestInitFromPy:
 
 class TestNow:
     def test_typical(self):
-        now = ZonedDateTime.now("Iceland")
-        assert now.tz_id == "Iceland"
-        py_now = py_datetime.now(ZoneInfo("Iceland"))
+        now = ZonedDateTime.now("Atlantic/Reykjavik")
+        assert now.tz_id == "Atlantic/Reykjavik"
+        py_now = py_datetime.now(ZoneInfo("Atlantic/Reykjavik"))
         assert py_now - now.to_stdlib() < py_timedelta(seconds=1)
 
     def test_patched(self):
@@ -1224,7 +1224,9 @@ class TestTimestamp:
         assert after.to_tz("Asia/Tokyo").timestamp(unit=unit) == after_epoch
 
     def test_default_seconds(self):
-        assert ZonedDateTime(1970, 1, 1, tz="Iceland").timestamp() == 0
+        assert (
+            ZonedDateTime(1970, 1, 1, tz="Atlantic/Reykjavik").timestamp() == 0
+        )
         assert (
             ZonedDateTime(
                 2020, 8, 15, 8, 8, 30, nanosecond=45_123, tz="America/New_York"
@@ -1486,8 +1488,8 @@ class TestRepr:
                 'ZonedDateTime("2020-08-15 23:12:09.009876543+09:30[Australia/Darwin]")',
             ),
             (
-                ZonedDateTime(2020, 8, 15, 23, 12, tz="Iceland"),
-                'ZonedDateTime("2020-08-15 23:12:00+00:00[Iceland]")',
+                ZonedDateTime(2020, 8, 15, 23, 12, tz="Atlantic/Reykjavik"),
+                'ZonedDateTime("2020-08-15 23:12:00+00:00[Atlantic/Reykjavik]")',
             ),
             (
                 ZonedDateTime(2020, 8, 15, 23, 12, tz="UTC"),
@@ -1537,8 +1539,8 @@ class TestParseIso:
                 ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Europe/Amsterdam"),
             ),
             (
-                "2020-08-15T12:08:30Z[Iceland]",
-                ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Iceland"),
+                "2020-08-15T12:08:30Z[Atlantic/Reykjavik]",
+                ZonedDateTime(2020, 8, 15, 12, 8, 30, tz="Atlantic/Reykjavik"),
             ),
             # fractions
             (
@@ -2543,9 +2545,18 @@ class TestReplace:
         assert d.replace(nanosecond=0, disambiguation="raise").strict_eq(
             create_zdt(2020, 8, 15, 23, 12, 9, nanosecond=0, tz=tz)
         )
-        assert d.replace(tz="Iceland", disambiguation="raise").strict_eq(
+        assert d.replace(
+            tz="Atlantic/Reykjavik", disambiguation="raise"
+        ).strict_eq(
             ZonedDateTime(
-                2020, 8, 15, 23, 12, 9, nanosecond=987_654, tz="Iceland"
+                2020,
+                8,
+                15,
+                23,
+                12,
+                9,
+                nanosecond=987_654,
+                tz="Atlantic/Reykjavik",
             )
         )
 

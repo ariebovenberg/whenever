@@ -5,28 +5,46 @@ updates:
   schedule:
     interval: daily
     time: "04:00"
+  cooldown:
+    default-days: 7
   open-pull-requests-limit: 10
   versioning-strategy: increase-if-necessary
   ignore:
   # Downstream must stay free to pin whatever tzdata it likes.
   - dependency-name: tzdata
+  groups:
+    python:
+      patterns: ["*"]
   commit-message:
     prefix: "🤖 "
 - package-ecosystem: "github-actions"
   directory: "/"
   schedule:
     interval: "weekly"
+  cooldown:
+    default-days: 7
+  groups:
+    actions:
+      patterns: ["*"]
   commit-message:
     prefix: "🤖 "
 - package-ecosystem: "cargo"
   directory: "/"
   schedule:
     interval: "weekly"
+  cooldown:
+    default-days: 7
+  # pyo3-ffi and pyo3-build-config must move together
+  groups:
+    rust:
+      patterns: ["*"]
   commit-message:
     prefix: "🤖 "
 - package-ecosystem: "rust-toolchain"
   directory: "/"
   schedule:
     interval: "weekly"
+  cooldown:
+    default-days: 7
   commit-message:
     prefix: "🤖 "

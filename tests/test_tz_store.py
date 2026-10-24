@@ -185,7 +185,10 @@ class TestTzIdRejection:
         class MyStr(str):
             pass
 
-        assert ZonedDateTime.now(MyStr("Iceland")).tz_id == "Iceland"
+        assert (
+            ZonedDateTime.now(MyStr("Atlantic/Reykjavik")).tz_id
+            == "Atlantic/Reykjavik"
+        )
 
 
 class TestTzCache:
@@ -650,10 +653,10 @@ class TestClearTzCache:
         from whenever._tz import store
 
         # Load a time zone to populate the fast cache
-        ZonedDateTime(2024, 1, 1, tz="US/Eastern")
-        assert store._last_tz_key == "us/eastern"
+        ZonedDateTime(2024, 1, 1, tz="America/New_York")
+        assert store._last_tz_key == "america/new_york"
         # Now clear that exact key — _last_tz_key should be reset
-        clear_tzcache(only_keys=["US/Eastern"])
+        clear_tzcache(only_keys=["America/New_York"])
         assert store._last_tz_key is None
 
     @pytest.mark.parametrize("bad", [3, None, b"UTC", 3.5, ["UTC"]])

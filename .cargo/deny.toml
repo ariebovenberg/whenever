@@ -1,0 +1,16 @@
+[licenses]
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "MIT",
+    "Unicode-3.0",
+]
+
+[bans]
+# Crates that must move together, like pyo3-ffi and pyo3-build-config
+multiple-versions = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

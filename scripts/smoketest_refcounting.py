@@ -18,9 +18,9 @@ f = PlainDateTime(2023, 10, 1, 12, 0, 0)
 
 
 def main():
-    f.assume_tz("Iceland")
-    f.assume_tz("Iceland")
-    f.assume_tz("Iceland")
+    f.assume_tz("Atlantic/Reykjavik")
+    f.assume_tz("Atlantic/Reykjavik")
+    f.assume_tz("Atlantic/Reykjavik")
     f.assume_tz("Europe/London")
     f.assume_tz("Europe/London")
     d = f.assume_tz("Europe/London")  # noqa

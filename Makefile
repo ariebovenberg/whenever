@@ -16,6 +16,7 @@ DEFAULT_PYTEST_ARGS := -q --tb=short
 DEFAULT_CARGO_ARGS := --quiet --message-format=short
 MYPY_ARGS := --no-error-summary
 RUFF_ARGS := --quiet
+ZIZMOR_ARGS := --quiet
 SPHINXOPTS ?= -q -W --keep-going
 BUILD_ARGS := -q
 RUST_BUILD_ARGS := --qbuild
@@ -27,6 +28,7 @@ DEFAULT_PYTEST_ARGS := -s
 DEFAULT_CARGO_ARGS :=
 MYPY_ARGS :=
 RUFF_ARGS :=
+ZIZMOR_ARGS :=
 SPHINXOPTS ?= -W --keep-going
 BUILD_ARGS :=
 RUST_BUILD_ARGS :=
@@ -116,6 +118,14 @@ ci-lint: check-readme check-docstrings check-llms-summaries
 	uv $(UV_ARGS) run ruff format $(RUFF_ARGS) --check pysrc/ tests/ scripts/
 	cargo fmt -- --check
 	cargo clippy $(CLIPPY_ARGS) --all-targets --all-features -- -D warnings
+	uv $(UV_ARGS) run actionlint
+	# offline: the same audits with or without a GH_TOKEN
+	uv $(UV_ARGS) run zizmor --offline $(ZIZMOR_ARGS) .
+
+# Needs cargo-deny installed; CI runs it through its own action
+.PHONY: check-deps
+check-deps:
+	cargo deny --all-features check
 
 .PHONY: clean-ext
 clean-ext:
