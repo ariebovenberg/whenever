@@ -222,3 +222,17 @@ operation changes the time zone.
 >>> d.replace(month=3, day=26, hour=2, disambiguation="earlier")  # a gap
 ZonedDateTime("2023-03-26 01:30:00+01:00[Europe/Paris]")
 ```
+
+The same holds for `disambiguation="raise"`: it raises only where the offset
+settles nothing, so a repeated local time that the current offset identifies
+passes without error. To resolve the new local time from scratch, as if it
+were written input, go through {class}`~whenever.PlainDateTime`:
+
+```python
+>>> d.replace(minute=45, disambiguation="raise")  # the offset decides
+ZonedDateTime("2023-10-29 02:45:00+01:00[Europe/Paris]")
+>>> d.to_plain().replace(minute=45).assume_tz(d.tz_id, disambiguation="raise")
+Traceback (most recent call last):
+  ...
+whenever.RepeatedTime: 2023-10-29 02:45:00 is repeated in time zone 'Europe/Paris'
+```

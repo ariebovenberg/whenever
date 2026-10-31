@@ -411,6 +411,14 @@ ZonedDateTime(\"2023-10-29 01:15:00+01:00[Europe/London]\")
 >>> ZonedDateTime(datetime(2020, 8, 15, 23, 12, tzinfo=ZoneInfo(\"Europe/London\")))
 ZonedDateTime(\"2020-08-15 23:12:00+01:00[Europe/London]\")
 
+The constructor takes no offset: the time zone and ``disambiguation=``
+determine it. If you have an offset, build an :class:`OffsetDateTime`
+and call :meth:`~OffsetDateTime.assume_tz`, which checks the offset
+against the time zone:
+
+>>> OffsetDateTime(2023, 10, 29, 1, 15, offset=hours(1)).assume_tz(\"Europe/London\")
+ZonedDateTime(\"2023-10-29 01:15:00+01:00[Europe/London]\")
+
 Convert to other types to discard time zone information:
 
 >>> d = ZonedDateTime(2024, 7, 1, 12, tz=\"Europe/Amsterdam\")
@@ -2144,8 +2152,10 @@ local time stays on its side of the transition, whatever
 ``disambiguation=`` says. A skipped local time, a changed ``tz=``,
 or an offset that no longer applies falls to ``disambiguation=``,
 which is ``\"compatible\"`` with :class:`ImplicitDisambiguationWarning`
-when omitted. A stated ``tz=`` keeps the local fields and moves the
-instant; :meth:`to_tz` keeps the instant. See
+when omitted. So ``disambiguation=\"raise\"`` raises only where the
+offset settles nothing. To resolve the new local time from scratch,
+go through :meth:`to_plain`. A stated ``tz=`` keeps the local fields
+and moves the instant; :meth:`to_tz` keeps the instant. See
 :ref:`offset-preserving`.
 
 >>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz=\"Europe/Paris\", disambiguation=\"later\")
@@ -2153,6 +2163,12 @@ instant; :meth:`to_tz` keeps the instant. See
 ZonedDateTime(\"2023-10-29 02:45:00+01:00[Europe/Paris]\")
 >>> d.replace(minute=45, disambiguation=\"earlier\")  # the offset still decides
 ZonedDateTime(\"2023-10-29 02:45:00+01:00[Europe/Paris]\")
+>>> d.replace(minute=45, disambiguation=\"raise\")  # so this doesn't raise
+ZonedDateTime(\"2023-10-29 02:45:00+01:00[Europe/Paris]\")
+>>> d.to_plain().replace(minute=45).assume_tz(d.tz_id, disambiguation=\"raise\")
+Traceback (most recent call last):
+  ...
+whenever.RepeatedTime: 2023-10-29 02:45:00 is repeated in time zone 'Europe/Paris'
 
 Pass ``SYSTEM_TZ`` as ``tz=`` for the system time zone.
 
@@ -2171,7 +2187,8 @@ Create a new instance with the date replaced
 
 See :meth:`replace`: the current offset is kept while it applies to
 the new local time; otherwise ``disambiguation=`` decides, with
-:class:`ImplicitDisambiguationWarning` when omitted.
+:class:`ImplicitDisambiguationWarning` when omitted. To resolve the
+new local time from scratch, go through :meth:`to_plain`.
 
 >>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz=\"Europe/Paris\", disambiguation=\"later\")
 >>> d.replace_date(Date(2023, 10, 30))
@@ -2185,11 +2202,18 @@ Create a new instance with the time replaced
 
 See :meth:`replace`: the current offset is kept while it applies to
 the new local time; otherwise ``disambiguation=`` decides, with
-:class:`ImplicitDisambiguationWarning` when omitted.
+:class:`ImplicitDisambiguationWarning` when omitted. To resolve the
+new local time from scratch, go through :meth:`to_plain`.
 
 >>> d = ZonedDateTime(2023, 10, 29, 2, 30, tz=\"Europe/Paris\", disambiguation=\"later\")
 >>> d.replace_time(Time(12))
 ZonedDateTime(\"2023-10-29 12:00:00+01:00[Europe/Paris]\")
+>>> d.replace_time(Time(2, 45), disambiguation=\"raise\")  # the offset decides
+ZonedDateTime(\"2023-10-29 02:45:00+01:00[Europe/Paris]\")
+>>> d.to_plain().replace_time(Time(2, 45)).assume_tz(d.tz_id, disambiguation=\"raise\")
+Traceback (most recent call last):
+  ...
+whenever.RepeatedTime: 2023-10-29 02:45:00 is repeated in time zone 'Europe/Paris'
 ";
 pub(crate) const ZONEDDATETIME_ROUND: &CStr = c"\
 round($self, unit='second', /, *, increment=..., mode='half_even')

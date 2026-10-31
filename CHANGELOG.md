@@ -186,9 +186,13 @@ with a new glossary and a comparison with Arrow.
   consistent. `start_of()`, `end_of()`, `round()`, `day_length()`, and
   `since()`/`until()` agree on where a day starts when a gap or a repeated
   midnight gets in the way, and units no longer overlap in a fold.
-- `ZonedDateTime.replace()` and calendar `add()`/`subtract()` could jump to
-  the other occurrence of a repeated time, even when it wasn't necessary.
-  They now keep the current offset where it's still valid, as parsing does.
+- `ZonedDateTime.replace()`, `replace_date()`, `replace_time()`, and
+  calendar `add()`/`subtract()` could jump to the other occurrence of a
+  repeated time, even when it wasn't necessary. They now keep the current
+  offset where it's still valid, as parsing does, and consult
+  `disambiguation=` only where it isn't. So `disambiguation="raise"` no
+  longer raises for a repeated time that the current offset identifies;
+  go through `to_plain()` and `assume_tz()` to resolve from scratch.
 - Rounded differences carry into larger units: rounding up to 1 day and
   24 hours gives 2 days, and 12 months gives 1 year. With exact units,
   `round_increment=` now rounds the smallest unit, as it does with calendar
