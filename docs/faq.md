@@ -243,10 +243,9 @@ with
 (faq-production-ready)=
 ## Is it production-ready?
 
-The core functionality is complete, and version 0.11 establishes the 1.0
-API: unless significant issues arise, 1.0 differs from it only by
-removing the spellings 0.11 deprecates. Please try it out and report any
-issues!
+Yes. Code that works with 1.0 keeps working on every 1.x release; the
+{ref}`stability policy <stability>` spells out what that covers. Please try
+it out and report any issues!
 
 ## Where do the benchmarks come from?
 
