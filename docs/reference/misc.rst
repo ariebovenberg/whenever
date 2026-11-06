@@ -45,10 +45,6 @@ Time zone data
 
 .. autofunction:: get_tzpath
 
-.. data:: TZPATH
-
-   Deprecated: use :func:`get_tzpath`. Removed in 1.0.
-
 .. autofunction:: clear_tzcache
 .. autofunction:: reset_tzpath
 .. autofunction:: available_timezones

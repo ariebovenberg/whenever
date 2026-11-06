@@ -3,8 +3,8 @@ myst:
   html_meta:
     description: >-
       Reference for patterns: date, time, offset, and time zone specifiers,
-      literal text rules, parsing requirements, migrating patterns in 0.11,
-      and how it differs from strftime.
+      literal text rules, parsing requirements, and how it differs from
+      strftime.
 ---
 
 (pattern-format)=
@@ -63,7 +63,7 @@ Month and weekday names are English, whatever the locale.
 Whenever deliberately avoids classic datetime-pattern footguns. `Y` is always
 the calendar year, never the ISO week-numbering year. `H` is the 24-hour clock,
 as in almost all other datetime libraries, while the distinct `i` is the
-12-hour clock and makes a missing AM/PM specifier detectable. `D` is always the
+12-hour clock, so a pattern shows at a glance which clock it uses. `D` is always the
 day of the month; day-of-year is not supported. Familiar but unsupported
 letters fail instead of silently acquiring a different meaning.
 :::
@@ -228,6 +228,10 @@ inside a quoted run or outside one:
 
 Parsed input strings must contain only ASCII characters.
 
+A pattern with the 12-hour clock (`i` or `ii`) needs an AM/PM specifier
+(`a` or `aa`) to parse: `03:00` alone could mean 3 AM or 3 PM.
+Without one, `parse()` raises {class}`ValueError`; `format()` accepts it.
+
 Variable-width numeric specifiers must be separated from following digits. The
 same rule applies to specifiers that omit optional digits, such as trimmed
 fractions and the optional seconds of an `xxxx` offset. The optional seconds
@@ -255,24 +259,6 @@ Month names, weekday names, and AM/PM are matched case-insensitively:
 
 A second value of ``60`` (leap second) is accepted and normalized to ``59``.
 See [](faq-leap-seconds) for details.
-
-## Migrating patterns in 0.11
-
-Version 0.11 accepts both the final spellings and the previous forms. Previous
-forms emit {class}`WheneverDeprecationWarning` on every `format()` or `parse()`
-call and will be rejected in 1.0.
-
-| Previous pattern | Replacement |
-|:-----------------|:------------|
-| `h` | `H` |
-| `hh` | `HH` |
-| `:SS` | `[:ss]` |
-| `:SS.FFF` | `[:ss.FFF]` |
-| separator-free `SS` | `[ss]` |
-
-The same bracketed spelling applies to exact fractions, such as replacing
-`:SS.fff` with `[:ss.fff]`. Keeping the separator inside the brackets makes
-it disappear with the seconds.
 
 ## Comparison with strftime
 
@@ -302,5 +288,5 @@ The following table maps common `strftime` directives to Whenever patterns:
 [^2]: During parsing, weekday names are validated against the parsed date. A mismatch raises ``ValueError``.
 [^3]: The complete bracketed group is omitted when both seconds and nanoseconds are zero.
 [^4]: Omitted when the value is zero, with preceding `.` also omitted.
-[^5]: AM/PM is determined by the hour value. Using `i`/`ii` without `a`/`aa` emits a warning, since a value such as `03:00` could mean 3 AM or 3 PM.
+[^5]: AM/PM is determined by the hour value. Parsing `i`/`ii` requires `a`/`aa`; see [parsing requirements](#parsing-requirements).
 [^6]: Time zone abbreviations are not supported for parsing: an abbreviation names more than one time zone. Use `VV` (time zone ID) instead. See {ref}`timezones-explained` for details.

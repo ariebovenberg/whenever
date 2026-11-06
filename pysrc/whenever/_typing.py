@@ -8,7 +8,6 @@ __all__ = [
     "DeltaTotalUnitStr",
     "DateDeltaUnitStr",
     "ExactDeltaUnitStr",
-    "DisambiguateStr",
     "DisambiguationStr",
     "OffsetMismatchStr",
     "TimestampUnitStr",
@@ -51,7 +50,6 @@ DateDeltaUnitStr: TypeAlias = Literal["years", "months", "weeks", "days"]
 ExactDeltaUnitStr: TypeAlias = Literal[
     "weeks", "days", "hours", "minutes", "seconds", "nanoseconds"
 ]
-DisambiguateStr: TypeAlias = Literal["compatible", "earlier", "later", "raise"]
 DisambiguationStr: TypeAlias = Literal[
     "compatible", "earlier", "later", "raise"
 ]

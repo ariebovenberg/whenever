@@ -244,53 +244,27 @@ def warn_lossy_stdlib_subclass(obj: Any, base: type, /) -> None:
         )
 
 
-def warn_deprecated(message: str, /, *, stacklevel: int) -> None:
-    warn(
-        message,
-        WheneverDeprecationWarning,
-        stacklevel=stacklevel + 1,
-    )
-
-
-def normalize_renamed_keyword(
-    new_value: Any,
-    kwargs: dict[str, Any],
-    /,
-    *,
-    function_name: str,
-    new_name: str,
-    old_name: str,
-) -> tuple[Any, bool]:
-    """The value, and whether it came by the deprecated name.
-
-    The caller warns with ``warn_renamed_keyword`` once its call has
-    succeeded: a call that raises emits no warning.
-    """
-    old_value = kwargs.pop(old_name, UNSET)
-    if old_value is UNSET:
-        return new_value, False
-    if new_value is not UNSET:
-        raise TypeError(
-            f"{function_name}() received both '{new_name}' "
-            f"and deprecated '{old_name}'"
-        )
-    return old_value, True
-
-
-def warn_renamed_keyword(
-    new_name: str, old_name: str, /, *, stacklevel: int
-) -> None:
-    warn_deprecated(
-        f"'{old_name}' is deprecated; use '{new_name}' instead",
-        stacklevel=stacklevel + 1,
-    )
-
-
 def unpack_pickle(fmt: str, data: bytes, /) -> tuple[Any, ...]:
     try:
         return _unpack(fmt, data)
     except _struct_error:
         raise ValueError("invalid pickle data") from None
+
+
+def invalid_bytes(type_name: str, data: bytes, /) -> ValueError:
+    return ValueError(f"invalid bytes for {type_name}: {data!r}")
+
+
+def unpack_bytes(fmt: str, type_name: str, data: bytes, /) -> tuple[Any, ...]:
+    """Unpack a ``from_bytes()`` payload, or raise the one error for a
+    payload that is not one. Only ``bytes`` is accepted, as on the Rust
+    backend; a buffer would pass here and fail there."""
+    if not isinstance(data, bytes):
+        raise TypeError("expected bytes argument")
+    try:
+        return _unpack(fmt, data)
+    except _struct_error:
+        raise invalid_bytes(type_name, data) from None
 
 
 def check_no_kwargs(

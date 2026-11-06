@@ -518,6 +518,16 @@ static SLOTS: PyDefSlice<PyType_Slot> = PyDefSlice::new(&[
     },
 ]);
 
+fn to_bytes(_: PyType, slf: TimeDelta) -> PyReturn {
+    pickle::encode_time_delta(slf).to_py()
+}
+
+fn from_bytes(cls: PyClass<TimeDelta>, arg: PyObj) -> PyReturn {
+    pickle::decode_time_delta(arg.expect_bytes()?)
+        .ok_or_else_value_err(|| format!("invalid bytes for TimeDelta: {arg}"))?
+        .to_obj(cls)
+}
+
 fn __reduce__(cls: PyClass<TimeDelta>, slf: TimeDelta) -> PyReturn {
     let data = pickle::encode_time_delta(slf);
     [
@@ -817,6 +827,8 @@ static METHODS: PyDefSlice<PyMethodDef> = PyDefSlice::new(&[
     COPY_METHOD,
     DEEPCOPY_METHOD,
     method0!(TimeDelta, __reduce__, c""),
+    method0!(TimeDelta, to_bytes, doc::TIMEDELTA_TO_BYTES),
+    classmethod1!(TimeDelta, from_bytes, doc::TIMEDELTA_FROM_BYTES),
     method0!(TimeDelta, format_iso, doc::TIMEDELTA_FORMAT_ISO),
     classmethod1!(TimeDelta, parse_iso, doc::TIMEDELTA_PARSE_ISO),
     method0!(TimeDelta, to_stdlib, doc::TIMEDELTA_TO_STDLIB),
