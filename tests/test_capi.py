@@ -146,9 +146,6 @@ class CAPI(Structure):
 
 
 RAISE, KEEP_INSTANT, KEEP_LOCAL = 0, 1, 2
-
-_err_occurred = ctypes.pythonapi.PyErr_Occurred
-_err_occurred.restype = c_void_p
 COMPATIBLE, EARLIER, LATER, DIS_RAISE = 0, 1, 2, 3
 
 
@@ -322,7 +319,9 @@ class TestExtract:
                 continue
             assert api.extract(name, obj, out) == 1
             assert bytes(out) == before
-            assert _err_occurred() is None
+            err_occurred = ctypes.pythonapi.PyErr_Occurred
+            err_occurred.restype = c_void_p
+            assert err_occurred() is None
 
 
 class TestNew:
