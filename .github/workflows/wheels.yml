@@ -54,8 +54,11 @@ jobs:
             target: x86_64
             native: true
             pgo: true
+          # Docker on ubuntu-26.04 blocks socketcall, which 32-bit glibc
+          # needs for DNS; drop once actions/runner-images#14790 is fixed.
           - os: linux
             target: x86
+            runner: ubuntu-24.04
           - os: linux
             target: aarch64
             runner: ubuntu-24.04-arm
