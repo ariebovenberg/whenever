@@ -19,6 +19,9 @@ time zone ID: pickling it raises `ValueError` (see {ref}`systemtime`).
 `copy.copy()` and `copy.deepcopy()` return the value itself, because values
 are immutable.
 
+The payload of a pickle is the {ref}`binary format <binary-format>`, which
+`to_bytes()` writes and `from_bytes()` reads without `pickle`.
+
 ## Zoned datetimes across time zone data updates
 
 A pickled {class}`~whenever.ZonedDateTime` stores its local fields, observed
@@ -70,7 +73,7 @@ out-of-range payloads still raise exceptions.
 ## Compatibility
 
 Every pickle written by 0.8.0 or later loads, as long as its type still
-exists. 0.11 also loads `Instant` pickles written before 0.8.0; 1.0 won't.
+exists.
 `DateDelta` and `DateTimeDelta` pickles stopped loading in 0.11 with their
 types; `SystemDateTime` pickles in 0.9.0. The payload stores a time zone ID,
 never the rules, so what a pickle loads as depends on the time zone data of

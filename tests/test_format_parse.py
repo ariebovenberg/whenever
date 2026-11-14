@@ -24,7 +24,6 @@ from whenever import (
     TimeDelta,
     TimeZoneNotFoundError,
     Weekday,
-    WheneverWarning,
     YearMonth,
     ZonedDateTime,
     hours,
@@ -113,9 +112,9 @@ class TestCompilePattern:
         """A pending '.' or ':' flushed as a literal when not consumed."""
         # '.' before a non-F specifier — flushed, not a DotFrac
         assert Date(2024, 3, 5).format("YYYY.M") == "2024.3"
-        # ':' before a non-S specifier — flushed, not a ColonSec
+        # ':' before a non-F specifier — flushed as a literal
         assert Time(14, 3, 5).format("HH:m") == "14:3"
-        # ':' before 'FFF' — flushed (not ColonSec; FFF needs '.')
+        # ':' before 'FFF' — flushed (FFF needs '.')
         assert (
             Time(14, 30, 5, nanosecond=120_000_000).format("HH:mm:FFF")
             == "14:30:12"
@@ -155,9 +154,7 @@ class TestCompilePattern:
         d = Date(2024, 3, 15)
         assert d.format("") == ""
 
-    @pytest.mark.parametrize(
-        "pattern", ["HH:mm aa", "hh:mm aa", "H:mm aa", "h:mm aa"]
-    )
+    @pytest.mark.parametrize("pattern", ["HH:mm aa", "H:mm aa"])
     def test_24h_with_ampm_raises(self, pattern):
         with pytest.raises(
             ValueError,
@@ -166,15 +163,32 @@ class TestCompilePattern:
         ):
             Time(14, 30).format(pattern)
 
-    def test_12h_without_ampm_warns(self):
-        t = Time(14, 30)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            t.format("ii:mm")
-            assert len(w) == 1
-            assert w[0].category is WheneverWarning
-            assert "without an AM/PM specifier" in str(w[0].message)
-            assert "24-hour clock" in str(w[0].message)
+    @pytest.mark.parametrize(
+        "cls, value, pattern",
+        [
+            (Time, "02:30", "ii:mm"),
+            (Time, "2:30", "i:mm"),
+            (PlainDateTime, "2024-03-15 02:30", "YYYY-MM-DD ii:mm"),
+            (Instant, "2024-03-15 02:30Z", "YYYY-MM-DD ii:mmXXX"),
+            (OffsetDateTime, "2024-03-15 02:30+02:00", "YYYY-MM-DD ii:mmxxx"),
+            (
+                ZonedDateTime,
+                "2024-03-15 02:30 Europe/Paris",
+                "YYYY-MM-DD ii:mm VV",
+            ),
+        ],
+    )
+    def test_12h_without_ampm_parse_raises(self, cls, value, pattern):
+        with pytest.raises(
+            ValueError,
+            match=r"^12-hour clock \(i/ii\) requires AM/PM \(a/aa\) to "
+            r"parse: add a/aa, or use the 24-hour clock \(H/HH\)$",
+        ):
+            cls.parse(value, pattern=pattern)
+
+    def test_12h_without_ampm_formats(self):
+        assert Time(14, 30).format("ii:mm") == "02:30"
+        assert Time(0, 30).format("i:mm") == "12:30"
 
     def test_yy_parse_disabled(self):
         with pytest.raises(ValueError, match="YY.*only.*formatting"):
@@ -182,7 +196,7 @@ class TestCompilePattern:
 
     def test_parse_requires_pattern(self):
         with pytest.raises(TypeError, match="required.*pattern"):
-            Date.parse("2024-03-15")  # type: ignore[call-overload]
+            Date.parse("2024-03-15")  # type: ignore[call-arg]
 
     def test_invalid_specifier_count(self):
         """E.g. YYY (3 Y's) is not valid — only 2 or 4."""
@@ -392,12 +406,6 @@ class TestOptionalSecondsPattern:
             Time(1, 2, 3).format("HH:mm[:ss]ss")
         with pytest.raises(ValueError, match="duplicate.*nanos"):
             Time(1, 2, 3).format("HH:mm[:ss.fff]fff")
-
-    def test_colon_seconds_in_error_messages(self):
-        with pytest.raises(ValueError, match="duplicate.*second"):
-            Time(1, 2, 3).format("HH:SS:SS")
-        with pytest.raises(ValueError, match="does not support"):
-            Date(2024, 3, 15).format(":SS")
 
     def test_brackets_invalid_for_date(self):
         with pytest.raises(ValueError, match="immediately follow.*'mm'"):
@@ -662,9 +670,6 @@ class TestTimeFormat:
             Time(14, 30, 5, nanosecond=120_000_000).format("HH:mm[:ss.FFF]")
             == "14:30:05.12"
         )
-        # error: wrong count of S characters in [:ss] context
-        with pytest.raises(ValueError, match="specifier.*S"):
-            Time(14, 30).format("HH:mm[:ss]S")
 
     def test_12h(self):
         assert Time(14, 30).format("ii:mm aa") == "02:30 PM"
@@ -862,7 +867,7 @@ class TestTimeParse:
         assert Time.parse("14:30:60", pattern="HH:mm:ss") == Time(14, 30, 59)
         # s (_SecondUnpadded): same
         assert Time.parse("14:30:60", pattern="HH:mm:s") == Time(14, 30, 59)
-        # [:ss] (_ColonSec, compiled from "[:ss]"): same
+        # [:ss] (_OptionalSeconds): same
         assert Time.parse("14:30:60", pattern="HH:mm[:ss]") == Time(14, 30, 59)
         # Values > 60 are invalid
         with pytest.raises(ValueError):
@@ -1246,18 +1251,18 @@ class TestZonedDateTimeParse:
         with pytest.raises(
             ValueError, match="^invalid disambiguation: 'bogus'$"
         ):
-            ZonedDateTime.parse(  # type: ignore[call-overload]
+            ZonedDateTime.parse(
                 s,
                 pattern=pattern,
-                disambiguation="bogus",
+                disambiguation="bogus",  # type: ignore[arg-type]
             )
 
     def test_invalid_offset_mismatch(self):
         with pytest.raises(ValueError, match="offset_mismatch"):
-            ZonedDateTime.parse(  # type: ignore[call-overload]
+            ZonedDateTime.parse(
                 "2020-08-15 12:00+02:00[Europe/Amsterdam]",
                 pattern="YYYY-MM-DD HH:mmxxx'['VV']'",
-                offset_mismatch="ignore",
+                offset_mismatch="ignore",  # type: ignore[arg-type]
             )
 
     @pytest.mark.parametrize(
@@ -1576,7 +1581,7 @@ class TestParseEdgeCases:
         with pytest.raises(
             TypeError, match="unexpected keyword argument 'foo'"
         ):
-            Date.parse("2024", pattern="YYYY", foo=1)  # type: ignore[call-overload]
+            Date.parse("2024", pattern="YYYY", foo=1)  # type: ignore[call-arg]
 
     def test_input_too_short(self):
         with pytest.raises(
@@ -2017,3 +2022,33 @@ def test_lone_surrogate_is_rejected(call):
 def test_lone_surrogate_names_no_time_zone(call):
     with pytest.raises(TimeZoneNotFoundError):
         call()
+
+
+class TestRemovedSpecifiers:
+    """The 0.11 spellings of the 24-hour clock and of optional seconds
+    are rejected with a message naming their replacements."""
+
+    HOUR_MSG = (
+        "`h` and `hh` were removed in 1.0; use `H` or `HH` for the 24-hour "
+        "clock, or `i` and `ii` for the 12-hour clock"
+    )
+    SECONDS_MSG = (
+        "`SS` was removed in 1.0; use optional seconds such as `[:ss]` or "
+        "`[ss]`, or `ss` for required seconds"
+    )
+
+    @pytest.mark.parametrize(
+        "pattern, message",
+        [
+            ("hh:mm", HOUR_MSG),
+            ("h:mm", HOUR_MSG),
+            ("HH:mm:SS", SECONDS_MSG),
+            ("HH:mmSS", SECONDS_MSG),
+            ("HH:mm:SS.FFF", SECONDS_MSG),
+        ],
+    )
+    def test_rejected(self, pattern, message):
+        with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+            Time.parse("12:00", pattern=pattern)
+        with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+            Time(12).format(pattern)

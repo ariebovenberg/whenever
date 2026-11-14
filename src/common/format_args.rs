@@ -1,12 +1,7 @@
 //! Python argument parsing for ISO formatting.
 
-use std::ffi::CStr;
-
 use crate::{
-    common::{
-        compat::{RenamedKeyword, warn_deprecated},
-        fmt::{Chunk, Precision, Sink},
-    },
+    common::fmt::{Chunk, Precision, Sink},
     docstrings::FORMAT_ISO_NO_TZ_MSG,
     domain::{
         date::Date,
@@ -64,36 +59,11 @@ enum TzDisplay {
     Omit,
 }
 
-/// The `tz_id_display` values, each with the deprecation warning it emits.
-///
-/// The 0.10 spellings map to their replacements; deleting their rows in 1.0
-/// makes them fail with the ordinary invalid-value error.
-fn tz_display_choices(state: &State) -> [(PyObj, (TzDisplay, Option<&'static CStr>)); 6] {
+fn tz_display_choices(state: &State) -> [(PyObj, TzDisplay); 3] {
     [
-        (*state.strs.required, (TzDisplay::Required, None)),
-        (*state.strs.if_available, (TzDisplay::IfAvailable, None)),
-        (*state.strs.omit, (TzDisplay::Omit, None)),
-        (
-            *state.strs.always,
-            (
-                TzDisplay::Required,
-                Some(c"tz_id_display='always' is deprecated; use 'required' instead"),
-            ),
-        ),
-        (
-            *state.strs.auto,
-            (
-                TzDisplay::IfAvailable,
-                Some(c"tz_id_display='auto' is deprecated; use 'if_available' instead"),
-            ),
-        ),
-        (
-            *state.strs.never,
-            (
-                TzDisplay::Omit,
-                Some(c"tz_id_display='never' is deprecated; use 'omit' instead"),
-            ),
-        ),
+        (*state.strs.required, TzDisplay::Required),
+        (*state.strs.if_available, TzDisplay::IfAvailable),
+        (*state.strs.omit, TzDisplay::Omit),
     ]
 }
 
@@ -168,7 +138,7 @@ pub(crate) fn format_datetime_iso(
     let mut sep = b'T';
     let mut unit = Precision::Auto;
     let mut basic = false;
-    let mut display_arg = RenamedKeyword::default();
+    let mut display_obj = None;
     handle_kwargs("format_iso", kwargs, |k, v, eq| {
         if eq(k, *state.strs.sep) {
             sep = match_interned_str(
@@ -181,20 +151,17 @@ pub(crate) fn format_datetime_iso(
         } else if eq(k, *state.strs.basic) {
             basic = v.is_truthy()?;
         } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.strs.tz_id_display) {
-            display_arg.set_new(v);
-        } else if matches!(suffix, Suffix::OffsetTz(_, _)) && eq(k, *state.strs.tz) {
-            display_arg.set_old(v);
+            display_obj = Some(v);
         } else {
             return Ok(false);
         }
         Ok(true)
     })?;
 
-    let (display_obj, renamed) = display_arg.finish("format_iso", "tz_id_display", "tz")?;
-    let (tz_id_display, deprecation) = display_obj
+    let tz_id_display = display_obj
         .map(|v| match_interned_str("tz_id_display", v, &tz_display_choices(state)))
         .transpose()?
-        .unwrap_or((TzDisplay::Required, None));
+        .unwrap_or(TzDisplay::Required);
 
     let suffix = match suffix {
         Suffix::Absent => SuffixFormat::Absent,
@@ -211,17 +178,10 @@ pub(crate) fn format_datetime_iso(
         },
     };
 
-    let result = PyAsciiStrBuilder::format((
+    PyAsciiStrBuilder::format((
         date.iso_format(basic),
         sep,
         time.iso_format(unit, basic),
         suffix,
-    ))?;
-    if renamed {
-        warn_deprecated(state, c"'tz' is deprecated; use 'tz_id_display' instead", 1)?;
-    }
-    if let Some(message) = deprecation {
-        warn_deprecated(state, message, 1)?;
-    }
-    Ok(result)
+    ))
 }
