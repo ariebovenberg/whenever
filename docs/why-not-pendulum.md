@@ -412,8 +412,9 @@ DateTime(2025, 4, 24, 23, 0, 0, tzinfo=Timezone('Africa/Cairo'))
 
 Reported in
 [#915](https://github.com/python-pendulum/pendulum/issues/915);
-a fix is proposed in
-[#994](https://github.com/python-pendulum/pendulum/pull/994).
+fixes are proposed in
+[#994](https://github.com/python-pendulum/pendulum/pull/994) and
+[#1094](https://github.com/python-pendulum/pendulum/pull/1094).
 
 (pendulum-equality)=
 
@@ -720,13 +721,13 @@ and several already have a proposed fix.
 | A `dateutil` 2.9 zone passed as `tz=` becomes `+00:00` | — | unreported | — |
 | `Duration / timedelta`, `//`, `%`, and `divmod()` raise `AttributeError` | [#382](https://github.com/python-pendulum/pendulum/issues/382) | Jun 2019 | [#1042](https://github.com/python-pendulum/pendulum/pull/1042) |
 | `//`, `%`, and `divmod()` ignore calendar units | [#799](https://github.com/python-pendulum/pendulum/issues/799) | Jan 2024 | [#1051](https://github.com/python-pendulum/pendulum/pull/1051) |
-| Durations lose microseconds beyond ~136 years | [#332](https://github.com/python-pendulum/pendulum/issues/332) | Jan 2019 | [#1003](https://github.com/python-pendulum/pendulum/pull/1003) |
-| `Time` arithmetic drops the time zone and microseconds | [#362](https://github.com/python-pendulum/pendulum/issues/362), [#584](https://github.com/python-pendulum/pendulum/issues/584) | Apr 2019 | — |
+| Durations lose microseconds beyond ~136 years | [#332](https://github.com/python-pendulum/pendulum/issues/332) | Jan 2019 | — |
+| `Time` arithmetic drops the time zone and microseconds | [#362](https://github.com/python-pendulum/pendulum/issues/362), [#584](https://github.com/python-pendulum/pendulum/issues/584) | Apr 2019 | [#1069](https://github.com/python-pendulum/pendulum/pull/1069) (microseconds only) |
 | A naive value's `is_dst()` is `True` while its `dst()` is `None` | — | unreported | — |
 | `is_future()` and `diff_for_humans()` raise `TypeError` on naive values | — | unreported | — |
 | `Interval.in_days()` counts local calendar dates, not 24-hour periods | — | unreported | — |
-| A negative `Interval` contains neither endpoint, yet `range()` iterates it | — | unreported | — |
-| Pickling and `copy.copy` drop `fold` | [#908](https://github.com/python-pendulum/pendulum/issues/908) | Aug 2025 | [#909](https://github.com/python-pendulum/pendulum/pull/909) |
+| A negative `Interval` contains neither endpoint, yet `range()` iterates it | — | unreported | [#1065](https://github.com/python-pendulum/pendulum/pull/1065) |
+| Pickling and `copy.copy` drop `fold` | [#908](https://github.com/python-pendulum/pendulum/issues/908) | Aug 2025 | [#909](https://github.com/python-pendulum/pendulum/pull/909), [#1073](https://github.com/python-pendulum/pendulum/pull/1073) |
 | `precise_diff` ignores the end's time of day | [#906](https://github.com/python-pendulum/pendulum/issues/906) | Aug 2025 | [#953](https://github.com/python-pendulum/pendulum/pull/953) |
 | `precise_diff` month detection is not monotonic — 29 days is "1 month", 30 days is "4 weeks 2 days" | [#790](https://github.com/python-pendulum/pendulum/issues/790) | Jan 2024 | [#1043](https://github.com/python-pendulum/pendulum/pull/1043) |
 | The two builds disagree on ISO 8601 durations | [#534](https://github.com/python-pendulum/pendulum/issues/534), [#833](https://github.com/python-pendulum/pendulum/issues/833) | Feb 2021 | [#993](https://github.com/python-pendulum/pendulum/pull/993), [#1005](https://github.com/python-pendulum/pendulum/pull/1005) |
@@ -734,8 +735,8 @@ and several already have a proposed fix.
 | `from_format(..., "X", tz=...)` returns the wrong instant | — | unreported | — |
 | Out-of-range offsets parse, then fail on use | — | unreported | [#1015](https://github.com/python-pendulum/pendulum/pull/1015) (pure-Python build only) |
 | Offsets in time-only strings are silently discarded | — | unreported | — |
-| Formatter tokens are recognized but not implemented | — | unreported | — |
-| Locale data is wrong or missing in ~15 locales | — | unreported | — |
+| Formatter tokens are recognized but not implemented | — | unreported | [#1092](https://github.com/python-pendulum/pendulum/pull/1092) (`a` only) |
+| Locale data is wrong or missing in ~15 locales | — | unreported | [#1088](https://github.com/python-pendulum/pendulum/pull/1088) (Turkish only) |
 | `TZ` is ignored on macOS | [#905](https://github.com/python-pendulum/pendulum/issues/905) | Jul 2025 | [#942](https://github.com/python-pendulum/pendulum/pull/942) |
 | The classes declare no `__slots__` | — | unreported | — |
 | `timezone(2)` means seconds, `datetime(tz=2)` means hours | — | unreported | — |
@@ -915,6 +916,8 @@ English.
 >>> pendulum.set_locale("en")
 ```
 
+A fix is proposed in [#1063](https://github.com/python-pendulum/pendulum/pull/1063).
+
 (pendulum-two-impls)=
 
 ### Two implementations that disagree
@@ -987,7 +990,8 @@ Several published examples no longer match version 3.3.0:
   ([#789](https://github.com/python-pendulum/pendulum/issues/789); a fix is proposed in [#1053](https://github.com/python-pendulum/pendulum/pull/1053));
 - parts of the documentation still call the result of `diff()` a `Period`,
   although the public class is now `Interval`;
-- examples for `Duration.total_days()` disagree with the actual result;
+- examples for `Duration.total_days()` disagree with the actual result
+  (a fix is proposed in [#1071](https://github.com/python-pendulum/pendulum/pull/1071));
 - the introduction claims comparisons account for time zones; the
   repeated-hour example above shows otherwise.
 
@@ -1008,10 +1012,10 @@ the "drop-in replacement" promise that is Pendulum's main selling point.
 None of those decisions were theirs.
 Reproducible correctness issues remain open across releases,
 including some with a tested fix ready
-([#909](https://github.com/python-pendulum/pendulum/pull/909),
-[#968](https://github.com/python-pendulum/pendulum/pull/968),
+([#968](https://github.com/python-pendulum/pendulum/pull/968),
 [#975](https://github.com/python-pendulum/pendulum/pull/975),
-[#987](https://github.com/python-pendulum/pendulum/pull/987)).
+[#987](https://github.com/python-pendulum/pendulum/pull/987),
+[#1073](https://github.com/python-pendulum/pendulum/pull/1073)).
 
 ## In short
 

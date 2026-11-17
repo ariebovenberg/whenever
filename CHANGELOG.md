@@ -69,6 +69,7 @@ supported for the rest of 1.x.
   Windows, and Apple Silicon macOS are built with profile-guided
   optimization. Common operations such as parsing, formatting, and
   arithmetic run up to 20% faster.
+- A source build of the Rust extension needs Rust 1.88, down from 1.93.
 
 ## 0.11.0 (2026-10-02)
 

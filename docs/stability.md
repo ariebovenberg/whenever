@@ -134,4 +134,8 @@ Its changelog entry says what changed and why.
   including modules such as `whenever._pywhenever`.
 - **Python versions.** A minor release may drop a Python version
   that has reached its end of life.
+- **The Rust toolchain.** A minor release may raise the Rust version
+  that a source build of the {term}`Rust extension` needs.
+  A binary wheel needs no Rust,
+  and neither does the {term}`pure-Python backend`.
 - **Performance.** Speed and memory use may change in either direction.
