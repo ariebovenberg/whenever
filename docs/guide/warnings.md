@@ -35,11 +35,12 @@ UserWarning (stdlib)
     └── WheneverDeprecationWarning
 ```
 
-Two warnings have no class of their own and emit `WheneverWarning` itself:
-a pattern with a 12-hour clock (`i` or `ii`) and no AM/PM specifier, and a
-conversion that loses data, such as `Date()` given a `datetime` or a
-constructor given a `pandas` object. Filter them by message if either case
-needs separate handling.
+One warning has no class of its own and emits `WheneverWarning` itself:
+a conversion that loses data, such as `Date()` given a `datetime` or a
+constructor given a `pandas` object. It points at the code rather than at a
+value passing through it: the type you convert from is known when you write
+the call. Fix the call instead of filtering the warning; the table under
+[Suppress specific calls](#suppress-specific-calls) says how.
 
 ## Turn warnings into errors
 
@@ -139,10 +140,10 @@ that suppresses it for that one call, and is named in the warning's message.
 | `stale_offset_ok=True` | {class}`~whenever.StaleOffsetWarning` | {class}`~whenever.OffsetDateTime` `add`/`subtract`, `since`/`until`, `now()`, `replace()`, `replace_date()`, `replace_time()`, `round()`, `start_of()`, `end_of()`; the delta methods `total()` and `in_units()` with an {class}`~whenever.OffsetDateTime` as `relative_to`, except on an {class}`~whenever.ItemizedDateDelta`, which reads only the date |
 | `naive_arithmetic_ok=True` | {class}`~whenever.NaiveArithmeticWarning` | {class}`~whenever.PlainDateTime` methods; the delta methods `total()` and `in_units()` with a {class}`~whenever.PlainDateTime` as `relative_to`, except on an {class}`~whenever.ItemizedDateDelta`, which reads only the date |
 | `month_composition_ok=True` | {class}`~whenever.MonthCompositionWarning` | {class}`~whenever.ItemizedDelta` and {class}`~whenever.ItemizedDateDelta` `add`/`subtract` |
-| `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `parse_iso()`, `parse()`, `replace()`, `replace_date()`, `replace_time()`, `add`/`subtract`; `assume_tz()` on {class}`~whenever.PlainDateTime` and {class}`~whenever.OffsetDateTime` |
+| `disambiguation=` (a policy, not a flag) | {class}`~whenever.ImplicitDisambiguationWarning` | {class}`~whenever.ZonedDateTime` construction, `parse_iso()`, `parse()`, `from_bytes()`, `replace()`, `replace_date()`, `replace_time()`, `add`/`subtract`; `assume_tz()` on {class}`~whenever.PlainDateTime` and {class}`~whenever.OffsetDateTime` |
 | none: filter the category | {class}`~whenever.PickleOffsetMismatchWarning` | `pickle.loads()` of a {class}`~whenever.ZonedDateTime` |
-| none: fix the pattern | the 12-hour {class}`~whenever.WheneverWarning` | `format()` and `parse()`: add `a`/`aa`, or use `H`/`HH` |
 | none: convert explicitly | the lossy-subclass {class}`~whenever.WheneverWarning` | constructors given a `pandas` or `pendulum` object, or `Date()` given a `datetime` |
+| none: switch to the replacement | {class}`~whenever.WheneverDeprecationWarning` | any deprecated API; see {ref}`stability` |
 
 For example:
 

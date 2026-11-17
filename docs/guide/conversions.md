@@ -63,8 +63,7 @@ ZonedDateTime("2023-12-28 10:30:00.5+01:00[Europe/Amsterdam]")
 
 To get an {class}`~whenever.OffsetDateTime` or {class}`~whenever.ZonedDateTime`
 from a timestamp, build an {class}`~whenever.Instant` and move it with
-`to_fixed_offset()` or `to_tz()`. Their own timestamp factories are
-deprecated.
+`to_fixed_offset()` or `to_tz()`.
 
 ## To and from local time
 

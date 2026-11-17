@@ -8,36 +8,6 @@ def __getattr__(name: str) -> object:
         for n in _LAZY_MODULES[src]:
             g[n] = getattr(mod, n)
         return g[name]
-    # TZPATH is a live view, not a cached value.
-    elif name == "TZPATH":
-        from ._common import warn_deprecated
-        from ._core import get_tzpath
-
-        warn_deprecated(
-            "TZPATH is deprecated; use get_tzpath() instead",
-            stacklevel=2,
-        )
-        return get_tzpath()
-    # Not cached, so that every access warns.
-    elif name == "DisambiguateStr":
-        from ._common import warn_deprecated
-        from ._typing import DisambiguateStr
-
-        warn_deprecated(
-            "DisambiguateStr is deprecated; use DisambiguationStr instead",
-            stacklevel=2,
-        )
-        return DisambiguateStr
-    elif name == "CalendarUnitCompositionWarning":
-        from ._common import warn_deprecated
-        from ._ideltas import MonthCompositionWarning
-
-        warn_deprecated(
-            "CalendarUnitCompositionWarning is deprecated; "
-            "use MonthCompositionWarning instead",
-            stacklevel=2,
-        )
-        return MonthCompositionWarning
     elif name == "AnyDelta":
         from ._core import TimeDelta
         from ._ideltas import ItemizedDateDelta, ItemizedDelta
@@ -46,6 +16,13 @@ def __getattr__(name: str) -> object:
             TimeDelta | ItemizedDelta | ItemizedDateDelta
         )
         return val
+    elif name == "C_API_v1":
+        # The C API capsule, which only the Rust extension provides
+        from . import _core
+
+        if _core._EXTENSION_LOADED:  # pragma: no cover
+            globals()[name] = capsule = _core.C_API_v1  # type: ignore[attr-defined]
+            return capsule
     elif name == "__version__":
         globals()["__version__"] = version = __import__(
             "importlib.metadata"
@@ -170,7 +147,6 @@ _LAZY_MODULES = {
         "_unpkl_offset",
         "_unpkl_tdelta",
         "_unpkl_time",
-        "_unpkl_utc",
         "_unpkl_zoned",
     ),
     f"{__package__}._ideltas": (

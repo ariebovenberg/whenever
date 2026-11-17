@@ -116,7 +116,7 @@ def test_dir_includes_public_names():
     assert result.returncode == 0, result.stderr
 
 
-def test_dir_names_resolve_without_deprecation_warnings():
+def test_dir_names_resolve():
     # help(whenever) reads every name dir() lists
     import whenever
 
@@ -191,6 +191,18 @@ def test_call_without_argument_array(call):
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_c_api_capsule_only_with_extension():
+    import whenever
+
+    if _EXTENSION_LOADED:
+        capsule = whenever.C_API_v1  # type: ignore[attr-defined]
+        assert type(capsule).__name__ == "PyCapsule"
+    else:
+        assert not hasattr(whenever, "C_API_v1")
+        with pytest.raises(AttributeError, match="C_API_v1"):
+            whenever.C_API_v1  # type: ignore[attr-defined]
 
 
 def test_no_attr_on_module():
@@ -298,11 +310,9 @@ def test_public_members_have_docstrings():
             continue
         for attr in public(cls):
             assert getattr(cls, attr).__doc__, f"{name}.{attr}"
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", WheneverDeprecationWarning)
-        for value in SAMPLE_VALUES:
-            for attr in public(type(value)):
-                assert getattr(value, attr).__doc__, f"{value!r}.{attr}"
+    for value in SAMPLE_VALUES:
+        for attr in public(type(value)):
+            assert getattr(value, attr).__doc__, f"{value!r}.{attr}"
 
 
 def test_functions_report_the_public_module():

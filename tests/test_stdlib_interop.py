@@ -197,12 +197,22 @@ class TestOutOfRangeIsValueError:
         OffsetDateTime(2020, 1, 1, offset=hours(1)).to_fixed_offset,
         ZonedDateTime(2020, 1, 1, tz="Europe/Amsterdam").to_fixed_offset,
         PlainDateTime(2020, 1, 1).assume_fixed_offset,
+        lambda o: OffsetDateTime(2020, 1, 1, offset=o),
+        lambda o: OffsetDateTime.now(o, stale_offset_ok=True),
+        lambda o: OffsetDateTime(2020, 1, 1, offset=hours(1)).replace(
+            offset=o
+        ),
     ],
 )
 @pytest.mark.parametrize(
     "offset, exc, message",
     [
-        ("x", TypeError, "offset must be a TimeDelta"),
+        (
+            "x",
+            TypeError,
+            r"offset must be a TimeDelta, for example hours\(2\)",
+        ),
+        (2, TypeError, r"offset must be a TimeDelta, for example hours\(2\)"),
         (
             hours(1) + TimeDelta(nanoseconds=1),
             ValueError,
@@ -213,7 +223,7 @@ class TestOutOfRangeIsValueError:
     ],
 )
 def test_offset_rejections(convert, offset, exc, message):
-    # the four entry points that take an offset share one set of messages
+    # every entry point that takes an offset shares one set of messages
     with pytest.raises(exc, match=f"^{message}$"):
         convert(offset)
 
