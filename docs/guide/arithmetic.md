@@ -85,6 +85,18 @@ ItemizedDelta("P3y5m14d")
 `until()` is the direction-reversed counterpart of `since()`:
 `a.until(b)` is equivalent to `b.since(a)`.
 
+The result has every unit you ask for, zeros included,
+so you can unpack a fixed number of values.
+To format it without the zeros, call {meth}`~ItemizedDelta.drop_zeros` first:
+
+```python
+>>> d = d2.since(d1, in_units=["days", "hours", "minutes"])
+ItemizedDelta("P1261dT0h0m")
+>>> days, hours, minutes = d.values()
+>>> d.drop_zeros().format_iso()
+'P1261D'
+```
+
 Both methods work with exact units (`hours`, `minutes`, `seconds`, `nanoseconds`,
 and for `total=` also `milliseconds` and `microseconds`)
 *and* calendar units (`years`, `months`, `weeks`, `days`).

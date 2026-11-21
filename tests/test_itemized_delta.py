@@ -1,3 +1,4 @@
+import pickle
 import re
 import warnings
 from collections import Counter
@@ -143,11 +144,15 @@ class TestInit:
         for unit in UNITS:
             assert d.get(unit, 0) == kwargs.get(unit, 0)
 
-    def test_no_components(self):
-        with pytest.raises(
-            ValueError, match="^at least one component must be present$"
-        ):
-            ItemizedDelta()
+    def test_empty(self):
+        d = ItemizedDelta()
+        assert len(d) == 0
+        assert d.sign() == 0
+        assert not d
+        assert d == ItemizedDelta(seconds=0)
+        assert not d.strict_eq(ItemizedDelta(seconds=0))
+        assert d.date_and_time_parts() == (None, None)
+        assert pickle.loads(pickle.dumps(d)).strict_eq(d)
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -593,6 +598,7 @@ class TestFormatIso:
     @pytest.mark.parametrize(
         "d, expected",
         [
+            (ItemizedDelta(), "PT0S"),
             (ItemizedDelta(seconds=0), "PT0S"),
             (ItemizedDelta(days=0), "P0D"),
             (ItemizedDelta(days=5), "P5D"),
@@ -630,6 +636,11 @@ class TestFormatIso:
         assert ItemizedDelta.parse_iso(
             d.format_iso(lowercase_units=lowercase_units)
         ).strict_eq(d)
+
+    def test_empty_round_trips_as_zero_seconds(self):
+        d = ItemizedDelta.parse_iso(ItemizedDelta().format_iso())
+        assert d.strict_eq(ItemizedDelta(seconds=0))
+        assert d == ItemizedDelta()
 
     def test_repr(self):
         d = ItemizedDelta(
@@ -925,10 +936,9 @@ class TestReplace:
         )
 
         # last component removed
-        with pytest.raises(
-            ValueError, match="^at least one component must remain present$"
-        ):
-            d.replace(years=None, months=None, seconds=None)
+        assert d.replace(years=None, months=None, seconds=None).strict_eq(
+            ItemizedDelta()
+        )
 
         # no arguments
         assert d.replace().strict_eq(d)
@@ -940,6 +950,32 @@ class TestReplace:
             match=r"^replace\(\) got an unexpected keyword argument 'foo'$",
         ):
             d.replace(foo=5)  # type: ignore[call-arg]
+
+
+class TestDropZeros:
+    @pytest.mark.parametrize(
+        "d, expected",
+        [
+            (
+                ItemizedDelta(days=0, hours=5, minutes=0),
+                ItemizedDelta(hours=5),
+            ),
+            (ItemizedDelta(years=-1, days=0), ItemizedDelta(years=-1)),
+            (ItemizedDelta(weeks=0, seconds=0), ItemizedDelta()),
+            (ItemizedDelta(), ItemizedDelta()),
+            (ItemizedDelta(hours=2), ItemizedDelta(hours=2)),
+            (
+                ItemizedDelta(seconds=3, nanoseconds=0),
+                ItemizedDelta(seconds=3),
+            ),
+            (
+                ItemizedDelta(minutes=0, nanoseconds=-5),
+                ItemizedDelta(seconds=0, nanoseconds=-5),
+            ),
+        ],
+    )
+    def test_valid(self, d: ItemizedDelta, expected: ItemizedDelta):
+        assert d.drop_zeros().strict_eq(expected)
 
 
 class TestComposition:
@@ -1954,6 +1990,22 @@ class TestDatetimeOperators:
         with warns_here(w) if w else nullcontext():
             expected_subtracted = dt.subtract(delta)
         assert subtracted == expected_subtracted
+
+    @pytest.mark.parametrize(
+        "dt",
+        [
+            Date(2021, 1, 31),
+            PlainDateTime(2021, 1, 31, 4),
+            OffsetDateTime(2021, 1, 31, 4, offset=hours(2)),
+            ZonedDateTime(2021, 1, 31, 4, tz="Europe/Paris"),
+        ],
+    )
+    def test_empty_delta_shifts_nothing(self, dt):
+        delta = (
+            ItemizedDateDelta() if isinstance(dt, Date) else ItemizedDelta()
+        )
+        assert dt + delta == dt
+        assert dt - delta == dt
 
     @pytest.mark.parametrize(
         "dt, expected",

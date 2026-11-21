@@ -87,6 +87,8 @@ def test_payload_matches_wire_format(value: object, payload: bytes):
             "_unpkl_iddelta",
             (None, 1, 0, None),
         ),
+        (w.ItemizedDelta(), "_unpkl_idelta", (None,) * 8),
+        (w.ItemizedDateDelta(), "_unpkl_iddelta", (None,) * 4),
     ],
 )
 def test_itemized_payload_matches_wire_format(
@@ -211,10 +213,8 @@ def test_malformed_payload_is_rejected(name: str, args: tuple[object, ...]):
     [
         ("_unpkl_iddelta", (10**9, 0, 0, 0)),
         ("_unpkl_iddelta", (1, -1, 0, 0)),
-        ("_unpkl_iddelta", (None, None, None, None)),
         ("_unpkl_idelta", (1, -1, None, None, None, None, None, None)),
         ("_unpkl_idelta", (None, None, None, None, None, None, 1, 10**9)),
-        ("_unpkl_idelta", (None,) * 8),
     ],
 )
 def test_itemized_payload_is_validated(name: str, args: tuple[object, ...]):

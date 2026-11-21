@@ -73,6 +73,7 @@ where each unit is a key and its value is the corresponding amount:
 
 Unlike a `Counter`, an absent component raises `KeyError` rather than
 counting as zero, and `+` keeps zero components instead of dropping them.
+{meth}`~ItemizedDelta.drop_zeros` removes them.
 
 Iteration always runs from the largest unit to the smallest and includes only
 the components you gave. Explicit zeroes remain present:
@@ -190,10 +191,9 @@ matters (see {ref}`strict-equality`); it takes only a delta of its own type,
 and raises {exc}`TypeError` for the other. `hash()` follows `==`, so an
 explicit zero hashes like a missing component, and equal deltas of the two
 types hash alike.
-Constructors currently require at least one component, so construct an
-itemized zero with an explicit component such as `ItemizedDelta(seconds=0)` or
-`ItemizedDateDelta(days=0)`. Allowing empty constructors may be considered as
-an additive change after 1.0.
+An itemized delta can be empty: `ItemizedDelta()` and `ItemizedDateDelta()`
+have no components. An empty delta equals any delta whose components are all
+zero.
 
 (delta-sign)=
 ## Sign
@@ -473,7 +473,10 @@ Where:
 - ``nY`` is the number of years, ``nM`` is the number of months, ``nW`` the
   number of weeks, etc.
 - Only seconds may have a fractional part.
-- At least one component must be present (it may be zero).
+- At least one component must be present (it may be zero). So an empty
+  {class}`ItemizedDelta` formats as ``PT0S``, which parses back as zero
+  seconds: equal to the empty delta, but not {meth}`~ItemizedDelta.strict_eq`.
+  An empty {class}`ItemizedDateDelta` formats as ``P0D`` the same way.
 
 For example:
 

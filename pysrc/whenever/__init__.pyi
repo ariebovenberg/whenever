@@ -913,6 +913,7 @@ class ItemizedDelta(
         seconds: int | None = ...,
         nanoseconds: int | None = ...,
     ) -> Self: ...
+    def drop_zeros(self) -> Self: ...
     @overload
     def in_units(
         self,
@@ -1228,6 +1229,7 @@ class ItemizedDateDelta(
         weeks: int | None = ...,
         days: int | None = ...,
     ) -> Self: ...
+    def drop_zeros(self) -> Self: ...
     def in_units(
         self,
         units: Sequence[Literal["years", "months", "weeks", "days"]],

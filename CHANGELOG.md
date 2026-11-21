@@ -48,8 +48,23 @@ supported for the rest of 1.x.
   warning only repeated what the pattern says. Parsing is another matter:
   `03:00` could mean 3 AM or 3 PM, and other libraries disagree on which.
 
+- `ItemizedDelta()` and `ItemizedDateDelta()` without arguments now return
+  an empty delta instead of raising `ValueError`. `replace()` can now remove
+  the last component. An empty delta formats as `PT0S`, which parses back
+  as zero seconds: equal to the empty delta, but not `strict_eq()`.
+  `ItemizedDateDelta` uses `P0D` and zero days the same way.
+
+  **Rationale**: a zero delta no longer needs an arbitrary component, and
+  `replace()` and `drop_zeros()` work on every delta. ISO 8601 has no empty
+  duration, so the round trip loses only what `==` already ignores.
+  Temporal also formats a zero duration as `PT0S`.
+
 **Added**
 
+- `drop_zeros()` on `ItemizedDelta` and `ItemizedDateDelta` returns a copy
+  of the delta without the zero components. Use it to format the result of
+  `since()` or `until()`, which keeps every requested unit: `P1261DT0H0M`
+  becomes `P1261D`.
 - `to_bytes()` and `from_bytes()` on `Date`, `Time`, `PlainDateTime`,
   `Instant`, `TimeDelta`, `OffsetDateTime`, and `ZonedDateTime`, which
   write and read a compact

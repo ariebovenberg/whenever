@@ -545,6 +545,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     >>> d2 = ItemizedDelta(years=2, weeks=3, hours=0)
     >>> dict(d2)
     {"years": 2, "weeks": 3, "hours": 0}
+    >>> d2.drop_zeros()
+    ItemizedDelta("P2y3w")
 
     Additionally, no normalization is performed.
     Months are not rolled into years, minutes into hours, etc.
@@ -558,12 +560,14 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     :meth:`total` for those units. See the
     `subsecond rules <https://whenever.rtfd.io/en/latest/reference/deltas.html#delta-subsecond>`_.
 
-    An empty delta is not allowed: at least one component must be present, but it may be zero:
+    A delta can have no components at all. ISO 8601 has no empty form, so
+    an empty delta formats as ``PT0S``, which parses back as zero seconds:
+    equal to the empty delta, but not :meth:`strict_eq`.
 
-    >>> ItemizedDelta()
-    ValueError: at least one component must be present
-    >>> ItemizedDelta(seconds=0)
+    >>> d0 = ItemizedDelta()
     ItemizedDelta("PT0s")
+    >>> len(d0)
+    0
 
     Negative deltas are supported, but all components must have the same sign:
 
@@ -661,19 +665,6 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             _MAX_SUBSEC_NANOS,
             _NANOS_OUT_OF_RANGE_MSG,
         )
-        if (
-            years is UNSET
-            and months is UNSET
-            and weeks is UNSET
-            and days is UNSET
-            and hours is UNSET
-            and minutes is UNSET
-            and seconds is UNSET
-            and nanoseconds is UNSET
-        ):
-            # This is to ensure ISO8601 formatting/parsing is round-trip safe.
-            # There is no "empty" duration in ISO 8601; at least one component must be present.
-            raise ValueError("at least one component must be present")
 
     __init__ = add_alternate_constructors(__init__, None)
 
@@ -899,6 +890,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         >>> d.format_iso()
         'P1W11DT4H1.000012S'
 
+        An empty delta formats as ``PT0S``.
+
         Parameters
         ----------
         lowercase_units
@@ -938,10 +931,10 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
                 parts.append(f"{abs(self._seconds)}.0{s}")
 
         joined = "".join(parts)
+        if joined == "PT":  # ISO 8601 has no empty form
+            return f"PT0{s}"
         if joined.endswith("T"):  # skip the T if no time components
             return joined[:-1]
-        # NOTE: we always have at least one component,
-        # so we don't need to check for "empty" durations.
         return joined
 
     @classmethod
@@ -1031,8 +1024,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         The date part is an :class:`ItemizedDateDelta`; the time part is a
         normalized :class:`TimeDelta`, since no itemized time-only type
         exists. A half with no component present is ``None``, while a half
-        given only as zero is a present zero. At least one half is present,
-        since at least one component is.
+        given only as zero is a present zero.
 
         >>> d = ItemizedDelta(
         ...     years=1,
@@ -1563,8 +1555,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
     def replace(self, **kwargs: int | None) -> ItemizedDelta:
         """Create a new delta with the given components replaced
 
-        A component given as ``None`` is removed. Removing the last one
-        raises :class:`ValueError`, as does a mixed sign.
+        A component given as ``None`` is removed. A mixed sign raises
+        :class:`ValueError`.
 
         >>> d = ItemizedDelta(years=1, months=2, hours=3)
         >>> d.replace(months=None, hours=2)
@@ -1578,9 +1570,19 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
             k: UNSET if v is None else v for k, v in kwargs.items()
         }
         components = {**self, **kwargs_w_sentinel}
-        if all(v is UNSET for v in components.values()):
-            raise ValueError("at least one component must remain present")
         return ItemizedDelta(**components)
+
+    def drop_zeros(self) -> ItemizedDelta:
+        """Return a copy without the components that are zero.
+
+        >>> d = ItemizedDelta(days=0, hours=5, minutes=0, seconds=0)
+        >>> d.drop_zeros()
+        ItemizedDelta("PT5h")
+
+        A zero ``seconds`` stays if ``nanoseconds`` is nonzero:
+        see :ref:`delta-subsecond`.
+        """
+        return ItemizedDelta(**{k: v for k, v in self.items() if v})
 
     @no_type_check
     def __reduce__(self):
@@ -1695,6 +1697,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     >>> d2 = ItemizedDateDelta(years=2, weeks=3, days=0)
     >>> dict(d2)
     {"years": 2, "weeks": 3, "days": 0}
+    >>> d2.drop_zeros()
+    ItemizedDateDelta("P2y3w")
 
     Additionally, no normalization is performed.
     Months are not rolled into years, weeks into days, etc.
@@ -1702,12 +1706,14 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     >>> d3 = ItemizedDateDelta(months=24, days=100)
     ItemizedDateDelta("P24m100d")
 
-    An empty delta is not allowed: at least one component must be present, but it may be zero:
+    A delta can have no components at all. ISO 8601 has no empty form, so
+    an empty delta formats as ``P0D``, which parses back as zero days:
+    equal to the empty delta, but not :meth:`strict_eq`.
 
-    >>> ItemizedDateDelta()
-    ValueError: at least one component must be present
-    >>> ItemizedDateDelta(days=0)
+    >>> d0 = ItemizedDateDelta()
     ItemizedDateDelta("P0d")
+    >>> len(d0)
+    0
 
     Negative deltas are supported, but all components must have the same sign:
 
@@ -1774,15 +1780,6 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         self._days, sign = _check_component(
             "days", days, sign, _MAX_DELTA_DAYS, _OUT_OF_RANGE_MSG
         )
-        if (
-            years is UNSET
-            and months is UNSET
-            and weeks is UNSET
-            and days is UNSET
-        ):
-            # This is to ensure ISO8601 formatting/parsing is round-trip safe.
-            # There is no "empty" duration in ISO 8601; at least one component must be present.
-            raise ValueError("at least one component must be present")
 
     __init__ = add_alternate_constructors(__init__, None)
 
@@ -1860,8 +1857,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
     def replace(self, **kwargs: int | None) -> ItemizedDateDelta:
         """Create a new delta with the given components replaced
 
-        A component given as ``None`` is removed. Removing the last one
-        raises :class:`ValueError`, as does a mixed sign.
+        A component given as ``None`` is removed. A mixed sign raises
+        :class:`ValueError`.
 
         >>> d = ItemizedDateDelta(years=1, months=2, weeks=3)
         >>> d.replace(months=None, weeks=4)
@@ -1878,9 +1875,16 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
             **{key: value for key, value in self.items()},
             **kwargs_w_sentinel,
         }
-        if all(v is UNSET for v in components.values()):
-            raise ValueError("at least one component must remain present")
         return ItemizedDateDelta(**cast(Any, components))
+
+    def drop_zeros(self) -> ItemizedDateDelta:
+        """Return a copy without the components that are zero.
+
+        >>> d = ItemizedDateDelta(years=0, months=2, days=0)
+        >>> d.drop_zeros()
+        ItemizedDateDelta("P2m")
+        """
+        return ItemizedDateDelta(**{k: v for k, v in self.items() if v})
 
     def format_iso(self, *, lowercase_units: bool = False) -> str:
         """Convert to the canonical ISO 8601 string representation:
@@ -1896,6 +1900,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         >>> d = ItemizedDateDelta(weeks=1, days=11)
         >>> d.format_iso()
         'P1W11D'
+
+        An empty delta formats as ``P0D``.
 
         Parameters
         ----------
@@ -1921,8 +1927,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         if self._days is not None:
             parts.append(f"{abs(self._days)}{d}")
 
-        # NOTE: we always have at least one component,
-        # so we don't need to check for "empty" durations.
+        if len(parts) == 2:  # ISO 8601 has no empty form
+            return f"P0{d}"
         return "".join(parts)
 
     @classmethod
