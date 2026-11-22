@@ -87,6 +87,8 @@ def test_payload_matches_wire_format(value: object, payload: bytes):
             "_unpkl_iddelta",
             (None, 1, 0, None),
         ),
+        (w.ItemizedDelta(), "_unpkl_idelta", (None,) * 8),
+        (w.ItemizedDateDelta(), "_unpkl_iddelta", (None,) * 4),
     ],
 )
 def test_itemized_payload_matches_wire_format(
@@ -150,8 +152,6 @@ def test_boundary_payloads_match_wire_format(value: object, payload: bytes):
             (struct.pack("<HBBBBBi", 2024, 2, 29, 0, 0, 0, 1_000_000_000),),
         ),
         ("_unpkl_local", (struct.pack("<HBBBBBi", 2024, 2, 29, 0, 0, 0, -1),)),
-        ("_unpkl_utc", (struct.pack("<qL", 0, 1_000_000_000),)),
-        ("_unpkl_utc", (struct.pack("<qL", 0, 0),)),
         ("_unpkl_inst", (struct.pack("<qL", -62_135_596_801, 0),)),
         ("_unpkl_inst", (struct.pack("<qL", 253_402_300_800, 0),)),
         ("_unpkl_inst", (struct.pack("<qL", 0, 1_000_000_000),)),
@@ -213,10 +213,8 @@ def test_malformed_payload_is_rejected(name: str, args: tuple[object, ...]):
     [
         ("_unpkl_iddelta", (10**9, 0, 0, 0)),
         ("_unpkl_iddelta", (1, -1, 0, 0)),
-        ("_unpkl_iddelta", (None, None, None, None)),
         ("_unpkl_idelta", (1, -1, None, None, None, None, None, None)),
         ("_unpkl_idelta", (None, None, None, None, None, None, 1, 10**9)),
-        ("_unpkl_idelta", (None,) * 8),
     ],
 )
 def test_itemized_payload_is_validated(name: str, args: tuple[object, ...]):
@@ -406,8 +404,7 @@ _PICKLES_0_10_5 = [
     ),
 ]
 
-# Captured under earlier releases without a version note; the Instant payload
-# naming ``_unpkl_utc`` predates 0.8.0.
+# Captured under earlier releases without a version note.
 _PICKLES_EARLIER = [
     # the pure-Python backend from 0.8.0 to 0.10.0 named its own module
     (
@@ -451,11 +448,6 @@ _PICKLES_EARLIER = [
     (
         b"\x80\x04\x95/\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\x0b_unp"
         b"kl_inst\x94\x93\x94C\x0c\xc9k8_\x00\x00\x00\x008h\xde:\x94\x85\x94R\x94.",
-        w.Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_200),
-    ),
-    (
-        b"\x80\x04\x95.\x00\x00\x00\x00\x00\x00\x00\x8c\x08whenever\x94\x8c\n_unpkl_u"
-        b"tc\x94\x93\x94C\x0cI\xb4\xcb\xd6\x0e\x00\x00\x008h\xde:\x94\x85\x94R\x94.",
         w.Instant.from_utc(2020, 8, 15, 23, 12, 9, nanosecond=987_654_200),
     ),
     (

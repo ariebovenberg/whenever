@@ -9,7 +9,6 @@ from datetime import (
 
 import pytest
 from whenever import (
-    Date,
     DaysAssumed24HoursWarning,
     ImplicitDisambiguationWarning,
     Instant,
@@ -24,7 +23,6 @@ from whenever import (
     RepeatedTime,
     SkippedTime,
     StaleOffsetWarning,
-    Time,
     TimeDelta,
     TimeZoneNotFoundError,
     WheneverDeprecationWarning,
@@ -54,14 +52,6 @@ def test_hierarchy():
     assert issubclass(SkippedTime, ValueError)
     assert issubclass(InvalidOffsetError, ValueError)
     assert issubclass(TimeZoneNotFoundError, ValueError)
-
-
-def test_deprecation_warning_is_shown_by_default():
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("default")
-        Date.today_in_system_tz()  # type: ignore[deprecated]
-    assert len(caught) == 1
-    assert caught[0].category is WheneverDeprecationWarning
 
 
 def test_naive_arithmetic_warning_names_its_escape():
@@ -169,7 +159,7 @@ _UTC = py_timezone.utc
             id="OffsetDateTime.now(hours(30))",
         ),
         pytest.param(
-            lambda: OffsetDateTime.now("x"),  # type: ignore[call-overload]
+            lambda: OffsetDateTime.now("x"),  # type: ignore[arg-type]
             TypeError,
             id="OffsetDateTime.now('x')",
         ),
@@ -282,32 +272,3 @@ def test_a_rejected_call_emits_no_warning(call, exc):
         warnings.simplefilter("error")
         with pytest.raises(exc):
             call()
-
-
-def test_12h_warning_points_at_the_caller():
-    with warns_here(WheneverWarning) as caught:
-        Time(14, 30).format("ii:mm")
-    assert "specifier" in str(caught[0].message)
-    with warns_here(WheneverWarning):
-        Time.parse("02:30", pattern="ii:mm")
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        Time(13),
-        PlainDateTime(2024, 3, 15, 13),
-        Instant.from_utc(2024, 3, 15, 13),
-        OffsetDateTime(2024, 3, 15, 13, offset=hours(2)),
-        ZonedDateTime(2024, 3, 15, 13, tz="Europe/Paris"),
-    ],
-    ids=lambda v: type(v).__name__,
-)
-def test_warnings_point_at_the_f_string(value):
-    """A pattern warning raised through __format__ names the caller's
-    line, as it does through format(). Date is absent because it has
-    no deprecated or ambiguous specifier."""
-    with warns_here(WheneverDeprecationWarning):
-        f"{value:hh}"
-    with warns_here(WheneverWarning):
-        f"{value:ii}"

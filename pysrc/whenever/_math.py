@@ -38,7 +38,6 @@ EXACT_TOTAL_UNITS = (
     "milliseconds",
     "microseconds",
 )
-EXACT_UNITS = ["weeks", "days", *EXACT_UNITS_STRICT]
 DELTA_UNITS = cast(
     Sequence[DeltaUnitStr], [*DATE_DELTA_UNITS, *EXACT_UNITS_STRICT]
 )

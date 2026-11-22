@@ -23,7 +23,8 @@ instant—sometimes requires more information:
 These rules apply to the {class}`~whenever.ZonedDateTime` constructor,
 whether you pass it an ISO string or a standard library datetime, and to
 {meth}`~whenever.ZonedDateTime.parse_iso`, patterned
-{meth}`~whenever.ZonedDateTime.parse`, and
+{meth}`~whenever.ZonedDateTime.parse`,
+{meth}`~whenever.ZonedDateTime.from_bytes`, and
 {meth}`~whenever.OffsetDateTime.assume_tz`. A local time derived from an
 existing value follows a related rule, described in
 {ref}`offset-preserving resolution <offset-preserving>`.
@@ -116,6 +117,13 @@ compares its exact offset.
 Matching at the written precision is what lets a formatted value parse back.
 Historical offsets often carry seconds—Dublin ran on `-00:25:21` until
 1916—so an offset written to the minute would match nothing at all.
+
+In a fold, both occurrences can round to the written offset. Niue moved its
+clocks from `-11:19:40` to `-11:20` in 1952, so
+`1952-10-15T23:59:59-11:20[Pacific/Niue]` matches either occurrence. An exact
+match wins there: whenever writes the earlier occurrence as `-11:19:40` and the
+later one as `-11:20`, so `-11:20` names the later one. Temporal picks the
+earlier occurrence instead, because it always writes offsets to the minute.
 
 `Z` is not an offset in this sense. ISO 8601 and RFC 3339 both read `Z` as the
 UTC designator: it says the time is written in UTC, not which offset the named

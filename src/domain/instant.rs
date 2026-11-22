@@ -4,7 +4,7 @@ use super::{
     scalar::{EpochSecs, Offset, SubSecNanos},
     time::Time,
     time_delta::TimeDelta,
-    units::{NS_PER_MILLISECOND, NS_PER_SECOND, S_PER_DAY},
+    units::{NS_PER_SECOND, S_PER_DAY},
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone)]
@@ -35,11 +35,6 @@ impl Instant {
 
     pub(crate) fn diff(self, other: Self) -> TimeDelta {
         TimeDelta::from_nanos_unchecked(self.timestamp_nanos() - other.timestamp_nanos())
-    }
-
-    pub(crate) fn timestamp_millis(self) -> i64 {
-        self.epoch.get() * i64::from(NS_PER_SECOND / NS_PER_MILLISECOND)
-            + self.subsec.get() as i64 / i64::from(NS_PER_MILLISECOND)
     }
 
     pub(crate) fn timestamp_nanos(self) -> i128 {

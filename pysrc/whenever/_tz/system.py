@@ -3,7 +3,6 @@ import os.path
 import platform
 from typing import Literal
 
-ZONEINFO = "zoneinfo"
 SYSTEM = platform.system()
 LOCALTIME = "/etc/localtime"
 # The plain-text name of the zone /etc/localtime was copied from, on
