@@ -1584,6 +1584,8 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
         """
         return ItemizedDelta(**{k: v for k, v in self.items() if v})
 
+    # pyo3-whenever reads this payload and calls _unpkl_idelta() with it, so
+    # keep both the function and the argument order stable through 1.x.
     @no_type_check
     def __reduce__(self):
         return (
@@ -1632,6 +1634,7 @@ class ItemizedDelta(_Base, Mapping[DeltaUnitStr, int]):
 
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
+# pyo3-whenever also calls it to build deltas, so keep its signature stable.
 def _unpkl_idelta(
     years: int | None,
     months: int | None,
@@ -2414,6 +2417,8 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
         self._days = _apply(days, _MAX_DELTA_DAYS, _OUT_OF_RANGE_MSG)
         return self
 
+    # pyo3-whenever reads this payload and calls _unpkl_iddelta() with it, so
+    # keep both the function and the argument order stable through 1.x.
     @no_type_check
     def __reduce__(self):
         return (
@@ -2445,6 +2450,7 @@ class ItemizedDateDelta(_Base, Mapping[DateDeltaUnitStr, int]):
 
 # A separate unpickling function allows us to make backwards-compatible changes
 # to the pickling format in the future
+# pyo3-whenever also calls it to build deltas, so keep its signature stable.
 def _unpkl_iddelta(
     years: int | None,
     months: int | None,
