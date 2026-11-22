@@ -474,12 +474,13 @@ fn traverse_type(
     arg: *mut c_void,
     num_singletons: usize,
 ) -> TraverseResult {
-    // XXX: This trick SEEMS to let us avoid adding GC support to our types.
-    // Since our types are atomic and immutable this should be allowed...
-    // ...BUT there is a reference cycle between the class and the
-    // singleton instances (e.g. the Date.MAX instance and Date class itself)
-    // Visiting the type once for each singleton should make GC aware of this.
-    // NOTE: the +1 is for the type itself
+    // Our types skip GC support (python/cpython#116946), so the GC can't see an
+    // instance's reference to its type. The singletons in the class dict (e.g.
+    // Date.MAX) close a cycle through such references: visiting the type once
+    // per singleton accounts for them, plus once for the state's own reference.
+    // An instance stored elsewhere in the cycle (e.g. `_whenever.X = Date(...)`)
+    // adds a reference no count can cover. The cycle then lives until
+    // finalization clears module dicts: the trade-off CPython weighs for _decimal.
     for _ in 0..(num_singletons + 1) {
         traverse(target.as_ptr(), visit, arg)?;
     }
