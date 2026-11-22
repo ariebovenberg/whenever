@@ -1720,6 +1720,35 @@ class TestParseIso:
             )
 
     @pytest.mark.parametrize(
+        "local, offset, tz, which",
+        [
+            # Niue's fold runs from -11:19:40 to -11:20. Temporal picks the
+            # earlier occurrence for -11:20, but that's how whenever writes
+            # the later one.
+            ("1952-10-15T23:59:59", "-11:20", "Pacific/Niue", "later"),
+            ("1952-10-15T23:59:59", "-11:20:00", "Pacific/Niue", "later"),
+            ("1952-10-15T23:59:59", "-11:19:40", "Pacific/Niue", "earlier"),
+            # each rounded offset matches one side of the fold
+            ("1919-02-28T23:59:00", "-00:43", "Africa/Monrovia", "earlier"),
+            ("1919-02-28T23:59:00", "-00:45", "Africa/Monrovia", "later"),
+        ],
+    )
+    def test_minute_precision_offset_in_fold(
+        self,
+        local: str,
+        offset: str,
+        tz: str,
+        which: Literal["earlier", "later"],
+    ):
+        expected = PlainDateTime.parse_iso(local).assume_tz(
+            tz, disambiguation=which
+        )
+        assert expected.is_repeated()
+        assert ZonedDateTime.parse_iso(
+            f"{local}{offset}[{tz}]", disambiguation="raise"
+        ).strict_eq(expected)
+
+    @pytest.mark.parametrize(
         "construct", [ZonedDateTime.parse_iso, ZonedDateTime]
     )
     def test_keep_instant_on_offset_mismatch(self, construct):
